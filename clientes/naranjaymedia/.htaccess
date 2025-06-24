@@ -1,0 +1,15 @@
+# Activar reescritura
+RewriteEngine On
+
+# Quitar index.php de la URL
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/(.*)/index\.php\sHTTP/ [NC]
+RewriteRule ^ %1/ [R=301,L]
+
+# Quitar extensión .php de la URL
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^([a-zA-Z0-9_-]+)/?$ $1.php [L]
+
+# Forzar uso de URLs sin .php ni index.php directamente
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s.*\.php\sHTTP/
+RewriteRule (.*)\.php$ /$1 [R=301,L]
