@@ -70,14 +70,14 @@ if (!$factura) {
 }
 
 // Obtener ítems de la factura
-$stmtItems = $pdo->prepare("SELECT * FROM factura_items WHERE factura_id = ?");
+$stmtItems = $pdo->prepare("SELECT * FROM factura_items_receptor WHERE factura_id = ?");
 $stmtItems->execute([$factura_id]);
 $items = $stmtItems->fetchAll();
 // Obtener ítems de la factura junto con el nombre del producto
 $stmtItems = $pdo->prepare("
     SELECT fi.*, p.nombre AS nombre_producto
-    FROM factura_items fi
-    LEFT JOIN productos p ON fi.producto_id = p.id
+    FROM factura_items_receptor fi
+    LEFT JOIN productos_clientes p ON fi.producto_id = p.id
     WHERE fi.factura_id = ?
 ");
 $stmtItems->execute([$factura_id]);
@@ -123,7 +123,24 @@ function formatFecha($fecha)
 
 <head>
 	<meta charset="UTF-8" />
-	<title>Factura <?= htmlspecialchars($factura['correlativo']) ?></title>
+	<?php
+	// Formato: Factura 0001 - Juan Pérez - 12 de marzo de 2025
+	$titulo_factura = 'Factura ' . htmlspecialchars($factura['correlativo']);
+
+	if (!empty($factura['receptor_nombre'])) {
+		$titulo_factura .= ' - ' . htmlspecialchars($factura['receptor_nombre']);
+	}
+
+	if (!empty($factura['fecha_emision'])) {
+		$titulo_factura .= ' - ' . formatFecha($factura['fecha_emision']);
+	}
+
+	if (!empty($items) && !empty($items[0]['descripcion_html'])) {
+		$titulo_factura .= ' - Corresponde a ' . htmlspecialchars($items[0]['descripcion_html']);
+	}
+	?>
+	<!-- <title>Factura <?= htmlspecialchars($factura['correlativo']) ?></title> -->
+	<title><?= $titulo_factura ?></title>
 	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
 	<style>
 		body {
@@ -351,7 +368,7 @@ function formatFecha($fecha)
 				<strong>RTN:</strong> <?= htmlspecialchars($factura['receptor_rtn'] ?? '') ?><br>
 				<strong>Dirección:</strong> <?= htmlspecialchars($factura['receptor_direccion'] ?? '') ?><br>
 				<strong>Teléfono:</strong> <?= htmlspecialchars($factura['receptor_telefono'] ?? '') ?><br>
-				<strong>Email:</strong> <?= htmlspecialchars($factura['receptor_email'] ?? '') ?>
+				<strong>Email:</strong> <?= htmlspecialchars($factura['receptor_email'] ?? '') ?><br>
 				<strong>Fecha de emisión:</strong> <?= formatFecha($factura['fecha_emision']) ?><br>
 			</div>
 			<div class="factura"><strong>Factura N.°:</strong> <?= htmlspecialchars($factura['correlativo']) ?></div>
@@ -363,7 +380,7 @@ function formatFecha($fecha)
 			<table class="table table-bordered mt-3">
 				<thead>
 					<tr>
-						<th style="max-width: 563px;">Artículo</th>
+						<th style="max-width: 460px;">Artículo</th>
 						<th class="text-center">Cantidad</th>
 						<th class="text-center">Precio Unitario</th>
 						<th class="text-center">Total</th>
@@ -372,7 +389,7 @@ function formatFecha($fecha)
 				<tbody>
 					<?php foreach ($items as $item): ?>
 						<tr>
-							<td style="max-width: 563px;">
+							<td style="max-width: 460px;">
 								<?php
 								if (!empty($item['descripcion_html'])) {
 									echo mb_strtoupper(htmlspecialchars($item['nombre_producto']), 'UTF-8') . ' - ' . mb_strtoupper(htmlspecialchars($item['descripcion_html']), 'UTF-8');
@@ -468,7 +485,6 @@ function formatFecha($fecha)
 		}
 
 		// Si hay items, recalculamos totales dinámicamente
-		
 	</script>
 </body>
 

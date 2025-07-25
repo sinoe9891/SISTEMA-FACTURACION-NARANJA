@@ -51,59 +51,8 @@ function generarCorrelativoFactura(PDO $pdo, int $cai_id, int $cliente_id, int $
 	return $correlativo_formateado;
 }
 
-
 function numeroALetras($numero)
 {
-	$unidades = [
-		'',
-		'uno',
-		'dos',
-		'tres',
-		'cuatro',
-		'cinco',
-		'seis',
-		'siete',
-		'ocho',
-		'nueve',
-		'diez',
-		'once',
-		'doce',
-		'trece',
-		'catorce',
-		'quince',
-		'dieciséis',
-		'diecisiete',
-		'dieciocho',
-		'diecinueve',
-		'veinte'
-	];
-
-	$decenas = [
-		'',
-		'',
-		'veinte',
-		'treinta',
-		'cuarenta',
-		'cincuenta',
-		'sesenta',
-		'setenta',
-		'ochenta',
-		'noventa'
-	];
-
-	$centenas = [
-		'',
-		'ciento',
-		'doscientos',
-		'trescientos',
-		'cuatrocientos',
-		'quinientos',
-		'seiscientos',
-		'setecientos',
-		'ochocientos',
-		'novecientos'
-	];
-
 	if ($numero == 0) {
 		return 'Cero lempiras exactos';
 	}
@@ -111,49 +60,83 @@ function numeroALetras($numero)
 	$num = floor($numero);
 	$centavos = round(($numero - $num) * 100);
 
+	$letras = convertirNumeroLetrasBasico($num);
+
+	// Corrección para "uno" → "un" antes de "lempiras"
+	if (preg_match('/(veintiuno|treinta y uno|cuarenta y uno|cincuenta y uno|sesenta y uno|setenta y uno|ochenta y uno|noventa y uno)$/', $letras)) {
+		$letras = preg_replace('/uno$/', 'ún', $letras);
+	}
+
+	$letras = ucfirst(trim($letras)) . ' lempiras';
+
+	if ($centavos > 0) {
+		$letras .= " con " . str_pad($centavos, 2, '0', STR_PAD_LEFT) . "/100 centavos";
+	} else {
+		$letras .= " exactos";
+	}
+
+	return $letras;
+}
+
+function convertirNumeroLetrasBasico($num)
+{
+	$unidades = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete', 'dieciocho', 'diecinueve', 'veinte'];
+	$decenas = ['', '', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
+	$centenas = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
+
 	$resultado = '';
 
 	if ($num == 100) {
-		$resultado = 'cien';
-	} else {
-		if ($num >= 1000000) {
-			$millones = floor($num / 1000000);
-			$resultado .= ($millones == 1 ? 'un millón ' : numeroALetras($millones) . ' millones ');
-			$num %= 1000000;
-		}
+		return 'cien';
+	}
 
-		if ($num >= 1000) {
-			$miles = floor($num / 1000);
-			if ($miles == 1) {
-				$resultado .= 'mil ';
-			} else {
-				$resultado .= numeroALetras($miles) . ' mil ';
-			}
-			$num %= 1000;
-		}
+	if ($num >= 1000000) {
+		$millones = floor($num / 1000000);
+		$resultado .= ($millones == 1 ? 'un millón' : convertirNumeroLetrasBasico($millones) . ' millones');
+		$num %= 1000000;
+		if ($num > 0) $resultado .= ' ';
+	}
 
-		if ($num >= 100) {
-			$resultado .= $centenas[floor($num / 100)] . ' ';
-			$num %= 100;
-		}
-
-		if ($num > 20) {
-			$resultado .= $decenas[floor($num / 10)];
-			if ($num % 10 > 0) {
-				$resultado .= ' y ' . $unidades[$num % 10];
-			}
+	if ($num >= 1000) {
+		$miles = floor($num / 1000);
+		if ($miles == 1) {
+			$resultado .= 'mil';
 		} else {
-			$resultado .= $unidades[$num];
+			$resultado .= convertirNumeroLetrasBasico($miles) . ' mil';
 		}
+		$num %= 1000;
+		if ($num > 0) $resultado .= ' ';
 	}
 
-	$resultado = ucfirst(trim($resultado)) . ' lempiras';
-
-	if ($centavos > 0) {
-		$resultado .= " con " . str_pad($centavos, 2, '0', STR_PAD_LEFT) . "/100 centavos";
-	} else {
-		$resultado .= " exactos";
+	if ($num >= 100) {
+		$resultado .= $centenas[floor($num / 100)];
+		$num %= 100;
+		if ($num > 0) $resultado .= ' ';
 	}
 
-	return $resultado;
+	if ($num > 20 && $num < 30) {
+		$resultado .= 'veinti' . $unidades[$num % 10];
+	} elseif ($num >= 30) {
+		$resultado .= $decenas[floor($num / 10)];
+		if ($num % 10 > 0) {
+			$resultado .= ' y ' . $unidades[$num % 10];
+		}
+	} elseif ($num > 0) {
+		$resultado .= $unidades[$num];
+	}
+
+	return trim($resultado);
+}
+
+function traducirMeses(array $lista_meses_en): array {
+	$traducciones = [
+		'January' => 'Enero', 'February' => 'Febrero', 'March' => 'Marzo',
+		'April' => 'Abril', 'May' => 'Mayo', 'June' => 'Junio',
+		'July' => 'Julio', 'August' => 'Agosto', 'September' => 'Septiembre',
+		'October' => 'Octubre', 'November' => 'Noviembre', 'December' => 'Diciembre'
+	];
+
+	return array_map(function ($mes) use ($traducciones) {
+		return strtr($mes, $traducciones);
+	}, $lista_meses_en);
 }

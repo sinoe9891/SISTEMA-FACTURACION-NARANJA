@@ -81,7 +81,7 @@ try {
 	$pdo->beginTransaction();
 
 	// Eliminar productos previos
-	$stmt = $pdo->prepare("DELETE FROM factura_items WHERE factura_id = ?");
+	$stmt = $pdo->prepare("DELETE FROM factura_items_receptor WHERE factura_id = ?");
 	$stmt->execute([$factura_id]);
 
 	// Recalcular totales
@@ -96,11 +96,11 @@ try {
 		$cantidad = (float)$item['cantidad'];
 		$precio_unitario = (float)$item['precio_unitario'];
 		$producto_id = (int)$item['id'];
-
+		$descripcion = trim($item['descripcion_html'] ?? '');
 		$subtotal_item = $cantidad * $precio_unitario;
 		$subtotal += $subtotal_item;
 
-		$stmtISV = $pdo->prepare("SELECT tipo_isv FROM productos WHERE id = ? AND cliente_id = ?");
+		$stmtISV = $pdo->prepare("SELECT tipo_isv FROM productos_clientes WHERE id = ? AND cliente_id = ?");
 		$stmtISV->execute([$producto_id, $cliente_id]);
 		$tipo_isv = (int) $stmtISV->fetchColumn();
 
@@ -124,8 +124,9 @@ try {
 		$isv_aplicado_item = $tipo_isv;
 
 		$stmtInsert = $pdo->prepare("
-		INSERT INTO factura_items (factura_id, producto_id, cantidad, precio_unitario, subtotal, isv_aplicado, isv_15, isv_18)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO factura_items_receptor 
+		(factura_id, producto_id, cantidad, precio_unitario, subtotal, isv_aplicado, isv_15, isv_18, descripcion_html)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	");
 		$stmtInsert->execute([
 			$factura_id,
@@ -135,7 +136,8 @@ try {
 			$subtotal_item,
 			$isv_aplicado_item,
 			$isv15_item,
-			$isv18_item
+			$isv18_item,
+			$descripcion
 		]);
 	}
 

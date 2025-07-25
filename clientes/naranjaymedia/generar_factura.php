@@ -1,7 +1,13 @@
 <?php
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
+// require_once '../../includes/api/productos_por_receptor.php';
+// require_once '../../includes/functions.php';
+// $numeros = [8625.00, 8645.00, 8655.00, 21.50, 1000000, 999999.99];
 
+// foreach ($numeros as $n) {
+// 	echo "L {$n} → " . numeroALetras($n) . "<br>";
+// }
 // Obtener cliente_id desde la sesión del usuario
 $usuario_id = $_SESSION['usuario_id'];
 $stmt = $pdo->prepare("
@@ -12,7 +18,9 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$usuario_id]);
 $datos = $stmt->fetch();
+
 $cliente_id = $datos['cliente_id'];
+$_SESSION['cliente_id'] = $cliente_id;
 
 // Obtener lista de clientes a facturar (los "receptores" de la factura)
 $stmtClientes = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cliente_id = ?");
@@ -28,7 +36,7 @@ $stmtProductos = $pdo->prepare("
                WHERE producto_id = p.id AND cliente_id = ?
                LIMIT 1
            ) AS precio_especial
-    FROM productos p
+    FROM productos_clientes p
     WHERE p.cliente_id = ?
 ");
 $stmtProductos->execute([$cliente_id, $cliente_id]);
@@ -81,38 +89,44 @@ require_once '../../includes/templates/header.php';
 
 		<h5>🧮 Detalle de productos</h5>
 		<div id="productos-container">
-			<div class="producto-item row g-2 align-items-end mb-2">
-				<div class="col-md-5">
-					<label>Producto</label>
-					<select name="productos[0][id]" class="form-select" required>
-						<option value="">Seleccione producto</option>
-						<?php foreach ($productos as $prod): ?>
-							<?php
-							$precio = $prod['precio_especial'] !== null ? $prod['precio_especial'] : $prod['precio_base'];
-							?>
-							<option value="<?= $prod['id'] ?>"
-								data-precio="<?= $precio ?>"
-								data-precio-base="<?= $prod['precio_base'] ?>"
-								data-isv="<?= $prod['tipo_isv'] ?>">
-								<?= htmlspecialchars($prod['nombre']) ?> - L<?= number_format($precio, 2) ?>
-							</option>
+			<div class="producto-item border rounded p-3 mb-4 bg-light">
+				<div class="row g-2 align-items-end">
+					<div class="col-md-5">
+						<label>Producto</label>
+						<select name="productos[0][id]" class="form-select" required>
+							<option value="">Seleccione producto</option>
+							<?php foreach ($productos as $prod): ?>
+								<?php
+								$precio = $prod['precio_especial'] !== null ? $prod['precio_especial'] : $prod['precio_base'];
+								?>
+								<option value="<?= $prod['id'] ?>"
+									data-precio="<?= $precio ?>"
+									data-precio-base="<?= $prod['precio_base'] ?>"
+									data-isv="<?= $prod['tipo_isv'] ?>">
+									<?= htmlspecialchars($prod['nombre']) ?> - L<?= number_format($precio, 2) ?>
+								</option>
 
-						<?php endforeach; ?>
-					</select>
+							<?php endforeach; ?>
+						</select>
 
+					</div>
+					<div class="col-md-3">
+						<label>Cantidad</label>
+						<input type="number" name="productos[0][cantidad]" class="form-control" min="1" value="1" required>
+					</div>
+					<div class="col-md-2">
+						<label>Precio</label>
+						<input type="number" step="0.01" name="productos[0][precio]" class="form-control" required>
+					</div>
+					<div class="col-md-2">
+						<button type="button" class="btn btn-danger btn-sm remove-producto">Eliminar</button>
+					</div>
+					<small class="text-muted">Precio sugerido: L<?= number_format($precio, 2) ?></small>
+					<div class="col-md-12 mt-2">
+						<label>Detalles / Descripción</label>
+						<textarea name="productos[0][detalles]" class="form-control" rows="2" placeholder="Ej: Observaciones, características, modelo, etc."></textarea>
+					</div>
 				</div>
-				<div class="col-md-3">
-					<label>Cantidad</label>
-					<input type="number" name="productos[0][cantidad]" class="form-control" min="1" value="1" required>
-				</div>
-				<div class="col-md-2">
-					<label>Precio</label>
-					<input type="number" step="0.01" name="productos[0][precio]" class="form-control" required>
-				</div>
-				<div class="col-md-2">
-					<button type="button" class="btn btn-danger btn-sm remove-producto">Eliminar</button>
-				</div>
-				<small class="text-muted">Precio sugerido: L<?= number_format($precio, 2) ?></small>
 			</div>
 		</div>
 
@@ -191,7 +205,7 @@ require_once '../../includes/templates/header.php';
 	document.getElementById('agregar-producto').addEventListener('click', function() {
 		const contenedor = document.getElementById('productos-container');
 		const nuevo = contenedor.children[0].cloneNode(true);
-		nuevo.querySelectorAll('input, select').forEach(el => {
+		nuevo.querySelectorAll('input, select, textarea').forEach(el => {
 			if (el.name.includes('productos')) {
 				const nuevoNombre = el.name.replace(/\[\d+\]/, `[${productoIndex}]`);
 				el.name = nuevoNombre;
@@ -439,6 +453,40 @@ require_once '../../includes/templates/header.php';
 			})
 			.catch(error => {
 				Swal.fire('Error', 'Ocurrió un error inesperado.', 'error');
+			});
+	});
+</script>
+<script>
+	document.getElementById('receptor_id').addEventListener('change', function() {
+		const receptorId = this.value;
+		const clienteId = <?= json_encode($cliente_id) ?>;
+
+		if (!receptorId) return;
+
+		console.log("Cliente ID:", clienteId);
+		console.log("Receptor ID:", receptorId);
+
+		fetch(`../../includes/api/productos_por_receptor.php?cliente_id=${clienteId}&receptor_id=${receptorId}`)
+			.then(response => response.json())
+			.then(productos => {
+				document.querySelectorAll('.producto-item').forEach((item, index) => {
+					const select = item.querySelector(`select[name="productos[${index}][id]"]`);
+					select.innerHTML = '<option value="">Seleccione producto</option>'; // Limpiar
+
+					productos.forEach(prod => {
+						const option = document.createElement('option');
+						option.value = prod.id;
+						option.textContent = `${prod.nombre} - L${parseFloat(prod.precio).toFixed(2)}`;
+						option.setAttribute('data-precio', prod.precio);
+						option.setAttribute('data-precio-base', prod.precio);
+						option.setAttribute('data-isv', prod.tipo_isv);
+						select.appendChild(option);
+					});
+				});
+			})
+			.catch(err => {
+				console.error('Error al cargar productos:', err);
+				Swal.fire('Error', 'No se pudieron cargar los productos del receptor.', 'error');
 			});
 	});
 </script>

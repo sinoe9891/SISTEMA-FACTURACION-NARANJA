@@ -41,6 +41,8 @@ if (!isset($_SESSION['establecimientos'])) {
 }
 
 define('USUARIO_ESTABLECIMIENTOS', $_SESSION['establecimientos'] ?? []);
+// Línea nueva: Definir SUBDOMINIO_ACTUAL desde la sesión si existe
+define('SUBDOMINIO_ACTUAL', $_SESSION['subdominio_actual'] ?? null);
 
 // Detectar subdominio (ej. ccic.naranjaymediahn.com)
 $host = $_SERVER['HTTP_HOST'];
@@ -63,6 +65,9 @@ for ($i = count($uri_parts) - 1; $i >= 0; $i--) {
 // Detectar cliente según entorno
 $cliente_detectado = $cliente_en_url ?? $subdominio_detectado;
 
+if (!isset($_SESSION['subdominio_actual']) && $cliente_detectado) {
+    $_SESSION['subdominio_actual'] = $cliente_detectado;
+}
 // Validar acceso solo si NO es superadmin
 if ($usuario['rol'] !== 'superadmin' && $cliente_detectado !== $usuario['subdominio']) {
 	session_destroy();

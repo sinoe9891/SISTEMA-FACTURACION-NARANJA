@@ -50,13 +50,13 @@ $clientes = $stmtClientes->fetchAll();
 $stmtProductos = $pdo->prepare("
     SELECT p.id, p.nombre, p.precio AS precio_base, p.tipo_isv,
            (SELECT precio_especial FROM precios_especiales WHERE producto_id = p.id AND cliente_id = ? LIMIT 1) AS precio_especial
-    FROM productos p
+    FROM productos_clientes p
     WHERE p.cliente_id = ?
 ");
 $stmtProductos->execute([$cliente_id, $cliente_id]);
 $productos = $stmtProductos->fetchAll();
 
-$stmt = $pdo->prepare("SELECT * FROM factura_items WHERE factura_id = ?");
+$stmt = $pdo->prepare("SELECT * FROM factura_items_receptor WHERE factura_id = ?");
 $stmt->execute([$factura_id]);
 $items = $stmt->fetchAll();
 
@@ -129,52 +129,58 @@ require_once '../../includes/templates/header.php';
 		<h5>🛒 Productos</h5>
 		<div id="productos-container">
 			<?php foreach ($items as $index => $item): ?>
-				<div class="row g-2 producto-item mb-2 align-items-end">
-					<div class="col-md-5">
-						<label>Producto</label>
-						<select name="productos[<?= $index ?>][id]" class="form-select" required>
-							<option value="">Seleccione producto</option>
-							<?php foreach ($productos as $prod):
-								$precio = $prod['precio_especial'] !== null ? $prod['precio_especial'] : $prod['precio_base'];
-							?>
-								<option
-									value="<?= $prod['id'] ?>"
-									data-precio="<?= $precio ?>"
-									data-precio-base="<?= $prod['precio_base'] ?>"
-									data-isv="<?= $prod['tipo_isv'] ?>"
-									<?= isset($item) && $prod['id'] == $item['producto_id'] ? 'selected' : '' ?>>
-									<?= htmlspecialchars($prod['nombre']) ?>
-									- Estándar: L<?= number_format($prod['precio_base'], 2) ?>
-									<?php if ($prod['precio_especial'] !== null): ?>
-										| Especial: L<?= number_format($prod['precio_especial'], 2) ?>
-									<?php endif; ?>
-								</option>
-							<?php endforeach; ?>
-						</select>
-					</div>
-					<div class="col-md-2">
-						<label>Cantidad</label>
-						<input type="number"
-							name="productos[<?= $index ?>][cantidad]"
-							class="form-control"
-							min="1"
-							value="<?= $item['cantidad'] ?>"
-							required>
-					</div>
-					<div class="col-md-2">
-						<label>Precio Unitario</label>
-						<input type="number" step="0.01" name="productos[<?= $index ?>][precio_unitario]" class="form-control precio-unitario" value="<?= $item['precio_unitario'] ?>" readonly>
+				<div class="producto-item border rounded p-3 mb-4 bg-light">
+					<div class="row g-2 align-items-end">
+						<div class="col-md-5">
+							<label>Producto</label>
+							<select name="productos[<?= $index ?>][id]" class="form-select" required>
+								<option value="">Seleccione producto</option>
+								<?php foreach ($productos as $prod):
+									$precio = $prod['precio_especial'] !== null ? $prod['precio_especial'] : $prod['precio_base'];
+								?>
+									<option
+										value="<?= $prod['id'] ?>"
+										data-precio="<?= $precio ?>"
+										data-precio-base="<?= $prod['precio_base'] ?>"
+										data-isv="<?= $prod['tipo_isv'] ?>"
+										<?= isset($item) && $prod['id'] == $item['producto_id'] ? 'selected' : '' ?>>
+										<?= htmlspecialchars($prod['nombre']) ?>
+										- Estándar: L<?= number_format($prod['precio_base'], 2) ?>
+										<?php if ($prod['precio_especial'] !== null): ?>
+											| Especial: L<?= number_format($prod['precio_especial'], 2) ?>
+										<?php endif; ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+						<div class="col-md-2">
+							<label>Cantidad</label>
+							<input type="number"
+								name="productos[<?= $index ?>][cantidad]"
+								class="form-control"
+								min="1"
+								value="<?= $item['cantidad'] ?>"
+								required>
+						</div>
+						<div class="col-md-2">
+							<label>Precio Unitario</label>
+							<input type="number" step="0.01" name="productos[<?= $index ?>][precio_unitario]" class="form-control precio-unitario" value="<?= $item['precio_unitario'] ?>" readonly>
 
-					</div>
-					<div class="col-md-2">
-						<label>Subtotal</label>
-						<input type="number" step="0.01" name="productos[<?= $index ?>][precio]" class="form-control subtotal-producto" value="<?= $item['cantidad'] * $item['precio_unitario'] ?>" readonly>
-					</div>
+						</div>
+						<div class="col-md-2">
+							<label>Subtotal</label>
+							<input type="number" step="0.01" name="productos[<?= $index ?>][precio]" class="form-control subtotal-producto" value="<?= $item['cantidad'] * $item['precio_unitario'] ?>" readonly>
+						</div>
 
-					<div class="col-md-2">
-						<button type="button" class="btn btn-danger btn-sm remove-producto">Eliminar</button>
+						<div class="col-md-2">
+							<button type="button" class="btn btn-danger btn-sm remove-producto">Eliminar</button>
+						</div>
+						<small class="text-muted precio-sugerido">Precio sugerido: L<?= number_format($item['cantidad'] * $item['precio_unitario'], 2) ?></small>
+						<div class="col-md-12 mt-2">
+							<label>Detalles / Descripción</label>
+							<textarea name="productos[<?= $index ?>][descripcion_html]" class="form-control" rows="2"><?= htmlspecialchars($item['descripcion_html'] ?? '') ?></textarea>
+						</div>
 					</div>
-					<small class="text-muted precio-sugerido">Precio sugerido: L<?= number_format($item['cantidad'] * $item['precio_unitario'], 2) ?></small>
 				</div>
 			<?php endforeach; ?>
 		</div>
@@ -530,6 +536,35 @@ require_once '../../includes/templates/header.php';
 	document.getElementById('exonerado').addEventListener('change', calcularTotalYLetra);
 
 	document.addEventListener('DOMContentLoaded', calcularTotalYLetra);
+	document.addEventListener('DOMContentLoaded', () => {
+		const receptorId = <?= json_encode($factura['receptor_id']) ?>;
+		console.log(receptorId);
+		fetch(`../../includes/api/productos_por_receptor.php?receptor_id=${receptorId}`)
+			.then(response => response.json())
+			.then(productos => {
+				document.querySelectorAll('select[name$="[id]"]').forEach(select => {
+					const selectedValue = select.value;
+					select.innerHTML = '<option value="">Seleccione producto</option>';
+
+					productos.forEach(prod => {
+						const option = document.createElement('option');
+						option.value = prod.id;
+						option.setAttribute('data-precio', prod.precio);
+						option.setAttribute('data-precio-base', prod.precio); // usa mismo precio si no hay especial
+						option.setAttribute('data-isv', prod.tipo_isv);
+						option.textContent = `${prod.nombre} - L${parseFloat(prod.precio).toFixed(2)}`;
+
+						if (parseInt(prod.id) === parseInt(selectedValue)) {
+							option.selected = true;
+						}
+						select.appendChild(option);
+					});
+				});
+			})
+			.catch(err => {
+				console.error('Error al cargar productos por receptor:', err);
+			});
+	});
 </script>
 
 <?php require_once '../../includes/templates/footer.php'; ?>

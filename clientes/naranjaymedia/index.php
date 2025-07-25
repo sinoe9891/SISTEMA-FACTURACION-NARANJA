@@ -1,6 +1,12 @@
 <?php
+ini_set('session.cookie_path', '/');
 session_start();
 require_once '../../includes/db.php';
+
+if (isset($_SESSION['usuario_id'])) {
+	header('Location: ./dashboard');
+	exit;
+}
 
 function detectarSubdominio()
 {
@@ -19,7 +25,7 @@ function detectarSubdominio()
 
 $password = 'admin123$$**';
 $hash = password_hash($password, PASSWORD_BCRYPT);
-echo $hash;
+// echo $hash;
 $cliente_subcarpeta = detectarSubdominio();
 $logo_url = null;
 $nombre_cliente = null;

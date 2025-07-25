@@ -68,7 +68,7 @@ try {
 		$pdo->beginTransaction();
 
 		// Eliminar factura e items
-		$pdo->prepare("DELETE FROM factura_items WHERE factura_id = ?")->execute([$factura_id]);
+		$pdo->prepare("DELETE FROM factura_items_receptor WHERE factura_id = ?")->execute([$factura_id]);
 		$pdo->prepare("DELETE FROM facturas WHERE id = ?")->execute([$factura_id]);
 
 		// Obtener nuevo último correlativo (ya sin la factura eliminada)

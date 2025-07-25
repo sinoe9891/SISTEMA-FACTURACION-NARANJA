@@ -46,6 +46,7 @@ if ($hora >= 5 && $hora < 12) {
 	<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 	<!-- Estilos personalizados opcionales -->
 	<link rel="stylesheet" href="../../../assets/css/custom.css">
+	<link rel="stylesheet" href="../../clientes/css/global.css">
 </head>
 
 <body class="bg-light">

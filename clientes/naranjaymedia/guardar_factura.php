@@ -32,7 +32,8 @@ try {
 	$receptor_id = filter_input(INPUT_POST, 'receptor_id', FILTER_VALIDATE_INT);
 	$cai_id = filter_input(INPUT_POST, 'cai_rango_id', FILTER_VALIDATE_INT);
 	$condicion_pago = filter_input(INPUT_POST, 'condicion_pago', FILTER_SANITIZE_STRING);
-
+	
+	
 	$exonerado = isset($_POST['exonerado']) ? 1 : 0;
 	$orden_compra_exenta = $exonerado ? trim($_POST['orden_compra_exenta'] ?? '') : null;
 	$constancia_exoneracion = $exonerado ? trim($_POST['constancia_exoneracion'] ?? '') : null;
@@ -106,7 +107,7 @@ try {
 	         WHERE producto_id = p.id AND cliente_id = :cliente_id LIMIT 1
 	       ), p.precio) AS precio_unitario,
 	       p.tipo_isv
-	FROM productos p
+	FROM productos_clientes p
 	WHERE p.cliente_id = :cliente_id
 ");
 	$stmtProd->execute(['cliente_id' => $cliente_id]);
@@ -202,17 +203,16 @@ try {
 	// Actualizar el último correlativo del CAI
 	$pdo->prepare("UPDATE cai_rangos SET ultimo_correlativo = ? WHERE id = ?")
 		->execute([$correlativo, $cai_id]);
-	// 4. Insertar detalles (factura_items)
+	// 4. Insertar detalles (factura_items_receptor)
 	$stmtInsertItem = $pdo->prepare("
-		INSERT INTO factura_items (factura_id, producto_id, cantidad, precio_unitario, subtotal, isv_aplicado)
-		VALUES (:factura_id, :producto_id, :cantidad, :precio_unitario, :subtotal, :isv_aplicado)
+		INSERT INTO factura_items_receptor (factura_id, producto_id, descripcion_html, cantidad, precio_unitario, subtotal, isv_aplicado) 
+		VALUES (:factura_id, :producto_id, :descripcion_html, :cantidad, :precio_unitario, :subtotal, :isv_aplicado)
 	");
-
 
 	foreach ($productos as $item) {
 		$prod_id = intval($item['id']);
 		$cantidad = floatval($item['cantidad']);
-
+		$descripcion = trim($item['detalles'] ?? '');
 		if (!isset($productos_db[$prod_id])) {
 			throw new Exception("Producto inválido: $prod_id");
 		}
@@ -224,6 +224,7 @@ try {
 		$stmtInsertItem->execute([
 			':factura_id' => $factura_id,
 			':producto_id' => $prod_id,
+			':descripcion_html' => $descripcion,
 			':cantidad' => $cantidad,
 			':precio_unitario' => $precio_unitario,
 			':subtotal' => $subtotal_item,

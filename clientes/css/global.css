@@ -1,0 +1,29 @@
+/* Naranja Bootstrap-like */
+.text-orange {
+	color: #fd7e14 !important; /* Naranja Bootstrap estándar */
+}
+.border-orange {
+	border-color: #fd7e14 !important;
+}
+.bg-orange {
+	background-color: #fd7e14 !important;
+}
+.text-bg-orange {
+	background-color: #fd7e14 !important;
+	color: #fff !important;
+}
+
+/* Ocre personalizado */
+.text-ocre {
+	color: #b46900 !important; /* Color ocre cálido */
+}
+.border-ocre {
+	border-color: #b46900 !important;
+}
+.bg-ocre {
+	background-color: #b46900 !important;
+}
+.text-bg-ocre {
+	background-color: #b46900 !important;
+	color: #fff !important;
+}
