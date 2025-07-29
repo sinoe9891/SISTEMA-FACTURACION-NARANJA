@@ -165,10 +165,6 @@ function formatFecha($fecha)
 			font-size: 14px;
 		}
 
-		.factura-header {
-			/* margin-bottom: 20px; */
-		}
-
 		td {
 			padding-bottom: 0 !important;
 		}

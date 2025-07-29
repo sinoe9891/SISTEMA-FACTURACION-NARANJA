@@ -12,9 +12,8 @@ function formatoCorrelativoCAI($cai, $numero)
 }
 function generarCorrelativoFactura(PDO $pdo, int $cai_id, int $cliente_id, int $establecimiento_id, int $punto_emision_id): string
 {
-	// Obtener info del rango CAI asegurando que pertenezca al cliente, establecimiento y punto de emisión
 	$stmt = $pdo->prepare("
-        SELECT correlativo_actual, rango_cai_inicio, rango_fin
+        SELECT correlativo_actual, rango_inicio, rango_cai_inicio, rango_fin
         FROM cai_rangos
         WHERE id = ? AND cliente_id = ? AND establecimiento_id = ? AND punto_emision_id = ?
         FOR UPDATE
@@ -26,30 +25,34 @@ function generarCorrelativoFactura(PDO $pdo, int $cai_id, int $cliente_id, int $
 		throw new Exception("Rango CAI no válido o no pertenece al cliente/establecimiento.");
 	}
 
+	$rango_inicio = (int)$cai['rango_inicio'];
+	$rango_fin = (int)$cai['rango_fin'];
 	$correlativo_actual = (int)$cai['correlativo_actual'];
-	$nuevo_correlativo = $correlativo_actual + 1;
 
-	if ($nuevo_correlativo > (int)$cai['rango_fin']) {
+	// Calcular correlativo real sumando base + desplazamiento actual
+	$correlativo_real = $rango_inicio + $correlativo_actual;
+
+	if ($correlativo_real > $rango_fin) {
 		throw new Exception("Se ha alcanzado el límite del rango CAI.");
 	}
 
-	// Separar el rango y reemplazar el último bloque
+	// Generar correlativo formateado
 	$partes = explode('-', $cai['rango_cai_inicio']);
-	if (count($partes) < 2) {
+	if (count($partes) < 4) {
 		throw new Exception("Formato de rango_cai_inicio inválido.");
 	}
 
-	$nuevo_bloque = str_pad($nuevo_correlativo, 8, '0', STR_PAD_LEFT);
-	$partes[count($partes) - 1] = $nuevo_bloque;
-
+	$partes[count($partes) - 1] = str_pad($correlativo_real, 8, '0', STR_PAD_LEFT);
 	$correlativo_formateado = implode('-', $partes);
 
-	// Actualizar el correlativo_actual en la tabla
+	// Actualizar correlativo_actual
 	$stmtUpdate = $pdo->prepare("UPDATE cai_rangos SET correlativo_actual = ? WHERE id = ?");
-	$stmtUpdate->execute([$nuevo_correlativo, $cai_id]);
+	$stmtUpdate->execute([$correlativo_actual + 1, $cai_id]);
 
 	return $correlativo_formateado;
 }
+
+
 
 function numeroALetras($numero)
 {
@@ -128,12 +131,21 @@ function convertirNumeroLetrasBasico($num)
 	return trim($resultado);
 }
 
-function traducirMeses(array $lista_meses_en): array {
+function traducirMeses(array $lista_meses_en): array
+{
 	$traducciones = [
-		'January' => 'Enero', 'February' => 'Febrero', 'March' => 'Marzo',
-		'April' => 'Abril', 'May' => 'Mayo', 'June' => 'Junio',
-		'July' => 'Julio', 'August' => 'Agosto', 'September' => 'Septiembre',
-		'October' => 'Octubre', 'November' => 'Noviembre', 'December' => 'Diciembre'
+		'January' => 'Enero',
+		'February' => 'Febrero',
+		'March' => 'Marzo',
+		'April' => 'Abril',
+		'May' => 'Mayo',
+		'June' => 'Junio',
+		'July' => 'Julio',
+		'August' => 'Agosto',
+		'September' => 'Septiembre',
+		'October' => 'Octubre',
+		'November' => 'Noviembre',
+		'December' => 'Diciembre'
 	];
 
 	return array_map(function ($mes) use ($traducciones) {

@@ -5,56 +5,7 @@ require_once '../../includes/session.php';
 define('ALERTA_FACTURAS_RESTANTES', 20);
 define('ALERTA_CAI_DIAS', 30);
 
-$usuario_id = $_SESSION['usuario_id'];
-$establecimiento_activo = $_SESSION['establecimiento_activo'] ?? null;
-$es_superadmin = (USUARIO_ROL === 'superadmin');
 
-if (!$establecimiento_activo && !$es_superadmin) {
-	header("Location: ./seleccionar_establecimiento");
-	exit;
-}
-
-$datos = [];
-
-if (!$es_superadmin) {
-	$stmt = $pdo->prepare("
-		SELECT u.nombre AS usuario_nombre, u.rol, c.nombre AS cliente_nombre, c.logo_url, c.id AS cliente_id
-		FROM usuarios u
-		INNER JOIN clientes_saas c ON u.cliente_id = c.id
-		WHERE u.id = ?
-	");
-	$stmt->execute([$usuario_id]);
-	$datos = $stmt->fetch();
-
-	if (!$datos) {
-		die("Error: no se encontró información del usuario.");
-	}
-
-	$cliente_id = $datos['cliente_id'];
-} else {
-	$cliente_id = $_SESSION['cliente_seleccionado'] ?? null;
-
-	if ($cliente_id) {
-		$stmtCliente = $pdo->prepare("SELECT nombre, logo_url FROM clientes_saas WHERE id = ?");
-		$stmtCliente->execute([$cliente_id]);
-		$cliente = $stmtCliente->fetch(PDO::FETCH_ASSOC);
-
-		$datos['cliente_nombre'] = $cliente ? $cliente['nombre'] : 'Cliente no asignado';
-		$datos['logo_url'] = $cliente['logo_url'] ?? '';
-	} else {
-		$datos['cliente_nombre'] = 'Cliente no asignado';
-		$datos['logo_url'] = '';
-	}
-
-	$datos['usuario_nombre'] = USUARIO_NOMBRE;
-	$datos['rol'] = USUARIO_ROL;
-}
-
-// Obtener nombre del establecimiento
-$stmtEstab = $pdo->prepare("SELECT nombre FROM establecimientos WHERE establecimiento_id = ?");
-$stmtEstab->execute([$establecimiento_activo]);
-$establecimiento = $stmtEstab->fetch(PDO::FETCH_ASSOC);
-$nombre_establecimiento = $establecimiento ? $establecimiento['nombre'] : 'No asignado';
 
 require_once '../../includes/templates/header.php';
 
@@ -101,7 +52,7 @@ $ultimoCorrelativoCAI = null;
 // Consulta facturas filtradas por CAI si $caix está definido, sino todas del establecimiento
 if ($caix) {
 	$stmtFacturas = $pdo->prepare("
-        SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, f.estado, cf.nombre AS receptor
+        SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, f.estado, f.pagada, cf.nombre AS receptor
         FROM facturas f
         INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
         WHERE f.cliente_id = ? AND f.establecimiento_id = ? AND f.cai_id = ?
@@ -110,7 +61,7 @@ if ($caix) {
 	$stmtFacturas->execute([$cliente_id, $establecimiento_activo, $caix]);
 } else {
 	$stmtFacturas = $pdo->prepare("
-        SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, f.estado, cf.nombre AS receptor
+        SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, f.estado, f.pagada, cf.nombre AS receptor
         FROM facturas f
         INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
         WHERE f.cliente_id = ? AND f.establecimiento_id = ?
@@ -165,7 +116,7 @@ require_once '../../includes/templates/header.php';
 				<option value="">-- Mostrar todas las facturas --</option>
 				<?php foreach ($cais as $cai): ?>
 					<option value="<?= $cai['id'] ?>" <?= ($caix == $cai['id']) ? 'selected' : '' ?>>
-						<?= htmlspecialchars($cai['cai']) ?> | Rango: <?= $cai['rango_inicio'] ?> - <?= $cai['rango_fin'] ?> | Restantes: <?= ($cai['rango_fin'] - $cai['correlativo_actual']) ?>
+						<?= htmlspecialchars($cai['cai']) ?> | Rango: <?= $cai['rango_inicio'] ?> - <?= $cai['rango_fin'] ?> | Restantes: <?= ($cai['rango_fin'] - $cai['rango_inicio'] + 1 - $cai['correlativo_actual']) ?>
 					</option>
 				<?php endforeach; ?>
 			</select>
@@ -182,6 +133,7 @@ require_once '../../includes/templates/header.php';
 						<th>Cliente</th>
 						<th>Total</th>
 						<th>Estado</th>
+						<th>Pagada</th>
 						<th>Acciones</th>
 						<th>PDF</th>
 					</tr>
@@ -207,6 +159,14 @@ require_once '../../includes/templates/header.php';
 							<td><?= htmlspecialchars($f['receptor']) ?></td>
 							<td>L<?= number_format($f['total'], 2) ?></td>
 							<td><?= ucfirst($f['estado']) ?></td>
+							<td><?php 
+
+								if ($f['pagada'] == 1): ?>
+									<button class="btn btn-sm btn-success">Sí</button>
+								<?php elseif ($f['pagada'] == 0): ?>
+									<button class="btn btn-sm btn-danger">No</button>
+								<?php endif; ?>
+</td>
 							<td>
 								<?php
 								$correlativoFactura = trim((string)$f['correlativo']);

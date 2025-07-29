@@ -134,74 +134,82 @@ require_once '../../includes/templates/header.php';
 
 		<!-- <canvas id="graficoProductosFacturas" height="100" class="mt-5"></canvas>
 		<canvas id="graficoTopProductos" height="100" class="mt-5"></canvas> -->
-		<h4 class="mt-5">📋 Resumen por Cliente Facturado</h4>
-		<table class="table table-bordered table-hover table-sm mt-2">
-			<thead class="thead-light">
-				<tr>
-					<th>Nombre del Cliente</th>
-					<th>Servicios Adquiridos</th>
-					<th>Subtotal (L)</th>
-					<th>ISV (L)</th>
-					<th>Total Pagado (L)</th>
-				</tr>
-			</thead>
-			<tbody>
-				<?php
-				$total_subtotal = 0;
-				$total_isv = 0;
-				$total_general = 0;
-				foreach ($resumen_receptores as $r):
-					$total_subtotal += $r['subtotal'];
-					$total_isv += $r['isv'];
-					$total_general += $r['total'];
-				?>
+		<div class="card border-0 shadow-sm p-4 mb-5">
+			<h4 class="mt-5">📋 Resumen por Cliente Facturado</h4>
+			<table class="table table-bordered table-hover table-sm mt-2">
+				<thead class="thead-light">
 					<tr>
-						<td><?= htmlspecialchars($r['receptor_nombre'] ?? 'N/D') ?></td>
-						<td><?= number_format((int)$r['cantidad_servicios']) ?></td>
-						<td>L <?= number_format((float)$r['subtotal'], 2) ?></td>
-						<td>L <?= number_format((float)$r['isv'], 2) ?></td>
-						<td><strong>L <?= number_format((float)$r['total'], 2) ?></strong></td>
+						<th>Nombre del Cliente</th>
+						<th>Servicios Adquiridos</th>
+						<th>Subtotal (L)</th>
+						<th>ISV (L)</th>
+						<th>Total Pagado (L)</th>
 					</tr>
-				<?php endforeach; ?>
-			</tbody>
-			<tfoot class="table-light">
-				<tr>
-					<th colspan="2" class="text-end">Totales:</th>
-					<th>L <?= number_format($total_subtotal, 2) ?></th>
-					<th>L <?= number_format($total_isv, 2) ?></th>
-					<th><strong>L <?= number_format($total_general, 2) ?></strong></th>
-				</tr>
-			</tfoot>
-		</table>
+				</thead>
+				<tbody>
+					<?php
+					$total_subtotal = 0;
+					$total_isv = 0;
+					$total_general = 0;
+					foreach ($resumen_receptores as $r):
+						$total_subtotal += $r['subtotal'];
+						$total_isv += $r['isv'];
+						$total_general += $r['total'];
+					?>
+						<tr>
+							<td><?= htmlspecialchars($r['receptor_nombre'] ?? 'N/D') ?></td>
+							<td><?= number_format((int)$r['cantidad_servicios']) ?></td>
+							<td>L <?= number_format((float)$r['subtotal'], 2) ?></td>
+							<td>L <?= number_format((float)$r['isv'], 2) ?></td>
+							<td><strong>L <?= number_format((float)$r['total'], 2) ?></strong></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+				<tfoot class="table-light">
+					<tr>
+						<th colspan="2" class="text-end">Totales:</th>
+						<th>L <?= number_format($total_subtotal, 2) ?></th>
+						<th>L <?= number_format($total_isv, 2) ?></th>
+						<th><strong>L <?= number_format($total_general, 2) ?></strong></th>
+					</tr>
+				</tfoot>
+			</table>
+		</div>
 		<?php
 		// Año seleccionado desde GET, o actual por defecto
 		$anio_promedio = $_GET['anio_promedio'] ?? date('Y');
 
 		// Obtener años disponibles de facturación
 		$stmtAnios = $pdo->prepare("
-	SELECT DISTINCT YEAR(fecha_emision) AS anio
-	FROM facturas
-	WHERE cliente_id = ?
-	  AND establecimiento_id = ?
-	  AND estado = 'emitida'
-	ORDER BY anio DESC
-");
+			SELECT DISTINCT YEAR(fecha_emision) AS anio
+			FROM facturas
+			WHERE cliente_id = ?
+			AND establecimiento_id = ?
+			AND estado = 'emitida'
+			ORDER BY anio DESC
+		");
 		$stmtAnios->execute([$cliente_id, $establecimiento_activo]);
 		$lista_anios = $stmtAnios->fetchAll(PDO::FETCH_COLUMN);
 		?>
-		<div class="card border-0 shadow-sm p-4 mb-5">
-			<form method="GET" class="row g-3 align-items-end mb-4">
+		<div class="card border-0 shadow-sm p-4 mb-5" id="datosporano">
+			<form method="GET" class="row gy-2 gx-3 align-items-center mb-4">
 				<div class="col-auto">
-					<label for="anio_promedio">📅 Ingresos por Año:</label>
-					<select name="anio_promedio" id="anio_promedio" class="form-control" onchange="this.form.submit()">
+					<label class="form-label mb-0" for="anio_promedio">
+						<i class="bi bi-calendar-event-fill me-1"></i> Ingresos por Año:
+					</label>
+					<select name="anio_promedio" id="anio_promedio" class="form-select" onchange="this.form.submit()">
 						<?php foreach ($lista_anios as $anio): ?>
-							<option value="<?= $anio ?>" <?= $anio == $anio_promedio ? 'selected' : '' ?>><?= $anio ?></option>
+							<option value="<?= $anio ?>" <?= $anio == $anio_promedio ? 'selected' : '' ?>>
+								<?= $anio ?>
+							</option>
 						<?php endforeach; ?>
 					</select>
 				</div>
 			</form>
 			<!-- GRÁFICO POR AÑO -->
-			<canvas id="graficoAnual" height="100" class="mt-5"></canvas>
+			<div style="width: 100%;  margin: auto;">
+				<canvas id="graficoAnual" height="100"></canvas>
+			</div>
 
 
 			<h4 class="mt-4">📊 Promedio Mensual de Ingresos - Año <?= htmlspecialchars($anio_promedio) ?></h4>
@@ -245,7 +253,18 @@ require_once '../../includes/templates/header.php';
 			</table>
 		</div>
 
-
+		<?php if (isset($_GET['anio_promedio'])): ?>
+			<script>
+				window.addEventListener('load', () => {
+					const target = document.getElementById("datosporano");
+					if (target) {
+						target.scrollIntoView({
+							behavior: "smooth"
+						});
+					}
+				});
+			</script>
+		<?php endif; ?>
 		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 		<script>
 			const ctx = document.getElementById('graficoIngresos').getContext('2d');
@@ -330,60 +349,60 @@ require_once '../../includes/templates/header.php';
 			});
 		</script>
 		<script>
-			const ctxProductosFacturas = document.getElementById('graficoProductosFacturas').getContext('2d');
+			// const ctxProductosFacturas = document.getElementById('graficoProductosFacturas').getContext('2d');
 
-			const chartProductosFacturas = new Chart(ctxProductosFacturas, {
-				type: 'bar',
-				data: {
-					labels: <?= json_encode(array_column($top_productos_facturas, 'nombre')) ?>,
-					datasets: [{
-						label: 'Veces facturado (en facturas distintas)',
-						data: <?= json_encode(array_map(fn($p) => (int)$p['veces_facturado'], $top_productos_facturas)) ?>,
-						backgroundColor: 'rgba(153, 102, 255, 0.6)'
-					}]
-				},
-				options: {
-					indexAxis: 'y',
-					responsive: true,
-					scales: {
-						x: {
-							beginAtZero: true,
-							title: {
-								display: true,
-								text: 'Cantidad de Facturas'
-							}
-						}
-					}
-				}
-			});
-		</script>
-		<script>
-			const ctxProductos = document.getElementById('graficoTopProductos').getContext('2d');
+			// const chartProductosFacturas = new Chart(ctxProductosFacturas, {
+			// 	type: 'bar',
+			// 	data: {
+			// 		labels: <?= json_encode(array_column($top_productos_facturas, 'nombre')) ?>,
+			// 		datasets: [{
+			// 			label: 'Veces facturado (en facturas distintas)',
+			// 			data: <?= json_encode(array_map(fn($p) => (int)$p['veces_facturado'], $top_productos_facturas)) ?>,
+			// 			backgroundColor: 'rgba(153, 102, 255, 0.6)'
+			// 		}]
+			// 	},
+			// 	options: {
+			// 		indexAxis: 'y',
+			// 		responsive: true,
+			// 		scales: {
+			// 			x: {
+			// 				beginAtZero: true,
+			// 				title: {
+			// 					display: true,
+			// 					text: 'Cantidad de Facturas'
+			// 				}
+			// 			}
+			// 		}
+			// 	}
+			// });
 
-			const chartProductos = new Chart(ctxProductos, {
-				type: 'bar',
-				data: {
-					labels: <?= json_encode(array_column($top_productos, 'nombre')) ?>,
-					datasets: [{
-						label: 'Cantidad Vendida',
-						data: <?= json_encode(array_map(fn($p) => (int)$p['total_vendido'], $top_productos)) ?>,
-						backgroundColor: 'rgba(255, 99, 132, 0.6)'
-					}]
-				},
-				options: {
-					indexAxis: 'y',
-					responsive: true,
-					scales: {
-						x: {
-							beginAtZero: true,
-							title: {
-								display: true,
-								text: 'Unidades Vendidas'
-							}
-						}
-					}
-				}
-			});
+			// 	const ctxProductos = document.getElementById('graficoTopProductos').getContext('2d');
+
+			// 	const chartProductos = new Chart(ctxProductos, {
+			// 		type: 'bar',
+			// 		data: {
+			// 			labels: <?= json_encode(array_column($top_productos, 'nombre')) ?>,
+			// 			datasets: [{
+			// 				label: 'Cantidad Vendida',
+			// 				data: <?= json_encode(array_map(fn($p) => (int)$p['total_vendido'], $top_productos)) ?>,
+			// 				backgroundColor: 'rgba(255, 99, 132, 0.6)'
+			// 			}]
+			// 		},
+			// 		options: {
+			// 			indexAxis: 'y',
+			// 			responsive: true,
+			// 			scales: {
+			// 				x: {
+			// 					beginAtZero: true,
+			// 					title: {
+			// 						display: true,
+			// 						text: 'Unidades Vendidas'
+			// 					}
+			// 				}
+			// 			}
+			// 		}
+			// 	});
+			// 
 		</script>
 
 	<?php else: ?>

@@ -246,11 +246,11 @@ $isv_mes_actual = (float)$facturas_mes_actual['isv_mes_actual'];
 
 
 
-// Top 10 productos más vendidos por cantidad
+// Top 10 productos_clientes más vendidos por cantidad
 $stmtTopProductos = $pdo->prepare("
     SELECT p.nombre, SUM(fi.cantidad) AS total_vendido
-    FROM factura_items fi
-    JOIN productos p ON fi.producto_id = p.id
+    FROM factura_items_receptor fi
+    JOIN productos_clientes p ON fi.producto_id = p.id
     JOIN facturas f ON fi.factura_id = f.id
     WHERE f.cliente_id = ? 
       AND f.establecimiento_id = ? 
@@ -263,11 +263,11 @@ $stmtTopProductos = $pdo->prepare("
 $stmtTopProductos->execute([$cliente_id, $establecimiento_activo, $fecha_inicio, $fecha_fin]);
 $top_productos = $stmtTopProductos->fetchAll(PDO::FETCH_ASSOC);
 
-// Top 10 productos más frecuentes en facturas (sin importar cantidad)
+// Top 10 productos_clientes más frecuentes en facturas (sin importar cantidad)
 $stmtTopProductosFacturas = $pdo->prepare("
 	SELECT p.nombre, COUNT(DISTINCT fi.factura_id) AS veces_facturado
-	FROM factura_items fi
-	JOIN productos p ON fi.producto_id = p.id
+	FROM factura_items_receptor fi
+	JOIN productos_clientes p ON fi.producto_id = p.id
 	JOIN facturas f ON fi.factura_id = f.id
 	WHERE f.cliente_id = ? 
 	  AND f.establecimiento_id = ? 
@@ -307,7 +307,7 @@ $stmtResumenReceptores = $pdo->prepare("
 		SUM(fi.subtotal) AS subtotal,
 		SUM(fi.isv_15 + fi.isv_18) AS isv,
 		SUM(fi.subtotal + fi.isv_15 + fi.isv_18) AS total
-	FROM factura_items fi
+	FROM factura_items_receptor fi
 	JOIN facturas f ON fi.factura_id = f.id
 	LEFT JOIN clientes_factura cf ON f.receptor_id = cf.id
 	WHERE f.cliente_id = ?
@@ -319,7 +319,7 @@ $stmtResumenReceptores = $pdo->prepare("
 ");
 $stmtResumenReceptores->execute([$cliente_id, $establecimiento_activo, $fecha_inicio, $fecha_fin]);
 $resumen_receptores = $stmtResumenReceptores->fetchAll(PDO::FETCH_ASSOC);
-
+ 
 // PRIOMEDIO ANUAL
 $anio_promedio = $_GET['anio_promedio'] ?? date('Y');
 $stmtPromedioMensual = $pdo->prepare("

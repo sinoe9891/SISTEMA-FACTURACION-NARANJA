@@ -46,6 +46,7 @@ if (empty($productos)) {
 }
 
 require_once '../../includes/templates/header.php';
+
 ?>
 
 
@@ -54,25 +55,33 @@ require_once '../../includes/templates/header.php';
 
 	<form action="guardar_factura" method="POST">
 		<div class="mb-3">
-			<label for="cai_rango_id" class="form-label">CAI (Clave de autorización de impresión)</label>
-			<select name="cai_rango_id" id="cai_rango_id" class="form-select" required>
-				<option value="">Seleccione un CAI</option>
-				<?php
-				$stmtCaiRangos = $pdo->prepare("
-            SELECT id, cai, rango_inicio, rango_fin, fecha_limite, fecha_creacion 
-            FROM cai_rangos 
-            WHERE cliente_id = ? AND fecha_limite >= CURDATE()
-            ORDER BY fecha_creacion DESC
-        ");
-				$stmtCaiRangos->execute([$cliente_id]);
-				foreach ($stmtCaiRangos->fetchAll() as $cai) {
-					echo "<option value='{$cai['id']}'>
-                CAI: {$cai['cai']} | Rango: {$cai['rango_inicio']} - {$cai['rango_fin']} | Válido hasta: {$cai['fecha_limite']}
-            </option>";
-				}
-				?>
-			</select>
-		</div>
+	<label for="cai_rango_id" class="form-label">CAI (Clave de autorización de impresión)</label>
+	<select name="cai_rango_id" id="cai_rango_id" class="form-select" required>
+		<option value="">Seleccione un CAI</option>
+		<?php
+		$stmtCaiRangos = $pdo->prepare("
+			SELECT id, cai, rango_inicio, rango_fin, correlativo_actual, fecha_limite, fecha_creacion 
+			FROM cai_rangos 
+			WHERE cliente_id = ? AND fecha_limite >= CURDATE()
+			ORDER BY fecha_creacion DESC
+		");
+		$stmtCaiRangos->execute([$cliente_id]);
+
+		foreach ($stmtCaiRangos->fetchAll() as $cai) {
+			$total = $cai['rango_fin'] - $cai['rango_inicio'] + 1;
+			$restantes = $total - (int)$cai['correlativo_actual'];
+			$restantes_texto = ($restantes <= 5)
+				? "<span style='color:red;'>Restantes: $restantes</span>"
+				: "Restantes: $restantes";
+
+			echo "<option value='{$cai['id']}'>
+				CAI: {$cai['cai']} | Rango: {$cai['rango_inicio']} - {$cai['rango_fin']} | $restantes_texto | Válido hasta: {$cai['fecha_limite']}
+			</option>";
+		}
+		?>
+	</select>
+</div>
+
 
 
 		<div class="mb-3">
@@ -103,7 +112,7 @@ require_once '../../includes/templates/header.php';
 									data-precio="<?= $precio ?>"
 									data-precio-base="<?= $prod['precio_base'] ?>"
 									data-isv="<?= $prod['tipo_isv'] ?>">
-									<?= htmlspecialchars($prod['nombre']) ?> - L<?= number_format($precio, 2) ?>
+									<?= htmlspecialchars($prod['nombre']) ?> - L<?= number_format($precio, 3) ?>
 								</option>
 
 							<?php endforeach; ?>
@@ -121,7 +130,7 @@ require_once '../../includes/templates/header.php';
 					<div class="col-md-2">
 						<button type="button" class="btn btn-danger btn-sm remove-producto">Eliminar</button>
 					</div>
-					<small class="text-muted">Precio sugerido: L<?= number_format($precio, 2) ?></small>
+					<small class="text-muted">Precio sugerido: L<?= number_format($precio, 3) ?></small>
 					<div class="col-md-12 mt-2">
 						<label>Detalles / Descripción</label>
 						<textarea name="productos[0][detalles]" class="form-control" rows="2" placeholder="Ej: Observaciones, características, modelo, etc."></textarea>
@@ -246,20 +255,23 @@ require_once '../../includes/templates/header.php';
 		}
 	});
 
-	document.getElementById('productos-container').addEventListener('input', function(e) {
-		const item = e.target.closest('.producto-item');
-		if (!item) return;
+	// Autocompletar precio basado en selección
+	document.getElementById('productos-container').addEventListener('change', function(e) {
+		if (e.target.tagName === 'SELECT' && e.target.name.includes('[id]')) {
+			const selected = e.target.selectedOptions[0];
+			const precio = selected.getAttribute('data-precio');
+			const isv = selected.getAttribute('data-isv');
+			const item = e.target.closest('.producto-item');
 
-		const cantidadInput = item.querySelector('input[name$="[cantidad]"]');
-		const precioInput = item.querySelector('input[name$="[precio]"]');
-		const precioUnitario = parseFloat(cantidadInput.getAttribute('data-precio-unitario')) || 0;
-		const cantidad = parseFloat(cantidadInput.value) || 0;
+			const precioInput = item.querySelector('input[name$="[precio]"]');
 
-		// Actualizar solo el campo visual de precio (no afecta el cálculo)
-		precioInput.value = (cantidad * precioUnitario).toFixed(2);
+			// Autocompletamos el precio solo una vez (el usuario puede luego editarlo)
+			precioInput.value = parseFloat(precio).toFixed(2);
 
-		calcularTotalYLetra(); // sigue llamándose
+			calcularTotalYLetra(); // Recalcula total al seleccionar producto
+		}
 	});
+
 
 
 	document.getElementById('exonerado').addEventListener('change', function() {
@@ -286,7 +298,8 @@ require_once '../../includes/templates/header.php';
 		document.querySelectorAll('.producto-item').forEach(item => {
 			const cantidadInput = item.querySelector('input[name$="[cantidad]"]');
 			const cantidad = parseFloat(cantidadInput.value) || 0;
-			const precioUnitario = parseFloat(cantidadInput.getAttribute('data-precio-unitario')) || 0;
+			const precioUnitario = parseFloat(item.querySelector('input[name$="[precio]"]').value) || 0;
+
 			const tipoISV = parseInt(item.querySelector('select[name$="[id]"]').selectedOptions[0].getAttribute('data-isv')) || 0;
 
 			const totalProducto = cantidad * precioUnitario;

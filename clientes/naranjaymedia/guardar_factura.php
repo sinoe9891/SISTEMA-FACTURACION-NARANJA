@@ -124,7 +124,7 @@ try {
 			throw new Exception("Producto inválido en el detalle: $prod_id");
 		}
 
-		$precio_unitario = floatval($productos_db[$prod_id]['precio_unitario']); // ✅ PRECIO REAL
+		$precio_unitario = isset($item['precio']) ? floatval($item['precio']) : floatval($productos_db[$prod_id]['precio_unitario']); // ✅ PRECIO REAL
 		$tipo_isv = (int)$productos_db[$prod_id]['tipo_isv'];
 
 		$subtotal_item = round($cantidad * $precio_unitario, 2);
@@ -217,7 +217,7 @@ try {
 			throw new Exception("Producto inválido: $prod_id");
 		}
 
-		$precio_unitario = floatval($productos_db[$prod_id]['precio_unitario']);
+		$precio_unitario = isset($item['precio']) ? floatval($item['precio']) : floatval($productos_db[$prod_id]['precio_unitario']);
 		$tipo_isv = (int) $productos_db[$prod_id]['tipo_isv'];
 		$subtotal_item = round($cantidad * $precio_unitario, 2);
 
