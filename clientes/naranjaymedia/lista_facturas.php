@@ -52,7 +52,7 @@ $ultimoCorrelativoCAI = null;
 // Consulta facturas filtradas por CAI si $caix está definido, sino todas del establecimiento
 if ($caix) {
 	$stmtFacturas = $pdo->prepare("
-        SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, f.estado, f.pagada, cf.nombre AS receptor
+        SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, f.estado, f.pagada, f.enviada_receptor, cf.nombre AS receptor 
         FROM facturas f
         INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
         WHERE f.cliente_id = ? AND f.establecimiento_id = ? AND f.cai_id = ?
@@ -61,7 +61,7 @@ if ($caix) {
 	$stmtFacturas->execute([$cliente_id, $establecimiento_activo, $caix]);
 } else {
 	$stmtFacturas = $pdo->prepare("
-        SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, f.estado, f.pagada, cf.nombre AS receptor
+        SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, f.estado, f.pagada, f.enviada_receptor, cf.nombre AS receptor
         FROM facturas f
         INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
         WHERE f.cliente_id = ? AND f.establecimiento_id = ?
@@ -133,6 +133,7 @@ require_once '../../includes/templates/header.php';
 						<th>Cliente</th>
 						<th>Total</th>
 						<th>Estado</th>
+						<th>Enviada</th>
 						<th>Pagada</th>
 						<th>Acciones</th>
 						<th>PDF</th>
@@ -159,14 +160,23 @@ require_once '../../includes/templates/header.php';
 							<td><?= htmlspecialchars($f['receptor']) ?></td>
 							<td>L<?= number_format($f['total'], 2) ?></td>
 							<td><?= ucfirst($f['estado']) ?></td>
-							<td><?php 
+							<td><?php
+
+								if ($f['enviada_receptor'] == 1): ?>
+									<button class="btn btn-sm btn-success">Sí</button>
+								<?php elseif ($f['enviada_receptor'] == 0): ?>
+									<button class="btn btn-sm btn-danger">No</button>
+								<?php endif; ?>
+							</td>
+							<td><?php
 
 								if ($f['pagada'] == 1): ?>
 									<button class="btn btn-sm btn-success">Sí</button>
 								<?php elseif ($f['pagada'] == 0): ?>
 									<button class="btn btn-sm btn-danger">No</button>
 								<?php endif; ?>
-</td>
+							</td>
+							
 							<td>
 								<?php
 								$correlativoFactura = trim((string)$f['correlativo']);
