@@ -130,11 +130,38 @@ $stmtCAI = $pdo->prepare("
 ");
 $stmtCAI->execute([$cliente_id, $establecimiento_activo]);
 $cai = $stmtCAI->fetch();
-
+if (
+    !empty($_GET['fecha_inicio']) &&
+    !empty($_GET['fecha_fin'])
+) {
+    $fecha_inicio = $_GET['fecha_inicio'];
+    $fecha_fin    = $_GET['fecha_fin'];
+} else {
+    $fecha_inicio = date('Y-01-01'); // 1 de enero del año corriente
+    $fecha_fin    = date('Y-m-d');   // hoy
+}
 // Contar facturas filtrando por establecimiento
-$stmtFact = $pdo->prepare("SELECT COUNT(*) AS total FROM facturas WHERE cliente_id = ? AND establecimiento_id = ?");
-$stmtFact->execute([$cliente_id, $establecimiento_activo]);
-$total_facturas = $stmtFact->fetchColumn();
+// FACTURAS EMITIDAS asociadas a un CAI vigente (no vencido / no agotado)
+$stmtFact = $pdo->prepare("
+    SELECT COUNT(*) 
+    FROM facturas f
+    JOIN cai_rangos c   ON c.id = f.cai_id
+    WHERE f.cliente_id        = ?
+      AND f.establecimiento_id = ?
+      AND f.estado             = 'emitida'
+      AND f.fecha_emision      BETWEEN ? AND ?
+      -- CAI aún válido
+      AND CURDATE()           <= c.fecha_limite
+      AND c.correlativo_actual <  c.rango_fin
+");
+$stmtFact->execute([
+    $cliente_id,
+    $establecimiento_activo,
+    $fecha_inicio,
+    $fecha_fin               // ← ya lo tenías arriba
+]);
+$total_facturas = (int)$stmtFact->fetchColumn();
+
 
 // Datos CAI para mostrar
 $facturas_restantes = $cai ? ($cai['rango_fin'] - $cai['correlativo_actual']) : 0;

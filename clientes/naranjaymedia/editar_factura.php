@@ -215,6 +215,59 @@ require_once '../../includes/templates/header.php';
 			<label>Monto en letras</label>
 			<input type="text" name="monto_letras" class="form-control" value="<?= $factura['monto_letras'] ?>" readonly>
 		</div>
+		<!-- =======  NUEVO BLOQUE ESTADO FACTURA  ======= -->
+		<div class="row mb-3 g-3">
+
+			<!-- Select Estado -->
+			<div class="col-md-4">
+				<label for="estado" class="form-label">Estado de la factura</label>
+				<select name="estado" id="estado" class="form-select">
+					<?php
+					$estados = ['emitida', 'anulada', 'borrador'];
+					foreach ($estados as $e):
+					?>
+						<option value="<?= $e ?>" <?= $factura['estado'] === $e ? 'selected' : '' ?>>
+							<?= ucfirst($e) ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+
+			<!-- Check: Declarada -->
+			<div class="col-md-2 d-flex align-items-end">
+				<div class="form-check">
+					<input class="form-check-input" type="checkbox" id="estado_declarada"
+						name="estado_declarada" <?= $factura['estado_declarada'] ? 'checked' : '' ?>>
+					<label class="form-check-label" for="estado_declarada">
+						Declarada
+					</label>
+				</div>
+			</div>
+
+			<!-- Check: Pagada -->
+			<div class="col-md-2 d-flex align-items-end">
+				<div class="form-check">
+					<input class="form-check-input" type="checkbox" id="pagada"
+						name="pagada" <?= $factura['pagada'] ? 'checked' : '' ?>>
+					<label class="form-check-label" for="pagada">
+						Pagada
+					</label>
+				</div>
+			</div>
+
+			<!-- Check: Enviada -->
+			<div class="col-md-3 d-flex align-items-end">
+				<div class="form-check">
+					<input class="form-check-input" type="checkbox" id="enviada_receptor"
+						name="enviada_receptor" <?= $factura['enviada_receptor'] ? 'checked' : '' ?>>
+					<label class="form-check-label" for="enviada_receptor">
+						Enviada al cliente
+					</label>
+				</div>
+			</div>
+
+		</div>
+		<!-- =======  FIN BLOQUE  ======= -->
 
 		<button type="submit" class="btn btn-primary">💾 Guardar cambios</button>
 		<a href="lista_facturas" class="btn btn-secondary">Cancelar</a>

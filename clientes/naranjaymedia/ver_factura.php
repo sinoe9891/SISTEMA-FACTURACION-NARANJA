@@ -388,7 +388,8 @@ function formatFecha($fecha)
 							<td style="max-width: 460px;">
 								<?php
 								if (!empty($item['descripcion_html'])) {
-									echo mb_strtoupper(htmlspecialchars($item['nombre_producto']), 'UTF-8') . ' - ' . mb_strtoupper(htmlspecialchars($item['descripcion_html']), 'UTF-8');
+									echo mb_strtoupper(htmlspecialchars($item['nombre_producto']), 'UTF-8') . ' - ' . nl2br(mb_strtoupper($item['descripcion_html']));
+
 								} else {
 									echo mb_strtoupper(htmlspecialchars($item['nombre_producto'] ?? 'SIN DESCRIPCIÓN'), 'UTF-8');
 								}

@@ -22,6 +22,16 @@ $motivo = htmlspecialchars(trim($_POST['motivo'] ?? ''), ENT_QUOTES, 'UTF-8');
 $usuario_autoriza = trim($_POST['usuario_autoriza'] ?? '');
 $clave_autoriza = trim($_POST['clave_autoriza'] ?? '');
 
+$estado            = in_array($_POST['estado'] ?? 'emitida', ['emitida', 'anulada', 'borrador'])
+	? $_POST['estado'] : 'emitida';
+
+$estado_declarada  = isset($_POST['estado_declarada']) ? 1 : 0;
+$pagada            = isset($_POST['pagada']) ? 1 : 0;
+$enviada_receptor  = isset($_POST['enviada_receptor']) ? 1 : 0;
+
+
+
+
 if (!$motivo || !$usuario_autoriza || !$clave_autoriza) {
 	die("Todos los campos de autorización son obligatorios.");
 }
@@ -147,13 +157,27 @@ try {
 
 	// Actualizar factura
 	$stmt = $pdo->prepare("
-	UPDATE facturas
-	SET fecha_emision = ?, condicion_pago = ?, exonerado = ?, orden_compra_exenta = ?, constancia_exoneracion = ?, 
-		registro_sag = ?, subtotal = ?, isv_15 = ?, isv_18 = ?, total = ?, monto_letras = ?, 
-		gravado_total = ?, importe_gravado_15 = ?, importe_gravado_18 = ?
-	WHERE id = ?
+    UPDATE facturas
+    SET fecha_emision        = ?, 
+        condicion_pago       = ?, 
+        exonerado            = ?, 
+        orden_compra_exenta  = ?, 
+        constancia_exoneracion = ?, 
+        registro_sag         = ?, 
+        subtotal             = ?, 
+        isv_15               = ?, 
+        isv_18               = ?, 
+        total                = ?, 
+        monto_letras         = ?, 
+        gravado_total        = ?, 
+        importe_gravado_15   = ?, 
+        importe_gravado_18   = ?,
+        estado               = ?,       
+        estado_declarada     = ?,        
+        pagada               = ?,        
+        enviada_receptor     = ?       
+    WHERE id = ?
 ");
-
 	$stmt->execute([
 		$fecha_emision,
 		$condicion_pago,
@@ -169,18 +193,55 @@ try {
 		$gravado_total,
 		$importe_gravado_15,
 		$importe_gravado_18,
+		$estado,
+		$estado_declarada,
+		$pagada,
+		$enviada_receptor,
 		$factura_id
 	]);
 
+
+	/* ---------- detectar cambios de estado ---------- */
+	$cambioEstado = (
+		$factura['estado']             !== $estado ||
+		$factura['estado_declarada']   !=  $estado_declarada ||
+		$factura['pagada']             !=  $pagada ||
+		$factura['enviada_receptor']   !=  $enviada_receptor
+	);
+
+	$accion  = $cambioEstado ? 'cambio_estado' : 'editada';
+	$detalles = $cambioEstado ? json_encode([
+		'previo' => [
+			'estado'            => $factura['estado'],
+			'estado_declarada'  => $factura['estado_declarada'],
+			'pagada'            => $factura['pagada'],
+			'enviada_receptor'  => $factura['enviada_receptor']
+		],
+		'nuevo'  => [
+			'estado'            => $estado,
+			'estado_declarada'  => $estado_declarada,
+			'pagada'            => $pagada,
+			'enviada_receptor'  => $enviada_receptor
+		]
+	], JSON_UNESCAPED_UNICODE) : null;
 
 
 
 	// Registrar en bitácora
 	$stmt = $pdo->prepare("
-		INSERT INTO bitacora_facturas (factura_id, usuario_id, autorizador_id, accion, motivo, fecha, ip)
-		VALUES (?, ?, ?, 'editada', ?, NOW(), ?)
-	");
-	$stmt->execute([$factura_id, $usuario_id, $autorizador['id'], $motivo, $ip]);
+    INSERT INTO bitacora_facturas
+    (factura_id, usuario_id, autorizador_id, accion, motivo, detalles, fecha, ip)
+    VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
+");
+	$stmt->execute([
+		$factura_id,
+		$usuario_id,
+		$autorizador['id'],
+		$accion,          // 'editada' o 'cambio_estado'
+		$motivo,
+		$detalles,        // null o JSON con cambios
+		$ip
+	]);
 
 	$pdo->commit();
 

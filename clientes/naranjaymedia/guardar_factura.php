@@ -32,8 +32,8 @@ try {
 	$receptor_id = filter_input(INPUT_POST, 'receptor_id', FILTER_VALIDATE_INT);
 	$cai_id = filter_input(INPUT_POST, 'cai_rango_id', FILTER_VALIDATE_INT);
 	$condicion_pago = filter_input(INPUT_POST, 'condicion_pago', FILTER_SANITIZE_STRING);
-	
-	
+
+
 	$exonerado = isset($_POST['exonerado']) ? 1 : 0;
 	$orden_compra_exenta = $exonerado ? trim($_POST['orden_compra_exenta'] ?? '') : null;
 	$constancia_exoneracion = $exonerado ? trim($_POST['constancia_exoneracion'] ?? '') : null;
@@ -161,16 +161,17 @@ try {
 	// 3. Insertar factura
 	$stmtInsertFactura = $pdo->prepare("
         INSERT INTO facturas (
-    		cliente_id, cai_id, receptor_id, establecimiento_id, correlativo, fecha_emision, estado_declarada, condicion_pago, exonerado,
-            orden_compra_exenta, constancia_exoneracion, registro_sag,
-            gravado_total, exento_total, importe_exonerado, importe_gravado_15, importe_gravado_18,
-            subtotal, isv_15, isv_18, total, monto_letras, estado
-        ) VALUES (
-            :cliente_id, :cai_id, :receptor_id, :establecimiento_id, :correlativo, :fecha_emision, :estado_declarada, :condicion_pago, :exonerado,
-            :orden_compra_exenta, :constancia_exoneracion, :registro_sag,
-            :gravado_total, :exento_total, :importe_exonerado, :importe_gravado_15, :importe_gravado_18,
-            :subtotal, :isv_15, :isv_18, :total, :monto_letras, :estado
-        )
+			cliente_id, cai_id, receptor_id, establecimiento_id, correlativo, fecha_emision, estado_declarada, enviada_receptor, condicion_pago, exonerado,
+			orden_compra_exenta, constancia_exoneracion, registro_sag,
+			gravado_total, exento_total, importe_exonerado, importe_gravado_15, importe_gravado_18,
+			subtotal, isv_15, isv_18, total, monto_letras, estado
+		) VALUES (
+			:cliente_id, :cai_id, :receptor_id, :establecimiento_id, :correlativo, :fecha_emision, :estado_declarada, :enviada_receptor, :condicion_pago, :exonerado,
+			:orden_compra_exenta, :constancia_exoneracion, :registro_sag,
+			:gravado_total, :exento_total, :importe_exonerado, :importe_gravado_15, :importe_gravado_18,
+			:subtotal, :isv_15, :isv_18, :total, :monto_letras, :estado
+		)
+
     ");
 
 	$stmtInsertFactura->execute([
@@ -180,7 +181,8 @@ try {
 		':establecimiento_id' => $establecimiento_id,
 		':correlativo' => $correlativo,
 		':fecha_emision' => $fecha_emision,
-		':estado_declarada' => 'no',
+		':estado_declarada' => 0,
+		':enviada_receptor' => 0,
 		':condicion_pago' => $condicion_pago,
 		':exonerado' => $exonerado,
 		':orden_compra_exenta' => $orden_compra_exenta,
