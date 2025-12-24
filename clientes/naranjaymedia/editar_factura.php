@@ -60,6 +60,10 @@ $stmt = $pdo->prepare("SELECT * FROM factura_items_receptor WHERE factura_id = ?
 $stmt->execute([$factura_id]);
 $items = $stmt->fetchAll();
 
+
+// var_dump($items);
+
+
 require_once '../../includes/templates/header.php';
 ?>
 
@@ -593,30 +597,34 @@ require_once '../../includes/templates/header.php';
 		const receptorId = <?= json_encode($factura['receptor_id']) ?>;
 		console.log(receptorId);
 		fetch(`../../includes/api/productos_por_receptor.php?receptor_id=${receptorId}`)
-			.then(response => response.json())
+			.then(r => r.json())
 			.then(productos => {
+				// Si no hay productos válidos, NO reemplazamos las opciones renderizadas en PHP
+				if (!Array.isArray(productos) || productos.length === 0) return;
+
 				document.querySelectorAll('select[name$="[id]"]').forEach(select => {
 					const selectedValue = select.value;
-					select.innerHTML = '<option value="">Seleccione producto</option>';
+
+					// Construimos un fragmento y reemplazamos al final (más seguro)
+					const frag = document.createDocumentFragment();
+					const opt0 = new Option('Seleccione producto', '');
+					frag.appendChild(opt0);
 
 					productos.forEach(prod => {
-						const option = document.createElement('option');
-						option.value = prod.id;
-						option.setAttribute('data-precio', prod.precio);
-						option.setAttribute('data-precio-base', prod.precio); // usa mismo precio si no hay especial
-						option.setAttribute('data-isv', prod.tipo_isv);
-						option.textContent = `${prod.nombre} - L${parseFloat(prod.precio).toFixed(2)}`;
-
-						if (parseInt(prod.id) === parseInt(selectedValue)) {
-							option.selected = true;
-						}
-						select.appendChild(option);
+						const etiqueta = `${prod.nombre} - L${(+prod.precio).toFixed(2)}`;
+						const opt = new Option(etiqueta, prod.id);
+						opt.setAttribute('data-precio', prod.precio);
+						opt.setAttribute('data-precio-base', prod.precio);
+						opt.setAttribute('data-isv', prod.tipo_isv);
+						if (+prod.id === +selectedValue) opt.selected = true;
+						frag.appendChild(opt);
 					});
+
+					select.replaceChildren(frag);
 				});
 			})
-			.catch(err => {
-				console.error('Error al cargar productos por receptor:', err);
-			});
+			.catch(err => console.error('Error al cargar productos por receptor:', err));
+
 	});
 </script>
 

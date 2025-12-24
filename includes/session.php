@@ -17,7 +17,7 @@ if (!isset($_SESSION['usuario_id'])) {
 	}
 
 	if ($cliente_detectado) {
-		header("Location: /clientes/{$cliente_detectado}/");
+		header("Location: ../{$cliente_detectado}/");
 	} else {
 		header("Location: /");
 	}

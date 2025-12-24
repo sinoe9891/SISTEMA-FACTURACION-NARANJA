@@ -8,25 +8,45 @@ if (isset($_SESSION['usuario_id'])) {
 	exit;
 }
 
-function detectarSubdominio()
+function detectarCliente()
 {
-	if (strpos($_SERVER['HTTP_HOST'], 'localhost') !== false) {
-		// Detectar la última carpeta de la URL
-		$path = trim($_SERVER['REQUEST_URI'], '/');
-		$segments = explode('/', $path);
-		return end($segments); // devuelve 'ccic'
-	} else {
-		// En producción: ccic.facturacion.com
-		$host = $_SERVER['HTTP_HOST'];
-		$partes = explode('.', $host);
-		return $partes[0]; // devuelve 'ccic'
-	}
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    $uriPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+
+    $segments = array_values(array_filter(explode('/', trim($uriPath, '/'))));
+
+    // 1) Por carpeta: buscar el ÚLTIMO "clientes" y tomar el siguiente segmento
+    $posCliente = null;
+    foreach ($segments as $i => $seg) {
+        if ($seg === 'clientes') {
+            $posCliente = $i; // nos quedamos con el último
+        }
+    }
+
+    if ($posCliente !== null && !empty($segments[$posCliente + 1])) {
+        return strtolower(trim($segments[$posCliente + 1])); // naranjaymedia
+    }
+
+    // 2) Por subdominio: <cliente>.facturacion.tld
+    $partes = explode('.', $host);
+    if (count($partes) >= 3 && $partes[0] !== 'www' && $partes[0] !== 'facturacion') {
+        return strtolower(trim($partes[0]));
+    }
+
+    return null;
 }
+
+
+error_log("HOST=".$_SERVER['HTTP_HOST']." URI=".$_SERVER['REQUEST_URI']);
+
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$fullUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? '') . ($_SERVER['REQUEST_URI'] ?? '');
 
 $password = 'admin123$$**';
 $hash = password_hash($password, PASSWORD_BCRYPT);
 // echo $hash;
-$cliente_subcarpeta = detectarSubdominio();
+$cliente_subcarpeta = strtolower(trim(detectarCliente() ?? ''));
+error_log("cliente_detectado=".$cliente_subcarpeta);
 $logo_url = null;
 $nombre_cliente = null;
 
@@ -89,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	<meta property="og:title" content="Accede a tu cuenta - <?= $nombre_cliente ?: 'Sistema de Facturación' ?>" />
 	<meta property="og:description" content="Emite y gestiona tus facturas desde la nube" />
 	<meta property="og:image" content="<?= $logo_url ?: 'https://www.naranjaymediahn.com/logo.png' ?>" />
-	<meta property="og:url" content="<?= $_SERVER['REQUEST_URI'] ?>" />
+	<meta property="og:url" content="<?= htmlspecialchars($fullUrl) ?>" />
 	<title>Login | <?= $nombre_cliente ?: 'Sistema de Facturación' ?></title>
 	<link rel="icon" href="<?= $logo_url ?: 'https://www.naranjaymediahn.com/wp-content/uploads/2023/03/favicon.svg' ?>" type="image/svg+xml" />
 	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />

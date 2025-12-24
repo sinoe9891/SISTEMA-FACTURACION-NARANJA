@@ -73,15 +73,67 @@ $nombre_establecimiento = $establecimiento ? $establecimiento['nombre'] : 'No as
 <html lang="es">
 
 <head>
+	<?php
+	$clienteNombre = $datos['cliente_nombre'] ?? 'Sistema de Facturación';
+	$clienteLogo   = $datos['logo_url'] ?? '';
+
+	// URL completa
+	$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+	$fullUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? '') . ($_SERVER['REQUEST_URI'] ?? '');
+
+	// Defaults
+	$defaultOgImage = 'https://www.naranjaymediahn.com/wp-content/uploads/2023/03/Naranja-y-Media-General-ppt.jpg';
+	$defaultFavicon = 'https://www.naranjaymediahn.com/wp-content/uploads/2024/07/cropped-Logo-Naranja-y-Media-23-32x32-1.ico#3700';
+	$defaultApple   = 'https://www.naranjaymediahn.com/wp-content/uploads/2024/07/cropped-Logo-Naranja-y-Media-23-192x192-1.ico#3699';
+	$defaultNavbarLogo = 'https://www.naranjaymediahn.com/logo.png';
+
+	// OG image por defecto: logo del cliente si existe, si no default
+	$ogImage = $clienteLogo ?: $defaultOgImage;
+
+	// Cliente desde sesión (si existe)
+	$clienteSubdominio = $_SESSION['subdominio_actual'] ?? null;
+
+	// Favicons por cliente (solo naranjaymedia por ahora)
+	$favicon   = $defaultFavicon;
+	$appleIcon = $defaultApple;
+
+	if ($clienteSubdominio === 'naranjaymedia') {
+		$ogImage   = 'https://www.naranjaymediahn.com/wp-content/uploads/2023/03/Naranja-y-Media-General-ppt.jpg';
+		$favicon   = 'https://www.naranjaymediahn.com/wp-content/uploads/2024/07/cropped-Logo-Naranja-y-Media-23-32x32-1.ico#3700';
+		$appleIcon = 'https://www.naranjaymediahn.com/wp-content/uploads/2024/07/cropped-Logo-Naranja-y-Media-23-192x192-1.ico#3699';
+	}
+
+	$pageTitle = ($titulo ?? 'Dashboard') . " | Sistema de Facturación";
+	$ogTitle   = "Sistema de Facturación | " . $clienteNombre;
+	$ogDesc    = "Panel de control del Sistema de Facturación de {$clienteNombre}. Visualiza facturación, CAI y métricas importantes.";
+
+	// Logo para navbar (preferí logo del cliente si existe, si no uno default liviano)
+	$navbarLogo = $clienteLogo ?: $defaultNavbarLogo;
+	?>
+
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta name="description" content="Panel principal de facturación de <?= htmlspecialchars($datos['cliente_nombre'] ?? $usuario['cliente_nombre']) ?>">
-	<meta property="og:title" content="Dashboard - Sistema de Facturación <?= htmlspecialchars($datos['cliente_nombre'] ?? $usuario['cliente_nombre']) ?>">
-	<meta property="og:description" content="Panel de control para visualizar facturación, CAI y métricas importantes">
-	<meta property="og:image" content="<?= htmlspecialchars($datos['logo_url'] ?? $usuario['logo_url']) ?>">
-	<meta property="og:url" content="<?= $_SERVER['REQUEST_URI'] ?>">
-	<title><?= $titulo ?? 'Sistema de Facturación' ?> | <?= htmlspecialchars($datos['cliente_nombre'] ?? $usuario['cliente_nombre']) ?></title>
-	<link rel="icon" href="<?= htmlspecialchars($datos['logo_url'] ?? $usuario['logo_url']) ?>" type="image/png">
+
+	<meta name="description" content="<?= htmlspecialchars($ogDesc) ?>">
+	<link rel="canonical" href="<?= htmlspecialchars($fullUrl) ?>">
+
+	<meta property="og:type" content="website">
+	<meta property="og:site_name" content="Sistema de Facturación">
+	<meta property="og:title" content="<?= htmlspecialchars($ogTitle) ?>">
+	<meta property="og:description" content="<?= htmlspecialchars($ogDesc) ?>">
+	<meta property="og:image" content="<?= htmlspecialchars($ogImage) ?>">
+	<meta property="og:image:alt" content="Sistema de Facturación | <?= htmlspecialchars($clienteNombre) ?>">
+	<meta property="og:url" content="<?= htmlspecialchars($fullUrl) ?>">
+
+	<meta name="twitter:card" content="summary_large_image">
+	<meta name="twitter:title" content="<?= htmlspecialchars($ogTitle) ?>">
+	<meta name="twitter:description" content="<?= htmlspecialchars($ogDesc) ?>">
+	<meta name="twitter:image" content="<?= htmlspecialchars($ogImage) ?>">
+
+	<link rel="shortcut icon" href="<?= htmlspecialchars($favicon) ?>" type="image/x-icon">
+	<link rel="apple-touch-icon" href="<?= htmlspecialchars($appleIcon) ?>">
+
+	<title><?= htmlspecialchars($pageTitle) ?> | <?= htmlspecialchars($clienteNombre) ?></title>
 
 	<!-- Bootstrap & SweetAlert2 -->
 	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -89,15 +141,13 @@ $nombre_establecimiento = $establecimiento ? $establecimiento['nombre'] : 'No as
 	<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 	<link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet" />
-
 	<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
 	<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 	<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-	<!-- Estilos personalizados opcionales -->
-	<!-- <link rel="stylesheet" href="../../../assets/css/custom.css"> -->
+
 	<link rel="stylesheet" href="../../clientes/css/global.css">
 </head>
+
 
 <body class="bg-light">
 
