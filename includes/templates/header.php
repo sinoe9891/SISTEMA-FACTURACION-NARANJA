@@ -31,7 +31,15 @@ $datos = [];
 
 if (!$es_superadmin) {
 	$stmt = $pdo->prepare("
-		SELECT u.nombre AS usuario_nombre, u.rol, c.nombre AS cliente_nombre, c.logo_url, c.id AS cliente_id
+		SELECT 
+			u.nombre AS usuario_nombre, 
+			u.rol, 
+			c.nombre AS cliente_nombre, 
+			c.logo_url, 
+			c.og_image_url,
+			c.favicon_url,
+			c.apple_touch_icon_url,
+			c.id AS cliente_id
 		FROM usuarios u
 		INNER JOIN clientes_saas c ON u.cliente_id = c.id
 		WHERE u.id = ?
@@ -48,12 +56,20 @@ if (!$es_superadmin) {
 	$cliente_id = $_SESSION['cliente_seleccionado'] ?? null;
 
 	if ($cliente_id) {
-		$stmtCliente = $pdo->prepare("SELECT nombre, logo_url FROM clientes_saas WHERE id = ?");
+		$stmtCliente = $pdo->prepare("
+			SELECT nombre, logo_url, og_image_url, favicon_url, apple_touch_icon_url 
+			FROM clientes_saas 
+			WHERE id = ?
+		");
+
 		$stmtCliente->execute([$cliente_id]);
 		$cliente = $stmtCliente->fetch(PDO::FETCH_ASSOC);
 
-		$datos['cliente_nombre'] = $cliente ? $cliente['nombre'] : 'Cliente no asignado';
+		$datos['cliente_nombre'] = $cliente['nombre'] ?? 'Cliente no asignado';
 		$datos['logo_url'] = $cliente['logo_url'] ?? '';
+		$datos['og_image_url'] = $cliente['og_image_url'] ?? '';
+		$datos['favicon_url'] = $cliente['favicon_url'] ?? '';
+		$datos['apple_touch_icon_url'] = $cliente['apple_touch_icon_url'] ?? '';
 	} else {
 		$datos['cliente_nombre'] = 'Cliente no asignado';
 		$datos['logo_url'] = '';
@@ -81,34 +97,23 @@ $nombre_establecimiento = $establecimiento ? $establecimiento['nombre'] : 'No as
 	$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 	$fullUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? '') . ($_SERVER['REQUEST_URI'] ?? '');
 
-	// Defaults
+	// Defaults globales
 	$defaultOgImage = 'https://www.naranjaymediahn.com/wp-content/uploads/2023/03/Naranja-y-Media-General-ppt.jpg';
 	$defaultFavicon = 'https://www.naranjaymediahn.com/wp-content/uploads/2024/07/cropped-Logo-Naranja-y-Media-23-32x32-1.ico#3700';
 	$defaultApple   = 'https://www.naranjaymediahn.com/wp-content/uploads/2024/07/cropped-Logo-Naranja-y-Media-23-192x192-1.ico#3699';
 	$defaultNavbarLogo = 'https://www.naranjaymediahn.com/logo.png';
 
-	// OG image por defecto: logo del cliente si existe, si no default
-	$ogImage = $clienteLogo ?: $defaultOgImage;
+	// Branding desde DB (si existe) o fallback
+	$ogImage = !empty($datos['og_image_url']) ? $datos['og_image_url'] : $defaultOgImage;
+	$favicon   = !empty($datos['favicon_url']) ? $datos['favicon_url'] : $defaultFavicon;
+	$appleIcon = !empty($datos['apple_touch_icon_url']) ? $datos['apple_touch_icon_url'] : $defaultApple;
 
-	// Cliente desde sesión (si existe)
-	$clienteSubdominio = $_SESSION['subdominio_actual'] ?? null;
-
-	// Favicons por cliente (solo naranjaymedia por ahora)
-	$favicon   = $defaultFavicon;
-	$appleIcon = $defaultApple;
-
-	if ($clienteSubdominio === 'naranjaymedia') {
-		$ogImage   = 'https://www.naranjaymediahn.com/wp-content/uploads/2023/03/Naranja-y-Media-General-ppt.jpg';
-		$favicon   = 'https://www.naranjaymediahn.com/wp-content/uploads/2024/07/cropped-Logo-Naranja-y-Media-23-32x32-1.ico#3700';
-		$appleIcon = 'https://www.naranjaymediahn.com/wp-content/uploads/2024/07/cropped-Logo-Naranja-y-Media-23-192x192-1.ico#3699';
-	}
+	// Para navbar: logo del cliente o uno default liviano
+	$navbarLogo = $clienteLogo ?: $defaultNavbarLogo;
 
 	$pageTitle = ($titulo ?? 'Dashboard') . " | Sistema de Facturación";
 	$ogTitle   = "Sistema de Facturación | " . $clienteNombre;
 	$ogDesc    = "Panel de control del Sistema de Facturación de {$clienteNombre}. Visualiza facturación, CAI y métricas importantes.";
-
-	// Logo para navbar (preferí logo del cliente si existe, si no uno default liviano)
-	$navbarLogo = $clienteLogo ?: $defaultNavbarLogo;
 	?>
 
 	<meta charset="UTF-8">
@@ -135,6 +140,7 @@ $nombre_establecimiento = $establecimiento ? $establecimiento['nombre'] : 'No as
 
 	<title><?= htmlspecialchars($pageTitle) ?> | <?= htmlspecialchars($clienteNombre) ?></title>
 
+
 	<!-- Bootstrap & SweetAlert2 -->
 	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -154,8 +160,8 @@ $nombre_establecimiento = $establecimiento ? $establecimiento['nombre'] : 'No as
 	<!-- Navbar -->
 	<nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom px-4 py-2 shadow-sm">
 		<a class="navbar-brand d-flex align-items-center" href="dashboard">
-			<img src="<?= htmlspecialchars($datos['logo_url'] ?? $usuario['logo_url']) ?>" alt="Logo Cliente" height="40" class="me-2">
-			<strong><?= htmlspecialchars($datos['cliente_nombre'] ?? 'Sistema') ?></strong>
+			<img src="<?= htmlspecialchars($navbarLogo) ?>" alt="Logo Cliente" height="40" class="me-2">
+			<strong><?= htmlspecialchars($clienteNombre) ?></strong>
 		</a>
 
 		<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSaas"
