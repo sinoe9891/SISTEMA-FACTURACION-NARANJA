@@ -22,7 +22,7 @@ $stmtCAIs = $pdo->prepare("
     WHERE cliente_id = ? AND establecimiento_id = ?
       AND correlativo_actual < rango_fin
       AND CURDATE() <= fecha_limite
-    ORDER BY fecha_recepcion DESC
+    ORDER BY fecha_recepcion ASC
 ");
 $stmtCAIs->execute([$cliente_id, $establecimiento_activo]);
 $cais = $stmtCAIs->fetchAll();

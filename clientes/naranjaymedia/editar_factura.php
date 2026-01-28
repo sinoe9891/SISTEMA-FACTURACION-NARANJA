@@ -168,12 +168,12 @@ require_once '../../includes/templates/header.php';
 						</div>
 						<div class="col-md-2">
 							<label>Precio Unitario</label>
-							<input type="number" step="0.01" name="productos[<?= $index ?>][precio_unitario]" class="form-control precio-unitario" value="<?= $item['precio_unitario'] ?>" readonly>
+							<input type="number" step="0.01" name="productos[<?= $index ?>][precio_unitario]" class="form-control precio-unitario" value="<?= $item['precio_unitario'] ?>">
 
 						</div>
 						<div class="col-md-2">
 							<label>Subtotal</label>
-							<input type="number" step="0.01" name="productos[<?= $index ?>][precio]" class="form-control subtotal-producto" value="<?= $item['cantidad'] * $item['precio_unitario'] ?>" readonly>
+							<input type="number" step="0.01" name="productos[<?= $index ?>][precio]" class="form-control subtotal-producto" value="<?= $item['cantidad'] * $item['precio_unitario'] ?>">
 						</div>
 
 						<div class="col-md-2">

@@ -63,7 +63,7 @@ require_once '../../includes/templates/header.php';
 			SELECT id, cai, rango_inicio, rango_fin, correlativo_actual, fecha_limite, fecha_creacion 
 			FROM cai_rangos 
 			WHERE cliente_id = ? AND fecha_limite >= CURDATE()
-			ORDER BY fecha_creacion DESC
+			ORDER BY fecha_creacion ASC
 		");
 		$stmtCaiRangos->execute([$cliente_id]);
 
@@ -502,4 +502,7 @@ require_once '../../includes/templates/header.php';
 				Swal.fire('Error', 'No se pudieron cargar los productos del receptor.', 'error');
 			});
 	});
+</script>
+<script>
+
 </script>

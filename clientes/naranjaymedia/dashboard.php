@@ -7,36 +7,85 @@ require_once '../../includes/dashboard.php';
 require_once '../../includes/templates/header.php';
 ?>
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+<style>
+	/* Mejoras responsive en tablas grandes */
+	.table-responsive {
+		-webkit-overflow-scrolling: touch;
+	}
+
+	/* Ocultamos el caret del accordion para usar + / - */
+	.accordion-button::after {
+		display: none !important;
+	}
+
+	/* Botón compactito en tabla */
+	.btn-icon {
+		width: 34px;
+		height: 34px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+	}
+
+	/* Mejoras de lectura en móviles */
+	@media (max-width: 576px) {
+		.card-header {
+			font-size: 0.95rem;
+		}
+
+		.card-body p {
+			margin-bottom: .4rem;
+		}
+	}
+</style>
+
 <div class="container mt-4">
-	<div class="d-flex justify-content-between align-items-center mb-3">
-		<div>
-			<h4> <?= $emoji ?> <?= $saludo ?>, <?= htmlspecialchars(USUARIO_NOMBRE) ?></h4>
-			<h6 class="text-muted"> Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> | Rol: <?= htmlspecialchars(ucfirst($datos['rol'])) ?> | Cliente: <?= htmlspecialchars($datos['cliente_nombre']) ?></h6>
+	<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+		<div class="flex-grow-1">
+			<h4 class="mb-1"> <?= $emoji ?> <?= $saludo ?>, <?= htmlspecialchars(USUARIO_NOMBRE) ?></h4>
+			<h6 class="text-muted mb-0">
+				Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> |
+				Rol: <?= htmlspecialchars(ucfirst($datos['rol'])) ?> |
+				Cliente: <?= htmlspecialchars($datos['cliente_nombre']) ?>
+			</h6>
 		</div>
 		<div>
 			<img src="<?= htmlspecialchars($datos['logo_url']) ?>" alt="Logo cliente" style="max-height: 60px;">
 		</div>
 	</div>
-	<form method="GET" class="row g-3 align-items-end mb-4">
-		<div class="col-auto">
-			<label>Desde:</label>
+
+	<!-- FILTRO (POST) -->
+	<form method="POST" class="row g-2 align-items-end mb-4">
+		<div class="col-12 col-sm-6 col-md-auto">
+			<label class="form-label mb-0">Desde:</label>
 			<input type="date" name="fecha_inicio" class="form-control" value="<?= htmlspecialchars($fecha_inicio) ?>">
 		</div>
-		<div class="col-auto">
-			<label>Hasta:</label>
+		<div class="col-12 col-sm-6 col-md-auto">
+			<label class="form-label mb-0">Hasta:</label>
 			<input type="date" name="fecha_fin" class="form-control" value="<?= htmlspecialchars($fecha_fin) ?>">
 		</div>
-		<div class="col-auto">
-			<button class="btn btn-primary" type="submit">📊 Filtrar</button>
+		<div class="col-12 col-md-auto">
+			<button class="btn btn-primary w-100 w-md-auto" type="submit">
+				<i class="bi bi-funnel-fill me-1"></i> Filtrar
+			</button>
 		</div>
 	</form>
+
+	<?php if (!empty($alerta_cai_vencido)): ?>
+		<div class="alert alert-danger">
+			⏰ Tu CAI está por vencer. Fecha límite: <?= formatFechaLimite($fecha_limite) ?>
+		</div>
+	<?php endif; ?>
 
 	<div class="row">
 		<div class="col-md-4">
 			<div class="card border-primary mb-3">
 				<div class="card-header">Facturas emitidas</div>
 				<div class="card-body text-primary">
-					<h5 class="card-title"><?= $total_facturas ?></h5>
+					<h5 class="card-title mb-0"><?= (int)$total_facturas ?></h5>
 				</div>
 			</div>
 		</div>
@@ -45,7 +94,7 @@ require_once '../../includes/templates/header.php';
 			<div class="card border-success mb-3">
 				<div class="card-header">Facturas restantes</div>
 				<div class="card-body text-success">
-					<h5 class="card-title"><?= $facturas_restantes ?></h5>
+					<h5 class="card-title mb-0"><?= (int)$facturas_restantes ?></h5>
 				</div>
 			</div>
 		</div>
@@ -54,50 +103,56 @@ require_once '../../includes/templates/header.php';
 			<div class="card border-warning mb-3">
 				<div class="card-header">Fecha límite CAI</div>
 				<div class="card-body text-warning">
-					<h5 class="card-title">
-						<h5 class="card-title"><?= formatFechaLimite($fecha_limite) ?></h5>
-					</h5>
+					<h5 class="card-title mb-0"><?= formatFechaLimite($fecha_limite) ?></h5>
+					<?php if ($dias_restantes_cai !== null): ?>
+						<small class="text-muted">Faltan <?= (int)$dias_restantes_cai ?> día(s)</small>
+					<?php endif; ?>
 				</div>
 			</div>
 		</div>
 	</div>
-	<?php if ($ingresos): ?>
+
+	<?php if (!empty($ingresos)): ?>
 		<div class="row mb-4">
 			<div class="col-md-4">
 				<div class="card border-info h-100">
 					<div class="card-header bg-info text-white">💰 Totales del mes actual (<?= date('F Y') ?>)</div>
 					<div class="card-body">
-						<p><strong>Subtotal:</strong> L <?= number_format($totales_mes['subtotal'], 2) ?></p>
-						<p><strong>ISV:</strong> L <?= number_format($totales_mes['isv'], 2) ?></p>
-						<p><strong>Total:</strong> L <?= number_format($totales_mes['total'], 2) ?></p>
+						<p><strong>Subtotal:</strong> L <?= number_format($totales_mes['subtotal'] ?? 0, 2) ?></p>
+						<p><strong>ISV:</strong> L <?= number_format($totales_mes['isv'] ?? 0, 2) ?></p>
+						<p class="mb-0"><strong>Total:</strong> L <?= number_format($totales_mes['total'] ?? 0, 2) ?></p>
 					</div>
 				</div>
 			</div>
+
 			<div class="col-md-4">
 				<div class="card border-secondary h-100">
 					<div class="card-header bg-secondary text-white">📅 Totales del año a la fecha (<?= date('Y') ?>)</div>
 					<div class="card-body">
-						<p><strong>Subtotal:</strong> L <?= number_format($totales_anio['subtotal'], 2) ?></p>
-						<p><strong>ISV:</strong> L <?= number_format($totales_anio['isv'], 2) ?></p>
-						<p><strong>Total:</strong> L <?= number_format($totales_anio['total'], 2) ?></p>
+						<p><strong>Subtotal:</strong> L <?= number_format($totales_anio['subtotal'] ?? 0, 2) ?></p>
+						<p><strong>ISV:</strong> L <?= number_format($totales_anio['isv'] ?? 0, 2) ?></p>
+						<p class="mb-0"><strong>Total:</strong> L <?= number_format($totales_anio['total'] ?? 0, 2) ?></p>
 					</div>
 				</div>
 			</div>
+
 			<div class="col-md-4">
 				<div class="card border-<?= $color_alerta ?> h-100">
 					<div class="card-header text-<?= $color_alerta ?>">🚨 Facturas no declaradas</div>
 					<div class="card-body text-<?= $color_alerta ?>">
-						<?php if ($cant_no_declaradas > 0): ?>
-							<p><strong>Cantidad atrasadas:</strong> <?= $cant_no_declaradas ?> facturas</p>
-							<p><strong>ISV pendiente:</strong> L <?= number_format($isv_pendiente, 2) ?></p>
-							<?php if (count($lista_meses) > 1): ?>
-								<p><strong>Meses pendientes:</strong> <?= $texto_meses ?></p>
-							<?php elseif (count($lista_meses) === 1): ?>
-								<p><strong>Mes pendiente:</strong> <?= $texto_meses ?></p>
+						<?php if (($cant_no_declaradas ?? 0) > 0): ?>
+							<p class="mb-1"><strong>Cantidad atrasadas:</strong> <?= (int)$cant_no_declaradas ?> facturas</p>
+							<p class="mb-1"><strong>ISV pendiente:</strong> L <?= number_format($isv_pendiente ?? 0, 2) ?></p>
+							<?php if (!empty($lista_meses) && count($lista_meses) > 0): ?>
+								<p class="mb-0">
+									<strong><?= count($lista_meses) > 1 ? 'Meses pendientes:' : 'Mes pendiente:' ?></strong>
+									<?= $texto_meses ?? '' ?>
+								</p>
 							<?php endif; ?>
 						<?php else: ?>
-							<p><strong>No hay meses pendientes de declaración.</strong></p>
+							<p class="mb-0"><strong>No hay meses pendientes de declaración.</strong></p>
 						<?php endif; ?>
+
 						<?php
 						switch ($color_alerta) {
 							case 'success':
@@ -118,306 +173,473 @@ require_once '../../includes/templates/header.php';
 							default:
 								$emoji_mes_actual = '📌';
 						}
-
-						if ($cant_mes_actual > 0): ?>
-							<hr>
-							<p><strong><?= $emoji_mes_actual ?> Facturas del mes actual:</strong> <?= $cant_mes_actual ?> facturas</p>
-							<p><strong>ISV estimado:</strong> L <?= number_format($isv_mes_actual, 2) ?></p>
-							<p><small>💡 Recuerda declarar antes del 30 de este mes.</small></p>
+						if (($cant_mes_actual ?? 0) > 0): ?>
+							<hr class="my-2">
+							<p class="mb-1"><strong><?= $emoji_mes_actual ?> Facturas del mes actual:</strong> <?= (int)$cant_mes_actual ?> facturas</p>
+							<p class="mb-1"><strong>ISV estimado:</strong> L <?= number_format($isv_mes_actual ?? 0, 2) ?></p>
+							<p class="mb-0"><small>💡 Recuerda declarar antes del 30 de este mes.</small></p>
 						<?php endif; ?>
 					</div>
 				</div>
 			</div>
 		</div>
 
-		<canvas id="graficoIngresos" height="100"></canvas>
-
-		<!-- <canvas id="graficoProductosFacturas" height="100" class="mt-5"></canvas>
-		<canvas id="graficoTopProductos" height="100" class="mt-5"></canvas> -->
-		<div class="card border-0 shadow-sm p-4 mb-5">
-			<h4 class="mt-5">📋 Resumen por Cliente Facturado</h4>
-			<table class="table table-bordered table-hover table-sm mt-2">
-				<thead class="thead-light">
-					<tr>
-						<th>Nombre del Cliente</th>
-						<th>Servicios Adquiridos</th>
-						<th>Subtotal (L)</th>
-						<th>ISV (L)</th>
-						<th>Total Pagado (L)</th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php
-					$total_subtotal = 0;
-					$total_isv = 0;
-					$total_general = 0;
-					foreach ($resumen_receptores as $r):
-						$total_subtotal += $r['subtotal'];
-						$total_isv += $r['isv'];
-						$total_general += $r['total'];
-					?>
-						<tr>
-							<td><?= htmlspecialchars($r['receptor_nombre'] ?? 'N/D') ?></td>
-							<td><?= number_format((int)$r['cantidad_servicios']) ?></td>
-							<td>L <?= number_format((float)$r['subtotal'], 2) ?></td>
-							<td>L <?= number_format((float)$r['isv'], 2) ?></td>
-							<td><strong>L <?= number_format((float)$r['total'], 2) ?></strong></td>
-						</tr>
-					<?php endforeach; ?>
-				</tbody>
-				<tfoot class="table-light">
-					<tr>
-						<th colspan="2" class="text-end">Totales:</th>
-						<th>L <?= number_format($total_subtotal, 2) ?></th>
-						<th>L <?= number_format($total_isv, 2) ?></th>
-						<th><strong>L <?= number_format($total_general, 2) ?></strong></th>
-					</tr>
-				</tfoot>
-			</table>
-		</div>
-		<?php
-		// Año seleccionado desde GET, o actual por defecto
-		$anio_promedio = $_GET['anio_promedio'] ?? date('Y');
-
-		// Obtener años disponibles de facturación
-		$stmtAnios = $pdo->prepare("
-			SELECT DISTINCT YEAR(fecha_emision) AS anio
-			FROM facturas
-			WHERE cliente_id = ?
-			AND establecimiento_id = ?
-			AND estado = 'emitida'
-			ORDER BY anio DESC
-		");
-		$stmtAnios->execute([$cliente_id, $establecimiento_activo]);
-		$lista_anios = $stmtAnios->fetchAll(PDO::FETCH_COLUMN);
-		?>
-		<div class="card border-0 shadow-sm p-4 mb-5" id="datosporano">
-			<form method="GET" class="row gy-2 gx-3 align-items-center mb-4">
-				<div class="col-auto">
-					<label class="form-label mb-0" for="anio_promedio">
-						<i class="bi bi-calendar-event-fill me-1"></i> Ingresos por Año:
-					</label>
-					<select name="anio_promedio" id="anio_promedio" class="form-select" onchange="this.form.submit()">
-						<?php foreach ($lista_anios as $anio): ?>
-							<option value="<?= $anio ?>" <?= $anio == $anio_promedio ? 'selected' : '' ?>>
-								<?= $anio ?>
-							</option>
-						<?php endforeach; ?>
-					</select>
+		<?php if (!empty($cais_activos)): ?>
+			<div class="card mt-3">
+				<div class="card-header">CAI activos</div>
+				<div class="card-body table-responsive">
+					<table class="table table-sm table-bordered mb-0">
+						<thead>
+							<tr>
+								<th>CAI</th>
+								<th>Rango</th>
+								<th>Restantes</th>
+								<th>Fecha límite</th>
+								<th>Días</th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ($cais_activos as $cai): ?>
+								<tr>
+									<td><?= htmlspecialchars($cai['cai']) ?></td>
+									<td><?= (int)$cai['rango_inicio'] ?> - <?= (int)$cai['rango_fin'] ?></td>
+									<td><strong><?= (int)$cai['restantes'] ?></strong></td>
+									<td><?= formatFechaLimite($cai['fecha_limite']) ?></td>
+									<td><?= (int)$cai['dias_para_vencer'] ?></td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
 				</div>
-			</form>
-			<!-- GRÁFICO POR AÑO -->
-			<div style="width: 100%;  margin: auto;">
-				<canvas id="graficoAnual" height="100"></canvas>
+			</div>
+		<?php endif; ?>
+
+		<!-- GRÁFICO INGRESOS POR MES -->
+		<div class="card border-0 shadow-sm p-3 mb-4">
+			<h5 class="mb-3">📊 Ingresos por Mes (rango seleccionado)</h5>
+			<canvas id="graficoIngresos" height="110"></canvas>
+		</div>
+
+		<!-- RESUMEN POR CLIENTE FACTURADO + DETALLES -->
+		<div class="card border-0 shadow-sm p-4 mb-5">
+			<div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+				<h4 class="mb-0">📋 Resumen por Cliente Facturado</h4>
+				<small class="text-muted">
+					Rango: <?= htmlspecialchars($fecha_inicio) ?> → <?= htmlspecialchars($fecha_fin) ?>
+				</small>
 			</div>
 
-
-			<h4 class="mt-4">📊 Promedio Mensual de Ingresos - Año <?= htmlspecialchars($anio_promedio) ?></h4>
-			<table class="table table-bordered table-hover table-sm">
-				<thead class="thead-light">
-					<tr>
-						<th>Mes</th>
-						<th>Subtotal (L)</th>
-						<th>ISV (L)</th>
-						<th>Total (L)</th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php
-					$total_sub = 0;
-					$total_isv = 0;
-					$total_all = 0;
-					$meses_contados = count($promedio_mensual);
-
-					foreach ($promedio_mensual as $fila):
-						$total_sub += $fila['subtotal'];
-						$total_isv += $fila['isv'];
-						$total_all += $fila['total'];
-					?>
+			<div class="table-responsive mt-3">
+				<table class="table table-bordered table-hover table-sm align-middle mb-0">
+					<thead class="thead-light">
 						<tr>
-							<td><?= ucfirst($fila['mes_nombre']) ?></td>
-							<td>L <?= number_format($fila['subtotal'], 2) ?></td>
-							<td>L <?= number_format($fila['isv'], 2) ?></td>
-							<td>L <?= number_format($fila['total'], 2) ?></td>
+							<th>Nombre del Cliente</th>
+							<th class="text-center">Servicios</th>
+							<th class="text-end">Subtotal (L)</th>
+							<th class="text-end">ISV (L)</th>
+							<th class="text-end">Total Pagado (L)</th>
+							<th class="text-center" style="width: 70px;">Detalles</th>
 						</tr>
-					<?php endforeach; ?>
-				</tbody>
-				<tfoot class="table-light">
-					<tr>
-						<th>Promedio mensual:</th>
-						<th>L <?= number_format($meses_contados ? $total_sub / $meses_contados : 0, 2) ?></th>
-						<th>L <?= number_format($meses_contados ? $total_isv / $meses_contados : 0, 2) ?></th>
-						<th><strong>L <?= number_format($meses_contados ? $total_all / $meses_contados : 0, 2) ?></strong></th>
-					</tr>
-				</tfoot>
-			</table>
+					</thead>
+
+					<tbody id="accordionReceptores">
+						<?php
+						$total_subtotal = 0;
+						$total_isv = 0;
+						$total_general = 0;
+
+						foreach ($resumen_receptores as $r):
+							$rid = (int)$r['receptor_id'];
+							$total_subtotal += (float)$r['subtotal'];
+							$total_isv += (float)$r['isv'];
+							$total_general += (float)$r['total'];
+						?>
+							<tr>
+								<td><?= htmlspecialchars($r['receptor_nombre'] ?? 'N/D') ?></td>
+								<td class="text-center"><?= (int)($r['cantidad_servicios'] ?? 0) ?></td>
+								<td class="text-end">L <?= number_format((float)$r['subtotal'], 2) ?></td>
+								<td class="text-end">L <?= number_format((float)$r['isv'], 2) ?></td>
+								<td class="text-end"><strong>L <?= number_format((float)$r['total'], 2) ?></strong></td>
+								<td class="text-center">
+									<button
+										class="btn btn-outline-primary btn-sm btn-icon toggle-receptor"
+										type="button"
+										data-bs-toggle="collapse"
+										data-bs-target="#detalles-receptor-<?= $rid ?>"
+										aria-expanded="false"
+										aria-controls="detalles-receptor-<?= $rid ?>"
+										title="Ver detalles">
+										<i class="bi bi-plus-lg"></i>
+									</button>
+								</td>
+							</tr>
+
+							<!-- ROW DETALLE (COLSPAN) -->
+							<tr class="bg-light">
+								<td colspan="6" class="p-0">
+									<div
+										id="detalles-receptor-<?= $rid ?>"
+										class="collapse detalle-receptor"
+										data-bs-parent="#accordionReceptores">
+										<div class="p-3">
+
+											<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+												<div>
+													<strong><?= htmlspecialchars($r['receptor_nombre'] ?? 'Cliente') ?></strong>
+													<span class="text-muted ms-2">
+														(<?= (int)($r['cantidad_facturas'] ?? 0) ?> factura(s))
+													</span>
+												</div>
+											</div>
+
+											<?php
+											$listaFacturas = $detalle_receptores[$rid] ?? [];
+											?>
+
+											<?php if (!empty($listaFacturas)): ?>
+												<div class="accordion accordion-flush" id="acc-facturas-<?= $rid ?>">
+													<?php foreach ($listaFacturas as $fx): ?>
+														<?php
+														$fid = (int)$fx['id'];
+														$isvFactura = (float)($fx['isv_15'] ?? 0) + (float)($fx['isv_18'] ?? 0);
+														$items = $fx['items'] ?? [];
+														?>
+														<div class="accordion-item">
+															<h2 class="accordion-header" id="h-<?= $rid ?>-<?= $fid ?>">
+																<button
+																	class="accordion-button collapsed py-2 d-flex align-items-center gap-2 toggle-factura"
+																	type="button"
+																	data-bs-toggle="collapse"
+																	data-bs-target="#c-<?= $rid ?>-<?= $fid ?>"
+																	aria-expanded="false"
+																	aria-controls="c-<?= $rid ?>-<?= $fid ?>">
+																	<i class="bi bi-plus-lg icon-plusminus"></i>
+																	<div class="w-100 d-flex flex-wrap justify-content-between align-items-center gap-2">
+																		<div>
+																			<span class="fw-semibold">Factura <?= htmlspecialchars($fx['correlativo'] ?? $fid) ?></span>
+																			<span class="text-muted ms-2"><?= htmlspecialchars(substr($fx['fecha_emision'] ?? '', 0, 10)) ?></span>
+																		</div>
+																		<div class="ms-auto fw-bold">
+																			L <?= number_format((float)$fx['total'], 2) ?>
+																		</div>
+																	</div>
+																</button>
+															</h2>
+
+															<div
+																id="c-<?= $rid ?>-<?= $fid ?>"
+																class="accordion-collapse collapse"
+																data-bs-parent="#acc-facturas-<?= $rid ?>">
+																<div class="accordion-body pt-2">
+
+																	<div class="row g-2 mb-3">
+																		<div class="col-12 col-md-8">
+																			<div class="small text-muted">
+																				Subtotal: <strong>L <?= number_format((float)$fx['subtotal'], 2) ?></strong> ·
+																				ISV: <strong>L <?= number_format($isvFactura, 2) ?></strong> ·
+																				Total: <strong>L <?= number_format((float)$fx['total'], 2) ?></strong>
+																			</div>
+																		</div>
+																		<div class="col-12 col-md-4 text-md-end">
+																			<a class="btn btn-sm btn-outline-secondary"
+																				href="ver_factura?id=<?= $fid ?>"
+																				target="_blank"
+																				rel="noopener noreferrer">
+																				<i class="bi bi-receipt me-1"></i> Ver factura
+																			</a>
+																		</div>
+																	</div>
+
+																	<?php if (!empty($items)): ?>
+																		<div class="table-responsive">
+																			<table class="table table-sm table-bordered mb-0 align-middle">
+																				<thead>
+																					<tr>
+																						<th>Servicio / Producto</th>
+																						<th class="text-end">Cantidad</th>
+																						<th class="text-end">P. Unitario</th>
+																						<th class="text-end">Subtotal</th>
+																						<th class="text-end">ISV %</th>
+																					</tr>
+																				</thead>
+																				<tbody>
+																					<?php foreach ($items as $it): ?>
+																						<tr>
+																							<td>
+																								<div class="fw-semibold">
+																									<?= htmlspecialchars($it['nombre_producto'] ?? 'SIN PRODUCTO') ?>
+																								</div>
+																								<?php if (!empty($it['descripcion_html'])): ?>
+																									<div class="text-muted small">
+																										<?= nl2br(htmlspecialchars($it['descripcion_html'])) ?>
+																									</div>
+																								<?php endif; ?>
+																							</td>
+																							<td class="text-end"><?= (int)($it['cantidad'] ?? 0) ?></td>
+																							<td class="text-end">L <?= number_format((float)($it['precio_unitario'] ?? 0), 2) ?></td>
+																							<td class="text-end">L <?= number_format((float)($it['subtotal'] ?? 0), 2) ?></td>
+																							<td class="text-end"><?= number_format((float)($it['isv_aplicado'] ?? 0), 2) ?></td>
+																						</tr>
+																					<?php endforeach; ?>
+																				</tbody>
+																			</table>
+																		</div>
+																	<?php else: ?>
+																		<div class="alert alert-warning mb-0">Esta factura no tiene items asociados.</div>
+																	<?php endif; ?>
+
+																</div>
+															</div>
+														</div>
+													<?php endforeach; ?>
+												</div>
+											<?php else: ?>
+												<div class="alert alert-info mb-0">No hay facturas para este cliente en el rango.</div>
+											<?php endif; ?>
+
+										</div>
+									</div>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+
+					<tfoot class="table-light">
+						<tr>
+							<th colspan="2" class="text-end">Totales:</th>
+							<th class="text-end">L <?= number_format($total_subtotal, 2) ?></th>
+							<th class="text-end">L <?= number_format($total_isv, 2) ?></th>
+							<th class="text-end"><strong>L <?= number_format($total_general, 2) ?></strong></th>
+							<th></th>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
 		</div>
 
-		<?php if (isset($_GET['anio_promedio'])): ?>
-			<script>
-				window.addEventListener('load', () => {
-					const target = document.getElementById("datosporano");
-					if (target) {
-						target.scrollIntoView({
-							behavior: "smooth"
-						});
+		<!-- INGRESOS POR AÑO (se mantiene, SIN SELECT) -->
+		<div class="card border-0 shadow-sm p-4 mb-5" id="datosporano">
+			<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+				<h4 class="mb-0"><i class="bi bi-calendar-event-fill me-1"></i> Ingresos por Año</h4>
+				<small class="text-muted">
+					(Usa el mismo filtro Desde/Hasta)
+				</small>
+			</div>
+
+			<div style="width: 100%; margin: auto;">
+				<canvas id="graficoAnual" height="110"></canvas>
+			</div>
+
+			<?php if (!empty($ingresos_anuales)): ?>
+				<div class="table-responsive mt-3">
+					<table class="table table-bordered table-hover table-sm mb-0">
+						<thead class="thead-light">
+							<tr>
+								<th>Año</th>
+								<th class="text-end">Subtotal (L)</th>
+								<th class="text-end">ISV (L)</th>
+								<th class="text-end">Total (L)</th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ($ingresos_anuales as $ax): ?>
+								<tr>
+									<td><?= htmlspecialchars($ax['anio']) ?></td>
+									<td class="text-end">L <?= number_format((float)$ax['subtotal'], 2) ?></td>
+									<td class="text-end">L <?= number_format((float)$ax['isv'], 2) ?></td>
+									<td class="text-end"><strong>L <?= number_format((float)$ax['total'], 2) ?></strong></td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+				</div>
+			<?php endif; ?>
+		</div>
+
+		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+		<script>
+			// ====== CHART: INGRESOS POR MES ======
+			const ctx = document.getElementById('graficoIngresos')?.getContext('2d');
+			if (ctx) {
+				new Chart(ctx, {
+					type: 'bar',
+					data: {
+						labels: <?= json_encode(array_column($ingresos, 'mes')) ?>,
+						datasets: [{
+								label: 'Subtotal',
+								backgroundColor: 'rgba(54, 162, 235, 0.6)',
+								data: <?= json_encode(array_map(fn($r) => (float)$r['subtotal'], $ingresos)) ?>
+							},
+							{
+								label: 'ISV',
+								backgroundColor: 'rgba(255, 206, 86, 0.6)',
+								data: <?= json_encode(array_map(fn($r) => (float)$r['isv'], $ingresos)) ?>
+							},
+							{
+								label: 'Total',
+								backgroundColor: 'rgba(75, 192, 192, 0.6)',
+								data: <?= json_encode(array_map(fn($r) => (float)$r['total'], $ingresos)) ?>
+							}
+						]
+					},
+					options: {
+						responsive: true,
+						scales: {
+							y: {
+								beginAtZero: true,
+								title: {
+									display: true,
+									text: 'Lempiras'
+								}
+							}
+						}
 					}
 				});
-			</script>
-		<?php endif; ?>
-		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-		<script>
-			const ctx = document.getElementById('graficoIngresos').getContext('2d');
+			}
 
-			const chart = new Chart(ctx, {
-				type: 'bar',
-				data: {
-					labels: <?= json_encode(array_column($ingresos, 'mes')) ?>,
-					datasets: [{
-							label: 'Subtotal',
-							backgroundColor: 'rgba(54, 162, 235, 0.6)',
-							data: <?= json_encode(array_map(fn($r) => (float)$r['subtotal'], $ingresos)) ?>
-						},
-						{
-							label: 'ISV',
-							backgroundColor: 'rgba(255, 206, 86, 0.6)',
-							data: <?= json_encode(array_map(fn($r) => (float)$r['isv'], $ingresos)) ?>
-						},
-						{
-							label: 'Total',
-							backgroundColor: 'rgba(75, 192, 192, 0.6)',
-							data: <?= json_encode(array_map(fn($r) => (float)$r['total'], $ingresos)) ?>
-						}
-					]
-				},
-				options: {
-					responsive: true,
-					scales: {
-						y: {
-							beginAtZero: true,
-							title: {
-								display: true,
-								text: 'Lempiras'
+			// ====== CHART: INGRESOS POR AÑO ======
+			const ctxAnual = document.getElementById('graficoAnual')?.getContext('2d');
+			if (ctxAnual) {
+				const anios = <?= json_encode(array_map(fn($x) => (string)$x['anio'], $ingresos_anuales ?? [])) ?>;
+				const subtotalA = <?= json_encode(array_map(fn($x) => (float)$x['subtotal'], $ingresos_anuales ?? [])) ?>;
+				const isvA = <?= json_encode(array_map(fn($x) => (float)$x['isv'], $ingresos_anuales ?? [])) ?>;
+				const totalA = <?= json_encode(array_map(fn($x) => (float)$x['total'], $ingresos_anuales ?? [])) ?>;
+
+				new Chart(ctxAnual, {
+					type: 'bar',
+					data: {
+						labels: anios,
+						datasets: [{
+								label: 'Subtotal',
+								backgroundColor: 'rgba(54, 162, 235, 0.4)',
+								data: subtotalA
+							},
+							{
+								label: 'ISV',
+								backgroundColor: 'rgba(255, 206, 86, 0.4)',
+								data: isvA
+							},
+							{
+								label: 'Total',
+								backgroundColor: 'rgba(75, 192, 192, 0.4)',
+								data: totalA
 							}
-						}
-					}
-				}
-			});
-		</script>
-		<script>
-			const ctxAnual = document.getElementById('graficoAnual').getContext('2d');
-
-			const chartAnual = new Chart(ctxAnual, {
-				type: 'bar',
-				data: {
-					labels: <?= json_encode(array_map(fn($r) => ucfirst($r['mes_nombre']), $promedio_mensual)) ?>,
-					datasets: [{
-							label: 'Subtotal',
-							backgroundColor: 'rgba(54, 162, 235, 0.4)',
-							data: <?= json_encode(array_map(fn($r) => (float)$r['subtotal'], $promedio_mensual)) ?>
-						},
-						{
-							label: 'ISV',
-							backgroundColor: 'rgba(255, 206, 86, 0.4)',
-							data: <?= json_encode(array_map(fn($r) => (float)$r['isv'], $promedio_mensual)) ?>
-						},
-						{
-							label: 'Total',
-							backgroundColor: 'rgba(75, 192, 192, 0.4)',
-							data: <?= json_encode(array_map(fn($r) => (float)$r['total'], $promedio_mensual)) ?>
-						}
-					]
-				},
-				options: {
-					responsive: true,
-					plugins: {
-						title: {
-							display: true,
-							text: '📊 Ingresos por Mes - Año <?= $anio_promedio ?>'
-						}
+						]
 					},
-					scales: {
-						y: {
-							beginAtZero: true,
+					options: {
+						responsive: true,
+						plugins: {
 							title: {
 								display: true,
-								text: 'Lempiras'
+								text: '📊 Ingresos por Año (rango seleccionado)'
+							}
+						},
+						scales: {
+							y: {
+								beginAtZero: true,
+								title: {
+									display: true,
+									text: 'Lempiras'
+								}
 							}
 						}
 					}
-				}
-			});
+				});
+			}
+
+
+			(() => {
+  // --- RECEPTOR: botón Detalles (+ / -) ---
+  document.querySelectorAll('.toggle-receptor').forEach((btn) => {
+    const targetSel = btn.getAttribute('data-bs-target');
+    const target = document.querySelector(targetSel);
+    if (!target) return;
+
+    const icon = btn.querySelector('i');
+    const setIcon = (open) => {
+      if (!icon) return;
+      icon.classList.toggle('bi-plus-lg', !open);
+      icon.classList.toggle('bi-dash-lg', open);
+    };
+
+    // click manual (para que el "-" SI cierre)
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const inst = bootstrap.Collapse.getOrCreateInstance(target, { toggle: false });
+      const isOpen = target.classList.contains('show');
+
+      if (isOpen) {
+        inst.hide();
+      } else {
+        // cerrar otros receptores abiertos
+        document.querySelectorAll('.detalle-receptor.show').forEach((openEl) => {
+          if (openEl !== target) {
+            bootstrap.Collapse.getOrCreateInstance(openEl, { toggle: false }).hide();
+          }
+        });
+        inst.show();
+      }
+    });
+
+    target.addEventListener('shown.bs.collapse', () => setIcon(true));
+
+    target.addEventListener('hidden.bs.collapse', () => {
+      // cerrar cualquier factura abierta dentro de este receptor
+      target.querySelectorAll('.accordion-collapse.show').forEach((c) => {
+        bootstrap.Collapse.getOrCreateInstance(c, { toggle: false }).hide();
+      });
+
+      // reset iconos de facturas dentro
+      target.querySelectorAll('.toggle-factura .icon-plusminus').forEach((ic) => {
+        ic.classList.remove('bi-dash-lg');
+        ic.classList.add('bi-plus-lg');
+      });
+
+      setIcon(false);
+    });
+  });
+
+  // --- FACTURAS: acordeón dentro del receptor (+ / -) ---
+  document.querySelectorAll('.toggle-factura').forEach((btn) => {
+    const targetSel = btn.getAttribute('data-bs-target');
+    const target = document.querySelector(targetSel);
+    if (!target) return;
+
+    const icon = btn.querySelector('.icon-plusminus');
+    const setIcon = (open) => {
+      if (!icon) return;
+      icon.classList.toggle('bi-plus-lg', !open);
+      icon.classList.toggle('bi-dash-lg', open);
+    };
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const inst = bootstrap.Collapse.getOrCreateInstance(target, { toggle: false });
+      const isOpen = target.classList.contains('show');
+
+      if (isOpen) inst.hide();
+      else inst.show();
+    });
+
+    target.addEventListener('shown.bs.collapse', () => setIcon(true));
+    target.addEventListener('hidden.bs.collapse', () => setIcon(false));
+  });
+})();
 		</script>
-		<script>
-			// const ctxProductosFacturas = document.getElementById('graficoProductosFacturas').getContext('2d');
 
-			// const chartProductosFacturas = new Chart(ctxProductosFacturas, {
-			// 	type: 'bar',
-			// 	data: {
-			// 		labels: <?= json_encode(array_column($top_productos_facturas, 'nombre')) ?>,
-			// 		datasets: [{
-			// 			label: 'Veces facturado (en facturas distintas)',
-			// 			data: <?= json_encode(array_map(fn($p) => (int)$p['veces_facturado'], $top_productos_facturas)) ?>,
-			// 			backgroundColor: 'rgba(153, 102, 255, 0.6)'
-			// 		}]
-			// 	},
-			// 	options: {
-			// 		indexAxis: 'y',
-			// 		responsive: true,
-			// 		scales: {
-			// 			x: {
-			// 				beginAtZero: true,
-			// 				title: {
-			// 					display: true,
-			// 					text: 'Cantidad de Facturas'
-			// 				}
-			// 			}
-			// 		}
-			// 	}
-			// });
-
-			// 	const ctxProductos = document.getElementById('graficoTopProductos').getContext('2d');
-
-			// 	const chartProductos = new Chart(ctxProductos, {
-			// 		type: 'bar',
-			// 		data: {
-			// 			labels: <?= json_encode(array_column($top_productos, 'nombre')) ?>,
-			// 			datasets: [{
-			// 				label: 'Cantidad Vendida',
-			// 				data: <?= json_encode(array_map(fn($p) => (int)$p['total_vendido'], $top_productos)) ?>,
-			// 				backgroundColor: 'rgba(255, 99, 132, 0.6)'
-			// 			}]
-			// 		},
-			// 		options: {
-			// 			indexAxis: 'y',
-			// 			responsive: true,
-			// 			scales: {
-			// 				x: {
-			// 					beginAtZero: true,
-			// 					title: {
-			// 						display: true,
-			// 						text: 'Unidades Vendidas'
-			// 					}
-			// 				}
-			// 			}
-			// 		}
-			// 	});
-			// 
-		</script>
 
 	<?php else: ?>
 		<div class="alert alert-info">No hay datos de ingresos en el rango seleccionado.</div>
 	<?php endif; ?>
 
-	<?php if ($facturas_restantes <= ALERTA_FACTURAS_RESTANTES && $total_facturas > 0): ?>
+	<?php if (($facturas_restantes ?? 999999) <= (defined('ALERTA_FACTURAS_RESTANTES') ? ALERTA_FACTURAS_RESTANTES : 0) && ($total_facturas ?? 0) > 0): ?>
 		<div class="alert alert-warning mt-4">
 			⚠️ ¡Atención! Estás por agotar tu rango de facturación.
-		</div>
-	<?php endif; ?>
-
-	<?php if ($alerta_cai_vencido): ?>
-		<div class="alert alert-danger">
-			⏰ Tu CAI está por vencer. Fecha límite: <?= formatFechaLimite($fecha_limite) ?>
 		</div>
 	<?php endif; ?>
 </div>
