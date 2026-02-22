@@ -492,3 +492,50 @@ $stmtPromedioMensual = $pdo->prepare("
 ");
 $stmtPromedioMensual->execute([$cliente_id, $establecimiento_activo, $anio_promedio]);
 $promedio_mensual = $stmtPromedioMensual->fetchAll(PDO::FETCH_ASSOC);
+
+// ── Contratos por vencer (alertas dashboard) ────────────────────────────────
+$stmtContratosAlerta = $pdo->prepare("
+    SELECT c.*,
+           cf.nombre   AS receptor_nombre,
+           cf.telefono AS receptor_tel,
+           p.nombre    AS servicio_nombre,
+           DATEDIFF(c.fecha_fin, CURDATE()) AS dias_restantes,
+           -- Próxima fecha de pago
+           CASE
+               WHEN DAY(CURDATE()) <= c.dia_pago
+                   THEN DATE(CONCAT(YEAR(CURDATE()), '-', LPAD(MONTH(CURDATE()), 2, '0'), '-', LPAD(c.dia_pago, 2, '0')))
+               ELSE
+                   DATE(CONCAT(
+                       YEAR(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), '-',
+                       LPAD(MONTH(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), 2, '0'), '-',
+                       LPAD(c.dia_pago, 2, '0')
+                   ))
+           END AS proxima_fecha_pago,
+           CASE
+               WHEN DAY(CURDATE()) <= c.dia_pago
+                   THEN c.dia_pago - DAY(CURDATE())
+               ELSE
+                   DATEDIFF(
+                       DATE(CONCAT(
+                           YEAR(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), '-',
+                           LPAD(MONTH(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), 2, '0'), '-',
+                           LPAD(c.dia_pago, 2, '0')
+                       )),
+                       CURDATE()
+                   )
+           END AS dias_para_pago
+    FROM contratos c
+    INNER JOIN clientes_factura   cf ON cf.id = c.receptor_id
+    INNER JOIN productos_clientes p  ON p.id  = c.producto_id
+    WHERE c.cliente_id = ?
+      AND c.estado     = 'activo'
+    ORDER BY dias_para_pago ASC
+");
+$stmtContratosAlerta->execute([$cliente_id]);
+$contratos_dashboard = $stmtContratosAlerta->fetchAll(PDO::FETCH_ASSOC);
+
+// Separar: por vencer (contrato termina en ≤3 días) vs próximos pagos
+$contratos_por_vencer  = array_filter($contratos_dashboard, fn($c) =>
+    $c['fecha_fin'] !== null && (int)$c['dias_restantes'] <= 3 && (int)$c['dias_restantes'] >= 0
+);
+$contratos_proximos_pagos = array_slice($contratos_dashboard, 0, 8); // top 8 más cercanos a pagar

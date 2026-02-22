@@ -74,6 +74,72 @@ require_once '../../includes/templates/header.php';
 		</div>
 	</form>
 
+	<?php
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// DASHBOARD — Bloque de Contratos MEJORADO
+	// Agrega este código en includes/dashboard.php (sección de queries, al final)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	// ── Contratos: alertas de vencimiento + próximos pagos ────────────────────────
+	$stmtContratosAlerta = $pdo->prepare("
+    SELECT c.*,
+           cf.nombre   AS receptor_nombre,
+           cf.telefono AS receptor_tel,
+           p.nombre    AS servicio_nombre,
+           DATEDIFF(c.fecha_fin, CURDATE()) AS dias_restantes,
+           -- Próxima fecha de pago
+           CASE
+               WHEN DAY(CURDATE()) <= c.dia_pago
+                   THEN DATE(CONCAT(YEAR(CURDATE()), '-', LPAD(MONTH(CURDATE()), 2, '0'), '-', LPAD(c.dia_pago, 2, '0')))
+               ELSE
+                   DATE(CONCAT(
+                       YEAR(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), '-',
+                       LPAD(MONTH(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), 2, '0'), '-',
+                       LPAD(c.dia_pago, 2, '0')
+                   ))
+           END AS proxima_fecha_pago,
+           CASE
+               WHEN DAY(CURDATE()) <= c.dia_pago
+                   THEN c.dia_pago - DAY(CURDATE())
+               ELSE
+                   DATEDIFF(
+                       DATE(CONCAT(
+                           YEAR(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), '-',
+                           LPAD(MONTH(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), 2, '0'), '-',
+                           LPAD(c.dia_pago, 2, '0')
+                       )),
+                       CURDATE()
+                   )
+           END AS dias_para_pago
+    FROM contratos c
+    INNER JOIN clientes_factura   cf ON cf.id = c.receptor_id
+    INNER JOIN productos_clientes p  ON p.id  = c.producto_id
+    WHERE c.cliente_id = ?
+      AND c.estado     = 'activo'
+    ORDER BY dias_para_pago ASC
+");
+	$stmtContratosAlerta->execute([$cliente_id]);
+	$contratos_dashboard = $stmtContratosAlerta->fetchAll(PDO::FETCH_ASSOC);
+
+	// Separar: por vencer (contrato termina en ≤3 días) vs próximos pagos
+	$contratos_por_vencer  = array_filter(
+		$contratos_dashboard,
+		fn($c) =>
+		$c['fecha_fin'] !== null && (int)$c['dias_restantes'] <= 3 && (int)$c['dias_restantes'] >= 0
+	);
+	$contratos_proximos_pagos = array_slice($contratos_dashboard, 0, 8); // top 8 más cercanos a pagar
+	?>
+
+
+	<?php
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// HTML: Pegar en dashboard.php (vista), antes de <?php if (!empty($alerta_cai_vencido)):
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	?>
+
+
+
+
 	<?php if (!empty($alerta_cai_vencido)): ?>
 		<div class="alert alert-danger">
 			⏰ Tu CAI está por vencer. Fecha límite: <?= formatFechaLimite($fecha_limite) ?>
@@ -183,7 +249,140 @@ require_once '../../includes/templates/header.php';
 				</div>
 			</div>
 		</div>
+		<!-- ═══════════════════════════════════════════════════════════════════════════
+     SECCIÓN CONTRATOS EN DASHBOARD
+════════════════════════════════════════════════════════════════════════════ -->
+		<?php if (!empty($contratos_dashboard)): ?>
+			<div class="mb-4">
 
+				<!-- ── 1. Alertas: contratos por vencer ────────────────────────────────── -->
+				<?php if (!empty($contratos_por_vencer)): ?>
+					<div class="mb-3">
+						<h5 class="text-danger mb-3">
+							<i class="fa-solid fa-triangle-exclamation me-2"></i>
+							Contratos por Vencer
+							<span class="badge bg-danger ms-1"><?= count($contratos_por_vencer) ?></span>
+						</h5>
+						<div class="row g-3">
+							<?php foreach ($contratos_por_vencer as $cv):
+								$dias = (int)$cv['dias_restantes'];
+								$colorBorde = $dias <= 1 ? 'danger' : 'warning';
+								$icono      = $dias <= 1 ? '🔴' : '🟡';
+								$diasTexto  = $dias === 0 ? '¡Vence HOY!' : "Faltan {$dias} día(s)";
+							?>
+								<div class="col-md-6 col-lg-4">
+									<div class="card border-<?= $colorBorde ?> h-100 shadow-sm">
+										<div class="card-header bg-<?= $colorBorde ?> bg-opacity-10 d-flex justify-content-between align-items-center py-2">
+											<span class="fw-bold text-<?= $colorBorde ?> small"><?= $icono ?> <?= $diasTexto ?></span>
+											<span class="badge bg-<?= $colorBorde ?>"><?= htmlspecialchars($cv['fecha_fin']) ?></span>
+										</div>
+										<div class="card-body pb-2">
+											<h6 class="card-title mb-1 fw-bold"><?= htmlspecialchars($cv['receptor_nombre']) ?></h6>
+											<p class="card-text mb-1 text-muted small">
+												<i class="fa-solid fa-box me-1"></i><?= htmlspecialchars($cv['servicio_nombre']) ?>
+											</p>
+											<p class="card-text mb-0">
+												<strong>L <?= number_format((float)$cv['monto'], 2) ?></strong>
+												<span class="text-muted small">/ mes</span>
+											</p>
+										</div>
+										<div class="card-footer bg-transparent border-top-0 d-flex gap-2 pb-3">
+											<a href="contratos" class="btn btn-sm btn-outline-secondary flex-fill">
+												<i class="fa-solid fa-eye me-1"></i> Ver
+											</a>
+											<a href="generar_factura?receptor_id=<?= $cv['receptor_id'] ?>&producto_id=<?= $cv['producto_id'] ?>&monto=<?= $cv['monto'] ?>&contrato_id=<?= $cv['id'] ?>"
+												class="btn btn-sm btn-success flex-fill">
+												<i class="fa-solid fa-file-invoice-dollar me-1"></i> Facturar
+											</a>
+										</div>
+									</div>
+								</div>
+							<?php endforeach; ?>
+						</div>
+					</div>
+				<?php endif; ?>
+
+				<!-- ── 2. Próximas fechas de pago ──────────────────────────────────────── -->
+				<div class="card border-0 shadow-sm">
+					<div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+						<h6 class="mb-0 fw-bold">
+							<i class="fa-solid fa-calendar-check me-2 text-primary"></i>
+							Próximas Fechas de Cobro
+						</h6>
+						<a href="contratos" class="btn btn-sm btn-outline-primary">
+							Ver todos <i class="fa-solid fa-arrow-right ms-1"></i>
+						</a>
+					</div>
+					<div class="card-body p-0">
+						<div class="table-responsive">
+							<table class="table table-hover align-middle mb-0">
+								<thead class="table-light">
+									<tr>
+										<th>Cliente</th>
+										<th class="d-none d-md-table-cell">Servicio</th>
+										<th class="text-end">Monto</th>
+										<th class="text-center">Próximo Cobro</th>
+										<th class="text-center">Días</th>
+										<th class="text-center d-none d-sm-table-cell">Acción</th>
+									</tr>
+								</thead>
+								<tbody>
+									<?php foreach ($contratos_proximos_pagos as $p):
+										$dias = (int)$p['dias_para_pago'];
+										if ($dias === 0) {
+											$badgeClass = 'bg-danger';
+											$iconoPago = '🔴';
+										} elseif ($dias <= 3) {
+											$badgeClass = 'bg-danger';
+											$iconoPago = '🔴';
+										} elseif ($dias <= 7) {
+											$badgeClass = 'bg-warning text-dark';
+											$iconoPago = '🟡';
+										} elseif ($dias <= 15) {
+											$badgeClass = 'bg-info';
+											$iconoPago = '🔵';
+										} else {
+											$badgeClass = 'bg-secondary';
+											$iconoPago = '⚪';
+										}
+									?>
+										<tr>
+											<td>
+												<div class="fw-semibold"><?= htmlspecialchars($p['receptor_nombre']) ?></div>
+												<?php if ($p['receptor_tel']): ?>
+													<small class="text-muted"><?= htmlspecialchars($p['receptor_tel']) ?></small>
+												<?php endif; ?>
+											</td>
+											<td class="text-muted small d-none d-md-table-cell">
+												<?= htmlspecialchars($p['servicio_nombre']) ?>
+											</td>
+											<td class="text-end fw-bold">L <?= number_format((float)$p['monto'], 2) ?></td>
+											<td class="text-center">
+												<div class="fw-semibold small"><?= htmlspecialchars($p['proxima_fecha_pago']) ?></div>
+												<small class="text-muted">Día <?= (int)$p['dia_pago'] ?></small>
+											</td>
+											<td class="text-center">
+												<span class="badge <?= $badgeClass ?>">
+													<?= $iconoPago ?> <?= $dias === 0 ? '¡Hoy!' : "{$dias}d" ?>
+												</span>
+											</td>
+											<td class="text-center d-none d-sm-table-cell">
+												<a href="generar_factura?receptor_id=<?= $p['receptor_id'] ?>&producto_id=<?= $p['producto_id'] ?>&monto=<?= $p['monto'] ?>&contrato_id=<?= $p['id'] ?>"
+													class="btn btn-sm btn-success" title="Crear Factura">
+													<i class="fa-solid fa-file-invoice-dollar"></i>
+												</a>
+											</td>
+										</tr>
+									<?php endforeach; ?>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+
+			</div>
+		<?php endif; ?>
+		<!-- ═══════════════════════════════════════════════ FIN SECCIÓN CONTRATOS === -->
 		<?php if (!empty($cais_activos)): ?>
 			<div class="card mt-3">
 				<div class="card-header">CAI activos</div>
@@ -550,86 +749,94 @@ require_once '../../includes/templates/header.php';
 
 
 			(() => {
-  // --- RECEPTOR: botón Detalles (+ / -) ---
-  document.querySelectorAll('.toggle-receptor').forEach((btn) => {
-    const targetSel = btn.getAttribute('data-bs-target');
-    const target = document.querySelector(targetSel);
-    if (!target) return;
+				// --- RECEPTOR: botón Detalles (+ / -) ---
+				document.querySelectorAll('.toggle-receptor').forEach((btn) => {
+					const targetSel = btn.getAttribute('data-bs-target');
+					const target = document.querySelector(targetSel);
+					if (!target) return;
 
-    const icon = btn.querySelector('i');
-    const setIcon = (open) => {
-      if (!icon) return;
-      icon.classList.toggle('bi-plus-lg', !open);
-      icon.classList.toggle('bi-dash-lg', open);
-    };
+					const icon = btn.querySelector('i');
+					const setIcon = (open) => {
+						if (!icon) return;
+						icon.classList.toggle('bi-plus-lg', !open);
+						icon.classList.toggle('bi-dash-lg', open);
+					};
 
-    // click manual (para que el "-" SI cierre)
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+					// click manual (para que el "-" SI cierre)
+					btn.addEventListener('click', (e) => {
+						e.preventDefault();
+						e.stopPropagation();
 
-      const inst = bootstrap.Collapse.getOrCreateInstance(target, { toggle: false });
-      const isOpen = target.classList.contains('show');
+						const inst = bootstrap.Collapse.getOrCreateInstance(target, {
+							toggle: false
+						});
+						const isOpen = target.classList.contains('show');
 
-      if (isOpen) {
-        inst.hide();
-      } else {
-        // cerrar otros receptores abiertos
-        document.querySelectorAll('.detalle-receptor.show').forEach((openEl) => {
-          if (openEl !== target) {
-            bootstrap.Collapse.getOrCreateInstance(openEl, { toggle: false }).hide();
-          }
-        });
-        inst.show();
-      }
-    });
+						if (isOpen) {
+							inst.hide();
+						} else {
+							// cerrar otros receptores abiertos
+							document.querySelectorAll('.detalle-receptor.show').forEach((openEl) => {
+								if (openEl !== target) {
+									bootstrap.Collapse.getOrCreateInstance(openEl, {
+										toggle: false
+									}).hide();
+								}
+							});
+							inst.show();
+						}
+					});
 
-    target.addEventListener('shown.bs.collapse', () => setIcon(true));
+					target.addEventListener('shown.bs.collapse', () => setIcon(true));
 
-    target.addEventListener('hidden.bs.collapse', () => {
-      // cerrar cualquier factura abierta dentro de este receptor
-      target.querySelectorAll('.accordion-collapse.show').forEach((c) => {
-        bootstrap.Collapse.getOrCreateInstance(c, { toggle: false }).hide();
-      });
+					target.addEventListener('hidden.bs.collapse', () => {
+						// cerrar cualquier factura abierta dentro de este receptor
+						target.querySelectorAll('.accordion-collapse.show').forEach((c) => {
+							bootstrap.Collapse.getOrCreateInstance(c, {
+								toggle: false
+							}).hide();
+						});
 
-      // reset iconos de facturas dentro
-      target.querySelectorAll('.toggle-factura .icon-plusminus').forEach((ic) => {
-        ic.classList.remove('bi-dash-lg');
-        ic.classList.add('bi-plus-lg');
-      });
+						// reset iconos de facturas dentro
+						target.querySelectorAll('.toggle-factura .icon-plusminus').forEach((ic) => {
+							ic.classList.remove('bi-dash-lg');
+							ic.classList.add('bi-plus-lg');
+						});
 
-      setIcon(false);
-    });
-  });
+						setIcon(false);
+					});
+				});
 
-  // --- FACTURAS: acordeón dentro del receptor (+ / -) ---
-  document.querySelectorAll('.toggle-factura').forEach((btn) => {
-    const targetSel = btn.getAttribute('data-bs-target');
-    const target = document.querySelector(targetSel);
-    if (!target) return;
+				// --- FACTURAS: acordeón dentro del receptor (+ / -) ---
+				document.querySelectorAll('.toggle-factura').forEach((btn) => {
+					const targetSel = btn.getAttribute('data-bs-target');
+					const target = document.querySelector(targetSel);
+					if (!target) return;
 
-    const icon = btn.querySelector('.icon-plusminus');
-    const setIcon = (open) => {
-      if (!icon) return;
-      icon.classList.toggle('bi-plus-lg', !open);
-      icon.classList.toggle('bi-dash-lg', open);
-    };
+					const icon = btn.querySelector('.icon-plusminus');
+					const setIcon = (open) => {
+						if (!icon) return;
+						icon.classList.toggle('bi-plus-lg', !open);
+						icon.classList.toggle('bi-dash-lg', open);
+					};
 
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+					btn.addEventListener('click', (e) => {
+						e.preventDefault();
+						e.stopPropagation();
 
-      const inst = bootstrap.Collapse.getOrCreateInstance(target, { toggle: false });
-      const isOpen = target.classList.contains('show');
+						const inst = bootstrap.Collapse.getOrCreateInstance(target, {
+							toggle: false
+						});
+						const isOpen = target.classList.contains('show');
 
-      if (isOpen) inst.hide();
-      else inst.show();
-    });
+						if (isOpen) inst.hide();
+						else inst.show();
+					});
 
-    target.addEventListener('shown.bs.collapse', () => setIcon(true));
-    target.addEventListener('hidden.bs.collapse', () => setIcon(false));
-  });
-})();
+					target.addEventListener('shown.bs.collapse', () => setIcon(true));
+					target.addEventListener('hidden.bs.collapse', () => setIcon(false));
+				});
+			})();
 		</script>
 
 
