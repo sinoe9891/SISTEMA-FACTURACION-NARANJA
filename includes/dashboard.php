@@ -495,47 +495,78 @@ $promedio_mensual = $stmtPromedioMensual->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Contratos por vencer (alertas dashboard) ────────────────────────────────
 $stmtContratosAlerta = $pdo->prepare("
-    SELECT c.*,
-           cf.nombre   AS receptor_nombre,
-           cf.telefono AS receptor_tel,
-           p.nombre    AS servicio_nombre,
-           DATEDIFF(c.fecha_fin, CURDATE()) AS dias_restantes,
-           -- Próxima fecha de pago
-           CASE
-               WHEN DAY(CURDATE()) <= c.dia_pago
-                   THEN DATE(CONCAT(YEAR(CURDATE()), '-', LPAD(MONTH(CURDATE()), 2, '0'), '-', LPAD(c.dia_pago, 2, '0')))
-               ELSE
-                   DATE(CONCAT(
-                       YEAR(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), '-',
-                       LPAD(MONTH(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), 2, '0'), '-',
-                       LPAD(c.dia_pago, 2, '0')
-                   ))
-           END AS proxima_fecha_pago,
-           CASE
-               WHEN DAY(CURDATE()) <= c.dia_pago
-                   THEN c.dia_pago - DAY(CURDATE())
-               ELSE
-                   DATEDIFF(
-                       DATE(CONCAT(
-                           YEAR(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), '-',
-                           LPAD(MONTH(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), 2, '0'), '-',
-                           LPAD(c.dia_pago, 2, '0')
-                       )),
-                       CURDATE()
-                   )
-           END AS dias_para_pago
-    FROM contratos c
-    INNER JOIN clientes_factura   cf ON cf.id = c.receptor_id
-    INNER JOIN productos_clientes p  ON p.id  = c.producto_id
-    WHERE c.cliente_id = ?
-      AND c.estado     = 'activo'
-    ORDER BY dias_para_pago ASC
+    SELECT x.*,
+           fp.id          AS factura_pendiente_id,
+           fp.correlativo AS factura_correlativo
+    FROM (
+        SELECT
+            c.id, c.cliente_id, c.receptor_id, c.producto_id, c.nombre_contrato, c.monto,
+            c.fecha_inicio, c.fecha_fin, c.dia_pago, c.estado,
+            cf.nombre   AS receptor_nombre,
+            cf.telefono AS receptor_tel,
+            p.nombre    AS servicio_nombre,
+            DATEDIFF(c.fecha_fin, CURDATE()) AS dias_restantes,
+            CASE
+                WHEN DAY(CURDATE()) <= LEAST(c.dia_pago, DAY(LAST_DAY(CURDATE())))
+                    THEN STR_TO_DATE(CONCAT(DATE_FORMAT(CURDATE(), '%Y-%m-'), LPAD(LEAST(c.dia_pago, DAY(LAST_DAY(CURDATE()))), 2, '0')), '%Y-%m-%d')
+                ELSE STR_TO_DATE(CONCAT(DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-'), LPAD(LEAST(c.dia_pago, DAY(LAST_DAY(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)))), 2, '0')), '%Y-%m-%d')
+            END AS proxima_fecha_pago,
+            CASE
+                WHEN DAY(CURDATE()) <= LEAST(c.dia_pago, DAY(LAST_DAY(CURDATE())))
+                    THEN LEAST(c.dia_pago, DAY(LAST_DAY(CURDATE()))) - DAY(CURDATE())
+                ELSE DATEDIFF(
+                    STR_TO_DATE(CONCAT(DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-'), LPAD(LEAST(c.dia_pago, DAY(LAST_DAY(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)))), 2, '0')), '%Y-%m-%d'),
+                    CURDATE()
+                )
+            END AS dias_para_pago
+        FROM contratos c
+        INNER JOIN clientes_factura   cf ON cf.id = c.receptor_id AND cf.cliente_id = c.cliente_id
+        INNER JOIN productos_clientes p  ON p.id  = c.producto_id  AND p.cliente_id  = c.cliente_id
+        WHERE c.cliente_id = ?
+          AND c.estado     = 'activo'
+          AND c.fecha_inicio <= CURDATE()
+    ) x
+    -- Factura pagada este mes → excluir contrato
+   LEFT JOIN facturas fpagada
+      ON fpagada.cliente_id  = x.cliente_id
+     AND fpagada.estado <> 'anulada'
+     AND fpagada.pagada = 1
+     AND YEAR(fpagada.fecha_emision)  = YEAR(x.proxima_fecha_pago)
+     AND MONTH(fpagada.fecha_emision) = MONTH(x.proxima_fecha_pago)
+     AND (
+         fpagada.contrato_id = x.id                          -- vinculada directamente
+         OR (fpagada.contrato_id IS NULL AND fpagada.receptor_id = x.receptor_id)  -- fallback por receptor
+     )
+    -- Factura pendiente/emitida este mes → mostrar botón 'Ver'
+    LEFT JOIN facturas fp
+  ON fp.cliente_id  = x.cliente_id
+ AND fp.estado <> 'anulada'
+ AND (fp.pagada = 0 OR fp.pagada IS NULL)
+ AND YEAR(fp.fecha_emision)  = YEAR(x.proxima_fecha_pago)
+ AND MONTH(fp.fecha_emision) = MONTH(x.proxima_fecha_pago)
+ AND (
+     fp.contrato_id = x.id
+     OR (
+         fp.contrato_id IS NULL
+         AND fp.receptor_id = x.receptor_id
+         AND NOT EXISTS (
+             SELECT 1 FROM facturas f_check
+             WHERE f_check.contrato_id = x.id
+               AND f_check.estado <> 'anulada'
+               AND (f_check.pagada = 0 OR f_check.pagada IS NULL)
+               AND YEAR(f_check.fecha_emision) = YEAR(x.proxima_fecha_pago)
+               AND MONTH(f_check.fecha_emision) = MONTH(x.proxima_fecha_pago)
+         )
+     )
+ )
+    WHERE fpagada.id IS NULL
+    ORDER BY x.dias_para_pago ASC
 ");
 $stmtContratosAlerta->execute([$cliente_id]);
 $contratos_dashboard = $stmtContratosAlerta->fetchAll(PDO::FETCH_ASSOC);
 
 // Separar: por vencer (contrato termina en ≤3 días) vs próximos pagos
-$contratos_por_vencer  = array_filter($contratos_dashboard, fn($c) =>
+$contratos_por_vencer = array_filter($contratos_dashboard, fn($c) =>
     $c['fecha_fin'] !== null && (int)$c['dias_restantes'] <= 3 && (int)$c['dias_restantes'] >= 0
 );
-$contratos_proximos_pagos = array_slice($contratos_dashboard, 0, 8); // top 8 más cercanos a pagar
+$contratos_proximos_pagos = array_slice($contratos_dashboard, 0, 8);

@@ -580,6 +580,34 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 								<i class="fa-solid fa-plus"></i> Nuevo Contrato
 							</a>
 						</li>
+						<li>
+							<hr class="dropdown-divider">
+						</li>
+						<li><span class="dropdown-section-label">Finanzas</span></li>
+						<li>
+							<a class="dropdown-item" href="gastos">
+								<i class="fa-solid fa-wallet"></i> Gastos
+							</a>
+						</li>
+						<li>
+							<a class="dropdown-item" href="categorias_gastos">
+								<i class="fa-solid fa-tags"></i> Categorías de Gastos
+							</a>
+						</li>
+						<li>
+							<a class="dropdown-item" href="financiero">
+								<i class="fa-solid fa-chart-line"></i> Estado de Resultados
+							</a>
+						</li>
+						<li>
+							<hr class="dropdown-divider">
+						</li>
+						<li><span class="dropdown-section-label">Personal</span></li>
+						<li>
+							<a class="dropdown-item" href="colaboradores">
+								<i class="fa-solid fa-users"></i> Colaboradores
+							</a>
+						</li>
 					</ul>
 				</li>
 				<!-- Gestión -->

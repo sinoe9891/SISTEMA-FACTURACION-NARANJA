@@ -74,72 +74,6 @@ require_once '../../includes/templates/header.php';
 		</div>
 	</form>
 
-	<?php
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// DASHBOARD — Bloque de Contratos MEJORADO
-	// Agrega este código en includes/dashboard.php (sección de queries, al final)
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-	// ── Contratos: alertas de vencimiento + próximos pagos ────────────────────────
-	$stmtContratosAlerta = $pdo->prepare("
-    SELECT c.*,
-           cf.nombre   AS receptor_nombre,
-           cf.telefono AS receptor_tel,
-           p.nombre    AS servicio_nombre,
-           DATEDIFF(c.fecha_fin, CURDATE()) AS dias_restantes,
-           -- Próxima fecha de pago
-           CASE
-               WHEN DAY(CURDATE()) <= c.dia_pago
-                   THEN DATE(CONCAT(YEAR(CURDATE()), '-', LPAD(MONTH(CURDATE()), 2, '0'), '-', LPAD(c.dia_pago, 2, '0')))
-               ELSE
-                   DATE(CONCAT(
-                       YEAR(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), '-',
-                       LPAD(MONTH(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), 2, '0'), '-',
-                       LPAD(c.dia_pago, 2, '0')
-                   ))
-           END AS proxima_fecha_pago,
-           CASE
-               WHEN DAY(CURDATE()) <= c.dia_pago
-                   THEN c.dia_pago - DAY(CURDATE())
-               ELSE
-                   DATEDIFF(
-                       DATE(CONCAT(
-                           YEAR(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), '-',
-                           LPAD(MONTH(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)), 2, '0'), '-',
-                           LPAD(c.dia_pago, 2, '0')
-                       )),
-                       CURDATE()
-                   )
-           END AS dias_para_pago
-    FROM contratos c
-    INNER JOIN clientes_factura   cf ON cf.id = c.receptor_id
-    INNER JOIN productos_clientes p  ON p.id  = c.producto_id
-    WHERE c.cliente_id = ?
-      AND c.estado     = 'activo'
-    ORDER BY dias_para_pago ASC
-");
-	$stmtContratosAlerta->execute([$cliente_id]);
-	$contratos_dashboard = $stmtContratosAlerta->fetchAll(PDO::FETCH_ASSOC);
-
-	// Separar: por vencer (contrato termina en ≤3 días) vs próximos pagos
-	$contratos_por_vencer  = array_filter(
-		$contratos_dashboard,
-		fn($c) =>
-		$c['fecha_fin'] !== null && (int)$c['dias_restantes'] <= 3 && (int)$c['dias_restantes'] >= 0
-	);
-	$contratos_proximos_pagos = array_slice($contratos_dashboard, 0, 8); // top 8 más cercanos a pagar
-	?>
-
-
-	<?php
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// HTML: Pegar en dashboard.php (vista), antes de <?php if (!empty($alerta_cai_vencido)):
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	?>
-
-
-
-
 	<?php if (!empty($alerta_cai_vencido)): ?>
 		<div class="alert alert-danger">
 			⏰ Tu CAI está por vencer. Fecha límite: <?= formatFechaLimite($fecha_limite) ?>
@@ -290,10 +224,19 @@ require_once '../../includes/templates/header.php';
 											<a href="contratos" class="btn btn-sm btn-outline-secondary flex-fill">
 												<i class="fa-solid fa-eye me-1"></i> Ver
 											</a>
-											<a href="generar_factura?receptor_id=<?= $cv['receptor_id'] ?>&producto_id=<?= $cv['producto_id'] ?>&monto=<?= $cv['monto'] ?>&contrato_id=<?= $cv['id'] ?>"
-												class="btn btn-sm btn-success flex-fill">
-												<i class="fa-solid fa-file-invoice-dollar me-1"></i> Facturar
-											</a>
+											<?php if (!empty($cv['factura_pendiente_id'])): ?>
+												<a href="ver_factura?id=<?= $cv['factura_pendiente_id'] ?>"
+													class="btn btn-sm btn-outline-info flex-fill"
+													title="Factura #<?= htmlspecialchars($cv['factura_correlativo']) ?> — pendiente de cobro"
+													target="_blank">
+													<i class="fa-solid fa-file-invoice me-1"></i> Ver Factura
+												</a>
+											<?php else: ?>
+												<a href="generar_factura?receptor_id=<?= $cv['receptor_id'] ?>&producto_id=<?= $cv['producto_id'] ?>&monto=<?= $cv['monto'] ?>&contrato_id=<?= $cv['id'] ?>"
+													class="btn btn-sm btn-success flex-fill">
+													<i class="fa-solid fa-file-invoice-dollar me-1"></i> Facturar
+												</a>
+											<?php endif; ?>
 										</div>
 									</div>
 								</div>
@@ -367,10 +310,21 @@ require_once '../../includes/templates/header.php';
 												</span>
 											</td>
 											<td class="text-center d-none d-sm-table-cell">
-												<a href="generar_factura?receptor_id=<?= $p['receptor_id'] ?>&producto_id=<?= $p['producto_id'] ?>&monto=<?= $p['monto'] ?>&contrato_id=<?= $p['id'] ?>"
-													class="btn btn-sm btn-success" title="Crear Factura">
-													<i class="fa-solid fa-file-invoice-dollar"></i>
-												</a>
+												<?php if (!empty($p['factura_pendiente_id'])): ?>
+													<a href="ver_factura?id=<?= $p['factura_pendiente_id'] ?>"
+														class="btn btn-sm btn-outline-info"
+														title="Factura #<?= htmlspecialchars($p['factura_correlativo']) ?> — pendiente de cobro"
+														target="_blank">
+														<i class="fa-solid fa-file-invoice me-1"></i>
+														<span class="d-none d-md-inline">Ver Factura</span>
+													</a>
+												<?php else: ?>
+													<a href="generar_factura?receptor_id=<?= $p['receptor_id'] ?>&producto_id=<?= $p['producto_id'] ?>&monto=<?= $p['monto'] ?>&contrato_id=<?= $p['id'] ?>"
+														class="btn btn-sm btn-success"
+														title="Crear Factura">
+														<i class="fa-solid fa-file-invoice-dollar"></i>
+													</a>
+												<?php endif; ?>
 											</td>
 										</tr>
 									<?php endforeach; ?>
@@ -497,7 +451,9 @@ require_once '../../includes/templates/header.php';
 
 											<?php if (!empty($listaFacturas)): ?>
 												<div class="accordion accordion-flush" id="acc-facturas-<?= $rid ?>">
-													<?php foreach ($listaFacturas as $fx): ?>
+
+													<?php $esAdmin = in_array(($datos['rol'] ?? ''), ['admin', 'superadmin'], true);
+													foreach ($listaFacturas as $fx): ?>
 														<?php
 														$fid = (int)$fx['id'];
 														$isvFactura = (float)($fx['isv_15'] ?? 0) + (float)($fx['isv_18'] ?? 0);
@@ -546,6 +502,14 @@ require_once '../../includes/templates/header.php';
 																				rel="noopener noreferrer">
 																				<i class="bi bi-receipt me-1"></i> Ver factura
 																			</a>
+																			<?php if ($esAdmin): ?>
+																				<a class="btn btn-sm btn-outline-info"
+																					href="editar_factura?id=<?= $fid ?>"
+																					target="_blank"
+																					rel="noopener noreferrer">
+																					<i class="bi bi-pencil-square me-1"></i> Editar
+																				</a>
+																			<?php endif; ?>
 																		</div>
 																	</div>
 
