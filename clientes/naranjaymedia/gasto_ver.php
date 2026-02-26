@@ -262,6 +262,19 @@ $archivoNombre = $g['archivo_nombre'] ?? basename($archivoRaw);
                     <i class="fa-solid fa-download me-1"></i> Descargar
                 </a>
             <?php endif; ?>
+            <?php if ($g['estado'] !== 'anulado'): ?>
+                <button class="btn btn-sm btn-outline-secondary" id="btnEditarGasto">
+                    <i class="fa-solid fa-pen-to-square me-1"></i> Editar
+                </button>
+                <button class="btn btn-sm btn-outline-warning" id="btnAnularGasto">
+                    <i class="fa-solid fa-ban me-1"></i> Anular
+                </button>
+            <?php endif; ?>
+            <?php if (in_array(USUARIO_ROL ?? '', ['admin', 'superadmin'])): ?>
+                <button class="btn btn-sm btn-outline-danger" id="btnEliminarGasto">
+                    <i class="fa-solid fa-trash me-1"></i> Eliminar
+                </button>
+            <?php endif; ?>
             <button onclick="window.print()" class="btn btn-sm btn-danger">
                 <i class="fa-solid fa-print me-1"></i> Imprimir
             </button>
@@ -441,6 +454,220 @@ $archivoNombre = $g['archivo_nombre'] ?? basename($archivoRaw);
             </div>
         </div>
     </div>
+    <!-- MODAL: Editar Gasto desde ver -->
+    <div class="modal fade" id="modalEditarGasto" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header border-bottom py-3">
+                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-pen-to-square me-2 text-primary"></i>Editar Gasto</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <form id="formEditarGasto" enctype="multipart/form-data">
+                        <input type="hidden" name="gasto_id" value="<?= $g['id'] ?>">
+                        <input type="hidden" name="gasto_grupo_id" value="<?= $g['gasto_grupo_id'] ?? '' ?>">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Descripción <span class="text-danger">*</span></label>
+                                <input type="text" name="descripcion" class="form-control" value="<?= htmlspecialchars($g['descripcion']) ?>" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Monto (L) <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <span class="input-group-text">L</span>
+                                    <input type="number" name="monto" class="form-control" step="0.01" value="<?= number_format((float)$g['monto'], 2, '.', '') ?>" required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Fecha <span class="text-danger">*</span></label>
+                                <input type="date" name="fecha" class="form-control" value="<?= $g['fecha'] ?>" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Estado</label>
+                                <select name="estado" class="form-select">
+                                    <option value="pendiente" <?= $g['estado'] === 'pendiente' ? 'selected' : '' ?>>⏳ Pendiente</option>
+                                    <option value="pagado" <?= $g['estado'] === 'pagado'    ? 'selected' : '' ?>>✅ Pagado</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Tipo</label>
+                                <select name="tipo" class="form-select">
+                                    <option value="fijo" <?= $g['tipo'] === 'fijo'          ? 'selected' : '' ?>>🔒 Fijo</option>
+                                    <option value="variable" <?= $g['tipo'] === 'variable'      ? 'selected' : '' ?>>Variable</option>
+                                    <option value="extraordinario" <?= $g['tipo'] === 'extraordinario' ? 'selected' : '' ?>>⭐ Extraordinario</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Método Pago</label>
+                                <select name="metodo_pago" class="form-select">
+                                    <option value="efectivo" <?= $g['metodo_pago'] === 'efectivo'      ? 'selected' : '' ?>>💵 Efectivo</option>
+                                    <option value="transferencia" <?= $g['metodo_pago'] === 'transferencia' ? 'selected' : '' ?>>🏦 Transferencia</option>
+                                    <option value="tarjeta" <?= $g['metodo_pago'] === 'tarjeta'       ? 'selected' : '' ?>>💳 Tarjeta</option>
+                                    <option value="cheque" <?= $g['metodo_pago'] === 'cheque'        ? 'selected' : '' ?>>📝 Cheque</option>
+                                    <option value="otro" <?= $g['metodo_pago'] === 'otro'          ? 'selected' : '' ?>>🔷 Otro</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Frecuencia</label>
+                                <select name="frecuencia" id="editFrecuencia" class="form-select">
+                                    <option value="unico" <?= $g['frecuencia'] === 'unico'     ? 'selected' : '' ?>>1️⃣ Único</option>
+                                    <option value="mensual" <?= $g['frecuencia'] === 'mensual'   ? 'selected' : '' ?>>📅 Mensual</option>
+                                    <option value="quincenal" <?= $g['frecuencia'] === 'quincenal' ? 'selected' : '' ?>>🔄 Quincenal</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Proveedor</label>
+                                <input type="text" name="proveedor" class="form-control" value="<?= htmlspecialchars($g['proveedor'] ?? '') ?>">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">N° Factura</label>
+                                <input type="text" name="factura_ref" class="form-control" value="<?= htmlspecialchars($g['factura_ref'] ?? '') ?>">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Fecha Vencimiento</label>
+                                <input type="date" name="fecha_vencimiento" class="form-control" value="<?= $g['fecha_vencimiento'] ?? '' ?>">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Notas</label>
+                                <textarea name="notas" class="form-control" rows="2"><?= htmlspecialchars($g['notas'] ?? '') ?></textarea>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">
+                                    <i class="fa-solid fa-paperclip me-1 text-secondary"></i>
+                                    Nuevo Comprobante <small class="text-muted fw-normal">(opcional · reemplaza el actual)</small>
+                                </label>
+                                <input type="file" name="archivo_adjunto" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf">
+                            </div>
+                            <?php if ($g['gasto_grupo_id']): ?>
+                                <div class="col-12">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="actualizar_grupo" id="chkGrupo" value="1">
+                                        <label class="form-check-label small text-muted" for="chkGrupo">
+                                            <i class="fa-solid fa-link me-1"></i> Actualizar también la otra quincena del grupo
+                                        </label>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer border-top">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary px-4" id="btnGuardarEdicionGasto">
+                        <i class="fa-solid fa-floppy-disk me-1"></i> Guardar Cambios
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $(function() {
+
+            $('#btnEditarGasto').on('click', function() {
+                $('#modalEditarGasto').modal('show');
+            });
+
+            $('#btnGuardarEdicionGasto').on('click', function() {
+                var btn = $(this);
+                btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i> Guardando...');
+                var fd = new FormData(document.getElementById('formEditarGasto'));
+                $.ajax({
+                    url: 'includes/gasto_actualizar.php',
+                    type: 'POST',
+                    data: fd,
+                    processData: false,
+                    contentType: false,
+                    dataType: 'json'
+                }).done(function(d) {
+                    if (d.success) {
+                        Swal.fire({
+                                icon: 'success',
+                                title: '¡Guardado!',
+                                text: d.message,
+                                timer: 1800,
+                                showConfirmButton: false
+                            })
+                            .then(function() {
+                                location.reload();
+                            });
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: d.error
+                        });
+                        btn.prop('disabled', false).html('<i class="fa-solid fa-floppy-disk me-1"></i> Guardar Cambios');
+                    }
+                }).fail(function() {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error de conexión'
+                    });
+                    btn.prop('disabled', false).html('<i class="fa-solid fa-floppy-disk me-1"></i> Guardar Cambios');
+                });
+            });
+
+            $('#btnAnularGasto').on('click', function() {
+                Swal.fire({
+                    icon: 'warning',
+                    title: '¿Anular este gasto?',
+                    html: '<strong><?= htmlspecialchars(addslashes($g['descripcion'])) ?></strong><br><small class="text-muted">No contará en totales pero quedará en historial.</small>',
+                    showCancelButton: true,
+                    confirmButtonColor: '#ffc107',
+                    confirmButtonText: 'Sí, anular',
+                    cancelButtonText: 'Cancelar'
+                }).then(function(r) {
+                    if (!r.isConfirmed) return;
+                    $.post('includes/gasto_eliminar.php', {
+                        id: <?= $g['id'] ?>,
+                        accion: 'anular'
+                    }, function(d) {
+                        if (d.success) Swal.fire({
+                                icon: 'success',
+                                title: 'Anulado',
+                                timer: 1400,
+                                showConfirmButton: false
+                            })
+                            .then(function() {
+                                window.location.href = 'gastos';
+                            });
+                        else Swal.fire('Error', d.error, 'error');
+                    }, 'json');
+                });
+            });
+
+            $('#btnEliminarGasto').on('click', function() {
+                Swal.fire({
+                    icon: 'error',
+                    title: '¿Eliminar definitivamente?',
+                    html: '<strong><?= htmlspecialchars(addslashes($g['descripcion'])) ?></strong><br><span class="text-danger small">Esta acción no se puede deshacer.</span>',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc3545',
+                    confirmButtonText: 'Sí, eliminar',
+                    cancelButtonText: 'Cancelar'
+                }).then(function(r) {
+                    if (!r.isConfirmed) return;
+                    $.post('includes/gasto_eliminar.php', {
+                        id: <?= $g['id'] ?>,
+                        accion: 'eliminar'
+                    }, function(d) {
+                        if (d.success) Swal.fire({
+                                icon: 'success',
+                                title: 'Eliminado',
+                                timer: 1400,
+                                showConfirmButton: false
+                            })
+                            .then(function() {
+                                window.location.href = 'gastos';
+                            });
+                        else Swal.fire('Error', d.error, 'error');
+                    }, 'json');
+                });
+            });
+
+        });
+    </script>
 </body>
 
 </html>

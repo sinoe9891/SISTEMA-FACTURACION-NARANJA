@@ -77,7 +77,11 @@ $sqlPagos = "
     WHERE g.cliente_id = ?
       AND (g.descripcion LIKE ? OR g.descripcion LIKE ?)
 ";
-$paramsPagos = [$cliente_id, 'Sueldo ' . $nombreCompleto . '%', 'Prestamo%' . $nombreCompleto . '%'];
+$paramsPagos = [
+    $cliente_id,
+    'Sueldo ' . $nombreCompleto . '%',
+    'Bono:%' . $nombreCompleto . '%',  // ← ahora también captura bonos
+];
 if (!$filtro_todo) {
     $sqlPagos .= " AND YEAR(g.fecha) = ? AND MONTH(g.fecha) = ?";
     $paramsPagos[] = $filtro_anio;
@@ -131,7 +135,75 @@ if (!empty($prestamo_ids)) {
     }
 }
 $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => $p['estado'] === 'activo'), 'saldo_pendiente'));
+
+// ── Cuotas con descuento automático pendientes ────────────────────────────────
+$stmtCuotasAuto = $pdo->prepare("
+    SELECT c.id AS cuota_id, c.monto AS cuota_monto, c.numero_cuota,
+           c.fecha_esperada,
+           p.id AS prestamo_id, p.descripcion AS prest_desc, p.tipo
+    FROM colaborador_prestamo_cuotas c
+    JOIN colaborador_prestamos p ON p.id = c.prestamo_id
+    WHERE p.colaborador_id = ? AND p.cliente_id = ?
+      AND p.estado = 'activo' AND p.descuento_auto = 1
+      AND c.estado = 'pendiente'
+      AND c.id = (
+          SELECT c2.id
+          FROM colaborador_prestamo_cuotas c2
+          WHERE c2.prestamo_id = p.id AND c2.estado = 'pendiente'
+          ORDER BY c2.numero_cuota ASC
+          LIMIT 1
+      )
+    ORDER BY p.id ASC
+");
+$stmtCuotasAuto->execute([$id, $cliente_id]);
+$cuotas_auto_pendientes = $stmtCuotasAuto->fetchAll(PDO::FETCH_ASSOC);
+
+$neto_quincena          = round($neto_mes / $div, 2);
+$total_descuento_auto   = 0;
+$cuotas_aplicables      = []; // solo las que caben en el neto
+
+foreach ($cuotas_auto_pendientes as $ca) {
+    $cuota_monto = (float)$ca['cuota_monto'];
+    if (($total_descuento_auto + $cuota_monto) <= $neto_quincena) {
+        $total_descuento_auto += $cuota_monto;
+        $cuotas_aplicables[]   = $ca;
+    } else {
+        // Cuota parcial si lo que queda alcanza algo
+        $restante = $neto_quincena - $total_descuento_auto;
+        if ($restante > 0) {
+            $ca_parcial = $ca;
+            $ca_parcial['cuota_monto']   = $restante;
+            $ca_parcial['parcial']       = true;
+            $ca_parcial['monto_original'] = $cuota_monto;
+            $cuotas_aplicables[]         = $ca_parcial;
+            $total_descuento_auto       += $restante;
+        }
+        break; // no hay más margen
+    }
+}
+$neto_a_pagar_real = max(0, round($neto_quincena - $total_descuento_auto, 2));
+
+// ── Detección quincenas ya pagadas en el mes actual ───────────────────────────
+$q1_pagada = false;
+$q2_pagada = false;
+if ($tipo_pago === 'quincenal') {
+    $stmtQP = $pdo->prepare("
+        SELECT quincena_num FROM gastos
+        WHERE cliente_id = ? AND descripcion LIKE ?
+          AND YEAR(fecha) = YEAR(CURDATE()) AND MONTH(fecha) = MONTH(CURDATE())
+          AND estado != 'anulado' AND quincena_num IN (1, 2)
+    ");
+    $stmtQP->execute([$cliente_id, 'Sueldo ' . $nombreCompleto . '%']);
+    foreach ($stmtQP->fetchAll(PDO::FETCH_COLUMN) as $qn) {
+        if ((int)$qn === 1) $q1_pagada = true;
+        if ((int)$qn === 2) $q2_pagada = true;
+    }
+}
+
+// Quincena sugerida (la que no está pagada)
+$quincena_sugerida = (!$q1_pagada) ? 1 : ((!$q2_pagada) ? 2 : 1);
 ?>
+
 <style>
     .avatar-xl {
         width: 80px;
@@ -623,10 +695,16 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
                                             </td>
                                             <td class="text-center no-print">
                                                 <?php if (!empty($p['archivo_adjunto'])): ?>
-                                                    <a href="gasto_ver.php?id=<?= $p['id'] ?>" target="_blank" class="btn btn-sm btn-outline-secondary" title="Ver comprobante"><i class="fa-solid fa-paperclip"></i></a>
-                                                <?php else: ?>
-                                                    <a href="gasto_ver.php?id=<?= $p['id'] ?>" target="_blank" class="btn btn-sm btn-outline-light border text-muted" title="Ver detalle"><i class="fa-solid fa-eye fa-xs"></i></a>
+                                                    <a href="gasto_ver.php?id=<?= $p['id'] ?>" target="_blank"
+                                                        class="btn btn-sm btn-outline-secondary" title="Ver comprobante">
+                                                        <i class="fa-solid fa-paperclip"></i>
+                                                    </a>
                                                 <?php endif; ?>
+                                                <a href="colaborador_recibo_pdf.php?gasto_id=<?= $p['id'] ?>&vista=1"
+                                                    target="_blank"
+                                                    class="btn btn-sm btn-outline-danger" title="Imprimir recibo PDF">
+                                                    <i class="fa-solid fa-file-pdf"></i>
+                                                </a>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -704,9 +782,9 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
                                     $badgeClass = "bg-danger text-white border border-danger";
                                 }
                                 $estado_config = [
-                                    'activo'    => ['color' => 'primary',   'label' => 'Activo'],
-                                    'pagado'    => ['color' => 'success',   'label' => 'Pagado'],
-                                    'cancelado' => ['color' => 'secondary', 'label' => 'Cancelado'],
+                                    'activo'    => ['color' => 'primary',   'label' => 'Activo',    'solid' => true],
+                                    'pagado'    => ['color' => 'success',   'label' => 'Pagado',    'solid' => true],
+                                    'cancelado' => ['color' => 'secondary', 'label' => 'Cancelado', 'solid' => false],
                                 ];
                                 $ec = $estado_config[$pr['estado']] ?? $estado_config['activo'];
 
@@ -718,9 +796,9 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
                                     <h2 class="accordion-header">
                                         <button class="accordion-button collapsed py-3 px-4" type="button" data-bs-toggle="collapse" data-bs-target="#prest-<?= $pr['id'] ?>">
                                             <div class="d-flex align-items-center gap-3 w-100 me-3 flex-wrap">
-                                               <span class="badge <?= $badgeClass ?> px-2" style="font-size:11px">
-  <i class="fa-solid <?= $tc['icon'] ?> me-1"></i><?= $tc['label'] ?>
-</span>
+                                                <span class="badge <?= $badgeClass ?> px-2" style="font-size:11px">
+                                                    <i class="fa-solid <?= $tc['icon'] ?> me-1"></i><?= $tc['label'] ?>
+                                                </span>
                                                 <div class="fw-semibold flex-grow-1" style="font-size:13.5px">
                                                     <?= htmlspecialchars($pr['descripcion']) ?>
                                                     <small class="text-muted fw-normal ms-2"><?= date('d/m/Y', strtotime($pr['fecha'])) ?></small>
@@ -736,7 +814,7 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
                                                         <div class="text-muted" style="font-size:10px">TOTAL</div>
                                                         <div class="fw-bold" style="font-size:13px">L <?= number_format((float)$pr['monto_total'], 2) ?></div>
                                                     </div>
-                                                    <span class="badge bg-<?= $ec['color'] ?> bg-opacity-15 text-<?= $ec['color'] ?> border" style="font-size:10px"><?= $ec['label'] ?></span>
+                                                    <span class="badge bg-<?= $ec['color'] ?> <?= ($ec['solid'] ?? false) ? 'text-white' : 'bg-opacity-15 text-' . $ec['color'] ?> border border-<?= $ec['color'] ?>" style="font-size:10px"><?= $ec['label'] ?></span>
                                                 </div>
                                             </div>
                                         </button>
@@ -787,6 +865,7 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
                                                     <div class="col-md-4 d-flex flex-column gap-2 justify-content-start no-print">
                                                         <button class="btn btn-sm btn-outline-primary btn-editar-prestamo"
                                                             data-prestamo-id="<?= $pr['id'] ?>"
+                                                            data-tipo="<?= $pr['tipo'] ?>"
                                                             data-descripcion="<?= htmlspecialchars($pr['descripcion']) ?>"
                                                             data-fecha="<?= $pr['fecha'] ?>"
                                                             data-notas="<?= htmlspecialchars($pr['notas'] ?? '') ?>"
@@ -798,6 +877,11 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
                                                             data-prestamo-id="<?= $pr['id'] ?>"
                                                             data-desc="<?= htmlspecialchars($pr['descripcion']) ?>">
                                                             <i class="fa-solid fa-xmark me-1"></i> Cancelar
+                                                        </button>
+                                                        <button class="btn btn-sm btn-danger btn-eliminar-prestamo"
+                                                            data-prestamo-id="<?= $pr['id'] ?>"
+                                                            data-desc="<?= htmlspecialchars($pr['descripcion']) ?>">
+                                                            <i class="fa-solid fa-trash me-1"></i> Eliminar
                                                         </button>
                                                     </div>
                                                 <?php endif; ?>
@@ -932,28 +1016,103 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
                                 <div class="fw-bold text-danger">L <?= number_format($rap_emp / $div, 2) ?></div>
                             </div>
                             <div class="col">
-                                <div class="text-muted fw-bold">✓ Neto</div>
-                                <div class="fw-bold text-success">L <?= number_format($neto_mes / $div, 2) ?></div>
+                                <div class="text-muted">Neto</div>
+                                <div class="fw-bold <?= $total_descuento_auto > 0 ? 'text-muted text-decoration-line-through' : 'text-success' ?>" id="lblNetoModal">L <?= number_format($neto_mes / $div, 2) ?></div>
                             </div>
+                            <div class="col" id="colDescModal" <?= $total_descuento_auto <= 0 ? 'style="display:none"' : '' ?>>
+                                <div class="text-muted">- Préstamo</div>
+                                <div class="fw-bold text-danger" id="lblDescModal">L <?= number_format($total_descuento_auto, 2) ?></div>
+                            </div>
+                            <div class="col" id="colApagarModal" <?= $total_descuento_auto <= 0 ? 'style="display:none"' : '' ?>>
+                                <div class="text-muted fw-bold text-success">✓ A pagar</div>
+                                <div class="fw-bold text-success fs-6" id="lblApagarModal">L <?= number_format($neto_a_pagar_real, 2) ?></div>
+                            </div>
+                            <?php if ($total_descuento_auto <= 0): ?>
+                                <div class="col" id="colApagarSolo">
+                                    <div class="text-muted fw-bold">✓ A pagar</div>
+                                    <div class="fw-bold text-success" id="lblApagarSoloVal">L <?= number_format($neto_mes / $div, 2) ?></div>
+                                </div>
+                            <?php endif; ?>
                             <div class="col">
                                 <div class="text-muted">+ Pat.</div>
                                 <div class="fw-bold text-warning">L <?= number_format(($ihss_pat + $rap_pat) / $div, 2) ?></div>
                             </div>
                         </div>
+                        <?php if (!empty($cuotas_auto_pendientes)): ?>
+                            <div class="mt-2 p-2 rounded-2 border border-danger border-opacity-25" id="boxCuotasDescuento" style="background:#fff5f5;font-size:11.5px">
+                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                    <span><i class="fa-solid fa-rotate me-1 text-danger"></i><strong>Descuentos en este pago:</strong></span>
+                                    <span class="text-muted" style="font-size:10px">Marca las que aplican</span>
+                                </div>
+                                <?php foreach ($cuotas_auto_pendientes as $ca):
+                                    // ¿Esta cuota estaba pre-marcada en $cuotas_aplicables?
+                                    $preChecked = false;
+                                    foreach ($cuotas_aplicables as $ap) {
+                                        if ($ap['cuota_id'] === $ca['cuota_id']) {
+                                            $preChecked = true;
+                                            break;
+                                        }
+                                    }
+                                ?>
+                                    <div class="d-flex justify-content-between align-items-center mt-1 gap-2 cuota-check-row">
+                                        <div class="form-check mb-0 d-flex align-items-center gap-2 flex-grow-1">
+                                            <input class="form-check-input cuota-chk mt-0" type="checkbox"
+                                                id="chk_cuota_<?= $ca['cuota_id'] ?>"
+                                                name="cuotas_ids[]"
+                                                value="<?= $ca['cuota_id'] ?>"
+                                                data-monto="<?= number_format((float)$ca['cuota_monto'], 4, '.', '') ?>"
+                                                data-prestamo-id="<?= $ca['prestamo_id'] ?>"
+                                                <?= $preChecked ? 'checked' : '' ?>>
+                                            <label class="form-check-label text-muted" for="chk_cuota_<?= $ca['cuota_id'] ?>" style="cursor:pointer">
+                                                <?= htmlspecialchars(mb_substr($ca['prest_desc'], 0, 34)) ?>
+                                                <span class="badge bg-secondary ms-1" style="font-size:9px">cuota #<?= $ca['numero_cuota'] ?></span>
+                                            </label>
+                                        </div>
+                                        <span class="fw-bold text-danger text-nowrap">-L <?= number_format((float)$ca['cuota_monto'], 2) ?></span>
+                                    </div>
+                                <?php endforeach; ?>
+                                <div class="d-flex justify-content-between mt-2 pt-1 border-top border-danger border-opacity-25">
+                                    <span class="fw-bold text-danger">Total descuento:</span>
+                                    <span class="fw-bold text-danger" id="lblTotalDescuento">-L <?= number_format($total_descuento_auto, 2) ?></span>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                     </div>
                     <?php if ($tipo_pago === 'quincenal'): ?>
                         <div class="mb-3">
                             <label class="form-label fw-semibold">¿Qué pago es?</label>
-                            <div class="d-flex gap-3">
+                            <div class="d-flex gap-3 flex-wrap">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="quincena" id="q1" value="1" checked>
-                                    <label class="form-check-label" for="q1"><span class="badge bg-primary">1ª Quincena</span> <small class="text-muted">día <?= (int)$col['dia_pago'] ?></small></label>
+                                    <input class="form-check-input" type="radio" name="quincena" id="q1" value="1"
+                                        <?= $quincena_sugerida === 1 ? 'checked' : '' ?>
+                                        <?= $q1_pagada ? 'disabled' : '' ?>>
+                                    <label class="form-check-label <?= $q1_pagada ? 'opacity-50' : '' ?>" for="q1">
+                                        <span class="badge bg-primary">1ª Quincena</span>
+                                        <small class="text-muted">día <?= (int)$col['dia_pago'] ?></small>
+                                        <?php if ($q1_pagada): ?>
+                                            <span class="badge bg-success ms-1" style="font-size:9px"><i class="fa-solid fa-check fa-xs"></i> Pagada</span>
+                                        <?php endif; ?>
+                                    </label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="quincena" id="q2" value="2">
-                                    <label class="form-check-label" for="q2"><span class="badge bg-info text-dark">2ª Quincena</span> <small class="text-muted">día <?= (int)$col['dia_pago_2'] ?></small></label>
+                                    <input class="form-check-input" type="radio" name="quincena" id="q2" value="2"
+                                        <?= $quincena_sugerida === 2 ? 'checked' : '' ?>
+                                        <?= $q2_pagada ? 'disabled' : '' ?>>
+                                    <label class="form-check-label <?= $q2_pagada ? 'opacity-50' : '' ?>" for="q2">
+                                        <span class="badge bg-info text-dark">2ª Quincena</span>
+                                        <small class="text-muted">día <?= (int)$col['dia_pago_2'] ?></small>
+                                        <?php if ($q2_pagada): ?>
+                                            <span class="badge bg-success ms-1" style="font-size:9px"><i class="fa-solid fa-check fa-xs"></i> Pagada</span>
+                                        <?php endif; ?>
+                                    </label>
                                 </div>
                             </div>
+                            <?php if ($q1_pagada && $q2_pagada): ?>
+                                <div class="alert alert-warning py-1 mt-2 mb-0" style="font-size:12px">
+                                    <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                                    Ambas quincenas de este mes ya están registradas.
+                                </div>
+                            <?php endif; ?>
                         </div>
                     <?php else: ?>
                         <input type="hidden" name="quincena" value="0">
@@ -1179,19 +1338,36 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
 
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
 <!-- MODAL: Editar Préstamo                                                     -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
 <div class="modal fade" id="modalEditarPrestamo" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-md">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content border-0 shadow">
-            <div class="modal-header border-bottom py-3" style="background:linear-gradient(135deg,#0d6efd,#6610f2)">
+            <div class="modal-header border-bottom py-3" style="background:linear-gradient(135deg,#dc3545,#b02a37)">
                 <h5 class="modal-title fw-bold text-white">
-                    <i class="fa-solid fa-pen-to-square me-2"></i>Editar Préstamo
+                    <i class="fa-solid fa-pen-to-square me-2"></i>Editar Préstamo / Adelanto / Bono
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
                 <form id="formEditarPrestamo">
                     <input type="hidden" name="prestamo_id" id="editPrestId">
+
+                    <!-- Tipo de movimiento (igual que en nuevo) -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Tipo de Movimiento</label>
+                        <div class="row g-2">
+                            <?php
+                            foreach ($tipos_btn as $tb): ?>
+                                <div class="col-6 col-md-3">
+                                    <input type="radio" class="btn-check" name="tipo" id="edit_tipo_<?= $tb['val'] ?>" value="<?= $tb['val'] ?>">
+                                    <label class="btn btn-outline-<?= $tb['color'] ?> w-100 py-2 h-100 d-flex flex-column align-items-center justify-content-center gap-1" for="edit_tipo_<?= $tb['val'] ?>">
+                                        <i class="fa-solid <?= $tb['icon'] ?> fa-lg"></i>
+                                        <span class="fw-bold" style="font-size:12px"><?= $tb['label'] ?></span>
+                                        <small class="opacity-75" style="font-size:10px"><?= $tb['desc'] ?></small>
+                                    </label>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Descripción <span class="text-danger">*</span></label>
@@ -1227,11 +1403,9 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
                         </div>
                     </div>
 
-                    <!-- Aviso campos no editables -->
                     <div class="mt-3 p-2 rounded-2 border" style="background:#fff8f0;font-size:11.5px;color:#856404">
                         <i class="fa-solid fa-triangle-exclamation me-1"></i>
                         <strong>Nota:</strong> el monto total y número de cuotas no son editables para preservar la integridad de los pagos ya registrados.
-                        Si necesitas cambiarlos, cancela este préstamo y crea uno nuevo.
                     </div>
                 </form>
             </div>
@@ -1378,7 +1552,47 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
                 });
         });
 
-        // Pago nómina
+        // ── Checkboxes de cuotas ── recalcular A pagar dinámicamente ─────────
+        var _netoPago = <?= number_format($neto_quincena, 4, '.', '') ?>;
+
+        function recalcularDescuentos() {
+            var total = 0;
+            $('.cuota-chk:checked').each(function() {
+                total += parseFloat($(this).data('monto')) || 0;
+            });
+            total = Math.min(total, _netoPago); // no puede superar el neto
+            var aPagar = Math.max(0, _netoPago - total);
+
+            $('#lblTotalDescuento').text('-L ' + aPagar === 0 ?
+                number_format(total) : number_format(total));
+            $('#lblTotalDescuento').text('-L ' + numberFmt(total));
+
+            // Actualizar "A pagar" en el resumen
+            $('#lblApagarModal').text('L ' + numberFmt(aPagar));
+
+            // Tachado en neto si hay descuento
+            if (total > 0) {
+                $('#lblNetoModal').addClass('text-muted text-decoration-line-through').removeClass('text-success');
+                $('#colApagarModal').show();
+                $('#colDescModal').show();
+                $('#lblDescModal').text('L ' + numberFmt(total));
+            } else {
+                $('#lblNetoModal').removeClass('text-muted text-decoration-line-through').addClass('text-success');
+                $('#colApagarModal').hide();
+                $('#colDescModal').hide();
+            }
+        }
+
+        function numberFmt(n) {
+            return parseFloat(n).toLocaleString('es-HN', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        $(document).on('change', '.cuota-chk', function() {
+            recalcularDescuentos();
+        });
         // Pago nómina
         var _diaPago1 = <?= (int)$col['dia_pago'] ?>;
         var _diaPago2 = <?= (int)($col['dia_pago_2'] ?? 0) ?>;
@@ -1463,12 +1677,15 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
                         Swal.fire({
                             icon: 'success',
                             title: '¡Pago registrado!',
-                            html: d.message,
-                            timer: 2000,
-                            showConfirmButton: false
-                        }).then(function() {
-                            location.reload();
-                        });
+                            html: d.message +
+                                '<br><br>' +
+                                '<a href="colaborador_recibo_pdf.php?gasto_id=' + d.gasto_id + '&vista=1" ' +
+                                'target="_blank" class="btn btn-sm btn-outline-danger mt-1">' +
+                                '<i class="fa-solid fa-file-pdf me-1"></i>Ver / Imprimir Recibo</a>',
+                            showConfirmButton: true,
+                            confirmButtonText: 'Cerrar',
+                            confirmButtonColor: '#6c757d',
+                        }).then(() => location.reload());
                     } else {
                         Swal.fire({
                             icon: 'error',
@@ -1914,6 +2131,43 @@ $total_deuda_activa = array_sum(array_column(array_filter($prestamos, fn($p) => 
         document.getElementById('pago_comprobante').files = dt.files;
         mostrarPreviewComprobante(file);
     }
+    // Eliminar préstamo
+    $(document).on('click', '.btn-eliminar-prestamo', function() {
+        var pid = $(this).data('prestamo-id'),
+            desc = $(this).data('desc');
+        Swal.fire({
+            icon: 'error',
+            title: '¿Eliminar definitivamente?',
+            html: '<strong>' + desc + '</strong><br><small class="text-danger">Se eliminarán el préstamo y todas sus cuotas. Esta acción <u>no se puede deshacer</u>.</small>',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText: 'No'
+        }).then(function(r) {
+            if (r.isConfirmed) {
+                $.post('includes/prestamo_eliminar.php', {
+                        prestamo_id: pid
+                    })
+                    .done(function(d) {
+                        if (d.success) Swal.fire({
+                                icon: 'success',
+                                title: 'Eliminado',
+                                text: d.message,
+                                timer: 1800,
+                                showConfirmButton: false
+                            })
+                            .then(function() {
+                                location.reload();
+                            });
+                        else Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: d.error
+                        });
+                    });
+            }
+        });
+    });
 </script>
 </body>
 

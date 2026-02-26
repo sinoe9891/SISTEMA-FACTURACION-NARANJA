@@ -35,7 +35,7 @@ try {
         if (!in_array($ext, $permitidos))  throw new Exception("Archivo no permitido. Solo JPG, PNG, WEBP o PDF.");
         if ($file['size'] > 5*1024*1024)   throw new Exception("El archivo supera el limite de 5 MB.");
         if ($file['error'] !== UPLOAD_ERR_OK) throw new Exception("Error al subir el archivo.");
-        $uploadDir = dirname(__DIR__, 3) . '/uploads/gastos/';
+        $uploadDir = __DIR__ . '/uploads/gastos/';
         if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
         $archivo_adjunto = 'gasto_'.$cid.'_'.time().'_'.bin2hex(random_bytes(4)).'.'.$ext;
         $archivo_nombre  = basename($file['name']);

@@ -57,91 +57,126 @@ $stmtC = $pdo->prepare("
 $stmtC->execute([$cliente_id]);
 $colaboradores = $stmtC->fetchAll(PDO::FETCH_ASSOC);
 
-$stmtPagos = $pdo->prepare("
-    SELECT descripcion, estado, quincena_num
-    FROM gastos
-    WHERE cliente_id=?
-      AND fecha BETWEEN DATE_FORMAT(CURDATE(),'%Y-%m-01') AND LAST_DAY(CURDATE())
-      AND descripcion LIKE 'Sueldo %'
-");
-$stmtPagos->execute([$cliente_id]);
-$pagos_mes = $stmtPagos->fetchAll(PDO::FETCH_ASSOC);
 
-// ── Pagos de nómina vencidos (programados pero no pagados aún) ───────────────
-// Colaboradores quincenales: si hoy > día de pago y no hay gasto 'pagado' ese mes
-$hoy_dia = (int)date('j');
-$hoy_mes = date('Y-m');
+
+
+// ── Todos los pagos de nómina (para detectar gaps históricos) ─────────────────
+$stmtTodosPagos = $pdo->prepare("
+    SELECT descripcion, estado, COALESCE(quincena_num, 0) AS quincena_num,
+           YEAR(fecha) AS anio, MONTH(fecha) AS mes
+    FROM gastos
+    WHERE cliente_id = ?
+      AND descripcion LIKE 'Sueldo %'
+      AND estado != 'anulado'
+");
+$stmtTodosPagos->execute([$cliente_id]);
+
+// Lookup rápido: "descripcion||anio||mes||quincena" => estado
+$pagos_realizados = [];
+$pagos_mes        = []; // para el badge en tabla (mes actual)
+$anio_actual      = (int)date('Y');
+$mes_actual       = (int)date('n');
+
+foreach ($stmtTodosPagos->fetchAll(PDO::FETCH_ASSOC) as $pg) {
+    $lookup_key = $pg['descripcion'] . '||' . $pg['anio'] . '||' . $pg['mes'] . '||' . $pg['quincena_num'];
+    $pagos_realizados[$lookup_key] = $pg['estado'];
+
+    if ((int)$pg['anio'] === $anio_actual && (int)$pg['mes'] === $mes_actual) {
+        $pagos_mes[] = [
+            'descripcion'  => $pg['descripcion'],
+            'estado'       => $pg['estado'],
+            'quincena_num' => $pg['quincena_num'],
+        ];
+    }
+}
+
+// ── Generar vencidos y próximos (últimos 6 meses + próximos 7 días) ───────────
+$hoy_dt       = new DateTime('today');
+$limite_atras = (new DateTime('today'))->modify('-12 months');
+$meses_es_abr  = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 $vencidos_nomina = [];
 $proximos_nomina = [];
 
 foreach ($colaboradores as $col) {
-    $nc = $col['nombre'] . ' ' . $col['apellido'];
+    if (!$col['activo']) continue;
 
-    if ($col['tipo_pago'] === 'quincenal') {
-        foreach (
-            [
-                1 => ['dia' => (int)$col['dia_pago'],   'label' => '1ª Quincena'],
-                2 => ['dia' => (int)$col['dia_pago_2'],  'label' => '2ª Quincena'],
-            ] as $q => $info
-        ) {
-            $estado = estadoPago($pagos_mes, $nc, $q);
-            $dias_diff = $hoy_dia - $info['dia'];
+    $nc              = $col['nombre'] . ' ' . $col['apellido'];
+    $ingreso_dt      = new DateTime($col['fecha_ingreso']);
+    $desde_dt = clone $ingreso_dt;
 
-            if ($estado === null) { // No hay registro este mes
-                if ($dias_diff > 0) {
-                    $vencidos_nomina[] = array_merge($col, [
-                        'quincena_num'  => $q,
-                        'quincena_label' => $info['label'],
-                        'dia_programado' => $info['dia'],
-                        'dias_atraso'   => $dias_diff,
-                        'monto_pago'    => calcNeto((float)$col['salario_base'], (int)$col['aplica_ihss'], (int)$col['aplica_rap'], 'quincenal')['neto_pago'],
-                    ]);
-                } elseif ($dias_diff >= -7) { // Próximos 7 días
-                    $proximos_nomina[] = array_merge($col, [
-                        'quincena_num'   => $q,
-                        'quincena_label' => $info['label'],
-                        'dia_programado' => $info['dia'],
-                        'dias_restantes' => abs($dias_diff),
-                        'monto_pago'     => calcNeto((float)$col['salario_base'], (int)$col['aplica_ihss'], (int)$col['aplica_rap'], 'quincenal')['neto_pago'],
-                    ]);
-                }
+    $curr = clone $desde_dt;
+    $curr->modify('first day of this month');
+    $curr->setTime(0, 0, 0);
+
+    $n_calc = calcNeto((float)$col['salario_base'], (int)$col['aplica_ihss'], (int)$col['aplica_rap'], $col['tipo_pago']);
+
+    // // Primer día del mes de inicio
+    // $curr = clone $desde_dt;
+    // $curr->modify('first day of this month');
+    // $curr->setTime(0, 0, 0);
+
+    // $n_calc = calcNeto((float)$col['salario_base'], (int)$col['aplica_ihss'], (int)$col['aplica_rap'], $col['tipo_pago']);
+
+    $cap_dt = (new DateTime('today'))->modify('-12 months');
+    if ($desde_dt < $cap_dt) $desde_dt = clone $cap_dt;
+
+
+    while ($curr <= $hoy_dt) {
+        $anio      = (int)$curr->format('Y');
+        $mes       = (int)$curr->format('n');
+        $dias_mes  = (int)$curr->format('t');
+        $mes_label = $meses_es_abr[$mes] . ' ' . $anio;
+
+        $checks = ($col['tipo_pago'] === 'quincenal')
+            ? [
+                1 => ['dia' => (int)$col['dia_pago'],   'label' => '1ª Quincena', 'suffix' => ' — 1ª Quincena'],
+                2 => ['dia' => (int)$col['dia_pago_2'],  'label' => '2ª Quincena', 'suffix' => ' — 2ª Quincena'],
+            ]
+            : [
+                0 => ['dia' => (int)$col['dia_pago'],   'label' => 'Mensual',     'suffix' => ''],
+            ];
+
+        foreach ($checks as $q => $info) {
+            $dia_real = min($info['dia'], $dias_mes);
+            $fp_str   = sprintf('%04d-%02d-%02d', $anio, $mes, $dia_real);
+            $fp_dt    = new DateTime($fp_str);
+
+            if ($fp_dt < $ingreso_dt) continue; // antes del ingreso
+
+            $descripcion = 'Sueldo ' . $nc . $info['suffix'];
+            $lkey        = $descripcion . '||' . $anio . '||' . $mes . '||' . $q;
+
+            if (isset($pagos_realizados[$lkey])) continue; // ya pagado
+
+            $diff     = $hoy_dt->diff($fp_dt);
+            $diff_d   = (int)$diff->days;
+            $es_fut   = ($fp_dt > $hoy_dt);
+
+            $base = array_merge($col, [
+                'quincena_num'     => $q,
+                'quincena_label'   => $info['label'],
+                'dia_programado'   => $dia_real,
+                'monto_pago'       => $n_calc['neto_pago'],
+                'periodo_label'    => $mes_label,
+                'fecha_esperada'   => $fp_str,
+            ]);
+
+            if (!$es_fut) {
+                $vencidos_nomina[] = array_merge($base, ['dias_atraso' => $diff_d]);
+            } elseif ($diff_d <= 7) {
+                $proximos_nomina[] = array_merge($base, ['dias_restantes' => $diff_d]);
             }
         }
-    } else { // mensual
-        $estado    = estadoPago($pagos_mes, $nc, 0);
-        $dia_pago  = (int)$col['dia_pago'];
-        $dias_diff = $hoy_dia - $dia_pago;
 
-        if ($estado === null) {
-            if ($dias_diff > 0) {
-                $vencidos_nomina[] = array_merge($col, [
-                    'quincena_num'   => 0,
-                    'quincena_label' => 'Mensual',
-                    'dia_programado' => $dia_pago,
-                    'dias_atraso'    => $dias_diff,
-                    'monto_pago'     => calcNeto((float)$col['salario_base'], (int)$col['aplica_ihss'], (int)$col['aplica_rap'], 'mensual')['neto_pago'],
-                ]);
-            } elseif ($dias_diff >= -7) {
-                $proximos_nomina[] = array_merge($col, [
-                    'quincena_num'   => 0,
-                    'quincena_label' => 'Mensual',
-                    'dia_programado' => $dia_pago,
-                    'dias_restantes' => abs($dias_diff),
-                    'monto_pago'     => calcNeto((float)$col['salario_base'], (int)$col['aplica_ihss'], (int)$col['aplica_rap'], 'mensual')['neto_pago'],
-                ]);
-            }
-        }
+        $curr->modify('+1 month');
     }
 }
 
-// Ordenar vencidos por días de atraso DESC
 usort($vencidos_nomina, fn($a, $b) => $b['dias_atraso'] - $a['dias_atraso']);
 usort($proximos_nomina, fn($a, $b) => $a['dias_restantes'] - $b['dias_restantes']);
 
-
-
-
+// Función para el badge de estado en tabla (mes actual)
 function estadoPago(array $pagos, string $nombre, int $q = 0): ?string
 {
     $base = 'Sueldo ' . $nombre;
@@ -208,8 +243,9 @@ function calcNeto(float $salario, int $ihss, int $rap, string $tipo): array
                     <thead class="table-light">
                         <tr>
                             <th>Colaborador</th>
+                            <th class="text-center">Período</th>
                             <th class="text-center">Pago</th>
-                            <th class="text-center">Día programado</th>
+                            <th class="text-center">Fecha programada</th>
                             <th class="text-center">Días atraso</th>
                             <th class="text-end">Monto neto</th>
                             <th class="text-center">Acción</th>
@@ -219,8 +255,17 @@ function calcNeto(float $salario, int $ihss, int $rap, string $tipo): array
                         <?php foreach ($vencidos_nomina as $vn): ?>
                             <tr class="table-danger">
                                 <td class="fw-semibold"><?= htmlspecialchars($vn['nombre'] . ' ' . $vn['apellido']) ?></td>
-                                <td class="text-center"><span class="badge bg-danger"><?= $vn['quincena_label'] ?></span></td>
-                                <td class="text-center">Día <?= $vn['dia_programado'] ?></td>
+                                <td class="text-center">
+                                    <span class="badge bg-danger bg-opacity-75" style="font-size:11px">
+                                        <?= $vn['periodo_label'] ?>
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-danger"><?= $vn['quincena_label'] ?></span>
+                                </td>
+                                <td class="text-center text-nowrap fw-semibold">
+                                    <?= date('d/m/Y', strtotime($vn['fecha_esperada'])) ?>
+                                </td>
                                 <td class="text-center fw-bold text-danger"><?= $vn['dias_atraso'] ?> día(s)</td>
                                 <td class="text-end fw-bold">L <?= number_format($vn['monto_pago'], 2) ?></td>
                                 <td class="text-center">
@@ -229,18 +274,20 @@ function calcNeto(float $salario, int $ihss, int $rap, string $tipo): array
                                     ?>
                                         <button class="btn btn-sm btn-success btn-pagar"
                                             data-col='<?= json_encode([
-                                                            'id' => $vn['id'],
-                                                            'nombre' => $vn['nombre'] . ' ' . $vn['apellido'],
-                                                            'tipo_pago' => $vn['tipo_pago'],
-                                                            'dia_pago' => $vn['dia_pago'],
-                                                            'dia_pago_2' => $vn['dia_pago_2'],
-                                                            'salario' => $vn['salario_base'],
-                                                            'neto_pago' => $n['neto_pago'],
-                                                            'ihss_emp' => $n['ihss_emp'],
-                                                            'rap_emp' => $n['rap_emp'],
-                                                            'ihss_pat' => $n['ihss_pat'],
-                                                            'rap_pat' => $n['rap_pat'],
-                                                            'costo_total' => $n['costo_total'],
+                                                            'id'                 => $vn['id'],
+                                                            'nombre'             => $vn['nombre'] . ' ' . $vn['apellido'],
+                                                            'tipo_pago'          => $vn['tipo_pago'],
+                                                            'dia_pago'           => $vn['dia_pago'],
+                                                            'dia_pago_2'         => $vn['dia_pago_2'],
+                                                            'salario'            => $vn['salario_base'],
+                                                            'neto_pago'          => $n['neto_pago'],
+                                                            'ihss_emp'           => $n['ihss_emp'],
+                                                            'rap_emp'            => $n['rap_emp'],
+                                                            'ihss_pat'           => $n['ihss_pat'],
+                                                            'rap_pat'            => $n['rap_pat'],
+                                                            'costo_total'        => $n['costo_total'],
+                                                            'fecha_esperada'     => $vn['fecha_esperada'],
+                                                            'quincena_preselect' => $vn['quincena_num'],
                                                         ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>'>
                                             <i class="fa-solid fa-check me-1"></i> Pagar
                                         </button>
@@ -292,18 +339,20 @@ function calcNeto(float $salario, int $ihss, int $rap, string $tipo): array
                                     ?>
                                         <button class="btn btn-sm btn-outline-success btn-pagar"
                                             data-col='<?= json_encode([
-                                                            'id' => $pn['id'],
-                                                            'nombre' => $pn['nombre'] . ' ' . $pn['apellido'],
-                                                            'tipo_pago' => $pn['tipo_pago'],
-                                                            'dia_pago' => $pn['dia_pago'],
-                                                            'dia_pago_2' => $pn['dia_pago_2'],
-                                                            'salario' => $pn['salario_base'],
-                                                            'neto_pago' => $n['neto_pago'],
-                                                            'ihss_emp' => $n['ihss_emp'],
-                                                            'rap_emp' => $n['rap_emp'],
-                                                            'ihss_pat' => $n['ihss_pat'],
-                                                            'rap_pat' => $n['rap_pat'],
-                                                            'costo_total' => $n['costo_total'],
+                                                            'id'                 => $pn['id'],
+                                                            'nombre'             => $pn['nombre'] . ' ' . $pn['apellido'],
+                                                            'tipo_pago'          => $pn['tipo_pago'],
+                                                            'dia_pago'           => $pn['dia_pago'],
+                                                            'dia_pago_2'         => $pn['dia_pago_2'],
+                                                            'salario'            => $pn['salario_base'],
+                                                            'neto_pago'          => $n['neto_pago'],
+                                                            'ihss_emp'           => $n['ihss_emp'],
+                                                            'rap_emp'            => $n['rap_emp'],
+                                                            'ihss_pat'           => $n['ihss_pat'],
+                                                            'rap_pat'            => $n['rap_pat'],
+                                                            'costo_total'        => $n['costo_total'],
+                                                            'fecha_esperada'     => $pn['fecha_esperada'],
+                                                            'quincena_preselect' => $pn['quincena_num'],
                                                         ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>'>
                                             <i class="fa-solid fa-hand-holding-dollar me-1"></i> Pagar
                                         </button>
@@ -829,27 +878,70 @@ function calcNeto(float $salario, int $ihss, int $rap, string $tipo): array
 
                     <!-- Desglose -->
                     <div class="rounded-3 p-3 mb-3 border" id="pagoDesglose" style="background:#f8f9fa">
-                        <div class="fw-bold mb-1" id="pago_nombre">—</div>
-                        <div class="row g-1 text-center" style="font-size:12px" id="pago_desglose_rows">
+                        <div class="fw-bold mb-2" id="pago_nombre">—</div>
+                        <div class="row g-1 text-center" style="font-size:12px" id="pago_desglose_rows"></div>
+
+                        <!-- Cargando cuotas -->
+                        <div id="pagoLoadingCuotas" class="text-center py-2 d-none">
+                            <i class="fa-solid fa-spinner fa-spin text-secondary me-1"></i>
+                            <small class="text-muted">Verificando préstamos...</small>
+                        </div>
+
+                        <!-- Checkboxes de cuotas auto-descuento -->
+                        <div id="boxCuotasDescuento" class="d-none mt-2 p-2 rounded-2 border border-danger border-opacity-25" style="background:#fff5f5;font-size:11.5px">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <span><i class="fa-solid fa-rotate me-1 text-danger"></i><strong>Descuentos en este pago:</strong></span>
+                                <span class="text-muted" style="font-size:10px">Marca las que aplican</span>
+                            </div>
+                            <div id="listaCuotasChk"></div>
+                            <div class="d-flex justify-content-between mt-2 pt-1 border-top border-danger border-opacity-25">
+                                <span class="fw-bold text-danger">Total descuento:</span>
+                                <span class="fw-bold text-danger" id="lblTotalDescPago">-L 0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between mt-1 pt-1 border-top border-success border-opacity-25">
+                                <span class="fw-bold text-success"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Total a pagar:</span>
+                                <span class="fw-bold text-success fs-6" id="lblTotalAPagar">L 0.00</span>
+                            </div>
+                        </div>
+                        <div id="boxBonosAplicar" class="d-none mt-2 p-2 rounded-2 border border-success border-opacity-25" style="background:#f0fff4;font-size:11.5px">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <span><i class="fa-solid fa-gift me-1 text-success"></i><strong>Bonos a aplicar en este pago:</strong></span>
+                                <span class="text-muted" style="font-size:10px">Marca los que aplican</span>
+                            </div>
+                            <div id="listaBonosChk"></div>
+                            <div class="d-flex justify-content-between mt-2 pt-1 border-top border-success border-opacity-25">
+                                <span class="fw-bold text-success">Total bonos:</span>
+                                <span class="fw-bold text-success" id="lblTotalBonosPago">+L 0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between mt-1 pt-1 border-top border-success border-opacity-50">
+                                <span class="fw-bold text-success"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Total a pagar:</span>
+                                <span class="fw-bold text-success fs-6" id="lblTotalAPagarBonos">L 0.00</span>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Quincena (solo si quincenal) -->
                     <div class="mb-3" id="grp_quincena">
                         <label class="form-label fw-semibold">¿Qué pago es?</label>
-                        <div class="d-flex gap-2">
+                        <div class="d-flex gap-3 flex-wrap" id="grp_quincena_radios">
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="quincena" id="q1" value="1" checked>
-                                <label class="form-check-label" for="q1">
+                                <label class="form-check-label" for="q1" id="lbl_q1">
                                     <span class="badge bg-primary">1ª Quincena</span>
+                                    <small class="text-muted" id="dia_q1_lbl"></small>
                                 </label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="quincena" id="q2" value="2">
-                                <label class="form-check-label" for="q2">
+                                <label class="form-check-label" for="q2" id="lbl_q2">
                                     <span class="badge bg-info text-dark">2ª Quincena</span>
+                                    <small class="text-muted" id="dia_q2_lbl"></small>
                                 </label>
                             </div>
+                        </div>
+                        <div id="alertaAmbasQuincenas" class="alert alert-warning py-1 mt-2 mb-0 d-none" style="font-size:12px">
+                            <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                            Ambas quincenas de este mes ya están registradas.
                         </div>
                     </div>
 
@@ -1175,51 +1267,237 @@ function calcNeto(float $salario, int $ihss, int $rap, string $tipo): array
         $('#pago_fecha').on('change', verificarVencimientoPago);
         $('[name=quincena]').on('change', verificarVencimientoPago);
 
+        // Variables del colaborador activo en el modal
+        var _pagoColActual = null;
+        var _netoPagoActual = 0;
+
+        function numberFmtPago(n) {
+            return parseFloat(n).toLocaleString('es-HN', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        function recalcularDescuentosPago() {
+            var totalDesc = 0;
+            $('#listaCuotasChk .cuota-chk-pago:checked').each(function() {
+                totalDesc += parseFloat($(this).data('monto')) || 0;
+            });
+            totalDesc = Math.min(totalDesc, _netoPagoActual);
+
+            var totalBonos = 0;
+            $('#listaBonosChk .bono-chk-pago:checked').each(function() {
+                totalBonos += parseFloat($(this).data('monto')) || 0;
+            });
+
+            var aPagar = Math.max(0, _netoPagoActual - totalDesc + totalBonos);
+
+            $('#lblTotalDescPago').text('-L ' + numberFmtPago(totalDesc));
+            $('#lblTotalBonosPago').text('+L ' + numberFmtPago(totalBonos));
+
+            // Actualizar AMBOS labels de "total a pagar" (cuotas y bonos)
+            var aPagarFmt = 'L ' + numberFmtPago(aPagar);
+            $('#lblTotalAPagar').text(aPagarFmt);
+            $('#lblTotalAPagarBonos').text(aPagarFmt);
+
+            // Actualizar columnas dinámicas del desglose
+            if (totalDesc > 0 || totalBonos > 0) {
+                $('#col_neto_pago').html(
+                    '<div class="text-muted">Neto</div>' +
+                    '<div class="fw-bold text-muted text-decoration-line-through">L ' + numberFmtPago(_netoPagoActual) + '</div>'
+                );
+                $('#col_desc_pago').html(
+                    '<div class="text-muted">- Préstamo</div>' +
+                    '<div class="fw-bold text-danger">L ' + numberFmtPago(totalDesc) + '</div>' // ← totalDesc, no total
+                ).show();
+                $('#col_apagar_pago').html(
+                    '<div class="text-muted fw-bold text-success">✓ A pagar</div>' +
+                    '<div class="fw-bold fs-6 text-success">L ' + numberFmtPago(aPagar) + '</div>'
+                ).show();
+            } else {
+                $('#col_neto_pago').html(
+                    '<div class="text-muted fw-bold text-success">✓ Neto a pagar</div>' +
+                    '<div class="fw-bold fs-6 text-success">L ' + numberFmtPago(_netoPagoActual) + '</div>'
+                );
+                $('#col_desc_pago').hide();
+                $('#col_apagar_pago').hide();
+            }
+        }
+
+        $(document).on('change', '.cuota-chk-pago', recalcularDescuentosPago);
+        $(document).on('change', '.bono-chk-pago', recalcularDescuentosPago);
+
         $(document).on('click', '.btn-pagar', function() {
             const c = $(this).data('col');
-
-            // Guardar datos del colaborador actual para el cálculo de vencimiento
+            _pagoColActual = c;
             _pagoActualDia1 = parseInt(c.dia_pago) || 0;
             _pagoActualDia2 = parseInt(c.dia_pago_2) || 0;
             _pagoActualTipo = c.tipo_pago || 'mensual';
+            _netoPagoActual = parseFloat(c.neto_pago) || 0;
 
             $('#pago_colab_id').val(c.id);
             $('#pago_nombre').text(c.nombre);
-            $('#pago_fecha').val(new Date().toISOString().slice(0, 10));
+
+            var fechaInit = (c.fecha_esperada) ? c.fecha_esperada : new Date().toISOString().slice(0, 10);
+            $('#pago_fecha').val(fechaInit);
             $('#estadoPagoFecha').html('');
+
             $('#pago_notas').val('');
             $('#pago_metodo').val('transferencia');
             limpiarComprobante();
+            $('#boxCuotasDescuento').addClass('d-none');
+            $('#listaCuotasChk').html('');
 
             const tipo = c.tipo_pago;
-            const lbl = tipo === 'quincenal' ? 'por quincena' : 'mensual';
+            const lbl = tipo === 'quincenal' ? 'quincena' : 'mes';
             $('#grp_quincena').toggle(tipo === 'quincenal');
-            $('#q1').prop('checked', true);
-
+            if (c.quincena_preselect && tipo === 'quincenal') {
+                $('[name=quincena][value=' + c.quincena_preselect + ']').prop('checked', true);
+            } else {
+                $('#q1').prop('checked', true);
+            }
+            // Desglose base (sin descuentos por ahora)
+            const bruto = parseFloat(c.neto_pago) + parseFloat(c.ihss_emp) + parseFloat(c.rap_emp);
             const rows = `
-            <div class="col-4 col-md">
-                <div class="text-muted">Bruto ${lbl}</div>
-                <div class="fw-bold text-dark">L ${parseFloat(c.neto_pago + c.ihss_emp + c.rap_emp).toLocaleString('es-HN',{minimumFractionDigits:2})}</div>
+            <div class="col">
+                <div class="text-muted">Bruto</div>
+                <div class="fw-bold text-dark">L ${numberFmtPago(bruto)}</div>
             </div>
-            <div class="col-4 col-md">
-                <div class="text-muted">- IHSS emp.</div>
-                <div class="fw-bold text-danger">L ${parseFloat(c.ihss_emp).toLocaleString('es-HN',{minimumFractionDigits:2})}</div>
+            <div class="col">
+                <div class="text-muted">- IHSS</div>
+                <div class="fw-bold text-danger">L ${numberFmtPago(c.ihss_emp)}</div>
             </div>
-            <div class="col-4 col-md">
-                <div class="text-muted">- RAP emp.</div>
-                <div class="fw-bold text-danger">L ${parseFloat(c.rap_emp).toLocaleString('es-HN',{minimumFractionDigits:2})}</div>
+            <div class="col">
+                <div class="text-muted">- RAP</div>
+                <div class="fw-bold text-danger">L ${numberFmtPago(c.rap_emp)}</div>
             </div>
-            <div class="col-4 col-md">
+            <div class="col" id="col_neto_pago">
                 <div class="text-muted fw-bold text-success">✓ Neto a pagar</div>
-                <div class="fw-bold fs-6 text-success">L ${parseFloat(c.neto_pago).toLocaleString('es-HN',{minimumFractionDigits:2})}</div>
+                <div class="fw-bold fs-6 text-success">L ${numberFmtPago(c.neto_pago)}</div>
             </div>
-            <div class="col-4 col-md">
-                <div class="text-muted">+ Patronal</div>
-                <div class="fw-bold text-warning">L ${parseFloat(c.ihss_pat + c.rap_pat).toLocaleString('es-HN',{minimumFractionDigits:2})}</div>
+            <div class="col d-none" id="col_desc_pago"></div>
+            <div class="col d-none" id="col_apagar_pago"></div>
+            <div class="col">
+                <div class="text-muted">+ Pat.</div>
+                <div class="fw-bold text-warning">L ${numberFmtPago(parseFloat(c.ihss_pat) + parseFloat(c.rap_pat))}</div>
             </div>`;
             $('#pago_desglose_rows').html(rows);
+
+            // Mostrar modal
             $('#modalPago').modal('show');
             setTimeout(verificarVencimientoPago, 150);
+
+            // AJAX: traer cuotas pendientes + quincenas pagadas
+            $('#pagoLoadingCuotas').removeClass('d-none');
+            $.getJSON('includes/colaborador_cuotas_info.php', {
+                    colab_id: c.id,
+                    fecha_ref: c.fecha_esperada || '' // ← período específico a verificar
+                })
+                .done(function(data) {
+                    $('#pagoLoadingCuotas').addClass('d-none');
+                    if (!data.success) return;
+
+                    // ── Quincenas pagadas ──────────────────────────────────
+                    if (tipo === 'quincenal') {
+                        var q1pd = data.q1_pagada;
+                        var q2pd = data.q2_pagada;
+
+                        // Quincena que viene preseleccionada (período vencido/próximo)
+                        var qPre = c.quincena_preselect ? parseInt(c.quincena_preselect) : 0;
+
+                        // Solo deshabilitar si está pagada Y no es la quincena que debemos pagar
+                        var deshQ1 = q1pd && (qPre !== 1);
+                        var deshQ2 = q2pd && (qPre !== 2);
+
+                        $('#q1').prop('disabled', deshQ1);
+                        $('#lbl_q1').toggleClass('opacity-50', deshQ1);
+                        $('#q2').prop('disabled', deshQ2);
+                        $('#lbl_q2').toggleClass('opacity-50', deshQ2);
+
+                        // Labels con día y estado
+                        var badgePagada = ' <span class="badge bg-success ms-1" style="font-size:9px">✓ Pagada este mes</span>';
+                        $('#dia_q1_lbl').html(' día ' + _pagoActualDia1 + (q1pd && qPre !== 1 ? badgePagada : ''));
+                        $('#dia_q2_lbl').html(' día ' + _pagoActualDia2 + (q2pd && qPre !== 2 ? badgePagada : ''));
+
+                        // Preseleccionar según período o la que no está pagada
+                        if (qPre === 1 || qPre === 2) {
+                            $('[name=quincena][value=' + qPre + ']').prop('checked', true);
+                        } else if (!q1pd) {
+                            $('#q1').prop('checked', true);
+                        } else if (!q2pd) {
+                            $('#q2').prop('checked', true);
+                        } else {
+                            $('#alertaAmbasQuincenas').removeClass('d-none');
+                        }
+
+                        // Ocultar aviso si no aplica
+                        if (!q1pd || !q2pd || qPre > 0) $('#alertaAmbasQuincenas').addClass('d-none');
+
+                        verificarVencimientoPago();
+                    }
+
+                    // ── Cuotas auto-descuento ──────────────────────────────
+                    if (data.cuotas && data.cuotas.length > 0) {
+                        var html = '';
+                        var totalPreMarcado = 0;
+
+                        data.cuotas.forEach(function(ca) {
+                            var monto = parseFloat(ca.cuota_monto);
+                            var preCheck = (totalPreMarcado + monto) <= _netoPagoActual;
+                            if (preCheck) totalPreMarcado += monto;
+
+                            html += `
+                            <div class="d-flex justify-content-between align-items-center mt-1 gap-2">
+                                <div class="form-check mb-0 d-flex align-items-center gap-2 flex-grow-1">
+                                    <input class="form-check-input cuota-chk-pago mt-0" type="checkbox"
+                                        id="chkp_${ca.cuota_id}"
+                                        name="cuotas_ids[]"
+                                        value="${ca.cuota_id}"
+                                        data-monto="${monto}"
+                                        data-prestamo-id="${ca.prestamo_id}"
+                                        ${preCheck ? 'checked' : ''}>
+                                    <label class="form-check-label text-muted" for="chkp_${ca.cuota_id}" style="cursor:pointer;font-size:11px">
+                                        ${ca.prest_desc.substring(0, 34)}
+                                        <span class="badge bg-secondary ms-1" style="font-size:9px">cuota #${ca.numero_cuota}</span>
+                                    </label>
+                                </div>
+                                <span class="fw-bold text-danger text-nowrap" style="font-size:11px">-L ${monto.toLocaleString('es-HN',{minimumFractionDigits:2})}</span>
+                            </div>`;
+                        });
+
+                        $('#listaCuotasChk').html(html);
+                        $('#boxCuotasDescuento').removeClass('d-none');
+                        recalcularDescuentosPago();
+                    }
+                    // ── Bonos a sumar ──────────────────────────────────
+                    if (data.bonos && data.bonos.length > 0) {
+                        var htmlBonos = '';
+                        data.bonos.forEach(function(b) {
+                            var monto = parseFloat(b.monto_total);
+                            htmlBonos += `
+        <div class="d-flex justify-content-between align-items-center mt-1 gap-2">
+            <div class="form-check mb-0 d-flex align-items-center gap-2 flex-grow-1">
+                <input class="form-check-input bono-chk-pago mt-0" type="checkbox"
+                    id="chkb_${b.id}"
+                    name="bonos_ids[]"
+                    value="${b.id}"
+                    data-monto="${monto}"
+                    checked>
+                <label class="form-check-label text-muted" for="chkb_${b.id}" style="cursor:pointer;font-size:11px">
+                    ${b.descripcion.substring(0, 34)}
+                </label>
+            </div>
+            <span class="fw-bold text-success text-nowrap" style="font-size:11px">+L ${monto.toLocaleString('es-HN',{minimumFractionDigits:2})}</span>
+        </div>`;
+                        });
+                        $('#listaBonosChk').html(htmlBonos);
+                        $('#boxBonosAplicar').removeClass('d-none');
+                        recalcularDescuentosPago();
+                    }
+                })
+                .fail(function() {
+                    $('#pagoLoadingCuotas').addClass('d-none');
+                });
         });
 
         // ── Comprobante: selección por click + drag & drop ─────────────────────────
@@ -1241,6 +1519,7 @@ function calcNeto(float $salario, int $ihss, int $rap, string $tipo): array
             if (archivo) fd.set('comprobante', archivo);
 
             $.ajax({
+                
                     url: 'includes/colaborador_pago_guardar.php',
                     type: 'POST',
                     data: fd,
@@ -1356,6 +1635,7 @@ function calcNeto(float $salario, int $ihss, int $rap, string $tipo): array
         document.getElementById('pago_comprobante').files = dt.files;
         mostrarPreviewComprobante(file);
     }
+    
 </script>
 </body>
 

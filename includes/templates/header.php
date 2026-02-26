@@ -131,7 +131,9 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 
 	<!-- CSS global -->
 	<link rel="stylesheet" href="../../clientes/css/global.css">
-
+<script>
+  window.APP_BASE = "<?= rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\') ?>";
+</script>
 	<style>
 		/* ─── Tokens ─────────────────────────────────── */
 		:root {
