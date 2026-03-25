@@ -18,11 +18,11 @@ $nombre_establecimiento = $establecimiento ? $establecimiento['nombre'] : 'No as
 
 // Obtener todos los CAI activos con facturas restantes para este establecimiento
 $stmtCAIs = $pdo->prepare("
-    SELECT * FROM cai_rangos
+    SELECT *, 
+           CASE WHEN CURDATE() <= fecha_limite THEN 1 ELSE 0 END AS activo
+    FROM cai_rangos
     WHERE cliente_id = ? AND establecimiento_id = ?
-      AND correlativo_actual < rango_fin
-      AND CURDATE() <= fecha_limite
-    ORDER BY fecha_recepcion ASC
+    ORDER BY fecha_recepcion DESC
 ");
 $stmtCAIs->execute([$cliente_id, $establecimiento_activo]);
 $cais = $stmtCAIs->fetchAll();
@@ -48,30 +48,56 @@ if (isset($_GET['cai_id']) && ctype_digit($_GET['cai_id'])) {
 if (count($cais) === 1) {
 	$caix = $cais[0]['id'];
 }
-$ultimoCorrelativoCAI = null;
-// Consulta facturas filtradas por CAI si $caix está definido, sino todas del establecimiento
-if ($caix) {
-	$stmtFacturas = $pdo->prepare("
-        SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, f.estado, f.pagada, f.enviada_receptor, cf.nombre AS receptor 
-        FROM facturas f
-        INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
-        WHERE f.cliente_id = ? AND f.establecimiento_id = ? AND f.cai_id = ?
-        ORDER BY f.fecha_emision DESC
-    ");
-	$stmtFacturas->execute([$cliente_id, $establecimiento_activo, $caix]);
-} else {
-	$stmtFacturas = $pdo->prepare("
-        SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, f.estado, f.pagada, f.enviada_receptor, cf.nombre AS receptor
-        FROM facturas f
-        INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
-        WHERE f.cliente_id = ? AND f.establecimiento_id = ?
-        ORDER BY f.fecha_emision DESC
-    ");
-	$stmtFacturas->execute([$cliente_id, $establecimiento_activo]);
+
+// Si no se seleccionó ningún CAI manualmente, preseleccionar el CAI activo por defecto
+if ($caix === null && !isset($_GET['cai_id'])) {
+	foreach ($cais as $cai) {
+		if ($cai['activo'] == 1) {
+			$caix = $cai['id'];
+			break; // Tomar el primero activo que encuentre
+		}
+	}
 }
+$ultimoCorrelativoCAI = null;
+
+// Capturar y sanitizar fechas
+$fecha_desde = !empty($_GET['fecha_desde']) ? $_GET['fecha_desde'] : null;
+$fecha_hasta = !empty($_GET['fecha_hasta']) ? $_GET['fecha_hasta'] : null;
+
+// Validar formato fecha
+if ($fecha_desde && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_desde)) $fecha_desde = null;
+if ($fecha_hasta && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_hasta)) $fecha_hasta = null;
+
+// Construir condiciones dinámicas
+$params = [$cliente_id, $establecimiento_activo];
+$whereExtra = "";
+
+if ($caix) {
+	$whereExtra .= " AND f.cai_id = ?";
+	$params[] = $caix;
+}
+if ($fecha_desde) {
+	$whereExtra .= " AND f.fecha_emision >= ?";
+	$params[] = $fecha_desde;
+}
+if ($fecha_hasta) {
+	$whereExtra .= " AND f.fecha_emision <= ?";
+	$params[] = $fecha_hasta;
+}
+
+$stmtFacturas = $pdo->prepare("
+    SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.monto_letras, 
+           f.estado, f.pagada, f.enviada_receptor, cf.nombre AS receptor 
+    FROM facturas f
+    INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
+    WHERE f.cliente_id = ? AND f.establecimiento_id = ?
+    $whereExtra
+    ORDER BY f.fecha_emision DESC
+");
+$stmtFacturas->execute($params);
 $facturas = $stmtFacturas->fetchAll();
 
-require_once '../../includes/templates/header.php';
+// require_once '../../includes/templates/header.php';
 ?>
 <script>
 	$(document).ready(function() {
@@ -108,22 +134,51 @@ require_once '../../includes/templates/header.php';
 
 	<?php if (count($cais) >= 1): ?>
 		<form method="GET" class="mb-4">
+			<div class="row g-3 align-items-end">
+
+				<!-- Selector CAI -->
+				<div class="col-md-5">
+					<label for="cai_id" class="form-label">Filtrar por CAI:</label>
+					<select id="cai_id" name="cai_id" class="form-select" <?= (count($cais) === 1) ? 'disabled' : '' ?>>
+						<option value="">-- Todos los CAI --</option>
+						<?php foreach ($cais as $cai): ?>
+							<option value="<?= $cai['id'] ?>" <?= ($caix == $cai['id']) ? 'selected' : '' ?>>
+								<?= htmlspecialchars($cai['cai']) ?>
+								<?= $cai['activo'] ? '✅' : '⛔ Vencido' ?>
+								| Rango: <?= $cai['rango_inicio'] ?> - <?= $cai['rango_fin'] ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+
+				<!-- Fecha desde -->
+				<div class="col-md-2">
+					<label class="form-label">Desde:</label>
+					<input type="date" name="fecha_desde" class="form-control"
+						value="<?= htmlspecialchars($_GET['fecha_desde'] ?? '') ?>">
+				</div>
+
+				<!-- Fecha hasta -->
+				<div class="col-md-2">
+					<label class="form-label">Hasta:</label>
+					<input type="date" name="fecha_hasta" class="form-control"
+						value="<?= htmlspecialchars($_GET['fecha_hasta'] ?? '') ?>">
+				</div>
+
+				<!-- Botones -->
+				<div class="col-md-3 d-flex gap-2">
+					<button type="submit" class="btn btn-primary w-100">🔍 Filtrar</button>
+					<a href="?" class="btn btn-outline-secondary w-100">🔄 Limpiar</a>
+				</div>
+			</div>
+
 			<?php if (count($cais) === 1): ?>
 				<input type="hidden" name="cai_id" value="<?= $cais[0]['id'] ?>">
 			<?php endif; ?>
-			<label for="cai_id" class="form-label">Filtrar por CAI:</label>
-			<select id="cai_id" name="cai_id" class="form-select" onchange="this.form.submit()" <?= (count($cais) === 1) ? 'disabled' : '' ?>>
-				<option value="">-- Mostrar todas las facturas --</option>
-				<?php foreach ($cais as $cai): ?>
-					<option value="<?= $cai['id'] ?>" <?= ($caix == $cai['id']) ? 'selected' : '' ?>>
-						<?= htmlspecialchars($cai['cai']) ?> | Rango: <?= $cai['rango_inicio'] ?> - <?= $cai['rango_fin'] ?> | Restantes: <?= ($cai['rango_fin'] - $cai['rango_inicio'] + 1 - $cai['correlativo_actual']) ?>
-					</option>
-				<?php endforeach; ?>
-			</select>
 		</form>
 	<?php endif; ?>
 
-	<?php if ($caix && count($facturas) > 0): ?>
+	<?php if (count($facturas) > 0): ?>
 		<div class="table-responsive">
 			<table id="tabla-facturas" class="table table-striped table-bordered">
 				<thead class="table-dark">
@@ -176,7 +231,7 @@ require_once '../../includes/templates/header.php';
 									<button class="btn btn-sm btn-danger">No</button>
 								<?php endif; ?>
 							</td>
-							
+
 							<td>
 								<?php
 								$correlativoFactura = trim((string)$f['correlativo']);
@@ -186,24 +241,29 @@ require_once '../../includes/templates/header.php';
 								?>
 
 								<?php if ($f['estado'] === 'emitida'): ?>
-									<button onclick="accionFactura(<?= $f['id'] ?>, 'anular')" class="btn btn-sm btn-warning">Anular</button>
+									<button onclick="accionFactura(<?= $f['id'] ?>, 'anular')"
+										class="btn btn-sm btn-warning">Anular</button>
 
 									<?php if ($puedeEliminar || $esAdmin): ?>
 										<a href="editar_factura?id=<?= $f['id'] ?>" class="btn btn-sm btn-info">Editar</a>
-										<button onclick="accionFactura(<?= $f['id'] ?>, 'eliminar')" class="btn btn-sm btn-danger">Eliminar</button>
+										<button onclick="accionFactura(<?= $f['id'] ?>, 'eliminar')"
+											class="btn btn-sm btn-danger">Eliminar</button>
 									<?php endif; ?>
 
 								<?php elseif ($f['estado'] === 'anulada'): ?>
 									<button class="btn btn-sm btn-secondary" disabled>Anulada</button>
-									<button onclick="accionFactura(<?= $f['id'] ?>, 'restaurar')" class="btn btn-sm btn-success">Reactivar</button>
+									<button onclick="accionFactura(<?= $f['id'] ?>, 'restaurar')"
+										class="btn btn-sm btn-success">Reactivar</button>
 
 								<?php elseif ($f['estado'] === 'borrador'): ?>
-									<button onclick="accionFactura(<?= $f['id'] ?>, 'restaurar')" class="btn btn-sm btn-success">Reactivar</button>
+									<button onclick="accionFactura(<?= $f['id'] ?>, 'restaurar')"
+										class="btn btn-sm btn-success">Reactivar</button>
 								<?php endif; ?>
 
 								<?php if ($esAdmin && !$puedeEliminar): ?>
 									<div style="font-size: 11px; color: #dc3545; margin-top: 5px;">
-										<small><strong>Advertencia:</strong> Solo admin puede eliminar facturas que no son las últimas del CAI.</small>
+										<small><strong>Advertencia:</strong> Solo admin puede eliminar facturas que no son las
+											últimas del CAI.</small>
 									</div>
 								<?php endif; ?>
 
@@ -218,7 +278,8 @@ require_once '../../includes/templates/header.php';
 
 
 							<td>
-								<a href="ver_factura?id=<?= $f['id'] ?>" class="btn btn-sm btn-primary" target="_blank">Ver / Imprimir</a>
+								<a href="ver_factura?id=<?= $f['id'] ?>" class="btn btn-sm btn-primary" target="_blank">Ver /
+									Imprimir</a>
 							</td>
 						</tr>
 					<?php endforeach; ?>
@@ -235,6 +296,10 @@ require_once '../../includes/templates/header.php';
 	<?php endif; ?>
 
 </div>
+<?php
+require_once '../../includes/templates/footer.php';
+?>
+
 <script>
 	function accionFactura(facturaId, accion) {
 		Swal.fire({

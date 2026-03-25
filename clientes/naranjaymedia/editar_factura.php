@@ -90,7 +90,8 @@ require_once '../../includes/templates/header.php';
 			<label for="receptor_id" class="form-label">Cliente (Receptor)</label>
 			<select name="receptor_id" class="form-select" disabled>
 				<?php foreach ($clientes as $cliente): ?>
-					<option value="<?= $cliente['id'] ?>" <?= $cliente['id'] == $factura['receptor_id'] ? 'selected' : '' ?>>
+					<option value="<?= $cliente['id'] ?>"
+						<?= $cliente['id'] == $factura['receptor_id'] ? 'selected' : '' ?>>
 						<?= htmlspecialchars($cliente['nombre']) ?>
 					</option>
 				<?php endforeach; ?>
@@ -99,38 +100,90 @@ require_once '../../includes/templates/header.php';
 
 		<div class="mb-3">
 			<label for="fecha_emision">Fecha de emisión</label>
-			<input type="datetime-local" name="fecha_emision" class="form-control" value="<?= date('Y-m-d\TH:i', strtotime($factura['fecha_emision'])) ?>" <?= !$es_admin ? 'readonly' : '' ?>>
+			<input type="datetime-local" name="fecha_emision" class="form-control"
+				value="<?= date('Y-m-d\TH:i', strtotime($factura['fecha_emision'])) ?>"
+				<?= !$es_admin ? 'readonly' : '' ?>>
 		</div>
 
 		<div class="mb-3">
 			<label for="condicion_pago">Condición de pago</label>
 			<select name="condicion_pago" class="form-select">
-				<option value="Contado" <?= $factura['condicion_pago'] == 'Contado' ? 'selected' : '' ?>>Contado</option>
-				<option value="Credito" <?= $factura['condicion_pago'] == 'Credito' ? 'selected' : '' ?>>Crédito</option>
+				<option value="Contado" <?= $factura['condicion_pago'] == 'Contado' ? 'selected' : '' ?>>Contado
+				</option>
+				<option value="Credito" <?= $factura['condicion_pago'] == 'Credito' ? 'selected' : '' ?>>Crédito
+				</option>
 			</select>
 		</div>
 
 		<div class="mb-3 form-check">
-			<input type="checkbox" class="form-check-input" name="exonerado" id="exonerado" <?= $factura['exonerado'] ? 'checked' : '' ?>>
+			<input type="checkbox" class="form-check-input" name="exonerado" id="exonerado"
+				<?= $factura['exonerado'] ? 'checked' : '' ?>>
 			<label class="form-check-label" for="exonerado">Factura exonerada</label>
 		</div>
 
 		<div id="campos-exoneracion" style="<?= $factura['exonerado'] ? 'display: block;' : 'display: none;' ?>">
 			<div class="mb-3">
 				<label>Orden de compra exenta</label>
-				<input type="text" name="orden_compra_exenta" class="form-control" value="<?= htmlspecialchars($factura['orden_compra_exenta']) ?>">
+				<input type="text" name="orden_compra_exenta" class="form-control"
+					value="<?= htmlspecialchars($factura['orden_compra_exenta']) ?>">
 			</div>
 			<div class="mb-3">
 				<label>Constancia de exoneración</label>
-				<input type="text" name="constancia_exoneracion" class="form-control" value="<?= htmlspecialchars($factura['constancia_exoneracion']) ?>">
+				<input type="text" name="constancia_exoneracion" class="form-control"
+					value="<?= htmlspecialchars($factura['constancia_exoneracion']) ?>">
 			</div>
 			<div class="mb-3">
 				<label>Registro SAG</label>
-				<input type="text" name="registro_sag" class="form-control" value="<?= htmlspecialchars($factura['registro_sag']) ?>">
+				<input type="text" name="registro_sag" class="form-control"
+					value="<?= htmlspecialchars($factura['registro_sag']) ?>">
 			</div>
 		</div>
 
 		<h5>🛒 Productos</h5>
+		<!-- Template oculto para nuevos productos -->
+		<div id="producto-template" style="display:none;" disabled>
+			<div class="producto-item border rounded p-3 mb-4 bg-light">
+				<div class="row g-2 align-items-end">
+					<div class="col-md-5">
+						<label>Producto</label>
+						<select name="productos[0][id]" class="form-select">
+							<option value="">Seleccione producto</option>
+							<?php foreach ($productos as $prod):
+								$precio = $prod['precio_especial'] !== null ? $prod['precio_especial'] : $prod['precio_base'];
+							?>
+								<option value="<?= $prod['id'] ?>" data-precio="<?= $precio ?>"
+									data-precio-base="<?= $prod['precio_base'] ?>" data-isv="<?= $prod['tipo_isv'] ?>">
+									<?= htmlspecialchars($prod['nombre']) ?> -
+									L<?= number_format($prod['precio_base'], 2) ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+					</div>
+					<div class="col-md-2">
+						<label>Cantidad</label>
+						<input type="number" name="productos[0][cantidad]" class="form-control" min="1" value="1">
+					</div>
+					<div class="col-md-2">
+						<label>Precio Unitario</label>
+						<input type="number" step="0.01" name="productos[0][precio_unitario]"
+							class="form-control precio-unitario" value="0.00">
+					</div>
+					<div class="col-md-2">
+						<label>Subtotal</label>
+						<input type="number" step="0.01" name="productos[0][precio]"
+							class="form-control subtotal-producto" value="0.00">
+					</div>
+					<div class="col-md-2">
+						<button type="button" class="btn btn-danger btn-sm remove-producto">Eliminar</button>
+					</div>
+					<small class="text-muted precio-sugerido"></small>
+					<div class="col-md-12 mt-2">
+						<label>Detalles / Descripción</label>
+						<textarea name="productos[0][descripcion_html]" class="form-control" rows="2"></textarea>
+					</div>
+				</div>
+			</div>
+		</div>
 		<div id="productos-container">
 			<?php foreach ($items as $index => $item): ?>
 				<div class="producto-item border rounded p-3 mb-4 bg-light">
@@ -142,11 +195,8 @@ require_once '../../includes/templates/header.php';
 								<?php foreach ($productos as $prod):
 									$precio = $prod['precio_especial'] !== null ? $prod['precio_especial'] : $prod['precio_base'];
 								?>
-									<option
-										value="<?= $prod['id'] ?>"
-										data-precio="<?= $precio ?>"
-										data-precio-base="<?= $prod['precio_base'] ?>"
-										data-isv="<?= $prod['tipo_isv'] ?>"
+									<option value="<?= $prod['id'] ?>" data-precio="<?= $precio ?>"
+										data-precio-base="<?= $prod['precio_base'] ?>" data-isv="<?= $prod['tipo_isv'] ?>"
 										<?= isset($item) && $prod['id'] == $item['producto_id'] ? 'selected' : '' ?>>
 										<?= htmlspecialchars($prod['nombre']) ?>
 										- Estándar: L<?= number_format($prod['precio_base'], 2) ?>
@@ -159,30 +209,31 @@ require_once '../../includes/templates/header.php';
 						</div>
 						<div class="col-md-2">
 							<label>Cantidad</label>
-							<input type="number"
-								name="productos[<?= $index ?>][cantidad]"
-								class="form-control"
-								min="1"
-								value="<?= $item['cantidad'] ?>"
-								required>
+							<input type="number" name="productos[<?= $index ?>][cantidad]" class="form-control" min="1"
+								value="<?= $item['cantidad'] ?>" required>
 						</div>
 						<div class="col-md-2">
 							<label>Precio Unitario</label>
-							<input type="number" step="0.01" name="productos[<?= $index ?>][precio_unitario]" class="form-control precio-unitario" value="<?= $item['precio_unitario'] ?>">
+							<input type="number" step="0.01" name="productos[<?= $index ?>][precio_unitario]"
+								class="form-control precio-unitario" value="<?= $item['precio_unitario'] ?>">
 
 						</div>
 						<div class="col-md-2">
 							<label>Subtotal</label>
-							<input type="number" step="0.01" name="productos[<?= $index ?>][precio]" class="form-control subtotal-producto" value="<?= $item['cantidad'] * $item['precio_unitario'] ?>">
+							<input type="number" step="0.01" name="productos[<?= $index ?>][precio]"
+								class="form-control subtotal-producto"
+								value="<?= $item['cantidad'] * $item['precio_unitario'] ?>">
 						</div>
 
 						<div class="col-md-2">
 							<button type="button" class="btn btn-danger btn-sm remove-producto">Eliminar</button>
 						</div>
-						<small class="text-muted precio-sugerido">Precio sugerido: L<?= number_format($item['cantidad'] * $item['precio_unitario'], 2) ?></small>
+						<small class="text-muted precio-sugerido">Precio sugerido:
+							L<?= number_format($item['cantidad'] * $item['precio_unitario'], 2) ?></small>
 						<div class="col-md-12 mt-2">
 							<label>Detalles / Descripción</label>
-							<textarea name="productos[<?= $index ?>][descripcion_html]" class="form-control" rows="2"><?= htmlspecialchars($item['descripcion_html'] ?? '') ?></textarea>
+							<textarea name="productos[<?= $index ?>][descripcion_html]" class="form-control"
+								rows="2"><?= htmlspecialchars($item['descripcion_html'] ?? '') ?></textarea>
 						</div>
 					</div>
 				</div>
@@ -193,15 +244,18 @@ require_once '../../includes/templates/header.php';
 
 		<div class="mb-3">
 			<label>Subtotal</label>
-			<input type="text" id="subtotal" name="subtotal" class="form-control" value="<?= $factura['subtotal'] ?>" readonly>
+			<input type="text" id="subtotal" name="subtotal" class="form-control" value="<?= $factura['subtotal'] ?>"
+				readonly>
 		</div>
 		<div class="mb-3">
 			<label>Importe Gravado 15%</label>
-			<input type="text" name="importe_gravado_15" id="importe_gravado_15" class="form-control" value="<?= $factura['importe_gravado_15'] ?>" readonly>
+			<input type="text" name="importe_gravado_15" id="importe_gravado_15" class="form-control"
+				value="<?= $factura['importe_gravado_15'] ?>" readonly>
 		</div>
 		<div class="mb-3">
 			<label>Importe Gravado 18%</label>
-			<input type="text" name="importe_gravado_18" id="importe_gravado_18" class="form-control" value="<?= $factura['importe_gravado_18'] ?>" readonly>
+			<input type="text" name="importe_gravado_18" id="importe_gravado_18" class="form-control"
+				value="<?= $factura['importe_gravado_18'] ?>" readonly>
 		</div>
 		<div class="mb-3">
 			<label>ISV 15%</label>
@@ -217,7 +271,8 @@ require_once '../../includes/templates/header.php';
 		</div>
 		<div class="mb-3">
 			<label>Monto en letras</label>
-			<input type="text" name="monto_letras" class="form-control" value="<?= $factura['monto_letras'] ?>" readonly>
+			<input type="text" name="monto_letras" class="form-control" value="<?= $factura['monto_letras'] ?>"
+				readonly>
 		</div>
 		<!-- =======  NUEVO BLOQUE ESTADO FACTURA  ======= -->
 		<div class="row mb-3 g-3">
@@ -240,8 +295,8 @@ require_once '../../includes/templates/header.php';
 			<!-- Check: Declarada -->
 			<div class="col-md-2 d-flex align-items-end">
 				<div class="form-check">
-					<input class="form-check-input" type="checkbox" id="estado_declarada"
-						name="estado_declarada" <?= $factura['estado_declarada'] ? 'checked' : '' ?>>
+					<input class="form-check-input" type="checkbox" id="estado_declarada" name="estado_declarada"
+						<?= $factura['estado_declarada'] ? 'checked' : '' ?>>
 					<label class="form-check-label" for="estado_declarada">
 						Declarada
 					</label>
@@ -251,8 +306,8 @@ require_once '../../includes/templates/header.php';
 			<!-- Check: Pagada -->
 			<div class="col-md-2 d-flex align-items-end">
 				<div class="form-check">
-					<input class="form-check-input" type="checkbox" id="pagada"
-						name="pagada" <?= $factura['pagada'] ? 'checked' : '' ?>>
+					<input class="form-check-input" type="checkbox" id="pagada" name="pagada"
+						<?= $factura['pagada'] ? 'checked' : '' ?>>
 					<label class="form-check-label" for="pagada">
 						Pagada
 					</label>
@@ -262,8 +317,8 @@ require_once '../../includes/templates/header.php';
 			<!-- Check: Enviada -->
 			<div class="col-md-3 d-flex align-items-end">
 				<div class="form-check">
-					<input class="form-check-input" type="checkbox" id="enviada_receptor"
-						name="enviada_receptor" <?= $factura['enviada_receptor'] ? 'checked' : '' ?>>
+					<input class="form-check-input" type="checkbox" id="enviada_receptor" name="enviada_receptor"
+						<?= $factura['enviada_receptor'] ? 'checked' : '' ?>>
 					<label class="form-check-label" for="enviada_receptor">
 						Enviada al cliente
 					</label>
@@ -287,7 +342,19 @@ require_once '../../includes/templates/header.php';
 
 	document.getElementById('agregar-producto').addEventListener('click', function() {
 		const contenedor = document.getElementById('productos-container');
-		const baseItem = contenedor.children[0];
+		const template = document.getElementById('producto-template');
+
+		let baseItem = contenedor.querySelector('.producto-item');
+		if (!baseItem) {
+			if (!template) {
+				console.error('No existe template ni items para clonar');
+				return; // Salir si no hay nada que clonar
+			}
+			baseItem = template.querySelector('.producto-item');
+		}
+
+		if (!baseItem) return; // Seguridad extra
+
 		const nuevo = baseItem.cloneNode(true);
 		const index = contenedor.children.length;
 
@@ -455,9 +522,12 @@ require_once '../../includes/templates/header.php';
 						if (response.includes("Usuario o contraseña incorrecta")) {
 							Swal.fire('Error', 'Usuario o contraseña incorrecta.', 'error');
 						} else if (response.includes("Solo un admin o superadmin")) {
-							Swal.fire('Error', 'Solo un admin o superadmin puede autorizar cambios.', 'error');
-						} else if (response.includes("Todos los campos de autorización son obligatorios")) {
-							Swal.fire('Error', 'Debes llenar todos los campos de autorización.', 'error');
+							Swal.fire('Error', 'Solo un admin o superadmin puede autorizar cambios.',
+								'error');
+						} else if (response.includes(
+								"Todos los campos de autorización son obligatorios")) {
+							Swal.fire('Error', 'Debes llenar todos los campos de autorización.',
+								'error');
 						} else if (response.includes("Factura no encontrada")) {
 							Swal.fire('Error', 'La factura no fue encontrada.', 'error');
 						} else if (response.includes("Acceso no autorizado")) {
@@ -485,7 +555,7 @@ require_once '../../includes/templates/header.php';
 		let isv18 = 0;
 		const exonerado = document.getElementById('exonerado').checked;
 
-		document.querySelectorAll('.producto-item').forEach(item => {
+		document.querySelectorAll('#productos-container .producto-item').forEach(item => {
 			const cantidad = parseFloat(item.querySelector('input[name$="[cantidad]"]').value) || 0;
 			const precioUnitario = parseFloat(item.querySelector('input[name$="[precio_unitario]"]').value) || 0;
 
@@ -536,8 +606,12 @@ require_once '../../includes/templates/header.php';
 	function numeroALetras(num) {
 		const UNIDADES = ["", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"];
 		const DECENAS = ["", "", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
-		const DIEZ_A_DIECINUEVE = ["diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve"];
-		const CENTENAS = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
+		const DIEZ_A_DIECINUEVE = ["diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete",
+			"dieciocho", "diecinueve"
+		];
+		const CENTENAS = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos",
+			"setecientos", "ochocientos", "novecientos"
+		];
 
 		function convertirGrupo(n) {
 			let output = "";

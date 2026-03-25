@@ -62,8 +62,8 @@ if ($rol_usuario === 'superadmin') {
 $factura = $stmt->fetch();
 
 $esAnulada = strtolower($factura['estado']) === 'anulada';
-$rangoCAIInicio = formatoCorrelativoCAI($factura['rango_cai_inicio'], $factura['rango_inicio']);
-$rangoCAIFin = formatoCorrelativoCAI($factura['rango_cai_fin'], $factura['rango_fin']);
+$rangoCAIInicio = htmlspecialchars($factura['rango_cai_inicio']);
+$rangoCAIFin    = htmlspecialchars($factura['rango_cai_fin']);
 
 if (!$factura) {
 	die("Factura no encontrada o no autorizada.");
@@ -336,7 +336,8 @@ function formatFecha($fecha)
 		<div class="d-flex justify-content-between factura-header">
 			<div class="factura-header" style="max-width: 300px;max-height: 300px">
 				<?php if (!empty($factura['logo_url'])): ?>
-					<img src="<?= htmlspecialchars($factura['logo_url']) ?>" alt="Logo" class="factura-logo" style="width: 150px;">
+					<img src="<?= htmlspecialchars($factura['logo_url']) ?>" alt="Logo" class="factura-logo"
+						style="width: 150px;">
 				<?php endif; ?>
 				<div><strong></strong></div>
 			</div>
@@ -389,7 +390,6 @@ function formatFecha($fecha)
 								<?php
 								if (!empty($item['descripcion_html'])) {
 									echo mb_strtoupper(htmlspecialchars($item['nombre_producto']), 'UTF-8') . ' - ' . nl2br(mb_strtoupper($item['descripcion_html']));
-
 								} else {
 									echo mb_strtoupper(htmlspecialchars($item['nombre_producto'] ?? 'SIN DESCRIPCIÓN'), 'UTF-8');
 								}
@@ -411,8 +411,10 @@ function formatFecha($fecha)
 			<div class="mt-2 mb-2">
 
 				<h6 class="text-uppercase" style="font-size: 14px;">Datos del Adquiriente Exonerado</h6>
-				<div><strong>Orden de Compra Exenta:</strong> <?= htmlspecialchars($factura['orden_compra_exenta']) ?></div>
-				<div><strong>Constancia de Registro Exonerado:</strong> <?= htmlspecialchars($factura['constancia_exoneracion']) ?></div>
+				<div><strong>Orden de Compra Exenta:</strong> <?= htmlspecialchars($factura['orden_compra_exenta']) ?>
+				</div>
+				<div><strong>Constancia de Registro Exonerado:</strong>
+					<?= htmlspecialchars($factura['constancia_exoneracion']) ?></div>
 				<div><strong>Registro SAG:</strong> <?= htmlspecialchars($factura['registro_sag']) ?></div>
 
 			</div>
@@ -462,7 +464,8 @@ function formatFecha($fecha)
 			</table>
 		</div>
 		<div style="clear: both;"></div>
-		<h5> <span class="cantidadletras">Cantidad en letras: </span><?= htmlspecialchars($factura['monto_letras']) ?></h5>
+		<h5> <span class="cantidadletras">Cantidad en letras: </span><?= htmlspecialchars($factura['monto_letras']) ?>
+		</h5>
 		<p class="agradecimiento">
 			Gracias por su preferencia.
 		</p>

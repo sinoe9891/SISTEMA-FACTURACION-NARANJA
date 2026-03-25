@@ -175,7 +175,8 @@ require_once '../../includes/templates/header.php';
 						}
 						if (($cant_mes_actual ?? 0) > 0): ?>
 							<hr class="my-2">
-							<p class="mb-1"><strong><?= $emoji_mes_actual ?> Facturas del mes actual:</strong> <?= (int)$cant_mes_actual ?> facturas</p>
+							<p class="mb-1"><strong><?= $emoji_mes_actual ?> Facturas del mes actual:</strong>
+								<?= (int)$cant_mes_actual ?> facturas</p>
 							<p class="mb-1"><strong>ISV estimado:</strong> L <?= number_format($isv_mes_actual ?? 0, 2) ?></p>
 							<p class="mb-0"><small>💡 Recuerda declarar antes del 30 de este mes.</small></p>
 						<?php endif; ?>
@@ -206,7 +207,8 @@ require_once '../../includes/templates/header.php';
 							?>
 								<div class="col-md-6 col-lg-4">
 									<div class="card border-<?= $colorBorde ?> h-100 shadow-sm">
-										<div class="card-header bg-<?= $colorBorde ?> bg-opacity-10 d-flex justify-content-between align-items-center py-2">
+										<div
+											class="card-header bg-<?= $colorBorde ?> bg-opacity-10 d-flex justify-content-between align-items-center py-2">
 											<span class="fw-bold text-<?= $colorBorde ?> small"><?= $icono ?> <?= $diasTexto ?></span>
 											<span class="badge bg-<?= $colorBorde ?>"><?= htmlspecialchars($cv['fecha_fin']) ?></span>
 										</div>
@@ -301,7 +303,8 @@ require_once '../../includes/templates/header.php';
 											</td>
 											<td class="text-end fw-bold">L <?= number_format((float)$p['monto'], 2) ?></td>
 											<td class="text-center">
-												<div class="fw-semibold small"><?= htmlspecialchars($p['proxima_fecha_pago']) ?></div>
+												<div class="fw-semibold small"><?= htmlspecialchars($p['proxima_fecha_pago']) ?>
+												</div>
 												<small class="text-muted">Día <?= (int)$p['dia_pago'] ?></small>
 											</td>
 											<td class="text-center">
@@ -320,8 +323,7 @@ require_once '../../includes/templates/header.php';
 													</a>
 												<?php else: ?>
 													<a href="generar_factura?receptor_id=<?= $p['receptor_id'] ?>&producto_id=<?= $p['producto_id'] ?>&monto=<?= $p['monto'] ?>&contrato_id=<?= $p['id'] ?>"
-														class="btn btn-sm btn-success"
-														title="Crear Factura">
+														class="btn btn-sm btn-success" title="Crear Factura">
 														<i class="fa-solid fa-file-invoice-dollar"></i>
 													</a>
 												<?php endif; ?>
@@ -414,13 +416,9 @@ require_once '../../includes/templates/header.php';
 								<td class="text-end">L <?= number_format((float)$r['isv'], 2) ?></td>
 								<td class="text-end"><strong>L <?= number_format((float)$r['total'], 2) ?></strong></td>
 								<td class="text-center">
-									<button
-										class="btn btn-outline-primary btn-sm btn-icon toggle-receptor"
-										type="button"
-										data-bs-toggle="collapse"
-										data-bs-target="#detalles-receptor-<?= $rid ?>"
-										aria-expanded="false"
-										aria-controls="detalles-receptor-<?= $rid ?>"
+									<button class="btn btn-outline-primary btn-sm btn-icon toggle-receptor" type="button"
+										data-bs-toggle="collapse" data-bs-target="#detalles-receptor-<?= $rid ?>"
+										aria-expanded="false" aria-controls="detalles-receptor-<?= $rid ?>"
 										title="Ver detalles">
 										<i class="bi bi-plus-lg"></i>
 									</button>
@@ -430,9 +428,7 @@ require_once '../../includes/templates/header.php';
 							<!-- ROW DETALLE (COLSPAN) -->
 							<tr class="bg-light">
 								<td colspan="6" class="p-0">
-									<div
-										id="detalles-receptor-<?= $rid ?>"
-										class="collapse detalle-receptor"
+									<div id="detalles-receptor-<?= $rid ?>" class="collapse detalle-receptor"
 										data-bs-parent="#accordionReceptores">
 										<div class="p-3">
 
@@ -463,16 +459,17 @@ require_once '../../includes/templates/header.php';
 															<h2 class="accordion-header" id="h-<?= $rid ?>-<?= $fid ?>">
 																<button
 																	class="accordion-button collapsed py-2 d-flex align-items-center gap-2 toggle-factura"
-																	type="button"
-																	data-bs-toggle="collapse"
-																	data-bs-target="#c-<?= $rid ?>-<?= $fid ?>"
-																	aria-expanded="false"
+																	type="button" data-bs-toggle="collapse"
+																	data-bs-target="#c-<?= $rid ?>-<?= $fid ?>" aria-expanded="false"
 																	aria-controls="c-<?= $rid ?>-<?= $fid ?>">
 																	<i class="bi bi-plus-lg icon-plusminus"></i>
-																	<div class="w-100 d-flex flex-wrap justify-content-between align-items-center gap-2">
+																	<div
+																		class="w-100 d-flex flex-wrap justify-content-between align-items-center gap-2">
 																		<div>
-																			<span class="fw-semibold">Factura <?= htmlspecialchars($fx['correlativo'] ?? $fid) ?></span>
-																			<span class="text-muted ms-2"><?= htmlspecialchars(substr($fx['fecha_emision'] ?? '', 0, 10)) ?></span>
+																			<span class="fw-semibold">Factura
+																				<?= htmlspecialchars($fx['correlativo'] ?? $fid) ?></span>
+																			<span
+																				class="text-muted ms-2"><?= htmlspecialchars(substr($fx['fecha_emision'] ?? '', 0, 10)) ?></span>
 																		</div>
 																		<div class="ms-auto fw-bold">
 																			L <?= number_format((float)$fx['total'], 2) ?>
@@ -481,31 +478,31 @@ require_once '../../includes/templates/header.php';
 																</button>
 															</h2>
 
-															<div
-																id="c-<?= $rid ?>-<?= $fid ?>"
-																class="accordion-collapse collapse"
+															<div id="c-<?= $rid ?>-<?= $fid ?>" class="accordion-collapse collapse"
 																data-bs-parent="#acc-facturas-<?= $rid ?>">
 																<div class="accordion-body pt-2">
 
 																	<div class="row g-2 mb-3">
 																		<div class="col-12 col-md-8">
 																			<div class="small text-muted">
-																				Subtotal: <strong>L <?= number_format((float)$fx['subtotal'], 2) ?></strong> ·
-																				ISV: <strong>L <?= number_format($isvFactura, 2) ?></strong> ·
-																				Total: <strong>L <?= number_format((float)$fx['total'], 2) ?></strong>
+																				Subtotal: <strong>L
+																					<?= number_format((float)$fx['subtotal'], 2) ?></strong>
+																				·
+																				ISV: <strong>L
+																					<?= number_format($isvFactura, 2) ?></strong> ·
+																				Total: <strong>L
+																					<?= number_format((float)$fx['total'], 2) ?></strong>
 																			</div>
 																		</div>
 																		<div class="col-12 col-md-4 text-md-end">
 																			<a class="btn btn-sm btn-outline-secondary"
-																				href="ver_factura?id=<?= $fid ?>"
-																				target="_blank"
+																				href="ver_factura?id=<?= $fid ?>" target="_blank"
 																				rel="noopener noreferrer">
 																				<i class="bi bi-receipt me-1"></i> Ver factura
 																			</a>
 																			<?php if ($esAdmin): ?>
 																				<a class="btn btn-sm btn-outline-info"
-																					href="editar_factura?id=<?= $fid ?>"
-																					target="_blank"
+																					href="editar_factura?id=<?= $fid ?>" target="_blank"
 																					rel="noopener noreferrer">
 																					<i class="bi bi-pencil-square me-1"></i> Editar
 																				</a>
@@ -538,17 +535,25 @@ require_once '../../includes/templates/header.php';
 																									</div>
 																								<?php endif; ?>
 																							</td>
-																							<td class="text-end"><?= (int)($it['cantidad'] ?? 0) ?></td>
-																							<td class="text-end">L <?= number_format((float)($it['precio_unitario'] ?? 0), 2) ?></td>
-																							<td class="text-end">L <?= number_format((float)($it['subtotal'] ?? 0), 2) ?></td>
-																							<td class="text-end"><?= number_format((float)($it['isv_aplicado'] ?? 0), 2) ?></td>
+																							<td class="text-end">
+																								<?= (int)($it['cantidad'] ?? 0) ?></td>
+																							<td class="text-end">L
+																								<?= number_format((float)($it['precio_unitario'] ?? 0), 2) ?>
+																							</td>
+																							<td class="text-end">L
+																								<?= number_format((float)($it['subtotal'] ?? 0), 2) ?>
+																							</td>
+																							<td class="text-end">
+																								<?= number_format((float)($it['isv_aplicado'] ?? 0), 2) ?>
+																							</td>
 																						</tr>
 																					<?php endforeach; ?>
 																				</tbody>
 																			</table>
 																		</div>
 																	<?php else: ?>
-																		<div class="alert alert-warning mb-0">Esta factura no tiene items asociados.</div>
+																		<div class="alert alert-warning mb-0">Esta factura no tiene items
+																			asociados.</div>
 																	<?php endif; ?>
 
 																</div>
@@ -557,7 +562,8 @@ require_once '../../includes/templates/header.php';
 													<?php endforeach; ?>
 												</div>
 											<?php else: ?>
-												<div class="alert alert-info mb-0">No hay facturas para este cliente en el rango.</div>
+												<div class="alert alert-info mb-0">No hay facturas para este cliente en el rango.
+												</div>
 											<?php endif; ?>
 
 										</div>
@@ -814,6 +820,11 @@ require_once '../../includes/templates/header.php';
 		</div>
 	<?php endif; ?>
 </div>
+
+<?php
+require_once '../../includes/templates/footer.php';
+
+?>
 
 </body>
 
