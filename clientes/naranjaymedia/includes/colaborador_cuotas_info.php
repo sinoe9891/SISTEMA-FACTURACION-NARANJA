@@ -1,7 +1,7 @@
 <?php
 // clientes/naranjaymedia/includes/colaborador_cuotas_info.php
-require_once '../../../includes/db.php';
-require_once '../../../includes/session.php';
+require_once __DIR__ . '/../../../includes/db.php';
+require_once __DIR__ . '/../../../includes/session.php';
 header('Content-Type: application/json; charset=utf-8');
 
 try {
@@ -28,7 +28,7 @@ try {
         $ref_mes  = (int)date('n');
     }
 
-    // ── Quincenas ya pagadas ──────────────────────────────────────────────────
+    // ── Quincenas ya pagadas en el período de referencia ─────────────────────
     $q1_pagada = false;
     $q2_pagada = false;
     if ($c['tipo_pago'] === 'quincenal') {
@@ -67,7 +67,7 @@ try {
     $stmtCuotas->execute([$colab_id, $cid]);
     $cuotas = $stmtCuotas->fetchAll(PDO::FETCH_ASSOC);
 
-    // ── Bonos activos ─────────────────────────────────────────────────────────
+    // ── Bonos activos (tipo = 'bono') ─────────────────────────────────────────
     $stmtBonos = $pdo->prepare("
         SELECT id, descripcion, monto_total, fecha
         FROM colaborador_prestamos
@@ -78,7 +78,7 @@ try {
     $stmtBonos->execute([$colab_id, $cid]);
     $bonos = $stmtBonos->fetchAll(PDO::FETCH_ASSOC);
 
-    // ── Viáticos activos ──────────────────────────────────────────────────────
+    // ── Viáticos activos (tipo = 'viatico') ───────────────────────────────────
     $stmtViat = $pdo->prepare("
         SELECT id, descripcion, monto_total, fecha
         FROM colaborador_prestamos
@@ -99,7 +99,6 @@ try {
         'bonos'     => $bonos,
         'viaticos'  => $viaticos,
     ], JSON_UNESCAPED_UNICODE);
-
 } catch (Throwable $e) {
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);

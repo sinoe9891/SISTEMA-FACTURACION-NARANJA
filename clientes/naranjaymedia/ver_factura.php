@@ -20,6 +20,7 @@ if (!$usuario) {
 
 $cliente_id_usuario = $usuario['cliente_id'];
 $rol_usuario = $usuario['rol'];
+$esAdmin = in_array($rol_usuario, ['admin', 'superadmin']);
 
 // Obtener datos generales de la factura, cliente, receptor y CAI
 if ($rol_usuario === 'superadmin') {
@@ -69,10 +70,6 @@ if (!$factura) {
 	die("Factura no encontrada o no autorizada.");
 }
 
-// Obtener ítems de la factura
-$stmtItems = $pdo->prepare("SELECT * FROM factura_items_receptor WHERE factura_id = ?");
-$stmtItems->execute([$factura_id]);
-$items = $stmtItems->fetchAll();
 // Obtener ítems de la factura junto con el nombre del producto
 $stmtItems = $pdo->prepare("
     SELECT fi.*, p.nombre AS nombre_producto
@@ -86,13 +83,12 @@ $items = $stmtItems->fetchAll();
 $stmtConfig = $pdo->prepare("SELECT * FROM configuracion_sistema WHERE id = 1");
 $stmtConfig->execute();
 $configuracion = $stmtConfig->fetch();
-// Función para formatear moneda
+
 function formatMoneda($monto)
 {
 	return 'L ' . number_format($monto, 2, '.', ',');
 }
 
-// Formatear fecha
 function formatFecha($fecha)
 {
 	$meses = [
@@ -109,11 +105,9 @@ function formatFecha($fecha)
 		'November' => 'noviembre',
 		'December' => 'diciembre'
 	];
-
 	$date = new DateTime($fecha);
 	$mes_en = $date->format('F');
 	$mes_es = $meses[$mes_en] ?? $mes_en;
-
 	return $date->format('d') . ' de ' . $mes_es . ' de ' . $date->format('Y');
 }
 ?>
@@ -124,25 +118,100 @@ function formatFecha($fecha)
 <head>
 	<meta charset="UTF-8" />
 	<?php
-	// Formato: Factura 0001 - Juan Pérez - 12 de marzo de 2025
 	$titulo_factura = 'Factura ' . htmlspecialchars($factura['correlativo']);
-
-	if (!empty($factura['receptor_nombre'])) {
-		$titulo_factura .= ' - ' . htmlspecialchars($factura['receptor_nombre']);
-	}
-
-	if (!empty($factura['fecha_emision'])) {
-		$titulo_factura .= ' - ' . formatFecha($factura['fecha_emision']);
-	}
-
-	if (!empty($items) && !empty($items[0]['descripcion_html'])) {
-		$titulo_factura .= ' - Corresponde a ' . htmlspecialchars($items[0]['descripcion_html']);
-	}
+	if (!empty($factura['receptor_nombre'])) $titulo_factura .= ' - ' . htmlspecialchars($factura['receptor_nombre']);
+	if (!empty($factura['fecha_emision']))   $titulo_factura .= ' - ' . formatFecha($factura['fecha_emision']);
+	if (!empty($items) && !empty($items[0]['descripcion_html'])) $titulo_factura .= ' - Corresponde a ' . htmlspecialchars($items[0]['descripcion_html']);
 	?>
-	<!-- <title>Factura <?= htmlspecialchars($factura['correlativo']) ?></title> -->
 	<title><?= $titulo_factura ?></title>
 	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+
 	<style>
+		/* ══════════════════════════════════════════
+		   BARRA DE ACCIONES (solo pantalla)
+		══════════════════════════════════════════ */
+		.action-bar {
+			background: #1e293b;
+			padding: .55rem 1.25rem;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: .75rem;
+			flex-wrap: wrap;
+			position: sticky;
+			top: 0;
+			z-index: 999;
+			box-shadow: 0 2px 10px rgba(0, 0, 0, .3);
+		}
+
+		.action-bar-info {
+			color: #94a3b8;
+			font-size: .82rem;
+			font-family: Arial, sans-serif;
+		}
+
+		.action-bar-info strong {
+			color: #e2e8f0;
+		}
+
+		.action-bar-btns {
+			display: flex;
+			gap: .5rem;
+			align-items: center;
+		}
+
+		.btn-ab {
+			display: inline-flex;
+			align-items: center;
+			gap: .4rem;
+			padding: .42rem 1rem;
+			border-radius: 8px;
+			font-size: .82rem;
+			font-weight: 600;
+			cursor: pointer;
+			border: none;
+			text-decoration: none;
+			transition: all .15s;
+			white-space: nowrap;
+			font-family: Arial, sans-serif;
+		}
+
+		.btn-ab-back {
+			background: rgba(255, 255, 255, .1);
+			color: #94a3b8 !important;
+			border: 1px solid rgba(255, 255, 255, .15);
+		}
+
+		.btn-ab-back:hover {
+			background: rgba(255, 255, 255, .18);
+			color: #e2e8f0 !important;
+		}
+
+		.btn-ab-edit {
+			background: #3b82f6;
+			color: #fff !important;
+			box-shadow: 0 1px 6px rgba(59, 130, 246, .35);
+		}
+
+		.btn-ab-edit:hover {
+			background: #2563eb;
+			color: #fff !important;
+		}
+
+		.btn-ab-print {
+			background: #e36f1f;
+			color: #fff !important;
+			box-shadow: 0 1px 6px rgba(227, 111, 31, .4);
+		}
+
+		.btn-ab-print:hover {
+			background: #c45e16;
+			color: #fff !important;
+		}
+
+		/* ══════════════════════════════════════════
+		   ESTILOS ORIGINALES DE LA FACTURA
+		══════════════════════════════════════════ */
 		body {
 			font-family: Arial, sans-serif;
 			font-size: 12px;
@@ -191,8 +260,6 @@ function formatFecha($fecha)
 			font-size: 16px;
 		}
 
-
-
 		.agradecimiento {
 			color: #e36f1f;
 			font-size: 30px;
@@ -213,6 +280,13 @@ function formatFecha($fecha)
 		}
 
 		@media print {
+
+			/* Ocultar barra de acciones al imprimir */
+			.action-bar,
+			.no-print {
+				display: none !important;
+			}
+
 			body {
 				font-size: 8px;
 				font-family: Arial, sans-serif;
@@ -226,11 +300,9 @@ function formatFecha($fecha)
 
 			.btn,
 			a,
-			.no-print,
 			.btn-secondary,
 			.agradecimiento {
 				display: none !important;
-				/* Oculta botones, enlaces y agradecimientos decorativos */
 			}
 
 			.container {
@@ -304,10 +376,6 @@ function formatFecha($fecha)
 				margin: 0;
 			}
 
-			.no-print {
-				display: none !important;
-			}
-
 			h6 {
 				font-size: 12px !important;
 			}
@@ -324,14 +392,36 @@ function formatFecha($fecha)
 </head>
 
 <body class="">
+
 	<?php if ($esAnulada): ?>
 		<div class="marca-agua-anulada">ANULADA</div>
 	<?php endif; ?>
-	<div class="no-print d-flex justify-content-end p-3">
-		<button onclick="window.print()" class="btn btn-outline-primary">
-			🖨️ Imprimir / Guardar PDF
-		</button>
+
+	<!-- ══════════════════════════════════════
+	     BARRA DE ACCIONES (no se imprime)
+	══════════════════════════════════════ -->
+	<div class="action-bar no-print">
+		<div class="action-bar-info">
+			Factura <strong><?= htmlspecialchars($factura['correlativo']) ?></strong>
+			&nbsp;·&nbsp; <?= htmlspecialchars($factura['receptor_nombre']) ?>
+			&nbsp;·&nbsp; <?= ucfirst($factura['estado']) ?>
+		</div>
+		<div class="action-bar-btns">
+			<a href="lista_facturas" class="btn-ab btn-ab-back">← Volver</a>
+			<?php if ($esAdmin): ?>
+				<a href="editar_factura?id=<?= $factura_id ?>" class="btn-ab btn-ab-edit">
+					✏️ Editar Factura
+				</a>
+			<?php endif; ?>
+			<button onclick="window.print()" class="btn-ab btn-ab-print">
+				🖨️ Imprimir / PDF
+			</button>
+		</div>
 	</div>
+
+	<!-- ══════════════════════════════════════
+	     CONTENIDO ORIGINAL DE LA FACTURA
+	══════════════════════════════════════ -->
 	<div class="container border p-4">
 		<div class="d-flex justify-content-between factura-header">
 			<div class="factura-header" style="max-width: 300px;max-height: 300px">
@@ -353,7 +443,6 @@ function formatFecha($fecha)
 				<div><strong>Rango autorizado:</strong> <?= $rangoCAIInicio ?> al<br><?= $rangoCAIFin ?></div>
 				<div><strong>Fecha Recepción:</strong> <?= formatFecha($factura['fecha_recepcion']) ?></div>
 				<div><strong>Fecha límite emisión:</strong> <?= formatFecha($factura['fecha_limite']) ?></div>
-
 			</div>
 		</div>
 
@@ -409,14 +498,12 @@ function formatFecha($fecha)
 		<hr>
 		<div class="d-flex justify-content-between">
 			<div class="mt-2 mb-2">
-
 				<h6 class="text-uppercase" style="font-size: 14px;">Datos del Adquiriente Exonerado</h6>
 				<div><strong>Orden de Compra Exenta:</strong> <?= htmlspecialchars($factura['orden_compra_exenta']) ?>
 				</div>
 				<div><strong>Constancia de Registro Exonerado:</strong>
 					<?= htmlspecialchars($factura['constancia_exoneracion']) ?></div>
 				<div><strong>Registro SAG:</strong> <?= htmlspecialchars($factura['registro_sag']) ?></div>
-
 			</div>
 			<table class="table table-borderless" style="max-width: 400px; float: right; text-align: right;">
 				<tbody>
@@ -464,7 +551,8 @@ function formatFecha($fecha)
 			</table>
 		</div>
 		<div style="clear: both;"></div>
-		<h5> <span class="cantidadletras">Cantidad en letras: </span><?= htmlspecialchars($factura['monto_letras']) ?>
+		<h5>
+			<span class="cantidadletras">Cantidad en letras: </span><?= htmlspecialchars($factura['monto_letras']) ?>
 		</h5>
 		<p class="agradecimiento">
 			Gracias por su preferencia.
@@ -475,16 +563,11 @@ function formatFecha($fecha)
 			<strong>Número Certificado:</strong> <?= htmlspecialchars($configuracion['numero_certificado']) ?><br>
 			<div><?= nl2br(htmlspecialchars($configuracion['footer_factura'])) ?></div>
 		</div>
-		<a href="./lista_facturas" class="btn btn-secondary mt-3">Volver al listado</a>
+		<a href="./lista_facturas" class="btn btn-secondary mt-3 no-print">Volver al listado</a>
 	</div>
+
 	<script>
 		document.querySelector("body").classList.add("print");
-		// Función para parsear moneda a número float
-		function parseCurrency(value) {
-			return parseFloat(value.replace(/[^0-9.-]+/g, "")) || 0;
-		}
-
-		// Si hay items, recalculamos totales dinámicamente
 	</script>
 </body>
 

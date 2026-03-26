@@ -4,7 +4,8 @@
 
       <div class="col-md-4 mb-3">
         <h5 class="text-uppercase">🍊 Naranja & Media</h5>
-        <p class="small">Creamos experiencias digitales con sabor. Marketing, desarrollo web y soluciones creativas a la medida.</p>
+        <p class="small">Creamos experiencias digitales con sabor. Marketing, desarrollo web y soluciones
+          creativas a la medida.</p>
       </div>
 
       <div class="col-md-4 mb-3">
@@ -20,10 +21,11 @@
       <div class="col-md-4 mb-3">
         <h5 class="text-uppercase">📬 Contacto</h5>
         <ul class="list-unstyled">
-          <li>📧 hola@naranjaymedia.com</li>
-          <li>📱 +504 9999-9999</li>
+          <li>📧 gerencia@naranjaymediahn.com</li>
+          <li>📱 +504 3182-8143</li>
           <li>📍 Siguatepeque, Honduras</li>
-          <li>🌐 <a href="https://naranjaymediahn.com" class="text-white text-decoration-underline">naranjaymediahn.com</a></li>
+          <li>🌐 <a href="https://naranjaymediahn.com"
+              class="text-white text-decoration-underline">naranjaymediahn.com</a></li>
         </ul>
       </div>
 

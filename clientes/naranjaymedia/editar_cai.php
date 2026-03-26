@@ -3,15 +3,11 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 
-// ── Validar ID ────────────────────────────────────────────────────────────────
-if (!isset($_GET['id']) || !ctype_digit($_GET['id'])) {
-    die("ID de CAI inválido.");
-}
+if (!isset($_GET['id']) || !ctype_digit($_GET['id'])) die("ID de CAI inválido.");
 
 $cai_id     = (int)$_GET['id'];
 $usuario_id = $_SESSION['usuario_id'];
 
-// ── Obtener datos del usuario / cliente ───────────────────────────────────────
 $stmtUser = $pdo->prepare("
     SELECT u.rol, c.id AS cliente_id, c.nombre AS cliente_nombre, c.logo_url
     FROM usuarios u
@@ -20,21 +16,13 @@ $stmtUser = $pdo->prepare("
 ");
 $stmtUser->execute([$usuario_id]);
 $datos = $stmtUser->fetch();
-
-if (!$datos) {
-    die("Usuario inválido.");
-}
+if (!$datos) die("Usuario inválido.");
 
 $cliente_id = $datos['cliente_id'];
 $rol        = $datos['rol'];
 
-// Solo admins pueden editar CAI
-if (!in_array($rol, ['admin', 'superadmin'])) {
-    die("No tienes permisos para editar CAI.");
-}
+if (!in_array($rol, ['admin', 'superadmin'])) die("No tienes permisos para editar CAI.");
 
-// ── Cargar el CAI (validando que pertenezca al cliente) ───────────────────────
-// Solo se consulta cai_rangos para evitar errores por diferencias en columnas de otras tablas
 if ($rol === 'superadmin') {
     $stmtCAI = $pdo->prepare("SELECT * FROM cai_rangos WHERE id = ?");
     $stmtCAI->execute([$cai_id]);
@@ -42,273 +30,562 @@ if ($rol === 'superadmin') {
     $stmtCAI = $pdo->prepare("SELECT * FROM cai_rangos WHERE id = ? AND cliente_id = ?");
     $stmtCAI->execute([$cai_id, $cliente_id]);
 }
-
 $cai = $stmtCAI->fetch();
+if (!$cai) die("CAI no encontrado o no autorizado.");
 
-if (!$cai) {
-    die("CAI no encontrado o no autorizado.");
-}
-
-// ── Cargar establecimientos del cliente (para el selector) ────────────────────
-$stmtEstab = $pdo->prepare("
-    SELECT establecimiento_id AS id, nombre
-    FROM establecimientos
-    WHERE cliente_id = ?
-    ORDER BY nombre ASC
-");
+$stmtEstab = $pdo->prepare("SELECT establecimiento_id AS id, nombre FROM establecimientos WHERE cliente_id = ? ORDER BY nombre ASC");
 $stmtEstab->execute([$cliente_id]);
 $establecimientos = $stmtEstab->fetchAll();
 
-// ── Cargar puntos de emisión del establecimiento actual ───────────────────────
-$stmtPuntos = $pdo->prepare("
-    SELECT *
-    FROM puntos_emision
-    WHERE establecimiento_id = ?
-");
+$stmtPuntos = $pdo->prepare("SELECT * FROM puntos_emision WHERE establecimiento_id = ?");
 $stmtPuntos->execute([$cai['establecimiento_id']]);
 $puntos_emision = $stmtPuntos->fetchAll();
 
-// ── Mensaje de éxito tras guardar (POST/redirect/GET) ─────────────────────────
 $guardado_ok = isset($_GET['guardado']) && $_GET['guardado'] === '1';
+
+$hoy    = new DateTime();
+$limite = new DateTime($cai['fecha_limite']);
+$activo = $hoy <= $limite;
+
+$total_facturas   = (int)$cai['rango_fin'] - (int)$cai['rango_inicio'] + 1;
+$usadas           = (int)$cai['correlativo_actual'];
+$restantes        = $total_facturas - $usadas;
+$porcentaje_usado = $total_facturas > 0 ? round(($usadas / $total_facturas) * 100) : 0;
+
+// Establecimiento activo para el header
+$establecimiento_activo = $_SESSION['establecimiento_activo'] ?? null;
+$nombre_establecimiento = 'No asignado';
+if ($establecimiento_activo) {
+    $stmt = $pdo->prepare("SELECT nombre FROM establecimientos WHERE establecimiento_id = ?");
+    $stmt->execute([$establecimiento_activo]);
+    $nombre_establecimiento = $stmt->fetchColumn() ?: 'No asignado';
+}
 
 require_once '../../includes/templates/header.php';
 ?>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
 <style>
+    :root {
+        --brand: #7c3aed;
+        --brand-light: #ede9fe;
+        --brand-dark: #5b21b6;
+        --success: #10b981;
+        --success-bg: #ecfdf5;
+        --danger: #ef4444;
+        --danger-bg: #fef2f2;
+        --warning: #f59e0b;
+        --warning-bg: #fffbeb;
+        --surface: #fff;
+        --surface-2: #f8fafc;
+        --border: #e2e8f0;
+        --text-main: #1e293b;
+        --text-muted: #64748b;
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, .06);
+        --shadow-md: 0 4px 16px rgba(0, 0, 0, .08);
+        --radius: 14px;
+        --radius-sm: 8px;
+        --tr: .2s cubic-bezier(.4, 0, .2, 1);
+    }
+
+    .ec-page {
+        padding: 1.5rem 0 3rem;
+    }
+
+    /* Header */
+    .ec-header {
+        background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+        border-radius: var(--radius);
+        padding: 1.5rem 2rem;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        box-shadow: var(--shadow-md);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .ec-header::before {
+        content: '';
+        position: absolute;
+        top: -40px;
+        right: -40px;
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, .08);
+        pointer-events: none;
+    }
+
+    .ec-header::after {
+        content: '';
+        position: absolute;
+        bottom: -60px;
+        left: 30%;
+        width: 260px;
+        height: 140px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, .05);
+        pointer-events: none;
+    }
+
+    .ec-header-body {
+        display: flex;
+        flex-direction: column;
+        gap: .4rem;
+    }
+
+    .ec-header-title {
+        font-size: 1.35rem;
+        font-weight: 700;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+    }
+
+    .ec-header-sub {
+        font-size: .82rem;
+        opacity: .8;
+    }
+
+    .ec-header-logo {
+        max-height: 52px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, .15);
+        padding: 4px;
+    }
+
     .badge-activo {
-        background-color: #198754;
+        background: #059669;
+        color: #fff;
+        padding: .2rem .65rem;
+        border-radius: 20px;
+        font-size: .75rem;
+        font-weight: 600;
     }
 
     .badge-vencido {
-        background-color: #dc3545;
+        background: #dc2626;
+        color: #fff;
+        padding: .2rem .65rem;
+        border-radius: 20px;
+        font-size: .75rem;
+        font-weight: 600;
+    }
+
+    /* Stats */
+    .ec-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .ec-stat {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1rem 1.1rem;
+        display: flex;
+        align-items: center;
+        gap: .8rem;
+        box-shadow: var(--shadow-sm);
+        transition: box-shadow var(--tr), transform var(--tr);
+    }
+
+    .ec-stat:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+    }
+
+    .ec-stat-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.15rem;
+        flex-shrink: 0;
+    }
+
+    .ec-stat-icon.purple {
+        background: var(--brand-light);
+        color: var(--brand);
+    }
+
+    .ec-stat-icon.green {
+        background: var(--success-bg);
+        color: var(--success);
+    }
+
+    .ec-stat-icon.amber {
+        background: var(--warning-bg);
+        color: var(--warning);
+    }
+
+    .ec-stat-val {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--text-main);
+        line-height: 1;
+    }
+
+    .ec-stat-lbl {
+        font-size: .72rem;
+        color: var(--text-muted);
+        margin-top: 2px;
+    }
+
+    /* Cards */
+    .ec-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-sm);
+        margin-bottom: 1.25rem;
+        overflow: hidden;
+    }
+
+    .ec-card-header {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface-2);
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+    }
+
+    .ec-card-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        flex-shrink: 0;
+    }
+
+    .ec-card-icon.purple {
+        background: var(--brand-light);
+        color: var(--brand);
+    }
+
+    .ec-card-icon.gray {
+        background: #f1f5f9;
+        color: var(--text-muted);
+    }
+
+    .ec-card-icon.green {
+        background: var(--success-bg);
+        color: var(--success);
+    }
+
+    .ec-card-icon.amber {
+        background: var(--warning-bg);
+        color: var(--warning);
+    }
+
+    .ec-card-title {
+        font-weight: 700;
+        font-size: .9rem;
+        color: var(--text-main);
+        margin: 0;
+    }
+
+    .ec-card-body {
+        padding: 1.5rem;
+    }
+
+    /* Fields */
+    .ec-field-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 1rem;
+    }
+
+    .ec-field-full {
+        grid-column: 1/-1;
+    }
+
+    .ec-field {
+        display: flex;
+        flex-direction: column;
+        gap: .35rem;
+    }
+
+    .ec-label {
+        font-size: .78rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        display: flex;
+        align-items: center;
+        gap: .35rem;
+    }
+
+    .ec-label .req {
+        color: var(--danger);
+    }
+
+    .ec-input,
+    .ec-select {
+        padding: .58rem .85rem;
+        border: 1.5px solid var(--border);
+        border-radius: var(--radius-sm);
+        font-size: .88rem;
+        color: var(--text-main);
+        background: var(--surface);
+        outline: none;
+        width: 100%;
+        transition: border-color var(--tr), box-shadow var(--tr);
+    }
+
+    .ec-input:focus,
+    .ec-select:focus {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px rgba(124, 58, 237, .12);
+    }
+
+    .ec-hint {
+        font-size: .74rem;
+        color: var(--text-muted);
     }
 
     .cai-display {
         font-family: 'Courier New', monospace;
-        font-size: 13px;
-        letter-spacing: 0.5px;
+        font-size: .82rem;
+        font-weight: 600;
         background: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        padding: 8px 12px;
-        color: #333;
-    }
-
-    .section-icon {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 14px;
-        margin-right: 8px;
-    }
-
-    .field-readonly {
-        background-color: #f8f9fa !important;
-        cursor: not-allowed;
-        color: #6c757d;
-    }
-
-    .card-header-custom {
-        background: #fff;
-        border-bottom: 1px solid #e9ecef;
-        padding: 1rem 1.25rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: .6rem .85rem;
+        color: var(--text-main);
     }
 
     .info-pill {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: .35rem;
         background: #fff3e0;
         color: #b05000;
         border: 1px solid #f5c07a;
         border-radius: 20px;
-        padding: 3px 12px;
-        font-size: 12px;
+        padding: .18rem .65rem;
+        font-size: .73rem;
         font-weight: 600;
     }
 
-    .facturas-counter {
-        background: linear-gradient(135deg, #e36f1f 0%, #f5a623 100%);
-        color: white;
-        border-radius: 12px;
-        padding: 16px 20px;
+    /* Progress */
+    .ec-progress {
+        height: 8px;
+        background: #e2e8f0;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: .4rem;
+    }
+
+    .ec-progress-bar {
+        height: 100%;
+        border-radius: 4px;
+        transition: width .4s;
+    }
+
+    /* Footer */
+    .ec-footer {
+        display: flex;
+        gap: .75rem;
+        justify-content: flex-end;
+        margin-top: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .btn-save {
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        padding: .6rem 1.5rem;
+        background: var(--brand);
+        color: #fff;
+        border: none;
+        border-radius: var(--radius-sm);
+        font-size: .9rem;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(124, 58, 237, .25);
+        transition: background var(--tr), transform var(--tr);
+    }
+
+    .btn-save:hover {
+        background: var(--brand-dark);
+        transform: translateY(-1px);
+    }
+
+    .btn-back {
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        padding: .6rem 1.2rem;
+        background: var(--surface);
+        color: var(--text-muted);
+        border: 1.5px solid var(--border);
+        border-radius: var(--radius-sm);
+        font-size: .9rem;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all var(--tr);
+    }
+
+    .btn-back:hover {
+        border-color: var(--text-muted);
+        color: var(--text-main);
+    }
+
+    @media(max-width:640px) {
+        .ec-header {
+            padding: 1.1rem 1.25rem;
+        }
+
+        .ec-header-title {
+            font-size: 1.1rem;
+        }
+
+        .ec-card-body {
+            padding: 1.1rem;
+        }
     }
 </style>
 
-<div class="container mt-4 mb-5">
+<div class="ec-page container">
 
-    <!-- ── Cabecera ──────────────────────────────────────────────────────────── -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-        <div>
-            <a href="configuracion_cai" class="btn btn-sm btn-outline-secondary me-2">
-                <i class="fa-solid fa-arrow-left me-1"></i> Volver
-            </a>
-            <h4 class="d-inline-block mb-0">
-                <i class="fa-solid fa-key me-2 text-primary"></i>Editar CAI
-            </h4>
-            <div class="mt-1">
-                <small class="text-muted">
-                    Modifica los datos del CAI y su rango de autorización.
-                </small>
-                <?php
-                $hoy    = new DateTime();
-                $limite = new DateTime($cai['fecha_limite']);
-                $activo = $hoy <= $limite;
-                ?>
-                <span class="badge ms-2 <?= $activo ? 'badge-activo' : 'badge-vencido' ?>">
+    <!-- Header -->
+    <div class="ec-header">
+        <div class="ec-header-body">
+            <h4 class="ec-header-title">
+                <i class="bi bi-key-fill"></i> Editar CAI
+                <span class="<?= $activo ? 'badge-activo' : 'badge-vencido' ?>">
                     <?= $activo ? '✅ Activo' : '⛔ Vencido' ?>
                 </span>
-            </div>
+            </h4>
+            <p class="ec-header-sub">
+                Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> &nbsp;·&nbsp;
+                Rol: <?= htmlspecialchars(ucfirst($rol)) ?> &nbsp;·&nbsp;
+                <?= htmlspecialchars($datos['cliente_nombre']) ?>
+            </p>
         </div>
         <?php if (!empty($datos['logo_url'])): ?>
-            <img src="<?= htmlspecialchars($datos['logo_url']) ?>" alt="Logo" style="max-height: 55px;">
+            <img src="<?= htmlspecialchars($datos['logo_url']) ?>" alt="Logo" class="ec-header-logo">
         <?php endif; ?>
     </div>
 
-    <!-- ── Alerta guardado exitoso ────────────────────────────────────────────── -->
     <?php if ($guardado_ok): ?>
-        <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2" role="alert">
-            <i class="fa-solid fa-circle-check fa-lg"></i>
-            <div><strong>¡CAI actualizado correctamente!</strong> Los cambios han sido guardados.</div>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2 mb-3">
+            <i class="bi bi-check-circle-fill"></i>
+            <strong>¡CAI actualizado correctamente!</strong>
+            <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
 
-    <!-- ── Resumen rápido ─────────────────────────────────────────────────────── -->
-    <?php
-    $total_facturas   = (int)$cai['rango_fin'] - (int)$cai['rango_inicio'] + 1;
-    $usadas           = (int)$cai['correlativo_actual'];
-    $restantes        = $total_facturas - $usadas;
-    $porcentaje_usado = $total_facturas > 0 ? round(($usadas / $total_facturas) * 100) : 0;
-    ?>
-    <div class="row g-3 mb-4">
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body d-flex align-items-center gap-3">
-                    <div class="section-icon bg-primary bg-opacity-10 text-primary">
-                        <i class="fa-solid fa-hashtag"></i>
-                    </div>
-                    <div>
-                        <div class="text-muted small">Total facturas</div>
-                        <div class="fw-bold fs-5"><?= number_format($total_facturas) ?></div>
-                    </div>
-                </div>
+    <!-- Stats -->
+    <div class="ec-stats">
+        <div class="ec-stat">
+            <div class="ec-stat-icon purple"><i class="bi bi-hash"></i></div>
+            <div>
+                <div class="ec-stat-val"><?= number_format($total_facturas) ?></div>
+                <div class="ec-stat-lbl">Total facturas</div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body d-flex align-items-center gap-3">
-                    <div class="section-icon bg-success bg-opacity-10 text-success">
-                        <i class="fa-solid fa-check-circle"></i>
-                    </div>
-                    <div>
-                        <div class="text-muted small">Emitidas</div>
-                        <div class="fw-bold fs-5 text-success"><?= number_format($usadas) ?></div>
-                    </div>
-                </div>
+        <div class="ec-stat">
+            <div class="ec-stat-icon green"><i class="bi bi-check-circle-fill"></i></div>
+            <div>
+                <div class="ec-stat-val" style="color:#059669;"><?= number_format($usadas) ?></div>
+                <div class="ec-stat-lbl">Emitidas</div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body d-flex align-items-center gap-3">
-                    <div class="section-icon bg-warning bg-opacity-10 text-warning">
-                        <i class="fa-solid fa-clock"></i>
-                    </div>
-                    <div>
-                        <div class="text-muted small">Restantes</div>
-                        <div class="fw-bold fs-5 <?= $restantes <= 20 ? 'text-danger' : 'text-warning' ?>">
-                            <?= number_format($restantes) ?>
-                        </div>
-                    </div>
-                </div>
+        <div class="ec-stat">
+            <div class="ec-stat-icon amber"><i class="bi bi-clock-fill"></i></div>
+            <div>
+                <div class="ec-stat-val"
+                    style="color:<?= $restantes <= 20 ? '#dc2626' : ($restantes <= 100 ? '#d97706' : '#1e293b') ?>;">
+                    <?= number_format($restantes) ?></div>
+                <div class="ec-stat-lbl">Restantes</div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="text-muted small mb-1">Uso del rango</div>
-                    <div class="fw-bold mb-1"><?= $porcentaje_usado ?>%</div>
-                    <div class="progress" style="height:8px;">
-                        <div class="progress-bar <?= $porcentaje_usado >= 90 ? 'bg-danger' : ($porcentaje_usado >= 70 ? 'bg-warning' : 'bg-success') ?>"
-                            style="width: <?= $porcentaje_usado ?>%"></div>
+        <div class="ec-stat">
+            <div class="ec-stat-icon purple"><i class="bi bi-bar-chart-fill"></i></div>
+            <div>
+                <div class="ec-stat-val"><?= $porcentaje_usado ?>%</div>
+                <div class="ec-stat-lbl">Uso del rango</div>
+                <div class="ec-progress">
+                    <div class="ec-progress-bar"
+                        style="width:<?= $porcentaje_usado ?>%;background:<?= $porcentaje_usado >= 90 ? '#dc2626' : ($porcentaje_usado >= 70 ? '#d97706' : '#059669') ?>;">
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- ── Formulario ─────────────────────────────────────────────────────────── -->
     <form id="formEditarCAI">
         <input type="hidden" name="id" value="<?= $cai['id'] ?>">
 
-        <!-- 1. Datos del CAI ──────────────────────────────────────────────────── -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header-custom d-flex align-items-center">
-                <span class="section-icon bg-primary bg-opacity-10 text-primary">
-                    <i class="fa-solid fa-key"></i>
-                </span>
-                <h6 class="mb-0 fw-bold">Datos del CAI</h6>
+        <!-- Datos del CAI -->
+        <div class="ec-card">
+            <div class="ec-card-header">
+                <div class="ec-card-icon purple"><i class="bi bi-key-fill"></i></div>
+                <h6 class="ec-card-title">Datos del CAI</h6>
             </div>
-            <div class="card-body p-4">
-                <div class="row g-3">
-
-                    <div class="col-12">
-                        <label class="form-label fw-semibold">
-                            Código CAI <span class="text-danger">*</span>
-                            <span class="info-pill ms-2">
-                                <i class="fa-solid fa-triangle-exclamation fa-xs"></i>
-                                Emitido por el SAR
-                            </span>
+            <div class="ec-card-body">
+                <div class="ec-field-grid">
+                    <div class="ec-field ec-field-full">
+                        <label class="ec-label">
+                            <i class="bi bi-upc-scan"></i> Código CAI <span class="req">*</span>
+                            <span class="info-pill ms-2"><i class="bi bi-exclamation-triangle-fill"></i> SAR</span>
                         </label>
-                        <input type="text" name="cai" class="form-control font-monospace text-uppercase"
+                        <input type="text" name="cai" class="ec-input font-monospace text-uppercase"
                             value="<?= htmlspecialchars($cai['cai']) ?>"
-                            placeholder="Ej: D0708E-EE616A-A54EE0-63BE03-090930-0B1100" maxlength="40" required>
-                        <div class="form-text">Formato: 6 grupos de 6 caracteres separados por guiones.</div>
+                            placeholder="D0708E-EE616A-A54EE0-63BE03-090930-0B1100" maxlength="40" required>
+                        <span class="ec-hint">Formato: 6 grupos de 6 caracteres separados por guiones.</span>
                     </div>
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">
-                            Fecha de recepción <span class="text-danger">*</span>
-                        </label>
-                        <input type="date" name="fecha_recepcion" class="form-control"
+                    <div class="ec-field">
+                        <label class="ec-label"><i class="bi bi-calendar-check"></i> Fecha de recepción <span
+                                class="req">*</span></label>
+                        <input type="date" name="fecha_recepcion" class="ec-input"
                             value="<?= htmlspecialchars($cai['fecha_recepcion']) ?>" required>
                     </div>
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">
-                            Fecha límite de emisión <span class="text-danger">*</span>
-                        </label>
-                        <input type="date" name="fecha_limite" class="form-control"
+                    <div class="ec-field">
+                        <label class="ec-label"><i class="bi bi-calendar-x"></i> Fecha límite <span
+                                class="req">*</span></label>
+                        <input type="date" name="fecha_limite" class="ec-input"
                             value="<?= htmlspecialchars($cai['fecha_limite']) ?>" required>
                         <?php if (!$activo): ?>
-                            <div class="form-text text-danger">
-                                <i class="fa-solid fa-circle-exclamation me-1"></i>
-                                Este CAI está vencido. Actualiza la fecha si corresponde.
-                            </div>
+                            <span class="ec-hint" style="color:#dc2626;"><i
+                                    class="bi bi-exclamation-circle-fill me-1"></i>Este CAI está vencido.</span>
                         <?php endif; ?>
                     </div>
-
                 </div>
             </div>
         </div>
 
-        <!-- 2. Establecimiento y Punto de Emisión ────────────────────────────── -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header-custom d-flex align-items-center">
-                <span class="section-icon bg-secondary bg-opacity-10 text-secondary">
-                    <i class="fa-solid fa-building"></i>
-                </span>
-                <h6 class="mb-0 fw-bold">Establecimiento y Punto de Emisión</h6>
+        <!-- Establecimiento y punto de emisión -->
+        <div class="ec-card">
+            <div class="ec-card-header">
+                <div class="ec-card-icon gray"><i class="bi bi-building"></i></div>
+                <h6 class="ec-card-title">Establecimiento y Punto de Emisión</h6>
             </div>
-            <div class="card-body p-4">
-                <div class="row g-3">
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Establecimiento</label>
-                        <select name="establecimiento_id" id="establecimiento_id" class="form-select" required>
+            <div class="ec-card-body">
+                <div class="ec-field-grid">
+                    <div class="ec-field">
+                        <label class="ec-label"><i class="bi bi-building"></i> Establecimiento <span
+                                class="req">*</span></label>
+                        <select name="establecimiento_id" id="establecimiento_id" class="ec-select" required>
                             <?php foreach ($establecimientos as $est): ?>
                                 <option value="<?= $est['id'] ?>"
                                     <?= $est['id'] == $cai['establecimiento_id'] ? 'selected' : '' ?>>
@@ -317,147 +594,114 @@ require_once '../../includes/templates/header.php';
                             <?php endforeach; ?>
                         </select>
                     </div>
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Punto de Emisión</label>
-                        <select name="punto_emision_id" id="punto_emision_id" class="form-select" required>
-                            <option value="">— Cargando... —</option>
+                    <div class="ec-field">
+                        <label class="ec-label"><i class="bi bi-printer"></i> Punto de Emisión <span
+                                class="req">*</span></label>
+                        <select name="punto_emision_id" id="punto_emision_id" class="ec-select" required>
                             <?php foreach ($puntos_emision as $pe): ?>
-                                <option value="<?= $pe['id'] ?>"
-                                    <?= $pe['id'] == $cai['punto_emision_id'] ? 'selected' : '' ?>>
+                                <option value="<?= $pe['id'] ?>" <?= $pe['id'] == $cai['punto_emision_id'] ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($pe['codigo_punto']) ?>
                                     <?= !empty($pe['descripcion']) ? ' — ' . htmlspecialchars($pe['descripcion']) : '' ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
                     </div>
-
                 </div>
             </div>
         </div>
 
-        <!-- 3. Rango de Correlativo ──────────────────────────────────────────── -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header-custom d-flex align-items-center">
-                <span class="section-icon bg-success bg-opacity-10 text-success">
-                    <i class="fa-solid fa-list-ol"></i>
-                </span>
-                <h6 class="mb-0 fw-bold">Rango de Correlativo</h6>
-                <small class="text-muted ms-2">Números autorizados por el SAR</small>
+        <!-- Rango de correlativo -->
+        <div class="ec-card">
+            <div class="ec-card-header">
+                <div class="ec-card-icon green"><i class="bi bi-list-ol"></i></div>
+                <h6 class="ec-card-title">Rango de Correlativo</h6>
+                <small class="text-muted ms-1">Números autorizados por el SAR</small>
             </div>
-            <div class="card-body p-4">
-                <div class="row g-3">
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">
-                            Rango inicio <span class="text-danger">*</span>
-                        </label>
-                        <input type="number" name="rango_inicio" class="form-control" min="1"
+            <div class="ec-card-body">
+                <div class="ec-field-grid">
+                    <div class="ec-field">
+                        <label class="ec-label"><i class="bi bi-1-circle"></i> Rango inicio <span
+                                class="req">*</span></label>
+                        <input type="number" name="rango_inicio" class="ec-input" min="1"
                             value="<?= htmlspecialchars($cai['rango_inicio']) ?>" required>
-                        <div class="form-text">Número de inicio del rango autorizado.</div>
                     </div>
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">
-                            Rango fin <span class="text-danger">*</span>
-                        </label>
-                        <input type="number" name="rango_fin" class="form-control" min="1"
+                    <div class="ec-field">
+                        <label class="ec-label"><i class="bi bi-infinity"></i> Rango fin <span
+                                class="req">*</span></label>
+                        <input type="number" name="rango_fin" class="ec-input" min="1"
                             value="<?= htmlspecialchars($cai['rango_fin']) ?>" required>
-                        <div class="form-text">Número final del rango autorizado.</div>
                     </div>
-
-                    <!-- Correlativos CAI completos (formato SAR) -->
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">
-                            Correlativo CAI inicio (formato SAR)
-                        </label>
-                        <input type="text" name="rango_cai_inicio" class="form-control font-monospace text-uppercase"
-                            value="<?= htmlspecialchars($cai['rango_cai_inicio']) ?>"
-                            placeholder="Ej: 000-002-01-00000101" maxlength="25">
-                        <div class="form-text">Correlativo completo con prefijo de sucursal.</div>
-                    </div>
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">
-                            Correlativo CAI fin (formato SAR)
-                        </label>
-                        <input type="text" name="rango_cai_fin" class="form-control font-monospace text-uppercase"
-                            value="<?= htmlspecialchars($cai['rango_cai_fin']) ?>" placeholder="Ej: 000-002-01-00000200"
+                    <div class="ec-field">
+                        <label class="ec-label">Correlativo CAI inicio (SAR)</label>
+                        <input type="text" name="rango_cai_inicio" class="ec-input font-monospace text-uppercase"
+                            value="<?= htmlspecialchars($cai['rango_cai_inicio']) ?>" placeholder="000-002-01-00000001"
                             maxlength="25">
-                        <div class="form-text">Correlativo completo del final del rango.</div>
                     </div>
-
-                    <!-- Vista previa del rango autorizado -->
-                    <div class="col-12">
-                        <label class="form-label fw-semibold text-muted small">Vista previa — Rango autorizado</label>
+                    <div class="ec-field">
+                        <label class="ec-label">Correlativo CAI fin (SAR)</label>
+                        <input type="text" name="rango_cai_fin" class="ec-input font-monospace text-uppercase"
+                            value="<?= htmlspecialchars($cai['rango_cai_fin']) ?>" placeholder="000-002-01-00000500"
+                            maxlength="25">
+                    </div>
+                    <div class="ec-field ec-field-full">
+                        <label class="ec-label"><i class="bi bi-eye"></i> Vista previa rango autorizado</label>
                         <div class="cai-display" id="preview-rango">
                             <span id="preview-inicio"><?= htmlspecialchars($cai['rango_cai_inicio']) ?></span>
                             <span class="text-muted mx-2">al</span>
                             <span id="preview-fin"><?= htmlspecialchars($cai['rango_cai_fin']) ?></span>
                         </div>
                     </div>
-
                 </div>
             </div>
         </div>
 
-        <!-- 4. Correlativo Actual (solo lectura, informativo) ────────────────── -->
+        <!-- Estado actual (solo si hay facturas emitidas) -->
         <?php if ($usadas > 0): ?>
-            <div class="card border-0 shadow-sm mb-4 border-start border-warning border-3">
-                <div class="card-header-custom d-flex align-items-center">
-                    <span class="section-icon bg-warning bg-opacity-10 text-warning">
-                        <i class="fa-solid fa-file-invoice"></i>
-                    </span>
-                    <h6 class="mb-0 fw-bold">Estado actual del correlativo</h6>
-                    <span class="badge bg-warning text-dark ms-2">Solo lectura</span>
+            <div class="ec-card" style="border-left:4px solid var(--warning);">
+                <div class="ec-card-header">
+                    <div class="ec-card-icon amber"><i class="bi bi-file-invoice"></i></div>
+                    <h6 class="ec-card-title">Estado actual del correlativo</h6>
+                    <span class="ms-2"
+                        style="background:var(--warning-bg);color:#92400e;border:1px solid #fde68a;border-radius:20px;padding:.15rem .6rem;font-size:.73rem;font-weight:600;">Solo
+                        lectura</span>
                 </div>
-                <div class="card-body p-4">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold text-muted small">Último correlativo emitido</label>
-                            <div class="cai-display">
-                                <?= htmlspecialchars($cai['ultimo_correlativo'] ?? '—') ?>
-                            </div>
+                <div class="ec-card-body">
+                    <div class="ec-field-grid">
+                        <div class="ec-field">
+                            <label class="ec-label">Último correlativo emitido</label>
+                            <div class="cai-display"><?= htmlspecialchars($cai['ultimo_correlativo'] ?? '—') ?></div>
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold text-muted small">Facturas emitidas con este CAI</label>
-                            <div class="cai-display">
-                                <?= number_format($usadas) ?> de <?= number_format($total_facturas) ?>
-                                <span class="text-muted ms-2">(<?= $porcentaje_usado ?>% utilizado)</span>
-                            </div>
+                        <div class="ec-field">
+                            <label class="ec-label">Facturas emitidas con este CAI</label>
+                            <div class="cai-display"><?= number_format($usadas) ?> de <?= number_format($total_facturas) ?>
+                                (<?= $porcentaje_usado ?>%)</div>
                         </div>
-                        <div class="col-12">
-                            <div class="alert alert-warning d-flex align-items-start gap-2 mb-0 py-2">
-                                <i class="fa-solid fa-triangle-exclamation mt-1"></i>
-                                <div>
-                                    <strong>Advertencia:</strong> Este CAI ya tiene facturas emitidas.
-                                    Modifica los rangos solo si hay un error tipográfico al registrarlo.
-                                    <strong>No reduzcas el rango por debajo de <?= $usadas ?>.</strong>
-                                </div>
-                            </div>
-                        </div>
+                    </div>
+                    <div class="alert alert-warning d-flex align-items-start gap-2 mb-0 mt-3 py-2">
+                        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+                        <div><strong>Advertencia:</strong> Este CAI ya tiene facturas emitidas. No reduzcas el rango por
+                            debajo de <strong><?= $usadas ?></strong>.</div>
                     </div>
                 </div>
             </div>
         <?php endif; ?>
 
-        <!-- ── Botones ────────────────────────────────────────────────────────── -->
-        <div class="d-flex gap-2 justify-content-end mb-5">
-            <a href="lista_cai" class="btn btn-outline-secondary px-4">
-                <i class="fa-solid fa-xmark me-1"></i> Cancelar
+        <!-- Footer -->
+        <div class="ec-footer">
+            <a href="configuracion_cai" class="btn-back">
+                <i class="bi bi-arrow-left"></i> Cancelar
             </a>
-            <button type="submit" class="btn btn-primary px-5" id="btnGuardar">
-                <i class="fa-solid fa-floppy-disk me-2"></i>Guardar cambios
+            <button type="submit" class="btn-save" id="btnGuardar">
+                <i class="bi bi-floppy-fill me-1"></i> Guardar cambios
             </button>
         </div>
-
     </form>
 </div>
 
 <script>
     const CLIENTE_ID = <?= json_encode($cliente_id) ?>;
 
-    // ── Vista previa del rango ────────────────────────────────────────────────────
+    /* ── Preview ── */
     document.querySelector('input[name="rango_cai_inicio"]').addEventListener('input', function() {
         document.getElementById('preview-inicio').textContent = this.value.toUpperCase() || '—';
     });
@@ -465,117 +709,104 @@ require_once '../../includes/templates/header.php';
         document.getElementById('preview-fin').textContent = this.value.toUpperCase() || '—';
     });
 
-    // ── Auto-mayúsculas en campos CAI ─────────────────────────────────────────────
+    /* ── Auto-upper ── */
     document.querySelectorAll('.text-uppercase').forEach(el => {
         el.addEventListener('input', function() {
-            const pos = this.selectionStart;
+            const p = this.selectionStart;
             this.value = this.value.toUpperCase();
-            this.setSelectionRange(pos, pos);
+            this.setSelectionRange(p, p);
         });
     });
 
-    // ── Cargar puntos de emisión al cambiar establecimiento ───────────────────────
+    /* ── Cargar puntos de emisión ── */
     document.getElementById('establecimiento_id').addEventListener('change', function() {
-        const estabId = this.value;
-        const selPunto = document.getElementById('punto_emision_id');
-        selPunto.innerHTML = '<option value="">— Cargando... —</option>';
-
-        if (!estabId) {
-            selPunto.innerHTML = '<option value="">— Seleccione establecimiento —</option>';
+        const estId = this.value;
+        const sel = document.getElementById('punto_emision_id');
+        sel.innerHTML = '<option value="">— Cargando... —</option>';
+        if (!estId) {
+            sel.innerHTML = '<option value="">— Seleccione establecimiento —</option>';
             return;
         }
-
         fetch(
-                `../../includes/api/puntos_por_establecimiento.php?establecimiento_id=${estabId}&cliente_id=${CLIENTE_ID}`
+                `../../includes/api/puntos_por_establecimiento.php?establecimiento_id=${estId}&cliente_id=${CLIENTE_ID}`
             )
             .then(r => r.json())
             .then(puntos => {
-                selPunto.innerHTML = '<option value="">— Seleccione punto de emisión —</option>';
-                if (puntos.length === 0) {
-                    selPunto.innerHTML = '<option value="">— Sin puntos registrados —</option>';
+                sel.innerHTML = '<option value="">— Seleccione punto —</option>';
+                if (!puntos.length) {
+                    sel.innerHTML = '<option value="">— Sin puntos —</option>';
                     return;
                 }
                 puntos.forEach(p => {
                     const o = document.createElement('option');
                     o.value = p.id;
                     o.textContent = p.codigo_punto + (p.descripcion ? ' — ' + p.descripcion : '');
-                    selPunto.appendChild(o);
+                    sel.appendChild(o);
                 });
             })
             .catch(() => {
-                selPunto.innerHTML = '<option value="">— Error al cargar —</option>';
-                Swal.fire('Error', 'No se pudieron cargar los puntos de emisión.', 'error');
+                sel.innerHTML = '<option value="">— Error —</option>';
+                Swal.fire('Error', 'No se pudieron cargar los puntos.', 'error');
             });
     });
 
-    // ── Envío del formulario vía AJAX ─────────────────────────────────────────────
+    /* ── Submit ── */
     document.getElementById('formEditarCAI').addEventListener('submit', function(e) {
         e.preventDefault();
-
         const btn = document.getElementById('btnGuardar');
-
-        // Validación: rango fin >= rango inicio
         const inicio = parseInt(document.querySelector('input[name="rango_inicio"]').value) || 0;
         const fin = parseInt(document.querySelector('input[name="rango_fin"]').value) || 0;
         if (fin < inicio) {
-            Swal.fire('Error de rango', 'El rango fin no puede ser menor que el rango inicio.', 'error');
+            Swal.fire('Error de rango', 'El rango fin no puede ser menor que el inicio.', 'error');
             return;
         }
-
-        // Validación: rango fin >= facturas ya emitidas
         const emitidas = <?= $usadas ?>;
-        const totalNuevo = fin - inicio + 1;
-        if (totalNuevo < emitidas) {
-            Swal.fire(
-                'Rango inválido',
-                `Ya se emitieron ${emitidas} facturas con este CAI. El rango no puede ser menor a ese número.`,
-                'error'
-            );
+        if ((fin - inicio + 1) < emitidas) {
+            Swal.fire('Rango inválido', `Ya se emitieron ${emitidas} facturas. El rango no puede ser menor.`,
+                'error');
             return;
         }
 
         Swal.fire({
-            title: '¿Guardar cambios?',
-            text: 'Se actualizarán los datos del CAI.',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Sí, guardar',
-            cancelButtonText: 'Cancelar',
-            confirmButtonColor: '#0d6efd',
-        }).then(result => {
-            if (!result.isConfirmed) return;
-
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Guardando...';
-
-            fetch('guardar_edicion_cai', {
-                    method: 'POST',
-                    body: new FormData(document.getElementById('formEditarCAI'))
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        Swal.fire({
-                            title: '¡Guardado!',
-                            text: data.message || 'CAI actualizado correctamente.',
-                            icon: 'success',
-                            confirmButtonText: 'Aceptar',
-                            confirmButtonColor: '#198754'
-                        }).then(() => {
-                            window.location.href = `editar_cai?id=<?= $cai['id'] ?>&guardado=1`;
-                        });
-                    } else {
-                        Swal.fire('Error', data.error || 'No se pudo guardar.', 'error');
+                title: '¿Guardar cambios?',
+                text: 'Se actualizarán los datos del CAI.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, guardar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#7c3aed'
+            })
+            .then(result => {
+                if (!result.isConfirmed) return;
+                btn.disabled = true;
+                btn.innerHTML =
+                    '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando…';
+                fetch('guardar_edicion_cai', {
+                        method: 'POST',
+                        body: new FormData(document.getElementById('formEditarCAI'))
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire({
+                                title: '¡Guardado!',
+                                text: data.message || 'CAI actualizado.',
+                                icon: 'success',
+                                confirmButtonColor: '#7c3aed'
+                            }).then(() => window.location.href =
+                                `editar_cai?id=<?= $cai['id'] ?>&guardado=1`);
+                        } else {
+                            Swal.fire('Error', data.error || 'No se pudo guardar.', 'error');
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-floppy-fill me-1"></i> Guardar cambios';
+                        }
+                    })
+                    .catch(() => {
+                        Swal.fire('Error', 'Error inesperado.', 'error');
                         btn.disabled = false;
-                        btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-2"></i>Guardar cambios';
-                    }
-                })
-                .catch(() => {
-                    Swal.fire('Error', 'Error inesperado al comunicarse con el servidor.', 'error');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-2"></i>Guardar cambios';
-                });
-        });
+                        btn.innerHTML = '<i class="bi bi-floppy-fill me-1"></i> Guardar cambios';
+                    });
+            });
     });
 </script>
 
