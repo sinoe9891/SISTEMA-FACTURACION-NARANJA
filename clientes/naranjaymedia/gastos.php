@@ -9,27 +9,13 @@ $cliente_id = (int)(USUARIO_ROL === 'superadmin'
     ? ($_SESSION['cliente_seleccionado'] ?? 0)
     : CLIENTE_ID);
 
-/* ── Filtros ─────────────────────────────────────────────────────────────── */
 $vista       = in_array($_GET['vista'] ?? '', ['anual', 'mensual']) ? $_GET['vista'] : 'mensual';
 $mes_filtro  = (int)($_GET['mes']  ?? date('n'));
 $anio_filtro = (int)($_GET['anio'] ?? date('Y'));
 $cat_filtro  = (int)($_GET['cat']  ?? 0);
 $tipo_filtro = trim($_GET['tipo']  ?? '');
 
-$meses_nombres = [
-    'Enero',
-    'Febrero',
-    'Marzo',
-    'Abril',
-    'Mayo',
-    'Junio',
-    'Julio',
-    'Agosto',
-    'Septiembre',
-    'Octubre',
-    'Noviembre',
-    'Diciembre'
-];
+$meses_nombres = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 if ($vista === 'mensual') {
     $fecha_ini = sprintf('%04d-%02d-01', $anio_filtro, $mes_filtro);
@@ -41,9 +27,8 @@ if ($vista === 'mensual') {
     $periodo   = "Año $anio_filtro";
 }
 
-/* ── KPIs ─────────────────────────────────────────────────────────────────── */
 $stmtKpi = $pdo->prepare("SELECT
-    COALESCE(SUM(CASE WHEN estado!='anulado' THEN monto END),0)                         AS total_mes,
+    COALESCE(SUM(CASE WHEN estado!='anulado' THEN monto END),0)                          AS total_mes,
     COALESCE(SUM(CASE WHEN tipo='fijo'           AND estado!='anulado' THEN monto END),0) AS fijos,
     COALESCE(SUM(CASE WHEN tipo='variable'       AND estado!='anulado' THEN monto END),0) AS variables,
     COALESCE(SUM(CASE WHEN tipo='extraordinario' AND estado!='anulado' THEN monto END),0) AS extraordinarios,
@@ -54,12 +39,18 @@ FROM gastos WHERE cliente_id=? AND fecha BETWEEN ? AND ?");
 $stmtKpi->execute([$cliente_id, $fecha_ini, $fecha_fin]);
 $kpi = $stmtKpi->fetch(PDO::FETCH_ASSOC);
 
-/* ── Categorías ──────────────────────────────────────────────────────────── */
 $stmtCats = $pdo->prepare("SELECT id,nombre,color,icono FROM categorias_gastos WHERE cliente_id=? AND activa=1 ORDER BY nombre");
 $stmtCats->execute([$cliente_id]);
 $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
 
-/* ── Gastos con filtros ───────────────────────────────────────────────────── */
+/* ── Colaboradores activos para SELECT en panel de Viáticos ──────────────── */
+$stmtColabs = $pdo->prepare("
+    SELECT id, CONCAT(nombre,' ',apellido) AS nombre_completo, puesto
+    FROM colaboradores WHERE cliente_id=? AND activo=1 ORDER BY nombre, apellido
+");
+$stmtColabs->execute([$cliente_id]);
+$colaboradores_lista = $stmtColabs->fetchAll(PDO::FETCH_ASSOC);
+
 $sql = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono
         FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id
         WHERE g.cliente_id=? AND g.fecha BETWEEN ? AND ?";
@@ -76,7 +67,6 @@ $sql .= " ORDER BY g.fecha DESC, g.id DESC";
 $stmtG = $pdo->prepare($sql);
 $stmtG->execute($params);
 $gastos = $stmtG->fetchAll(PDO::FETCH_ASSOC);
-
 $total = count($gastos);
 ?>
 
@@ -142,7 +132,6 @@ $total = count($gastos);
         pointer-events: none;
     }
 
-    /* Stats */
     .gs-stats {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
@@ -221,7 +210,6 @@ $total = count($gastos);
         margin-top: 2px;
     }
 
-    /* Toolbar */
     .gs-toolbar {
         display: flex;
         align-items: center;
@@ -317,7 +305,6 @@ $total = count($gastos);
         outline: none;
     }
 
-    /* Card tabla */
     .gs-card {
         background: var(--surface);
         border: 1px solid var(--border);
@@ -430,7 +417,6 @@ $total = count($gastos);
         padding: 0 2px;
     }
 
-    /* Tipo/estado badges */
     .tipo-badge {
         display: inline-flex;
         align-items: center;
@@ -500,7 +486,6 @@ $total = count($gastos);
         font-weight: 600;
     }
 
-    /* Acciones */
     .gs-actions {
         display: flex;
         gap: .35rem;
@@ -567,7 +552,6 @@ $total = count($gastos);
         color: #fff;
     }
 
-    /* Paginación */
     .gs-pagination {
         display: flex;
         align-items: center;
@@ -633,7 +617,6 @@ $total = count($gastos);
         color: var(--text-muted);
     }
 
-    /* Modal */
     .mf-label {
         font-size: .78rem;
         font-weight: 600;
@@ -662,10 +645,6 @@ $total = count($gastos);
         border-color: #d97706;
         box-shadow: 0 0 0 3px rgba(217, 119, 6, .1);
     }
-
-    .mb-mf {
-        margin-bottom: .9rem;
-    }
 </style>
 
 <div class="gs-page container-xxl">
@@ -674,9 +653,8 @@ $total = count($gastos);
     <div class="gs-header">
         <div>
             <h4 style="font-size:1.35rem;font-weight:700;margin:0">💸 Gestión de Gastos</h4>
-            <p style="font-size:.82rem;opacity:.8;margin:.25rem 0 0">
-                <?= $periodo ?> — egresos, viáticos y gastos recurrentes
-            </p>
+            <p style="font-size:.82rem;opacity:.8;margin:.25rem 0 0"><?= $periodo ?> — egresos, viáticos y gastos
+                recurrentes</p>
         </div>
         <div style="font-size:3rem;opacity:.2;font-weight:900;line-height:1">💸</div>
     </div>
@@ -686,7 +664,7 @@ $total = count($gastos);
         <div class="gs-stat">
             <div class="gs-stat-icon si-amb"><i class="bi bi-receipt-cutoff"></i></div>
             <div>
-                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['total_mes'], 0) ?>
+                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['total_mes'], 2) ?>
                 </div>
                 <div class="gs-stat-lbl">Total (<?= (int)$kpi['total_registros'] ?> reg.)</div>
             </div>
@@ -694,14 +672,14 @@ $total = count($gastos);
         <div class="gs-stat">
             <div class="gs-stat-icon si-grn"><i class="bi bi-lock-fill"></i></div>
             <div>
-                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['fijos'], 0) ?></div>
+                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['fijos'], 2) ?></div>
                 <div class="gs-stat-lbl">Fijos</div>
             </div>
         </div>
         <div class="gs-stat">
             <div class="gs-stat-icon si-blu"><i class="bi bi-graph-up"></i></div>
             <div>
-                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['variables'], 0) ?>
+                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['variables'], 2) ?>
                 </div>
                 <div class="gs-stat-lbl">Variables</div>
             </div>
@@ -709,8 +687,7 @@ $total = count($gastos);
         <div class="gs-stat">
             <div class="gs-stat-icon si-sky"><i class="bi bi-airplane-fill"></i></div>
             <div>
-                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['viaticos'], 0) ?>
-                </div>
+                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['viaticos'], 2) ?></div>
                 <div class="gs-stat-lbl">Viáticos</div>
             </div>
         </div>
@@ -734,74 +711,48 @@ $total = count($gastos);
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-body py-3">
             <form method="GET" class="row g-2 align-items-end">
-                <div class="col-auto">
-                    <label class="form-label small fw-semibold mb-1">Vista</label>
-                    <select name="vista" id="sVista" class="form-select form-select-sm">
+                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Vista</label><select name="vista"
+                        id="sVista" class="form-select form-select-sm">
                         <option value="mensual" <?= $vista === 'mensual' ? 'selected' : '' ?>>🗓️ Mensual</option>
-                        <option value="anual" <?= $vista === 'anual'  ? 'selected' : '' ?>>📅 Anual</option>
-                    </select>
-                </div>
-                <div class="col-auto" id="grpMesFiltro" <?= $vista === 'anual' ? 'style="display:none"' : '' ?>>
-                    <label class="form-label small fw-semibold mb-1">Mes</label>
-                    <select name="mes" class="form-select form-select-sm">
-                        <?php for ($m = 1; $m <= 12; $m++): ?>
-                            <option value="<?= $m ?>" <?= $m == $mes_filtro ? 'selected' : '' ?>><?= $meses_nombres[$m - 1] ?>
-                            </option>
-                        <?php endfor; ?>
-                    </select>
-                </div>
-                <div class="col-auto">
-                    <label class="form-label small fw-semibold mb-1">Año</label>
-                    <select name="anio" class="form-select form-select-sm">
-                        <?php for ($a = date('Y'); $a >= date('Y') - 4; $a--): ?>
-                            <option value="<?= $a ?>" <?= $a == $anio_filtro ? 'selected' : '' ?>><?= $a ?></option>
-                        <?php endfor; ?>
-                    </select>
-                </div>
-                <div class="col-auto">
-                    <label class="form-label small fw-semibold mb-1">Categoría</label>
-                    <select name="cat" class="form-select form-select-sm">
-                        <option value="">Todas</option>
-                        <?php foreach ($categorias as $cc): ?>
-                            <option value="<?= $cc['id'] ?>" <?= $cc['id'] == $cat_filtro ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($cc['nombre']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-auto">
-                    <label class="form-label small fw-semibold mb-1">Tipo</label>
-                    <select name="tipo" class="form-select form-select-sm">
+                        <option value="anual" <?= $vista === 'anual' ? 'selected' : '' ?>>📅 Anual</option>
+                    </select></div>
+                <div class="col-auto" id="grpMesFiltro" <?= $vista === 'anual' ? 'style="display:none"' : '' ?>><label
+                        class="form-label small fw-semibold mb-1">Mes</label><select name="mes"
+                        class="form-select form-select-sm"><?php for ($m = 1; $m <= 12; $m++): ?><option value="<?= $m ?>"
+                                <?= $m == $mes_filtro ? 'selected' : '' ?>><?= $meses_nombres[$m - 1] ?></option>
+                        <?php endfor; ?></select></div>
+                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Año</label><select name="anio"
+                        class="form-select form-select-sm"><?php for ($a = date('Y'); $a >= date('Y') - 4; $a--): ?><option
+                                value="<?= $a ?>" <?= $a == $anio_filtro ? 'selected' : '' ?>><?= $a ?></option>
+                        <?php endfor; ?></select></div>
+                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Categoría</label><select
+                        name="cat" class="form-select form-select-sm">
+                        <option value="">Todas</option><?php foreach ($categorias as $cc): ?><option
+                                value="<?= $cc['id'] ?>" <?= $cc['id'] == $cat_filtro ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($cc['nombre']) ?></option><?php endforeach; ?>
+                    </select></div>
+                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Tipo</label><select name="tipo"
+                        class="form-select form-select-sm">
                         <option value="">Todos</option>
-                        <option value="fijo" <?= $tipo_filtro === 'fijo'          ? 'selected' : '' ?>>🔒 Fijo</option>
-                        <option value="variable" <?= $tipo_filtro === 'variable'      ? 'selected' : '' ?>>📊 Variable
-                        </option>
+                        <option value="fijo" <?= $tipo_filtro === 'fijo' ? 'selected' : '' ?>>🔒 Fijo</option>
+                        <option value="variable" <?= $tipo_filtro === 'variable' ? 'selected' : '' ?>>📊 Variable</option>
                         <option value="extraordinario" <?= $tipo_filtro === 'extraordinario' ? 'selected' : '' ?>>⭐
                             Extraordinario</option>
-                        <option value="viaticos" <?= $tipo_filtro === 'viaticos'      ? 'selected' : '' ?>>✈️ Viáticos
-                        </option>
-                    </select>
-                </div>
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-primary btn-sm">
-                        <i class="fa-solid fa-filter me-1"></i>Filtrar
-                    </button>
-                    <a href="gastos" class="btn btn-outline-secondary btn-sm ms-1">Limpiar</a>
-                </div>
+                        <option value="viaticos" <?= $tipo_filtro === 'viaticos' ? 'selected' : '' ?>>✈️ Viáticos</option>
+                    </select></div>
+                <div class="col-auto"><button type="submit" class="btn btn-primary btn-sm"><i
+                            class="fa-solid fa-filter me-1"></i>Filtrar</button><a href="gastos"
+                        class="btn btn-outline-secondary btn-sm ms-1">Limpiar</a></div>
             </form>
         </div>
     </div>
 
-    <!-- Toolbar JS (búsqueda + filtros en tabla) -->
+    <!-- Toolbar JS -->
     <div class="gs-toolbar">
-        <button class="btn-nuevo-gs" id="btnNuevoGasto">
-            <i class="bi bi-plus-circle-fill"></i> Nuevo Gasto
-        </button>
-        <div class="gs-search-wrap">
-            <i class="bi bi-search"></i>
-            <input type="text" id="gsSearch" class="gs-search" placeholder="Buscar descripción, proveedor, destino…"
-                autocomplete="off">
-            <button class="gs-clear-btn" id="gsClear"><i class="bi bi-x-lg"></i></button>
-        </div>
+        <button class="btn-nuevo-gs" id="btnNuevoGasto"><i class="bi bi-plus-circle-fill"></i> Nuevo Gasto</button>
+        <div class="gs-search-wrap"><i class="bi bi-search"></i><input type="text" id="gsSearch" class="gs-search"
+                placeholder="Buscar descripción, proveedor, destino…" autocomplete="off"><button class="gs-clear-btn"
+                id="gsClear"><i class="bi bi-x-lg"></i></button></div>
         <select id="gsFiltroTipo" class="gs-select">
             <option value="">Todos los tipos</option>
             <option value="fijo">🔒 Fijo</option>
@@ -825,9 +776,8 @@ $total = count($gastos);
     <!-- Tabla -->
     <div class="gs-card">
         <div class="gs-card-header">
-            <span style="font-weight:700;font-size:.95rem;display:flex;align-items:center;gap:.5rem;">
-                <i class="bi bi-table"></i> Gastos — <?= $periodo ?>
-            </span>
+            <span style="font-weight:700;font-size:.95rem;display:flex;align-items:center;gap:.5rem;"><i
+                    class="bi bi-table"></i> Gastos — <?= $periodo ?></span>
             <span class="gs-badge" id="gsBadge"><?= $total ?> gastos</span>
         </div>
         <div class="gs-table-wrap">
@@ -851,88 +801,66 @@ $total = count($gastos);
                 <tbody id="gsBody">
                     <?php
                     $tipoClasses = ['variable' => 'tb-var', 'fijo' => 'tb-fij', 'extraordinario' => 'tb-ext', 'viaticos' => 'tb-via'];
-                    $tipoLabels  = ['variable' => '📊 Variable', 'fijo' => '🔒 Fijo', 'extraordinario' => '⭐ Extraordinario', 'viaticos' => '✈️ Viáticos'];
+                    $tipoLabels = ['variable' => '📊 Variable', 'fijo' => '🔒 Fijo', 'extraordinario' => '⭐ Extraordinario', 'viaticos' => '✈️ Viáticos'];
                     foreach ($gastos as $g):
-                        $tCls  = $tipoClasses[$g['tipo'] ?? ''] ?? 'tb-var';
-                        $tLbl  = $tipoLabels[$g['tipo'] ?? '']  ?? ucfirst($g['tipo'] ?? '');
-                        $est   = $g['estado'] ?? 'pendiente';
-                        $src   = strtolower(($g['descripcion'] ?? '') . ' ' . ($g['tipo'] ?? '') . ' ' . ($g['estado'] ?? '') . ' ' . ($g['cat_nombre'] ?? '') . ' ' . ($g['proveedor'] ?? '') . ' ' . (($g['tipo'] === 'viaticos' && !empty($g['viatico_destino'])) ? $g['viatico_destino'] : ''));
+                        $tCls = $tipoClasses[$g['tipo'] ?? ''] ?? 'tb-var';
+                        $tLbl = $tipoLabels[$g['tipo'] ?? ''] ?? ucfirst($g['tipo'] ?? '');
+                        $est = $g['estado'] ?? 'pendiente';
+                        $src = strtolower(($g['descripcion'] ?? '') . ' ' . ($g['tipo'] ?? '') . ' ' . ($g['estado'] ?? '') . ' ' . ($g['cat_nombre'] ?? '') . ' ' . ($g['proveedor'] ?? '') . ' ' . (($g['tipo'] === 'viaticos' && !empty($g['viatico_destino'])) ? $g['viatico_destino'] : '') . ' ' . (($g['tipo'] === 'viaticos' && !empty($g['viatico_colaborador'])) ? $g['viatico_colaborador'] : ''));
                     ?>
                         <tr data-search="<?= htmlspecialchars($src) ?>" data-tipo="<?= htmlspecialchars($g['tipo'] ?? '') ?>"
                             data-estado="<?= htmlspecialchars($est) ?>">
                             <td data-col="fecha" style="white-space:nowrap;font-size:.83rem;color:#64748b;font-weight:600;">
-                                <?= date('d/m/Y', strtotime($g['fecha'])) ?>
-                            </td>
+                                <?= date('d/m/Y', strtotime($g['fecha'])) ?></td>
                             <td>
                                 <div class="fw-semibold" data-col="desc"
                                     style="<?= $est === 'anulado' ? 'text-decoration:line-through;opacity:.5' : '' ?>">
                                     <?= htmlspecialchars(mb_substr($g['descripcion'] ?? '', 0, 60)) ?><?= mb_strlen($g['descripcion'] ?? '') > 60 ? '…' : '' ?>
                                 </div>
-                                <?php if (!empty($g['proveedor'])): ?>
-                                    <small class="text-muted"><i
-                                            class="bi bi-shop me-1"></i><?= htmlspecialchars($g['proveedor']) ?></small>
-                                <?php endif; ?>
-                                <?php if (($g['tipo'] ?? '') === 'viaticos' && !empty($g['viatico_destino'])): ?>
-                                    <div style="font-size:.75rem;color:#0369a1;">
-                                        <i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($g['viatico_destino']) ?>
-                                        <?php if (!empty($g['viatico_colaborador'])): ?>
-                                            — <?= htmlspecialchars($g['viatico_colaborador']) ?>
-                                        <?php endif; ?>
+                                <?php if (!empty($g['proveedor'])): ?><small class="text-muted"><i
+                                            class="bi bi-shop me-1"></i><?= htmlspecialchars($g['proveedor']) ?></small><?php endif; ?>
+                                <?php if (($g['tipo'] ?? '') === 'viaticos'): ?>
+                                    <div style="font-size:.75rem;color:#0369a1;margin-top:2px;">
+                                        <?php if (!empty($g['viatico_destino'])): ?><i
+                                                class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($g['viatico_destino']) ?><?php endif; ?>
+                                            <?php if (!empty($g['viatico_colaborador'])): ?>&nbsp;·&nbsp;<i
+                                                class="bi bi-person me-1"></i><?= htmlspecialchars($g['viatico_colaborador']) ?><?php endif; ?>
                                     </div>
                                 <?php endif; ?>
                             </td>
                             <td><span class="tipo-badge <?= $tCls ?>"><?= $tLbl ?></span></td>
-                            <td data-col="cat" style="font-size:.83rem;">
-                                <?php if (!empty($g['cat_nombre'])): ?>
-                                    <span class="badge rounded-pill px-2" style="background:<?= $g['cat_color'] ?>18;color:<?= $g['cat_color'] ?>;
-                                                 border:1px solid <?= $g['cat_color'] ?>40;font-size:.73rem;">
-                                        <i
-                                            class="fa-solid <?= $g['cat_icono'] ?> me-1"></i><?= htmlspecialchars($g['cat_nombre']) ?>
-                                    </span>
-                                <?php else: ?>
-                                    <span style="opacity:.4;font-size:.8rem;">—</span>
-                                <?php endif; ?>
-                            </td>
+                            <td data-col="cat" style="font-size:.83rem;"><?php if (!empty($g['cat_nombre'])): ?><span
+                                        class="badge rounded-pill px-2"
+                                        style="background:<?= $g['cat_color'] ?>18;color:<?= $g['cat_color'] ?>;border:1px solid <?= $g['cat_color'] ?>40;font-size:.73rem;"><i
+                                            class="fa-solid <?= $g['cat_icono'] ?> me-1"></i><?= htmlspecialchars($g['cat_nombre']) ?></span><?php else: ?><span
+                                        style="opacity:.4;font-size:.8rem;">—</span><?php endif; ?></td>
                             <td
                                 style="font-weight:700;white-space:nowrap;<?= $est === 'anulado' ? 'text-decoration:line-through;opacity:.5' : '' ?>">
-                                L <?= number_format((float)($g['monto'] ?? 0), 2) ?>
-                            </td>
+                                L <?= number_format((float)($g['monto'] ?? 0), 2) ?></td>
                             <td>
-                                <?php if ($est === 'pagado'): ?>
-                                    <span class="estado-pg"><i class="bi bi-check-circle-fill"></i>Pagado</span>
-                                <?php elseif ($est === 'pendiente'): ?>
-                                    <span class="estado-pd"><i class="bi bi-hourglass-split"></i>Pendiente</span>
-                                <?php else: ?>
-                                    <span class="estado-an"><i class="bi bi-x-circle-fill"></i>Anulado</span>
-                                <?php endif; ?>
+                                <?php if ($est === 'pagado'): ?><span class="estado-pg"><i
+                                            class="bi bi-check-circle-fill"></i>Pagado</span>
+                                <?php elseif ($est === 'pendiente'): ?><span class="estado-pd"><i
+                                            class="bi bi-hourglass-split"></i>Pendiente</span>
+                                <?php else: ?><span class="estado-an"><i
+                                            class="bi bi-x-circle-fill"></i>Anulado</span><?php endif; ?>
                             </td>
                             <td>
                                 <div class="gs-actions">
                                     <button class="btn-a btn-edit btn-editar-gasto"
                                         data-gasto='<?= json_encode($g, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>'
-                                        title="Editar">
-                                        <i class="bi bi-pencil-fill"></i>
-                                    </button>
-                                    <?php if ($est === 'pendiente'): ?>
-                                        <button class="btn-a btn-pay btn-pagar-gasto" data-id="<?= $g['id'] ?>"
-                                            title="Marcar pagado">
-                                            <i class="bi bi-check-lg"></i>
-                                        </button>
-                                    <?php endif; ?>
-                                    <?php if ($est !== 'anulado'): ?>
-                                        <button class="btn-a btn-anu btn-anular-gasto" data-id="<?= $g['id'] ?>"
+                                        title="Editar"><i class="bi bi-pencil-fill"></i></button>
+                                    <?php if ($est === 'pendiente'): ?><button class="btn-a btn-pay btn-pagar-gasto"
+                                            data-id="<?= $g['id'] ?>" title="Marcar pagado"><i
+                                                class="bi bi-check-lg"></i></button><?php endif; ?>
+                                    <?php if ($est !== 'anulado'): ?><button class="btn-a btn-anu btn-anular-gasto"
+                                            data-id="<?= $g['id'] ?>"
                                             data-desc="<?= htmlspecialchars(mb_substr($g['descripcion'] ?? '', 0, 40)) ?>"
-                                            title="Anular">
-                                            <i class="bi bi-slash-circle"></i>
-                                        </button>
-                                    <?php endif; ?>
-                                    <?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'])): ?>
-                                        <button class="btn-a btn-del btn-eliminar-gasto" data-id="<?= $g['id'] ?>"
+                                            title="Anular"><i class="bi bi-slash-circle"></i></button><?php endif; ?>
+                                    <?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'])): ?><button
+                                            class="btn-a btn-del btn-eliminar-gasto" data-id="<?= $g['id'] ?>"
                                             data-desc="<?= htmlspecialchars(mb_substr($g['descripcion'] ?? '', 0, 40)) ?>"
-                                            title="Eliminar">
-                                            <i class="bi bi-trash3-fill"></i>
-                                        </button>
-                                    <?php endif; ?>
+                                            title="Eliminar"><i class="bi bi-trash3-fill"></i></button><?php endif; ?>
                                 </div>
                             </td>
                         </tr>
@@ -955,104 +883,83 @@ $total = count($gastos);
                 <div id="gsEmptySub" style="font-size:.85rem;margin-top:.3rem;"></div>
             </div>
         </div>
-        <div class="gs-pagination">
-            <span class="gs-page-info" id="gsPageInfo"></span>
+        <div class="gs-pagination"><span class="gs-page-info" id="gsPageInfo"></span>
             <div class="gs-page-btns" id="gsPageBtns"></div>
         </div>
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════════════════
-     MODAL: Nuevo / Editar Gasto (con Viáticos)
-══════════════════════════════════════════════════════════════════════ -->
+<!-- ══ MODAL: Nuevo / Editar Gasto ════════════════════════════════════ -->
 <div class="modal fade" id="modalGasto" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header py-3" style="background:linear-gradient(135deg,#d97706,#92400e)">
-                <h5 class="modal-title fw-bold text-white" id="modalGastoTitulo">
-                    <i class="bi bi-plus-circle-fill me-2"></i>Nuevo Gasto
-                </h5>
+                <h5 class="modal-title fw-bold text-white" id="modalGastoTitulo"><i
+                        class="bi bi-plus-circle-fill me-2"></i>Nuevo Gasto</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
                 <form id="formGasto">
                     <input type="hidden" name="gasto_id" id="g_id">
                     <div class="row g-3">
-                        <div class="col-12">
-                            <label class="mf-label">Descripción <span style="color:#ef4444">*</span></label>
-                            <input type="text" name="descripcion" id="g_desc" class="mf-input"
-                                placeholder="Descripción del gasto" maxlength="300" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="mf-label">Tipo <span style="color:#ef4444">*</span></label>
-                            <select name="tipo" id="g_tipo" class="mf-select" required>
+                        <div class="col-12"><label class="mf-label">Descripción <span
+                                    style="color:#ef4444">*</span></label><input type="text" name="descripcion"
+                                id="g_desc" class="mf-input" placeholder="Descripción del gasto" maxlength="300"
+                                required></div>
+                        <div class="col-md-6"><label class="mf-label">Tipo <span
+                                    style="color:#ef4444">*</span></label><select name="tipo" id="g_tipo"
+                                class="mf-select" required>
                                 <option value="variable">📊 Variable</option>
                                 <option value="fijo">🔒 Fijo (recurrente)</option>
                                 <option value="extraordinario">⭐ Extraordinario</option>
                                 <option value="viaticos">✈️ Viáticos</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6" id="grpFrecuencia">
-                            <label class="mf-label">Frecuencia</label>
-                            <select name="frecuencia" id="g_frec" class="mf-select">
+                            </select></div>
+                        <div class="col-md-6" id="grpFrecuencia"><label class="mf-label">Frecuencia</label><select
+                                name="frecuencia" id="g_frec" class="mf-select">
                                 <option value="unico">📌 Único</option>
                                 <option value="mensual">📅 Mensual</option>
                                 <option value="quincenal">🔄 Quincenal</option>
                                 <option value="anual">📆 Anual</option>
-                            </select>
+                            </select></div>
+                        <div class="col-md-4"><label class="mf-label">Monto (L) <span
+                                    style="color:#ef4444">*</span></label>
+                            <div class="input-group"><span class="input-group-text">L</span><input type="number"
+                                    name="monto" id="g_monto" class="mf-input" min="0.01" step="0.01" placeholder="0.00"
+                                    required style="border-radius:0 var(--radius-sm) var(--radius-sm) 0"></div>
                         </div>
-                        <div class="col-md-4">
-                            <label class="mf-label">Monto (L) <span style="color:#ef4444">*</span></label>
-                            <div class="input-group">
-                                <span class="input-group-text">L</span>
-                                <input type="number" name="monto" id="g_monto" class="mf-input" min="0.01" step="0.01"
-                                    placeholder="0.00" required
-                                    style="border-radius:0 var(--radius-sm) var(--radius-sm) 0">
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="mf-label">Fecha <span style="color:#ef4444">*</span></label>
-                            <input type="date" name="fecha" id="g_fecha" class="mf-input" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="mf-label">Estado</label>
-                            <select name="estado" id="g_estado" class="mf-select">
+                        <div class="col-md-4"><label class="mf-label">Fecha <span
+                                    style="color:#ef4444">*</span></label><input type="date" name="fecha" id="g_fecha"
+                                class="mf-input" required></div>
+                        <div class="col-md-4"><label class="mf-label">Estado</label><select name="estado" id="g_estado"
+                                class="mf-select">
                                 <option value="pendiente">⏳ Pendiente</option>
                                 <option value="pagado">✅ Pagado</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="mf-label">Categoría</label>
-                            <select name="categoria_id" id="g_cat" class="mf-select">
-                                <option value="">— Sin categoría —</option>
-                                <?php foreach ($categorias as $cc): ?>
-                                    <option value="<?= $cc['id'] ?>"><?= htmlspecialchars($cc['nombre']) ?></option>
+                            </select></div>
+                        <div class="col-md-6"><label class="mf-label">Categoría</label><select name="categoria_id"
+                                id="g_cat" class="mf-select">
+                                <option value="">— Sin categoría —</option><?php foreach ($categorias as $cc): ?><option
+                                        value="<?= $cc['id'] ?>"><?= htmlspecialchars($cc['nombre']) ?></option>
                                 <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="mf-label">Proveedor / Beneficiario</label>
-                            <input type="text" name="proveedor" id="g_prov" class="mf-input"
-                                placeholder="Nombre del proveedor" maxlength="200">
-                        </div>
-                        <div class="col-md-3" id="grpDia1" style="display:none">
-                            <label class="mf-label">Día de pago</label>
-                            <input type="number" name="dia_pago" id="g_dia1" class="mf-input" min="1" max="31">
-                        </div>
-                        <div class="col-md-3" id="grpDia2G" style="display:none">
-                            <label class="mf-label">2° Día quincenal</label>
-                            <input type="number" name="dia_pago_2" id="g_dia2" class="mf-input" min="1" max="31">
-                        </div>
-                        <div class="col-md-6" id="grpFechaVenc" style="display:none">
-                            <label class="mf-label">Fecha vencimiento</label>
-                            <input type="date" name="fecha_vencimiento" id="g_venc" class="mf-input">
+                            </select></div>
+                        <div class="col-md-6"><label class="mf-label">Proveedor / Beneficiario</label><input type="text"
+                                name="proveedor" id="g_prov" class="mf-input" placeholder="Nombre del proveedor"
+                                maxlength="200"></div>
+                        <div class="col-md-3" id="grpDia1" style="display:none"><label class="mf-label">Día de
+                                pago</label><input type="number" name="dia_pago" id="g_dia1" class="mf-input" min="1"
+                                max="31"></div>
+                        <div class="col-md-3" id="grpDia2G" style="display:none"><label class="mf-label">2° Día
+                                quincenal</label><input type="number" name="dia_pago_2" id="g_dia2" class="mf-input"
+                                min="1" max="31"></div>
+                        <div class="col-md-6" id="grpFechaVenc" style="display:none"><label class="mf-label">Fecha
+                                vencimiento</label><input type="date" name="fecha_vencimiento" id="g_venc"
+                                class="mf-input">
                             <div class="form-text">Para recurrentes: hasta cuándo aplica.</div>
                         </div>
 
-                        <!-- ── Panel Viáticos ──────────────────────────────── -->
+                        <!-- ══ Panel Viáticos — Colaborador como SELECT ══════ -->
                         <div class="col-12" id="panelViaticos" style="display:none">
-                            <div class="rounded-3 p-3 border-0" style="background:#e0f2fe;border:1.5px solid #bae6fd">
-                                <div class="fw-semibold small mb-2" style="color:#0369a1">
+                            <div class="rounded-3 p-3" style="background:#e0f2fe;border:1.5px solid #bae6fd">
+                                <div class="fw-semibold small mb-3" style="color:#0369a1">
                                     <i class="bi bi-airplane me-1"></i> Datos del Viático
                                 </div>
                                 <div class="row g-2">
@@ -1061,10 +968,22 @@ $total = count($gastos);
                                         <input type="text" name="viatico_destino" id="g_vdest" class="mf-input"
                                             placeholder="Ej: San Pedro Sula" maxlength="150">
                                     </div>
+                                    <!-- ← FIX: SELECT de colaboradores en lugar de text input ↓ -->
                                     <div class="col-md-6">
-                                        <label class="mf-label">Colaborador</label>
-                                        <input type="text" name="viatico_colaborador" id="g_vcolab" class="mf-input"
-                                            placeholder="Nombre del empleado" maxlength="150">
+                                        <label class="mf-label">
+                                            Colaborador
+                                            <span class="text-muted fw-normal"
+                                                style="text-transform:none;font-size:.75rem;letter-spacing:0">(opcional)</span>
+                                        </label>
+                                        <select name="viatico_colaborador" id="g_vcolab" class="mf-select">
+                                            <option value="">— Sin colaborador específico —</option>
+                                            <?php foreach ($colaboradores_lista as $cl): ?>
+                                                <option value="<?= htmlspecialchars($cl['nombre_completo']) ?>">
+                                                    <?= htmlspecialchars($cl['nombre_completo']) ?><?php if ($cl['puesto']): ?>
+                                                    — <?= htmlspecialchars($cl['puesto']) ?><?php endif; ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="mf-label">Motivo</label>
@@ -1090,19 +1009,16 @@ $total = count($gastos);
                             </div>
                         </div>
 
-                        <div class="col-12">
-                            <label class="mf-label">Notas</label>
-                            <textarea name="notas" id="g_notas" class="mf-input" rows="2"
-                                style="height:auto;resize:vertical;" maxlength="500"></textarea>
-                        </div>
+                        <div class="col-12"><label class="mf-label">Notas</label><textarea name="notas" id="g_notas"
+                                class="mf-input" rows="2" style="height:auto;resize:vertical;"
+                                maxlength="500"></textarea></div>
                     </div>
                 </form>
             </div>
             <div class="modal-footer border-top">
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" id="btnGuardarGasto" style="display:inline-flex;align-items:center;gap:.4rem;padding:.58rem 1.3rem;
-                               background:#d97706;color:#fff;border:none;border-radius:var(--radius-sm);
-                               font-size:.88rem;font-weight:600;cursor:pointer;">
+                <button type="button" id="btnGuardarGasto"
+                    style="display:inline-flex;align-items:center;gap:.4rem;padding:.58rem 1.3rem;background:#d97706;color:#fff;border:none;border-radius:var(--radius-sm);font-size:.88rem;font-weight:600;cursor:pointer;">
                     <i class="bi bi-floppy-fill me-1"></i> Guardar Gasto
                 </button>
             </div>
@@ -1115,7 +1031,6 @@ $total = count($gastos);
         document.getElementById('grpMesFiltro').style.display = this.value === 'mensual' ? '' : 'none';
     });
 
-    /* ── Table engine ──────────────────────────────────────────────────────────── */
     (() => {
         let query = '',
             filtroTipo = '',
@@ -1126,8 +1041,8 @@ $total = count($gastos);
             sortDir = 'asc';
         const allRows = Array.from(document.querySelectorAll('#gsBody tr'));
         const $s = document.getElementById('gsSearch'),
-            $cl = document.getElementById('gsClear');
-        const $pp = document.getElementById('gsPerPage');
+            $cl = document.getElementById('gsClear'),
+            $pp = document.getElementById('gsPerPage');
         const $ft = document.getElementById('gsFiltroTipo'),
             $fe = document.getElementById('gsFiltroEstado');
         const $empty = document.getElementById('gsEmpty'),
@@ -1263,7 +1178,6 @@ $total = count($gastos);
         render();
     })();
 
-    /* ── Modal lógica ────────────────────────────────────────────────────────── */
     function toggleCamposGasto() {
         const t = document.getElementById('g_tipo').value;
         const f = document.getElementById('g_frec').value;
@@ -1271,8 +1185,7 @@ $total = count($gastos);
         document.getElementById('grpFrecuencia').style.display = (t !== 'viaticos') ? '' : 'none';
         const fijo = t === 'fijo';
         document.getElementById('grpDia1').style.display = fijo ? '' : 'none';
-        const quin = fijo && f === 'quincenal';
-        document.getElementById('grpDia2G').style.display = quin ? '' : 'none';
+        document.getElementById('grpDia2G').style.display = (fijo && f === 'quincenal') ? '' : 'none';
         document.getElementById('grpFechaVenc').style.display = fijo ? '' : 'none';
     }
     document.getElementById('g_tipo').addEventListener('change', toggleCamposGasto);
@@ -1315,7 +1228,20 @@ $total = count($gastos);
             if (g.fecha_vencimiento) document.getElementById('g_venc').value = g.fecha_vencimiento;
             if (g.tipo === 'viaticos') {
                 document.getElementById('g_vdest').value = g.viatico_destino || '';
-                document.getElementById('g_vcolab').value = g.viatico_colaborador || '';
+                // Para el SELECT: selecciona la opción que coincide con el valor guardado
+                const sel = document.getElementById('g_vcolab');
+                const valActual = g.viatico_colaborador || '';
+                let encontrado = false;
+                for (let opt of sel.options) {
+                    if (opt.value === valActual) {
+                        opt.selected = true;
+                        encontrado = true;
+                        break;
+                    }
+                }
+                if (!encontrado) {
+                    sel.value = '';
+                } // Si no hay coincidencia exacta, queda en "Sin colaborador"
                 document.getElementById('g_vmotivo').value = g.viatico_motivo || '';
                 document.getElementById('g_vsalida').value = g.viatico_fecha_salida || '';
                 document.getElementById('g_vregreso').value = g.viatico_fecha_regreso || '';
@@ -1324,7 +1250,6 @@ $total = count($gastos);
         });
     });
 
-    /* ── Guardar ─────────────────────────────────────────────────────────────── */
     document.getElementById('btnGuardarGasto').addEventListener('click', () => {
         const isEdit = !!document.getElementById('g_id').value;
         const btn = document.getElementById('btnGuardarGasto');
@@ -1336,17 +1261,13 @@ $total = count($gastos);
                 body: new FormData(document.getElementById('formGasto'))
             })
             .then(r => r.json()).then(d => {
-                if (d.success) {
-                    Swal.fire({
-                            icon: 'success',
-                            title: '¡Guardado!',
-                            timer: 1500,
-                            showConfirmButton: false
-                        })
-                        .then(() => location.reload());
-                } else {
-                    Swal.fire('Error', d.error || 'No se pudo guardar.', 'error');
-                }
+                if (d.success) Swal.fire({
+                    icon: 'success',
+                    title: '¡Guardado!',
+                    timer: 1500,
+                    showConfirmButton: false
+                }).then(() => location.reload());
+                else Swal.fire('Error', d.error || 'No se pudo guardar.', 'error');
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-floppy-fill me-1"></i> Guardar Gasto';
             }).catch(() => {
@@ -1356,90 +1277,81 @@ $total = count($gastos);
             });
     });
 
-    /* ── Acciones tabla ──────────────────────────────────────────────────────── */
     document.querySelectorAll('.btn-pagar-gasto').forEach(btn => {
         btn.addEventListener('click', () => {
             Swal.fire({
-                    title: '¿Marcar como pagado?',
-                    icon: 'question',
-                    showCancelButton: true,
-                    confirmButtonColor: '#059669',
-                    confirmButtonText: 'Sí, pagado',
-                    cancelButtonText: 'No'
-                })
-                .then(r => {
-                    if (!r.isConfirmed) return;
-                    const fd = new FormData();
-                    fd.append('gasto_id', btn.dataset.id);
-                    fd.append('_solo_estado', 1);
-                    fd.append('estado', 'pagado');
-                    fetch('includes/gasto_actualizar.php', {
-                            method: 'POST',
-                            body: fd
-                        })
-                        .then(r => r.json()).then(d => {
-                            if (d.success) location.reload();
-                            else Swal.fire('Error', d.error, 'error');
-                        });
+                title: '¿Marcar como pagado?',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#059669',
+                confirmButtonText: 'Sí, pagado',
+                cancelButtonText: 'No'
+            }).then(r => {
+                if (!r.isConfirmed) return;
+                const fd = new FormData();
+                fd.append('gasto_id', btn.dataset.id);
+                fd.append('_solo_estado', 1);
+                fd.append('estado', 'pagado');
+                fetch('includes/gasto_actualizar.php', {
+                    method: 'POST',
+                    body: fd
+                }).then(r => r.json()).then(d => {
+                    if (d.success) location.reload();
+                    else Swal.fire('Error', d.error, 'error');
                 });
+            });
         });
     });
-
     document.querySelectorAll('.btn-anular-gasto').forEach(btn => {
         btn.addEventListener('click', () => {
             Swal.fire({
-                    title: '¿Anular este gasto?',
-                    html: `<strong>${btn.dataset.desc}</strong>`,
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#dc2626',
-                    confirmButtonText: 'Sí, anular',
-                    cancelButtonText: 'No',
-                    reverseButtons: true
-                })
-                .then(r => {
-                    if (!r.isConfirmed) return;
-                    const fd = new FormData();
-                    fd.append('id', btn.dataset.id);
-                    fd.append('accion', 'anular');
-                    fetch('includes/gasto_eliminar.php', {
-                            method: 'POST',
-                            body: fd
-                        })
-                        .then(r => r.json()).then(d => {
-                            if (d.success) location.reload();
-                            else Swal.fire('Error', d.error, 'error');
-                        });
+                title: '¿Anular este gasto?',
+                html: `<strong>${btn.dataset.desc}</strong>`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc2626',
+                confirmButtonText: 'Sí, anular',
+                cancelButtonText: 'No',
+                reverseButtons: true
+            }).then(r => {
+                if (!r.isConfirmed) return;
+                const fd = new FormData();
+                fd.append('id', btn.dataset.id);
+                fd.append('accion', 'anular');
+                fetch('includes/gasto_eliminar.php', {
+                    method: 'POST',
+                    body: fd
+                }).then(r => r.json()).then(d => {
+                    if (d.success) location.reload();
+                    else Swal.fire('Error', d.error, 'error');
                 });
+            });
         });
     });
-
     document.querySelectorAll('.btn-eliminar-gasto').forEach(btn => {
         btn.addEventListener('click', () => {
             Swal.fire({
-                    title: '¿Eliminar definitivamente?',
-                    html: `<strong>${btn.dataset.desc}</strong>`,
-                    icon: 'error',
-                    showCancelButton: true,
-                    confirmButtonColor: '#dc2626',
-                    confirmButtonText: 'Sí, eliminar',
-                    cancelButtonText: 'No',
-                    reverseButtons: true
-                })
-                .then(r => {
-                    if (!r.isConfirmed) return;
-                    const fd = new FormData();
-                    fd.append('id', btn.dataset.id);
-                    fd.append('accion', 'eliminar');
-                    fetch('includes/gasto_eliminar.php', {
-                            method: 'POST',
-                            body: fd
-                        })
-                        .then(r => r.json()).then(d => {
-                            if (d.success) location.reload();
-                            else Swal.fire('Error', d.error, 'error');
-                        });
+                title: '¿Eliminar definitivamente?',
+                html: `<strong>${btn.dataset.desc}</strong>`,
+                icon: 'error',
+                showCancelButton: true,
+                confirmButtonColor: '#dc2626',
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'No',
+                reverseButtons: true
+            }).then(r => {
+                if (!r.isConfirmed) return;
+                const fd = new FormData();
+                fd.append('id', btn.dataset.id);
+                fd.append('accion', 'eliminar');
+                fetch('includes/gasto_eliminar.php', {
+                    method: 'POST',
+                    body: fd
+                }).then(r => r.json()).then(d => {
+                    if (d.success) location.reload();
+                    else Swal.fire('Error', d.error, 'error');
                 });
+            });
         });
     });
 </script>

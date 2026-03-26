@@ -24,7 +24,6 @@ require_once '../../includes/templates/header.php';
 		--tr: .2s cubic-bezier(.4, 0, .2, 1);
 	}
 
-	/* Header */
 	.db-header {
 		background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 		border-radius: var(--radius);
@@ -71,7 +70,6 @@ require_once '../../includes/templates/header.php';
 		padding: 4px;
 	}
 
-	/* Stats strip */
 	.db-stats {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -150,7 +148,6 @@ require_once '../../includes/templates/header.php';
 		margin-top: 2px;
 	}
 
-	/* CAI alertas */
 	.cai-vencido {
 		background: #fef2f2;
 		border: 1px solid #fecaca;
@@ -161,7 +158,6 @@ require_once '../../includes/templates/header.php';
 		gap: .75rem;
 	}
 
-	/* Cards estándar */
 	.db-card {
 		background: var(--surface);
 		border: 1px solid var(--border);
@@ -188,7 +184,6 @@ require_once '../../includes/templates/header.php';
 		color: var(--text-main);
 	}
 
-	/* Contrato por vencer badge */
 	.contrato-card {
 		border-radius: var(--radius-sm);
 		overflow: hidden;
@@ -207,7 +202,7 @@ require_once '../../includes/templates/header.php';
 
 <div class="container-xxl mt-4 pb-5">
 
-	<!-- ── Header ──────────────────────────────────────────────────────── -->
+	<!-- Header -->
 	<div class="db-header mb-4">
 		<div>
 			<h4 style="font-size:1.35rem;font-weight:700;margin:0"><?= $emoji ?> <?= $saludo ?>,
@@ -223,7 +218,7 @@ require_once '../../includes/templates/header.php';
 		<?php endif; ?>
 	</div>
 
-	<!-- ── Filtro de fechas ─────────────────────────────────────────────── -->
+	<!-- Filtro -->
 	<div class="db-card mb-4">
 		<div class="card-body py-3 px-4">
 			<form method="POST" class="row g-2 align-items-end">
@@ -245,7 +240,7 @@ require_once '../../includes/templates/header.php';
 		</div>
 	</div>
 
-	<!-- ── Alerta CAI vencido ───────────────────────────────────────────── -->
+	<!-- Alerta CAI -->
 	<?php if (!empty($alerta_cai_vencido)): ?>
 		<div class="alert alert-danger d-flex align-items-center gap-3 mb-4 rounded-3 shadow-sm">
 			<i class="bi bi-exclamation-triangle-fill fs-4"></i>
@@ -253,7 +248,7 @@ require_once '../../includes/templates/header.php';
 		</div>
 	<?php endif; ?>
 
-	<!-- ── Stats strip ─────────────────────────────────────────────────── -->
+	<!-- ══ Stats strip — TODOS LOS MONTOS CON 2 DECIMALES ══════════════════ -->
 	<div class="db-stats">
 		<div class="db-stat">
 			<div class="db-stat-icon si-blue"><i class="bi bi-receipt-cutoff"></i></div>
@@ -277,19 +272,21 @@ require_once '../../includes/templates/header.php';
 					<?php if ($dias_restantes_cai !== null): ?>(<?= (int)$dias_restantes_cai ?>d)<?php endif; ?></div>
 			</div>
 		</div>
+		<!-- ← FIX: 2 decimales ↓ -->
 		<div class="db-stat">
 			<div class="db-stat-icon si-teal"><i class="bi bi-cash-coin"></i></div>
 			<div>
-				<div class="db-stat-val" style="font-size:1rem;">L <?= number_format($totales_mes['total'] ?? 0, 0) ?>
-				</div>
+				<div class="db-stat-val" style="font-size:.88rem;">L
+					<?= number_format((float)($totales_mes['total'] ?? 0), 2) ?></div>
 				<div class="db-stat-lbl">Total <?= date('M Y') ?></div>
 			</div>
 		</div>
+		<!-- ← FIX: 2 decimales ↓ -->
 		<div class="db-stat">
 			<div class="db-stat-icon si-purple"><i class="bi bi-graph-up-arrow"></i></div>
 			<div>
-				<div class="db-stat-val" style="font-size:1rem;">L <?= number_format($totales_anio['total'] ?? 0, 0) ?>
-				</div>
+				<div class="db-stat-val" style="font-size:.88rem;">L
+					<?= number_format((float)($totales_anio['total'] ?? 0), 2) ?></div>
 				<div class="db-stat-lbl">Acumulado <?= date('Y') ?></div>
 			</div>
 		</div>
@@ -306,7 +303,7 @@ require_once '../../includes/templates/header.php';
 
 	<?php if (!empty($ingresos)): ?>
 
-		<!-- ── Totales del mes / año / no declaradas ─────────────────────── -->
+		<!-- Totales mes / año / no declaradas -->
 		<div class="row g-3 mb-4">
 			<div class="col-md-4">
 				<div class="db-card mb-0 h-100">
@@ -347,7 +344,8 @@ require_once '../../includes/templates/header.php';
 					<div class="card-body px-4 py-3 text-<?= $color_alerta ?>">
 						<?php if (($cant_no_declaradas ?? 0) > 0): ?>
 							<div class="mb-1"><strong><?= (int)$cant_no_declaradas ?></strong> facturas atrasadas</div>
-							<div class="mb-1">ISV pendiente: <strong>L <?= number_format($isv_pendiente ?? 0, 2) ?></strong></div>
+							<div class="mb-1">ISV pendiente: <strong>L <?= number_format($isv_pendiente ?? 0, 2) ?></strong>
+							</div>
 							<?php if (!empty($texto_meses)): ?><div class="small text-muted"><?= $texto_meses ?></div>
 							<?php endif; ?>
 						<?php else: ?>
@@ -366,9 +364,8 @@ require_once '../../includes/templates/header.php';
 			</div>
 		</div>
 
-		<!-- ── Contratos por vencer ─────────────────────────────────────────── -->
+		<!-- Contratos por vencer -->
 		<?php if (!empty($contratos_dashboard)): ?>
-
 			<?php if (!empty($contratos_por_vencer)): ?>
 				<div class="db-card">
 					<div class="db-card-header">
@@ -379,10 +376,10 @@ require_once '../../includes/templates/header.php';
 						<div class="row g-3">
 							<?php foreach ($contratos_por_vencer as $cv):
 								$dias = (int)$cv['dias_restantes'];
-								$urg  = $dias <= 1;
-								$cls  = $urg ? 'urgente' : 'alerta';
-								$ico  = $urg ? '🔴' : '🟡';
-								$txt  = $dias === 0 ? '¡Vence HOY!' : "Faltan {$dias} día(s)";
+								$urg = $dias <= 1;
+								$cls = $urg ? 'urgente' : 'alerta';
+								$ico = $urg ? '🔴' : '🟡';
+								$txt = $dias === 0 ? '¡Vence HOY!' : "Faltan {$dias} día(s)";
 							?>
 								<div class="col-md-6 col-lg-4">
 									<div class="contrato-card <?= $cls ?> h-100">
@@ -445,7 +442,7 @@ require_once '../../includes/templates/header.php';
 								<?php foreach ($contratos_proximos_pagos as $p):
 									$dias = (int)$p['dias_para_pago'];
 									$bCls = $dias <= 3 ? 'bg-danger' : ($dias <= 7 ? 'bg-warning text-dark' : ($dias <= 15 ? 'bg-info' : 'bg-secondary'));
-									$ico  = $dias <= 3 ? '🔴' : ($dias <= 7 ? '🟡' : ($dias <= 15 ? '🔵' : '⚪'));
+									$ico = $dias <= 3 ? '🔴' : ($dias <= 7 ? '🟡' : ($dias <= 15 ? '🔵' : '⚪'));
 								?>
 									<tr>
 										<td>
@@ -463,15 +460,15 @@ require_once '../../includes/templates/header.php';
 										<td class="text-center"><span class="badge <?= $bCls ?>"><?= $ico ?>
 												<?= $dias === 0 ? '¡Hoy!' : $dias . 'd' ?></span></td>
 										<td class="text-center d-none d-sm-table-cell">
-											<?php if (!empty($p['factura_pendiente_id'])): ?>
-												<a href="ver_factura?id=<?= $p['factura_pendiente_id'] ?>" target="_blank"
+											<?php if (!empty($p['factura_pendiente_id'])): ?><a
+													href="ver_factura?id=<?= $p['factura_pendiente_id'] ?>" target="_blank"
 													class="btn btn-sm btn-outline-info"><i
 														class="fa-solid fa-file-invoice me-1"></i><span class="d-none d-md-inline">Ver
 														Factura</span></a>
-											<?php else: ?>
-												<a href="generar_factura?receptor_id=<?= $p['receptor_id'] ?>&producto_id=<?= $p['producto_id'] ?>&monto=<?= $p['monto'] ?>&contrato_id=<?= $p['id'] ?>"
-													class="btn btn-sm btn-success"><i class="fa-solid fa-file-invoice-dollar"></i></a>
-											<?php endif; ?>
+											<?php else: ?><a
+													href="generar_factura?receptor_id=<?= $p['receptor_id'] ?>&producto_id=<?= $p['producto_id'] ?>&monto=<?= $p['monto'] ?>&contrato_id=<?= $p['id'] ?>"
+													class="btn btn-sm btn-success"><i
+														class="fa-solid fa-file-invoice-dollar"></i></a><?php endif; ?>
 										</td>
 									</tr>
 								<?php endforeach; ?>
@@ -482,7 +479,7 @@ require_once '../../includes/templates/header.php';
 			</div>
 		<?php endif; ?>
 
-		<!-- ── CAIs activos ──────────────────────────────────────────────────── -->
+		<!-- CAIs activos -->
 		<?php if (!empty($cais_activos)): ?>
 			<div class="db-card">
 				<div class="db-card-header"><span class="db-card-title"><i class="bi bi-shield-check me-2 text-success"></i>CAIs
@@ -520,7 +517,7 @@ require_once '../../includes/templates/header.php';
 			</div>
 		<?php endif; ?>
 
-		<!-- ── Gráfico ingresos por mes ──────────────────────────────────────── -->
+		<!-- Gráfico ingresos por mes -->
 		<div class="db-card">
 			<div class="db-card-header"><span class="db-card-title"><i
 						class="bi bi-bar-chart-fill me-2 text-primary"></i>Ingresos por Mes —
@@ -528,7 +525,7 @@ require_once '../../includes/templates/header.php';
 			<div class="card-body p-4"><canvas id="graficoIngresos" height="110"></canvas></div>
 		</div>
 
-		<!-- ── Resumen por cliente facturado ─────────────────────────────────── -->
+		<!-- Resumen por cliente facturado -->
 		<div class="db-card">
 			<div class="db-card-header">
 				<span class="db-card-title"><i class="bi bi-table me-2 text-secondary"></i>Resumen por Cliente
@@ -562,12 +559,10 @@ require_once '../../includes/templates/header.php';
 									<td class="text-end">L <?= number_format((float)$r['isv'], 2) ?></td>
 									<td class="text-end fw-bold">L <?= number_format((float)$r['total'], 2) ?></td>
 									<td class="text-center">
-										<button class="btn btn-outline-primary btn-sm"
+										<button class="btn btn-outline-primary btn-sm toggle-receptor"
 											style="width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;"
-											type="button" data-bs-toggle="collapse" data-bs-target="#det-<?= $rid ?>"
-											class="toggle-receptor" title="Ver detalles">
-											<i class="bi bi-plus-lg"></i>
-										</button>
+											type="button" data-bs-toggle="collapse" data-bs-target="#det-<?= $rid ?>"><i
+												class="bi bi-plus-lg"></i></button>
 									</td>
 								</tr>
 								<tr class="bg-light">
@@ -586,14 +581,14 @@ require_once '../../includes/templates/header.php';
 														foreach ($listaFacturas as $fx):
 															$fid = (int)$fx['id'];
 															$isvFactura = (float)($fx['isv_15'] ?? 0) + (float)($fx['isv_18'] ?? 0);
-															$items = $fx['items'] ?? []; ?>
+															$items = $fx['items'] ?? [];
+														?>
 															<div class="accordion-item">
-																<h2 class="accordion-header" id="h-<?= $rid ?>-<?= $fid ?>">
-																	<button
+																<h2 class="accordion-header"><button
 																		class="accordion-button collapsed py-2 d-flex align-items-center gap-2 toggle-factura"
 																		type="button" data-bs-toggle="collapse"
-																		data-bs-target="#c-<?= $rid ?>-<?= $fid ?>">
-																		<i class="bi bi-plus-lg icon-plusminus"></i>
+																		data-bs-target="#c-<?= $rid ?>-<?= $fid ?>"><i
+																			class="bi bi-plus-lg icon-plusminus"></i>
 																		<div
 																			class="w-100 d-flex flex-wrap justify-content-between align-items-center gap-2">
 																			<div><span class="fw-semibold">Factura
@@ -603,8 +598,7 @@ require_once '../../includes/templates/header.php';
 																			<div class="ms-auto fw-bold">L
 																				<?= number_format((float)$fx['total'], 2) ?></div>
 																		</div>
-																	</button>
-																</h2>
+																	</button></h2>
 																<div id="c-<?= $rid ?>-<?= $fid ?>" class="accordion-collapse collapse"
 																	data-bs-parent="#acc-facturas-<?= $rid ?>">
 																	<div class="accordion-body pt-2">
@@ -618,11 +612,11 @@ require_once '../../includes/templates/header.php';
 																						<?= number_format((float)$fx['total'], 2) ?></strong>
 																				</div>
 																			</div>
-																			<div class="col-12 col-md-4 text-md-end">
-																				<a class="btn btn-sm btn-outline-secondary"
+																			<div class="col-12 col-md-4 text-md-end"><a
+																					class="btn btn-sm btn-outline-secondary"
 																					href="ver_factura?id=<?= $fid ?>" target="_blank"><i
-																						class="bi bi-receipt me-1"></i>Ver factura</a>
-																				<?php if ($esAdmin): ?><a
+																						class="bi bi-receipt me-1"></i>Ver
+																					factura</a><?php if ($esAdmin): ?><a
 																						class="btn btn-sm btn-outline-info ms-1"
 																						href="editar_factura?id=<?= $fid ?>"
 																						target="_blank"><i
@@ -643,9 +637,7 @@ require_once '../../includes/templates/header.php';
 																							<th class="text-end">ISV%</th>
 																						</tr>
 																					</thead>
-																					<tbody>
-																						<?php foreach ($items as $it): ?>
-																							<tr>
+																					<tbody><?php foreach ($items as $it): ?><tr>
 																								<td>
 																									<div class="fw-semibold">
 																										<?= htmlspecialchars($it['nombre_producto'] ?? 'SIN PRODUCTO') ?>
@@ -666,9 +658,7 @@ require_once '../../includes/templates/header.php';
 																								<td class="text-end">
 																									<?= number_format((float)($it['isv_aplicado'] ?? 0), 2) ?>
 																								</td>
-																							</tr>
-																						<?php endforeach; ?>
-																					</tbody>
+																							</tr><?php endforeach; ?></tbody>
 																				</table>
 																			</div>
 																		<?php else: ?><div class="alert alert-warning mb-0 py-2 small">
@@ -700,7 +690,7 @@ require_once '../../includes/templates/header.php';
 			</div>
 		</div>
 
-		<!-- ── Ingresos por año ──────────────────────────────────────────────── -->
+		<!-- Ingresos por año -->
 		<div class="db-card">
 			<div class="db-card-header">
 				<span class="db-card-title"><i class="bi bi-calendar-event-fill me-2 text-secondary"></i>Ingresos por
@@ -720,16 +710,12 @@ require_once '../../includes/templates/header.php';
 									<th class="text-end">Total (L)</th>
 								</tr>
 							</thead>
-							<tbody>
-								<?php foreach ($ingresos_anuales as $ax): ?>
-									<tr>
+							<tbody><?php foreach ($ingresos_anuales as $ax): ?><tr>
 										<td><?= htmlspecialchars($ax['anio']) ?></td>
 										<td class="text-end">L <?= number_format((float)$ax['subtotal'], 2) ?></td>
 										<td class="text-end">L <?= number_format((float)$ax['isv'], 2) ?></td>
 										<td class="text-end fw-bold">L <?= number_format((float)$ax['total'], 2) ?></td>
-									</tr>
-								<?php endforeach; ?>
-							</tbody>
+									</tr><?php endforeach; ?></tbody>
 						</table>
 					</div>
 				<?php endif; ?>
@@ -750,7 +736,6 @@ require_once '../../includes/templates/header.php';
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-	// ── Gráfico ingresos por mes ──────────────────────────────────────────────
 	const ctx = document.getElementById('graficoIngresos')?.getContext('2d');
 	if (ctx) {
 		new Chart(ctx, {
@@ -758,21 +743,18 @@ require_once '../../includes/templates/header.php';
 			data: {
 				labels: <?= json_encode(array_column($ingresos, 'mes')) ?>,
 				datasets: [{
-						label: 'Subtotal',
-						backgroundColor: 'rgba(30,64,175,0.55)',
-						data: <?= json_encode(array_map(fn($r) => (float)$r['subtotal'], $ingresos)) ?>
-					},
-					{
-						label: 'ISV',
-						backgroundColor: 'rgba(245,158,11,0.55)',
-						data: <?= json_encode(array_map(fn($r) => (float)$r['isv'], $ingresos)) ?>
-					},
-					{
-						label: 'Total',
-						backgroundColor: 'rgba(5,150,105,0.55)',
-						data: <?= json_encode(array_map(fn($r) => (float)$r['total'], $ingresos)) ?>
-					}
-				]
+					label: 'Subtotal',
+					backgroundColor: 'rgba(30,64,175,0.55)',
+					data: <?= json_encode(array_map(fn($r) => (float)$r['subtotal'], $ingresos)) ?>
+				}, {
+					label: 'ISV',
+					backgroundColor: 'rgba(245,158,11,0.55)',
+					data: <?= json_encode(array_map(fn($r) => (float)$r['isv'], $ingresos)) ?>
+				}, {
+					label: 'Total',
+					backgroundColor: 'rgba(5,150,105,0.55)',
+					data: <?= json_encode(array_map(fn($r) => (float)$r['total'], $ingresos)) ?>
+				}]
 			},
 			options: {
 				responsive: true,
@@ -793,8 +775,6 @@ require_once '../../includes/templates/header.php';
 			}
 		});
 	}
-
-	// ── Gráfico ingresos por año ──────────────────────────────────────────────
 	const ctxAnual = document.getElementById('graficoAnual')?.getContext('2d');
 	if (ctxAnual) {
 		new Chart(ctxAnual, {
@@ -802,21 +782,18 @@ require_once '../../includes/templates/header.php';
 			data: {
 				labels: <?= json_encode(array_map(fn($x) => (string)$x['anio'], $ingresos_anuales ?? [])) ?>,
 				datasets: [{
-						label: 'Subtotal',
-						backgroundColor: 'rgba(30,64,175,0.4)',
-						data: <?= json_encode(array_map(fn($x) => (float)$x['subtotal'], $ingresos_anuales ?? [])) ?>
-					},
-					{
-						label: 'ISV',
-						backgroundColor: 'rgba(245,158,11,0.4)',
-						data: <?= json_encode(array_map(fn($x) => (float)$x['isv'], $ingresos_anuales ?? [])) ?>
-					},
-					{
-						label: 'Total',
-						backgroundColor: 'rgba(5,150,105,0.4)',
-						data: <?= json_encode(array_map(fn($x) => (float)$x['total'], $ingresos_anuales ?? [])) ?>
-					}
-				]
+					label: 'Subtotal',
+					backgroundColor: 'rgba(30,64,175,0.4)',
+					data: <?= json_encode(array_map(fn($x) => (float)$x['subtotal'], $ingresos_anuales ?? [])) ?>
+				}, {
+					label: 'ISV',
+					backgroundColor: 'rgba(245,158,11,0.4)',
+					data: <?= json_encode(array_map(fn($x) => (float)$x['isv'], $ingresos_anuales ?? [])) ?>
+				}, {
+					label: 'Total',
+					backgroundColor: 'rgba(5,150,105,0.4)',
+					data: <?= json_encode(array_map(fn($x) => (float)$x['total'], $ingresos_anuales ?? [])) ?>
+				}]
 			},
 			options: {
 				responsive: true,
@@ -842,11 +819,9 @@ require_once '../../includes/templates/header.php';
 		});
 	}
 
-	// ── Acordeón receptores ────────────────────────────────────────────────────
 	(() => {
 		document.querySelectorAll('.toggle-receptor').forEach(btn => {
-			const targetSel = btn.getAttribute('data-bs-target');
-			const target = document.querySelector(targetSel);
+			const target = document.querySelector(btn.getAttribute('data-bs-target'));
 			if (!target) return;
 			const icon = btn.querySelector('i');
 			const setIcon = open => {
@@ -885,10 +860,8 @@ require_once '../../includes/templates/header.php';
 				setIcon(false);
 			});
 		});
-
 		document.querySelectorAll('.toggle-factura').forEach(btn => {
-			const targetSel = btn.getAttribute('data-bs-target');
-			const target = document.querySelector(targetSel);
+			const target = document.querySelector(btn.getAttribute('data-bs-target'));
 			if (!target) return;
 			const icon = btn.querySelector('.icon-plusminus');
 			const setIcon = open => {

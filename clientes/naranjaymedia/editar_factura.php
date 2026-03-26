@@ -79,7 +79,7 @@ require_once '../../includes/templates/header.php';
 		</div>
 		<div>
 			<?php if (!empty($datos['logo_url'])): ?>
-				<img src="<?= htmlspecialchars($datos['logo_url']) ?>" alt="Logo cliente" style="max-height: 60px;">
+				<img src="https://www.naranjaymediahn.com/wp-content/uploads/2023/06/logo-naranja.svg" alt="Logo cliente" style="max-height: 60px;">
 			<?php endif; ?>
 		</div>
 	</div>

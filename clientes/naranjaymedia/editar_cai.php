@@ -482,7 +482,7 @@ require_once '../../includes/templates/header.php';
             </p>
         </div>
         <?php if (!empty($datos['logo_url'])): ?>
-            <img src="<?= htmlspecialchars($datos['logo_url']) ?>" alt="Logo" class="ec-header-logo">
+            <img src="https://www.naranjaymediahn.com/wp-content/uploads/2023/06/logo-naranja.svg" alt="Logo" class="ec-header-logo">
         <?php endif; ?>
     </div>
 

@@ -652,7 +652,7 @@ $total_clientes = count($clientes);
 			</p>
 		</div>
 		<?php if (!empty($datos['logo_url'])): ?>
-			<img src="<?= htmlspecialchars($datos['logo_url']) ?>" alt="Logo" class="cf-header-logo">
+			<img src="https://www.naranjaymediahn.com/wp-content/uploads/2023/06/logo-naranja.svg" alt="Logo" class="cf-header-logo">
 		<?php endif; ?>
 	</div>
 

@@ -82,12 +82,12 @@ if ($caix) {
 	$ultimoCorrelativoCAI = $stmtUltimo->fetchColumn();
 }
 
-$total_facturas   = count($facturas);
-$emitidas_count   = count(array_filter($facturas, fn($f) => $f['estado'] === 'emitida'));
-$anuladas_count   = count(array_filter($facturas, fn($f) => $f['estado'] === 'anulada'));
-$pagadas_count    = count(array_filter($facturas, fn($f) => $f['pagada'] == 1));
-$total_monto      = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
-$esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
+$total_facturas = count($facturas);
+$emitidas_count = count(array_filter($facturas, fn($f) => $f['estado'] === 'emitida'));
+$anuladas_count = count(array_filter($facturas, fn($f) => $f['estado'] === 'anulada'));
+$pagadas_count  = count(array_filter($facturas, fn($f) => $f['pagada'] == 1));
+$total_monto    = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
+$esAdmin        = in_array($datos['rol'], ['admin', 'superadmin']);
 ?>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -121,7 +121,6 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		padding: 1.5rem 0 3rem;
 	}
 
-	/* Header */
 	.fh-header {
 		background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 		border-radius: var(--radius);
@@ -180,7 +179,6 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		padding: 4px;
 	}
 
-	/* Stats */
 	.fh-stats {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -254,7 +252,6 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		margin-top: 2px;
 	}
 
-	/* Filter card */
 	.fh-filter-card {
 		background: var(--surface);
 		border: 1px solid var(--border);
@@ -357,7 +354,6 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		color: var(--text-main);
 	}
 
-	/* Toolbar */
 	.fh-toolbar {
 		display: flex;
 		align-items: center;
@@ -436,7 +432,6 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		border-color: #1d4ed8;
 	}
 
-	/* Table card */
 	.fh-card {
 		background: var(--surface);
 		border: 1px solid var(--border);
@@ -557,7 +552,6 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		vertical-align: middle;
 	}
 
-	/* Badges */
 	.st-badge {
 		display: inline-flex;
 		align-items: center;
@@ -605,7 +599,6 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		font-weight: 600;
 	}
 
-	/* Action buttons */
 	.fh-actions {
 		display: flex;
 		gap: .35rem;
@@ -694,14 +687,12 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		cursor: not-allowed;
 	}
 
-	/* Highlight */
 	.fh-highlight {
 		background: #fef08a;
 		border-radius: 3px;
 		padding: 0 2px;
 	}
 
-	/* Pagination */
 	.fh-pagination {
 		display: flex;
 		align-items: center;
@@ -761,7 +752,6 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		pointer-events: none;
 	}
 
-	/* Empty */
 	.fh-empty {
 		text-align: center;
 		padding: 3rem 1rem;
@@ -774,7 +764,6 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		opacity: .3;
 	}
 
-	/* Correlativo mono */
 	.corr-mono {
 		font-family: 'Courier New', monospace;
 		font-size: .82rem;
@@ -858,10 +847,11 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 				<div class="fh-stat-lbl">Pagadas</div>
 			</div>
 		</div>
+		<!-- ← FIX: número_format con 2 decimales ↓ -->
 		<div class="fh-stat">
 			<div class="fh-stat-icon teal"><i class="bi bi-currency-dollar"></i></div>
 			<div>
-				<div class="fh-stat-val" style="font-size:1.1rem;">L <?= number_format($total_monto, 0) ?></div>
+				<div class="fh-stat-val" style="font-size:1rem;">L <?= number_format($total_monto, 2) ?></div>
 				<div class="fh-stat-lbl">Monto emitido</div>
 			</div>
 		</div>
@@ -879,9 +869,8 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 							<option value="">— Todos los CAI —</option>
 							<?php foreach ($cais as $cai): ?>
 								<option value="<?= $cai['id'] ?>" <?= ($caix == $cai['id']) ? 'selected' : '' ?>>
-									<?= htmlspecialchars($cai['cai']) ?>
-									<?= $cai['activo'] ? ' ✅' : ' ⛔ Vencido' ?>
-									| <?= $cai['rango_inicio'] ?>–<?= $cai['rango_fin'] ?>
+									<?= htmlspecialchars($cai['cai']) ?><?= $cai['activo'] ? ' ✅' : ' ⛔ Vencido' ?> |
+									<?= $cai['rango_inicio'] ?>–<?= $cai['rango_fin'] ?>
 								</option>
 							<?php endforeach; ?>
 						</select>
@@ -913,7 +902,6 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		<div class="fh-card-header">
 			<span class="fh-card-title"><i class="bi bi-table"></i> Facturas</span>
 			<div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
-				<!-- inline search -->
 				<div class="fh-search-wrap">
 					<i class="bi bi-search"></i>
 					<input type="text" id="fhSearch" class="fh-search"
@@ -953,79 +941,65 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 				</thead>
 				<tbody id="fhBody">
 					<?php foreach ($facturas as $f):
-						$corrStr    = trim((string)$f['correlativo']);
-						$ultimoStr  = trim((string)($ultimoCorrelativoCAI ?? ''));
-						$puedeElim  = ($corrStr === $ultimoStr);
-						$estadoCls  = match ($f['estado']) {
+						$corrStr   = trim((string)$f['correlativo']);
+						$ultimoStr = trim((string)($ultimoCorrelativoCAI ?? ''));
+						$puedeElim = ($corrStr === $ultimoStr);
+						$estadoCls = match ($f['estado']) {
 							'emitida' => 'st-emitida',
 							'anulada' => 'st-anulada',
-							default => 'st-borrador'
+							default   => 'st-borrador'
 						};
 					?>
-						<tr data-search="<?= strtolower(htmlspecialchars(
-												$f['correlativo'] . ' ' . $f['receptor'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision']))
-											)) ?>">
+						<tr
+							data-search="<?= strtolower(htmlspecialchars($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision'])))) ?>">
 							<td><span class="corr-mono" data-col="corr"><?= htmlspecialchars($f['correlativo']) ?></span>
 							</td>
 							<td data-col="fecha"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
 							<td data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></td>
-							<td data-col="total" data-sort-val="<?= $f['total'] ?>">
-								<strong>L <?= number_format($f['total'], 2) ?></strong>
-							</td>
+							<td data-col="total" data-sort-val="<?= $f['total'] ?>"><strong>L
+									<?= number_format($f['total'], 2) ?></strong></td>
 							<td>
 								<span class="st-badge <?= $estadoCls ?>">
 									<?= $f['estado'] === 'emitida' ? '<i class="bi bi-check-circle-fill"></i>' : ($f['estado'] === 'anulada' ? '<i class="bi bi-x-circle-fill"></i>' : '<i class="bi bi-pencil-fill"></i>') ?>
 									<?= ucfirst($f['estado']) ?>
 								</span>
 							</td>
-							<td>
-								<span class="yn-badge <?= $f['enviada_receptor'] == 1 ? 'yn-yes' : 'yn-no' ?>">
-									<?= $f['enviada_receptor'] == 1 ? '<i class="bi bi-check-lg"></i> Sí' : '<i class="bi bi-x-lg"></i> No' ?>
-								</span>
+							<td><span
+									class="yn-badge <?= $f['enviada_receptor'] == 1 ? 'yn-yes' : 'yn-no' ?>"><?= $f['enviada_receptor'] == 1 ? '<i class="bi bi-check-lg"></i> Sí' : '<i class="bi bi-x-lg"></i> No' ?></span>
 							</td>
-							<td>
-								<span class="yn-badge <?= $f['pagada'] == 1 ? 'yn-yes' : 'yn-no' ?>">
-									<?= $f['pagada'] == 1 ? '<i class="bi bi-check-lg"></i> Sí' : '<i class="bi bi-x-lg"></i> No' ?>
-								</span>
+							<td><span
+									class="yn-badge <?= $f['pagada'] == 1 ? 'yn-yes' : 'yn-no' ?>"><?= $f['pagada'] == 1 ? '<i class="bi bi-check-lg"></i> Sí' : '<i class="bi bi-x-lg"></i> No' ?></span>
 							</td>
 							<td>
 								<div class="fh-actions">
 									<?php if ($f['estado'] === 'emitida'): ?>
-										<button onclick="accionFactura(<?= $f['id'] ?>,'anular')" class="btn-fa btn-fa-warn">
-											<i class="bi bi-slash-circle"></i> Anular
-										</button>
+										<button onclick="accionFactura(<?= $f['id'] ?>,'anular')" class="btn-fa btn-fa-warn"><i
+												class="bi bi-slash-circle"></i> Anular</button>
 										<?php if ($puedeElim || $esAdmin): ?>
-											<a href="editar_factura?id=<?= $f['id'] ?>" class="btn-fa btn-fa-edit">
-												<i class="bi bi-pencil-fill"></i> Editar
-											</a>
+											<a href="editar_factura?id=<?= $f['id'] ?>" class="btn-fa btn-fa-edit"><i
+													class="bi bi-pencil-fill"></i> Editar</a>
 											<button onclick="accionFactura(<?= $f['id'] ?>,'eliminar')"
-												class="btn-fa btn-fa-danger">
-												<i class="bi bi-trash3-fill"></i> Eliminar
-											</button>
+												class="btn-fa btn-fa-danger"><i class="bi bi-trash3-fill"></i> Eliminar</button>
 										<?php endif; ?>
 									<?php elseif ($f['estado'] === 'anulada'): ?>
 										<span class="btn-fa btn-fa-sec" style="cursor:default;">Anulada</span>
 										<button onclick="accionFactura(<?= $f['id'] ?>,'restaurar')"
-											class="btn-fa btn-fa-success">
-											<i class="bi bi-arrow-counterclockwise"></i> Reactivar
-										</button>
+											class="btn-fa btn-fa-success"><i class="bi bi-arrow-counterclockwise"></i>
+											Reactivar</button>
 									<?php elseif ($f['estado'] === 'borrador'): ?>
 										<button onclick="accionFactura(<?= $f['id'] ?>,'restaurar')"
-											class="btn-fa btn-fa-success">
-											<i class="bi bi-arrow-counterclockwise"></i> Reactivar
-										</button>
+											class="btn-fa btn-fa-success"><i class="bi bi-arrow-counterclockwise"></i>
+											Reactivar</button>
 									<?php endif; ?>
 								</div>
 								<?php if ($esAdmin && !$puedeElim && $f['estado'] === 'emitida'): ?>
-									<div style="font-size:.7rem;color:var(--warning);margin-top:4px;">
-										<i class="bi bi-exclamation-triangle-fill"></i> No es la última del CAI
-									</div>
+									<div style="font-size:.7rem;color:var(--warning);margin-top:4px;"><i
+											class="bi bi-exclamation-triangle-fill"></i> No es la última del CAI</div>
 								<?php endif; ?>
 							</td>
 							<td>
-								<a href="ver_factura?id=<?= $f['id'] ?>" class="btn-fa btn-fa-view" target="_blank">
-									<i class="bi bi-printer-fill"></i> Ver/PDF
-								</a>
+								<a href="ver_factura?id=<?= $f['id'] ?>" class="btn-fa btn-fa-view" target="_blank"><i
+										class="bi bi-printer-fill"></i> Ver/PDF</a>
 							</td>
 						</tr>
 					<?php endforeach; ?>
@@ -1043,11 +1017,9 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 			<div class="fh-page-btns" id="fhPageBtns"></div>
 		</div>
 	</div>
-
 </div>
 
 <script>
-	/* ── Table engine ── */
 	(() => {
 		let query = '',
 			page = 1,
@@ -1055,29 +1027,23 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 			sortCol = -1,
 			sortDir = 'asc';
 		const allRows = Array.from(document.querySelectorAll('#fhBody tr'));
-		const $s = $('#fhSearch'),
-			$cl = $('#fhClear'),
-			$pp = $('#fhPerPage');
-		const $empty = $('#fhEmpty'),
-			$sub = $('#fhEmptySub'),
-			$info = $('#fhPageInfo');
-		const $btns = $('#fhPageBtns'),
-			$badge = $('#fhBadge');
+		const $s = document.getElementById('fhSearch'),
+			$cl = document.getElementById('fhClear'),
+			$pp = document.getElementById('fhPerPage');
+		const $empty = document.getElementById('fhEmpty'),
+			$sub = document.getElementById('fhEmptySub');
+		const $info = document.getElementById('fhPageInfo'),
+			$btns = document.getElementById('fhPageBtns'),
+			$badge = document.getElementById('fhBadge');
 		const headers = document.querySelectorAll('#fhTable thead th[data-col]');
-
-		function hl(t, q) {
-			if (!q) return t;
-			return t.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, `gi`),
-				'<mark class="fh-highlight">$1</mark>');
-		}
-
-		function colTxt(r, i) {
+		const hl = (t, q) => !q ? t : t.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, `gi`),
+			'<mark class="fh-highlight">$1</mark>');
+		const colTxt = (r, i) => {
 			const td = r.querySelectorAll('td')[i];
 			return td ? (td.dataset.original || td.getAttribute('data-sort-val') || td.textContent).trim()
 				.toLowerCase() : '';
-		}
-
-		function filtered() {
+		};
+		const filtered = () => {
 			const base = !query ? allRows : allRows.filter(r => r.dataset.search.includes(query.toLowerCase()));
 			if (sortCol < 0) return base;
 			return [...base].sort((a, b) => {
@@ -1085,17 +1051,13 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 					vb = colTxt(b, sortCol);
 				return sortDir === 'asc' ? va.localeCompare(vb, 'es') : vb.localeCompare(va, 'es');
 			});
-		}
-
-		function updIcons() {
-			headers.forEach(th => {
-				const i = parseInt(th.dataset.col);
-				th.classList.remove('sort-asc', 'sort-desc');
-				if (i === sortCol) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
-			});
-		}
-
-		function render() {
+		};
+		const updIcons = () => headers.forEach(th => {
+			const i = parseInt(th.dataset.col);
+			th.classList.remove('sort-asc', 'sort-desc');
+			if (i === sortCol) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+		});
+		const render = () => {
 			const rows = filtered(),
 				total = rows.length,
 				totPg = Math.max(1, Math.ceil(total / perPage));
@@ -1120,9 +1082,8 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 			$badge.textContent = `${total} registro${total!==1?'s':''}`;
 			$info.textContent = total === 0 ? 'Sin resultados' : `Mostrando ${s+1}–${e} de ${total}`;
 			buildPg(page, totPg);
-		}
-
-		function buildPg(cur, tot) {
+		};
+		const buildPg = (cur, tot) => {
 			$btns.innerHTML = '';
 			if (tot <= 1) return;
 			const mk = (html, p, cls = '') => {
@@ -1153,8 +1114,7 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 			});
 			mk('<i class="bi bi-chevron-right"></i>', cur + 1, cur === tot ? 'disabled' : '');
 			mk('<i class="bi bi-chevron-double-right"></i>', tot, cur === tot ? 'disabled' : '');
-		}
-
+		};
 		headers.forEach(th => th.addEventListener('click', () => {
 			const i = parseInt(th.dataset.col);
 			sortDir = (sortCol === i && sortDir === 'asc') ? 'desc' : 'asc';
@@ -1190,15 +1150,10 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 		render();
 	})();
 
-	/* ── Acciones factura ── */
 	function accionFactura(facturaId, accion) {
 		Swal.fire({
 			title: `¿${accion.charAt(0).toUpperCase()+accion.slice(1)} esta factura?`,
-			html: `
-            <input type="text" id="motivo" class="swal2-input" placeholder="Motivo (obligatorio)">
-            <input type="text" id="usuario" class="swal2-input" placeholder="Usuario admin/superadmin">
-            <input type="password" id="clave" class="swal2-input" placeholder="Contraseña">
-        `,
+			html: `<input type="text" id="motivo" class="swal2-input" placeholder="Motivo (obligatorio)"><input type="text" id="usuario" class="swal2-input" placeholder="Usuario admin/superadmin"><input type="password" id="clave" class="swal2-input" placeholder="Contraseña">`,
 			icon: 'warning',
 			showCancelButton: true,
 			confirmButtonText: 'Confirmar',
@@ -1206,9 +1161,9 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 			confirmButtonColor: '#1e40af',
 			focusConfirm: false,
 			preConfirm: () => {
-				const motivo = document.getElementById('motivo').value.trim();
-				const usuario = document.getElementById('usuario').value.trim();
-				const clave = document.getElementById('clave').value.trim();
+				const motivo = document.getElementById('motivo').value.trim(),
+					usuario = document.getElementById('usuario').value.trim(),
+					clave = document.getElementById('clave').value.trim();
 				if (!motivo || !usuario || !clave) {
 					Swal.showValidationMessage('Todos los campos son obligatorios.');
 					return false;
@@ -1234,8 +1189,7 @@ $esAdmin          = in_array($datos['rol'], ['admin', 'superadmin']);
 						clave_autoriza: result.value.clave
 					})
 				})
-				.then(r => r.json())
-				.then(data => {
+				.then(r => r.json()).then(data => {
 					if (data.success) Swal.fire('Correcto', data.message, 'success').then(() => location
 						.reload());
 					else Swal.fire('Error', data.error, 'error');
