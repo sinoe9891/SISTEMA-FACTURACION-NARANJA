@@ -14,8 +14,22 @@ $mes_filtro  = (int)($_GET['mes']  ?? date('n'));
 $anio_filtro = (int)($_GET['anio'] ?? date('Y'));
 $cat_filtro  = (int)($_GET['cat']  ?? 0);
 $tipo_filtro = trim($_GET['tipo']  ?? '');
+$dias_filtro = (int)($_GET['dias'] ?? 0); // 0=todos, -1=vencidos, 5/10/20/30=próximos X
 
-$meses_nombres = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+$meses_nombres = [
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre'
+];
 
 if ($vista === 'mensual') {
     $fecha_ini = sprintf('%04d-%02d-01', $anio_filtro, $mes_filtro);
@@ -27,6 +41,7 @@ if ($vista === 'mensual') {
     $periodo   = "Año $anio_filtro";
 }
 
+/* ── KPIs ─────────────────────────────────────────────────────────────────── */
 $stmtKpi = $pdo->prepare("SELECT
     COALESCE(SUM(CASE WHEN estado!='anulado' THEN monto END),0)                          AS total_mes,
     COALESCE(SUM(CASE WHEN tipo='fijo'           AND estado!='anulado' THEN monto END),0) AS fijos,
@@ -39,21 +54,21 @@ FROM gastos WHERE cliente_id=? AND fecha BETWEEN ? AND ?");
 $stmtKpi->execute([$cliente_id, $fecha_ini, $fecha_fin]);
 $kpi = $stmtKpi->fetch(PDO::FETCH_ASSOC);
 
+/* ── Categorías ──────────────────────────────────────────────────────────── */
 $stmtCats = $pdo->prepare("SELECT id,nombre,color,icono FROM categorias_gastos WHERE cliente_id=? AND activa=1 ORDER BY nombre");
 $stmtCats->execute([$cliente_id]);
 $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
 
-/* ── Colaboradores activos para SELECT en panel de Viáticos ──────────────── */
-$stmtColabs = $pdo->prepare("
-    SELECT id, CONCAT(nombre,' ',apellido) AS nombre_completo, puesto
-    FROM colaboradores WHERE cliente_id=? AND activo=1 ORDER BY nombre, apellido
-");
+/* ── Colaboradores activos para selects ──────────────────────────────────── */
+$stmtColabs = $pdo->prepare("SELECT id, CONCAT(nombre,' ',apellido) AS nombre_completo, puesto
+    FROM colaboradores WHERE cliente_id=? AND activo=1 ORDER BY nombre, apellido");
 $stmtColabs->execute([$cliente_id]);
 $colaboradores_lista = $stmtColabs->fetchAll(PDO::FETCH_ASSOC);
 
-$sql = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono
-        FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id
-        WHERE g.cliente_id=? AND g.fecha BETWEEN ? AND ?";
+/* ── Gastos con filtros ───────────────────────────────────────────────────── */
+$sql    = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono
+           FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id
+           WHERE g.cliente_id=? AND g.fecha BETWEEN ? AND ?";
 $params = [$cliente_id, $fecha_ini, $fecha_fin];
 if ($cat_filtro) {
     $sql .= " AND g.categoria_id=?";
@@ -63,11 +78,17 @@ if ($tipo_filtro) {
     $sql .= " AND g.tipo=?";
     $params[] = $tipo_filtro;
 }
+if ($dias_filtro < 0) {
+    $sql .= " AND g.estado='pendiente' AND g.fecha < CURDATE()";
+} elseif ($dias_filtro > 0) {
+    $sql .= " AND g.estado='pendiente' AND g.fecha >= CURDATE() AND g.fecha <= DATE_ADD(CURDATE(), INTERVAL ? DAY)";
+    $params[] = $dias_filtro;
+}
 $sql .= " ORDER BY g.fecha DESC, g.id DESC";
 $stmtG = $pdo->prepare($sql);
 $stmtG->execute($params);
 $gastos = $stmtG->fetchAll(PDO::FETCH_ASSOC);
-$total = count($gastos);
+$total  = count($gastos);
 ?>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -210,6 +231,29 @@ $total = count($gastos);
         margin-top: 2px;
     }
 
+    .gs-dias-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .35rem .9rem;
+        border-radius: var(--radius-sm);
+        font-size: .82rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+    }
+
+    .gs-dias-badge.vencidos {
+        background: #fee2e2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+
+    .gs-dias-badge.proximos {
+        background: #fef3c7;
+        color: #b45309;
+        border: 1px solid #fde68a;
+    }
+
     .gs-toolbar {
         display: flex;
         align-items: center;
@@ -249,10 +293,6 @@ $total = count($gastos);
     .gs-search:focus {
         border-color: var(--amber);
         box-shadow: 0 0 0 3px rgba(217, 119, 6, .12);
-    }
-
-    .gs-search::placeholder {
-        color: #94a3b8;
     }
 
     .gs-clear-btn {
@@ -445,6 +485,11 @@ $total = count($gastos);
     .tb-via {
         background: #e0f2fe;
         color: #0369a1;
+    }
+
+    .tb-anu {
+        background: #fef9c3;
+        color: #ca8a04;
     }
 
     .estado-pg {
@@ -664,7 +709,7 @@ $total = count($gastos);
         <div class="gs-stat">
             <div class="gs-stat-icon si-amb"><i class="bi bi-receipt-cutoff"></i></div>
             <div>
-                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['total_mes'], 2) ?>
+                <div class="gs-stat-val" style="font-size:.9rem;">L <?= number_format((float)$kpi['total_mes'], 2) ?>
                 </div>
                 <div class="gs-stat-lbl">Total (<?= (int)$kpi['total_registros'] ?> reg.)</div>
             </div>
@@ -672,14 +717,14 @@ $total = count($gastos);
         <div class="gs-stat">
             <div class="gs-stat-icon si-grn"><i class="bi bi-lock-fill"></i></div>
             <div>
-                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['fijos'], 2) ?></div>
+                <div class="gs-stat-val" style="font-size:.9rem;">L <?= number_format((float)$kpi['fijos'], 2) ?></div>
                 <div class="gs-stat-lbl">Fijos</div>
             </div>
         </div>
         <div class="gs-stat">
             <div class="gs-stat-icon si-blu"><i class="bi bi-graph-up"></i></div>
             <div>
-                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['variables'], 2) ?>
+                <div class="gs-stat-val" style="font-size:.9rem;">L <?= number_format((float)$kpi['variables'], 2) ?>
                 </div>
                 <div class="gs-stat-lbl">Variables</div>
             </div>
@@ -687,7 +732,8 @@ $total = count($gastos);
         <div class="gs-stat">
             <div class="gs-stat-icon si-sky"><i class="bi bi-airplane-fill"></i></div>
             <div>
-                <div class="gs-stat-val" style="font-size:1rem;">L <?= number_format((float)$kpi['viaticos'], 2) ?></div>
+                <div class="gs-stat-val" style="font-size:.9rem;">L <?= number_format((float)$kpi['viaticos'], 2) ?>
+                </div>
                 <div class="gs-stat-lbl">Viáticos</div>
             </div>
         </div>
@@ -707,42 +753,76 @@ $total = count($gastos);
         </div>
     </div>
 
+    <!-- Badge filtro activo días -->
+    <?php if ($dias_filtro !== 0): ?>
+        <div class="gs-dias-badge <?= $dias_filtro < 0 ? 'vencidos' : 'proximos' ?>">
+            <?php if ($dias_filtro < 0): ?><i class="bi bi-alarm-fill"></i> Mostrando gastos <strong>vencidos</strong>
+                pendientes
+            <?php else: ?><i class="bi bi-clock-history"></i> Gastos con vencimiento próximos <strong><?= $dias_filtro ?>
+                    días</strong><?php endif; ?>
+            <a href="gastos" class="ms-2 text-muted" style="text-decoration:none;font-size:.8rem">✕ Quitar</a>
+        </div>
+    <?php endif; ?>
+
     <!-- Filtros GET -->
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-body py-3">
             <form method="GET" class="row g-2 align-items-end">
-                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Vista</label><select name="vista"
-                        id="sVista" class="form-select form-select-sm">
+                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Vista</label>
+                    <select name="vista" id="sVista" class="form-select form-select-sm">
                         <option value="mensual" <?= $vista === 'mensual' ? 'selected' : '' ?>>🗓️ Mensual</option>
-                        <option value="anual" <?= $vista === 'anual' ? 'selected' : '' ?>>📅 Anual</option>
-                    </select></div>
-                <div class="col-auto" id="grpMesFiltro" <?= $vista === 'anual' ? 'style="display:none"' : '' ?>><label
-                        class="form-label small fw-semibold mb-1">Mes</label><select name="mes"
-                        class="form-select form-select-sm"><?php for ($m = 1; $m <= 12; $m++): ?><option value="<?= $m ?>"
-                                <?= $m == $mes_filtro ? 'selected' : '' ?>><?= $meses_nombres[$m - 1] ?></option>
-                        <?php endfor; ?></select></div>
-                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Año</label><select name="anio"
-                        class="form-select form-select-sm"><?php for ($a = date('Y'); $a >= date('Y') - 4; $a--): ?><option
-                                value="<?= $a ?>" <?= $a == $anio_filtro ? 'selected' : '' ?>><?= $a ?></option>
-                        <?php endfor; ?></select></div>
-                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Categoría</label><select
-                        name="cat" class="form-select form-select-sm">
+                        <option value="anual" <?= $vista === 'anual'  ? 'selected' : '' ?>>📅 Anual</option>
+                    </select>
+                </div>
+                <div class="col-auto" id="grpMesFiltro" <?= $vista === 'anual' ? 'style="display:none"' : '' ?>>
+                    <label class="form-label small fw-semibold mb-1">Mes</label>
+                    <select name="mes" class="form-select form-select-sm"><?php for ($m = 1; $m <= 12; $m++): ?><option
+                                value="<?= $m ?>" <?= $m == $mes_filtro ? 'selected' : '' ?>><?= $meses_nombres[$m - 1] ?>
+                            </option>
+                        <?php endfor; ?></select>
+                </div>
+                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Año</label>
+                    <select name="anio"
+                        class="form-select form-select-sm"><?php for ($a = date('Y'); $a >= date('Y') - 4; $a--): ?>
+                            <option value="<?= $a ?>" <?= $a == $anio_filtro ? 'selected' : '' ?>><?= $a ?></option>
+                        <?php endfor; ?>
+                    </select>
+                </div>
+                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Categoría</label>
+                    <select name="cat" class="form-select form-select-sm">
                         <option value="">Todas</option><?php foreach ($categorias as $cc): ?><option
                                 value="<?= $cc['id'] ?>" <?= $cc['id'] == $cat_filtro ? 'selected' : '' ?>>
                                 <?= htmlspecialchars($cc['nombre']) ?></option><?php endforeach; ?>
-                    </select></div>
-                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Tipo</label><select name="tipo"
-                        class="form-select form-select-sm">
+                    </select>
+                </div>
+                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Tipo</label>
+                    <select name="tipo" class="form-select form-select-sm">
                         <option value="">Todos</option>
-                        <option value="fijo" <?= $tipo_filtro === 'fijo' ? 'selected' : '' ?>>🔒 Fijo</option>
-                        <option value="variable" <?= $tipo_filtro === 'variable' ? 'selected' : '' ?>>📊 Variable</option>
+                        <option value="fijo" <?= $tipo_filtro === 'fijo'          ? 'selected' : '' ?>>🔒 Fijo</option>
+                        <option value="variable" <?= $tipo_filtro === 'variable'      ? 'selected' : '' ?>>📊 Variable
+                        </option>
                         <option value="extraordinario" <?= $tipo_filtro === 'extraordinario' ? 'selected' : '' ?>>⭐
                             Extraordinario</option>
-                        <option value="viaticos" <?= $tipo_filtro === 'viaticos' ? 'selected' : '' ?>>✈️ Viáticos</option>
-                    </select></div>
-                <div class="col-auto"><button type="submit" class="btn btn-primary btn-sm"><i
-                            class="fa-solid fa-filter me-1"></i>Filtrar</button><a href="gastos"
-                        class="btn btn-outline-secondary btn-sm ms-1">Limpiar</a></div>
+                        <option value="viaticos" <?= $tipo_filtro === 'viaticos'      ? 'selected' : '' ?>>✈️ Viáticos
+                        </option>
+                    </select>
+                </div>
+                <!-- ── SELECT VENCIMIENTO ──────────────────────────────── -->
+                <div class="col-auto"><label class="form-label small fw-semibold mb-1">Vencimiento</label>
+                    <select name="dias" class="form-select form-select-sm">
+                        <option value="0" <?= $dias_filtro === 0  ? 'selected' : '' ?>>📋 Todos</option>
+                        <option value="-1" <?= $dias_filtro === -1 ? 'selected' : '' ?>>🔴 Vencidos</option>
+                        <option value="5" <?= $dias_filtro === 5  ? 'selected' : '' ?>>🟡 Próximos 5 días</option>
+                        <option value="10" <?= $dias_filtro === 10 ? 'selected' : '' ?>>🟡 Próximos 10 días</option>
+                        <option value="20" <?= $dias_filtro === 20 ? 'selected' : '' ?>>🟠 Próximos 20 días</option>
+                        <option value="30" <?= $dias_filtro === 30 ? 'selected' : '' ?>>🔵 Próximos 30 días</option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary btn-sm"><i
+                            class="fa-solid fa-filter me-1"></i>Filtrar</button>
+                    <a href="gastos" class="btn btn-outline-secondary btn-sm ms-1">Limpiar</a>
+                </div>
             </form>
         </div>
     </div>
@@ -751,8 +831,8 @@ $total = count($gastos);
     <div class="gs-toolbar">
         <button class="btn-nuevo-gs" id="btnNuevoGasto"><i class="bi bi-plus-circle-fill"></i> Nuevo Gasto</button>
         <div class="gs-search-wrap"><i class="bi bi-search"></i><input type="text" id="gsSearch" class="gs-search"
-                placeholder="Buscar descripción, proveedor, destino…" autocomplete="off"><button class="gs-clear-btn"
-                id="gsClear"><i class="bi bi-x-lg"></i></button></div>
+                placeholder="Buscar descripción, proveedor, colaborador…" autocomplete="off"><button
+                class="gs-clear-btn" id="gsClear"><i class="bi bi-x-lg"></i></button></div>
         <select id="gsFiltroTipo" class="gs-select">
             <option value="">Todos los tipos</option>
             <option value="fijo">🔒 Fijo</option>
@@ -806,26 +886,35 @@ $total = count($gastos);
                         $tCls = $tipoClasses[$g['tipo'] ?? ''] ?? 'tb-var';
                         $tLbl = $tipoLabels[$g['tipo'] ?? ''] ?? ucfirst($g['tipo'] ?? '');
                         $est = $g['estado'] ?? 'pendiente';
-                        $src = strtolower(($g['descripcion'] ?? '') . ' ' . ($g['tipo'] ?? '') . ' ' . ($g['estado'] ?? '') . ' ' . ($g['cat_nombre'] ?? '') . ' ' . ($g['proveedor'] ?? '') . ' ' . (($g['tipo'] === 'viaticos' && !empty($g['viatico_destino'])) ? $g['viatico_destino'] : '') . ' ' . (($g['tipo'] === 'viaticos' && !empty($g['viatico_colaborador'])) ? $g['viatico_colaborador'] : ''));
+                        $dias_diff = ($est === 'pendiente' && $g['fecha'] < date('Y-m-d')) ? (int)((time() - strtotime($g['fecha'])) / 86400) : 0;
+                        $src = strtolower(($g['descripcion'] ?? '') . ' ' . ($g['tipo'] ?? '') . ' ' . ($g['estado'] ?? '') . ' ' . ($g['cat_nombre'] ?? '') . ' ' . ($g['proveedor'] ?? '') . ' ' . (($g['tipo'] === 'viaticos') ? ($g['viatico_destino'] ?? '') . ' ' . ($g['viatico_colaborador'] ?? '') : ''));
                     ?>
-                        <tr data-search="<?= htmlspecialchars($src) ?>" data-tipo="<?= htmlspecialchars($g['tipo'] ?? '') ?>"
+                        <tr data-search="<?= htmlspecialchars($src) ?>"
+                            data-tipo="<?= htmlspecialchars($g['tipo'] ?? '') ?>"
                             data-estado="<?= htmlspecialchars($est) ?>">
                             <td data-col="fecha" style="white-space:nowrap;font-size:.83rem;color:#64748b;font-weight:600;">
-                                <?= date('d/m/Y', strtotime($g['fecha'])) ?></td>
+                                <?= date('d/m/Y', strtotime($g['fecha'])) ?>
+                                <?php if ($dias_diff > 0): ?><br><span class="badge bg-danger"
+                                        style="font-size:9px"><?= $dias_diff ?> días atraso</span><?php endif; ?>
+                            </td>
                             <td>
                                 <div class="fw-semibold" data-col="desc"
                                     style="<?= $est === 'anulado' ? 'text-decoration:line-through;opacity:.5' : '' ?>">
                                     <?= htmlspecialchars(mb_substr($g['descripcion'] ?? '', 0, 60)) ?><?= mb_strlen($g['descripcion'] ?? '') > 60 ? '…' : '' ?>
                                 </div>
                                 <?php if (!empty($g['proveedor'])): ?><small class="text-muted"><i
-                                            class="bi bi-shop me-1"></i><?= htmlspecialchars($g['proveedor']) ?></small><?php endif; ?>
-                                <?php if (($g['tipo'] ?? '') === 'viaticos'): ?>
+                                            class="bi bi-person me-1"></i><?= htmlspecialchars($g['proveedor']) ?></small><?php endif; ?>
+                                <?php if (($g['tipo'] ?? '') === 'viaticos' && (!empty($g['viatico_destino']) || !empty($g['viatico_colaborador']))): ?>
                                     <div style="font-size:.75rem;color:#0369a1;margin-top:2px;">
                                         <?php if (!empty($g['viatico_destino'])): ?><i
                                                 class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($g['viatico_destino']) ?><?php endif; ?>
-                                            <?php if (!empty($g['viatico_colaborador'])): ?>&nbsp;·&nbsp;<i
-                                                class="bi bi-person me-1"></i><?= htmlspecialchars($g['viatico_colaborador']) ?><?php endif; ?>
+                                            <?php if (!empty($g['viatico_colaborador'])): ?> · <i
+                                                    class="bi bi-person me-1"></i><?= htmlspecialchars($g['viatico_colaborador']) ?><?php endif; ?>
                                     </div>
+                                <?php endif; ?>
+                                <?php if (!empty($g['frecuencia']) && $g['frecuencia'] !== 'unico'): ?>
+                                    <span class="badge bg-light text-secondary border"
+                                        style="font-size:9px"><?= ucfirst($g['frecuencia']) ?></span>
                                 <?php endif; ?>
                             </td>
                             <td><span class="tipo-badge <?= $tCls ?>"><?= $tLbl ?></span></td>
@@ -889,7 +978,7 @@ $total = count($gastos);
     </div>
 </div>
 
-<!-- ══ MODAL: Nuevo / Editar Gasto ════════════════════════════════════ -->
+<!-- ══ MODAL: Nuevo / Editar Gasto ════════════════════════════════════════ -->
 <div class="modal fade" id="modalGasto" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow">
@@ -902,48 +991,73 @@ $total = count($gastos);
                 <form id="formGasto">
                     <input type="hidden" name="gasto_id" id="g_id">
                     <div class="row g-3">
-                        <div class="col-12"><label class="mf-label">Descripción <span
-                                    style="color:#ef4444">*</span></label><input type="text" name="descripcion"
-                                id="g_desc" class="mf-input" placeholder="Descripción del gasto" maxlength="300"
-                                required></div>
-                        <div class="col-md-6"><label class="mf-label">Tipo <span
-                                    style="color:#ef4444">*</span></label><select name="tipo" id="g_tipo"
-                                class="mf-select" required>
+                        <div class="col-12"><label class="mf-label">Descripción *</label><input type="text"
+                                name="descripcion" id="g_desc" class="mf-input" placeholder="Descripción del gasto"
+                                maxlength="300" required></div>
+
+                        <div class="col-md-6"><label class="mf-label">Tipo *</label>
+                            <select name="tipo" id="g_tipo" class="mf-select" required>
                                 <option value="variable">📊 Variable</option>
                                 <option value="fijo">🔒 Fijo (recurrente)</option>
                                 <option value="extraordinario">⭐ Extraordinario</option>
                                 <option value="viaticos">✈️ Viáticos</option>
-                            </select></div>
-                        <div class="col-md-6" id="grpFrecuencia"><label class="mf-label">Frecuencia</label><select
-                                name="frecuencia" id="g_frec" class="mf-select">
+                            </select>
+                        </div>
+                        <div class="col-md-6" id="grpFrecuencia"><label class="mf-label">Frecuencia</label>
+                            <select name="frecuencia" id="g_frec" class="mf-select">
                                 <option value="unico">📌 Único</option>
                                 <option value="mensual">📅 Mensual</option>
                                 <option value="quincenal">🔄 Quincenal</option>
                                 <option value="anual">📆 Anual</option>
-                            </select></div>
-                        <div class="col-md-4"><label class="mf-label">Monto (L) <span
-                                    style="color:#ef4444">*</span></label>
+                            </select>
+                            <small class="text-muted mt-1 d-block" id="frec_help"
+                                style="font-size:.75rem;display:none!important"></small>
+                        </div>
+
+                        <div class="col-md-4"><label class="mf-label">Monto (L) *</label>
                             <div class="input-group"><span class="input-group-text">L</span><input type="number"
                                     name="monto" id="g_monto" class="mf-input" min="0.01" step="0.01" placeholder="0.00"
                                     required style="border-radius:0 var(--radius-sm) var(--radius-sm) 0"></div>
                         </div>
-                        <div class="col-md-4"><label class="mf-label">Fecha <span
-                                    style="color:#ef4444">*</span></label><input type="date" name="fecha" id="g_fecha"
-                                class="mf-input" required></div>
-                        <div class="col-md-4"><label class="mf-label">Estado</label><select name="estado" id="g_estado"
-                                class="mf-select">
+                        <div class="col-md-4"><label class="mf-label">Fecha *</label><input type="date" name="fecha"
+                                id="g_fecha" class="mf-input" required></div>
+                        <div class="col-md-4"><label class="mf-label">Estado</label>
+                            <select name="estado" id="g_estado" class="mf-select">
                                 <option value="pendiente">⏳ Pendiente</option>
                                 <option value="pagado">✅ Pagado</option>
-                            </select></div>
-                        <div class="col-md-6"><label class="mf-label">Categoría</label><select name="categoria_id"
-                                id="g_cat" class="mf-select">
+                            </select>
+                        </div>
+
+                        <div class="col-md-6"><label class="mf-label">Categoría</label>
+                            <select name="categoria_id" id="g_cat" class="mf-select">
                                 <option value="">— Sin categoría —</option><?php foreach ($categorias as $cc): ?><option
                                         value="<?= $cc['id'] ?>"><?= htmlspecialchars($cc['nombre']) ?></option>
                                 <?php endforeach; ?>
-                            </select></div>
+                            </select>
+                        </div>
+                        <!-- ── COLABORADOR asignado ─────────────────────── -->
+                        <div class="col-md-6">
+                            <label class="mf-label">
+                                Colaborador asignado
+                                <span class="text-muted fw-normal"
+                                    style="text-transform:none;letter-spacing:0;font-size:.72rem">(opcional)</span>
+                            </label>
+                            <select name="colaborador_id_asignado" id="g_colab" class="mf-select">
+                                <option value="">— Sin colaborador —</option>
+                                <?php foreach ($colaboradores_lista as $cl): ?>
+                                    <option value="<?= $cl['id'] ?>"
+                                        data-nombre="<?= htmlspecialchars($cl['nombre_completo']) ?>">
+                                        <?= htmlspecialchars($cl['nombre_completo']) ?><?php if ($cl['puesto']): ?> —
+                                        <?= htmlspecialchars($cl['puesto']) ?><?php endif; ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
                         <div class="col-md-6"><label class="mf-label">Proveedor / Beneficiario</label><input type="text"
                                 name="proveedor" id="g_prov" class="mf-input" placeholder="Nombre del proveedor"
                                 maxlength="200"></div>
+
+                        <!-- Días de pago (solo fijo mensual/quincenal) -->
                         <div class="col-md-3" id="grpDia1" style="display:none"><label class="mf-label">Día de
                                 pago</label><input type="number" name="dia_pago" id="g_dia1" class="mf-input" min="1"
                                 max="31"></div>
@@ -956,37 +1070,26 @@ $total = count($gastos);
                             <div class="form-text">Para recurrentes: hasta cuándo aplica.</div>
                         </div>
 
-                        <!-- ══ Panel Viáticos — Colaborador como SELECT ══════ -->
+                        <!-- Panel Viáticos -->
                         <div class="col-12" id="panelViaticos" style="display:none">
                             <div class="rounded-3 p-3" style="background:#e0f2fe;border:1.5px solid #bae6fd">
-                                <div class="fw-semibold small mb-3" style="color:#0369a1">
-                                    <i class="bi bi-airplane me-1"></i> Datos del Viático
-                                </div>
+                                <div class="fw-semibold small mb-3" style="color:#0369a1"><i
+                                        class="bi bi-airplane me-1"></i> Datos del Viático</div>
                                 <div class="row g-2">
-                                    <div class="col-md-6">
-                                        <label class="mf-label">Destino / Ciudad</label>
-                                        <input type="text" name="viatico_destino" id="g_vdest" class="mf-input"
-                                            placeholder="Ej: San Pedro Sula" maxlength="150">
-                                    </div>
-                                    <!-- ← FIX: SELECT de colaboradores en lugar de text input ↓ -->
-                                    <div class="col-md-6">
-                                        <label class="mf-label">
-                                            Colaborador
-                                            <span class="text-muted fw-normal"
-                                                style="text-transform:none;font-size:.75rem;letter-spacing:0">(opcional)</span>
-                                        </label>
+                                    <div class="col-md-6"><label class="mf-label">Destino / Ciudad</label><input
+                                            type="text" name="viatico_destino" id="g_vdest" class="mf-input"
+                                            placeholder="Ej: San Pedro Sula" maxlength="150"></div>
+                                    <div class="col-md-6"><label class="mf-label">Colaborador</label>
                                         <select name="viatico_colaborador" id="g_vcolab" class="mf-select">
                                             <option value="">— Sin colaborador específico —</option>
                                             <?php foreach ($colaboradores_lista as $cl): ?>
                                                 <option value="<?= htmlspecialchars($cl['nombre_completo']) ?>">
                                                     <?= htmlspecialchars($cl['nombre_completo']) ?><?php if ($cl['puesto']): ?>
-                                                    — <?= htmlspecialchars($cl['puesto']) ?><?php endif; ?>
-                                                </option>
+                                                    — <?= htmlspecialchars($cl['puesto']) ?><?php endif; ?></option>
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
-                                    <div class="col-md-4">
-                                        <label class="mf-label">Motivo</label>
+                                    <div class="col-md-4"><label class="mf-label">Motivo</label>
                                         <select name="viatico_motivo" id="g_vmotivo" class="mf-select">
                                             <option value="">— Seleccione —</option>
                                             <option value="reunion">Reunión de negocios</option>
@@ -996,14 +1099,10 @@ $total = count($gastos);
                                             <option value="otro">Otro</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-4">
-                                        <label class="mf-label">Fecha salida</label>
-                                        <input type="date" name="viatico_fecha_salida" id="g_vsalida" class="mf-input">
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label class="mf-label">Fecha regreso</label>
-                                        <input type="date" name="viatico_fecha_regreso" id="g_vregreso"
-                                            class="mf-input">
+                                    <div class="col-md-4"><label class="mf-label">Fecha salida</label><input type="date"
+                                            name="viatico_fecha_salida" id="g_vsalida" class="mf-input"></div>
+                                    <div class="col-md-4"><label class="mf-label">Fecha regreso</label><input
+                                            type="date" name="viatico_fecha_regreso" id="g_vregreso" class="mf-input">
                                     </div>
                                 </div>
                             </div>
@@ -1031,6 +1130,7 @@ $total = count($gastos);
         document.getElementById('grpMesFiltro').style.display = this.value === 'mensual' ? '' : 'none';
     });
 
+    /* ══ TABLE ENGINE ══════════════════════════════════════════════════════════ */
     (() => {
         let query = '',
             filtroTipo = '',
@@ -1052,7 +1152,7 @@ $total = count($gastos);
         const $badge = document.getElementById('gsBadge'),
             $sf = document.getElementById('statFiltered');
         const headers = document.querySelectorAll('#gsTable thead th[data-col]');
-        const hl = (t, q) => !q ? t : t.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, `gi`),
+        const hl = (t, q) => !q ? t : t.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'),
             '<mark class="gs-highlight">$1</mark>');
         const colTxt = (r, i) => {
             const td = r.querySelectorAll('td')[i];
@@ -1178,18 +1278,32 @@ $total = count($gastos);
         render();
     })();
 
+    /* ══ MODAL GASTO ══════════════════════════════════════════════════════════ */
     function toggleCamposGasto() {
         const t = document.getElementById('g_tipo').value;
         const f = document.getElementById('g_frec').value;
+        const esFijo = t === 'fijo';
         document.getElementById('panelViaticos').style.display = (t === 'viaticos') ? '' : 'none';
         document.getElementById('grpFrecuencia').style.display = (t !== 'viaticos') ? '' : 'none';
-        const fijo = t === 'fijo';
-        document.getElementById('grpDia1').style.display = fijo ? '' : 'none';
-        document.getElementById('grpDia2G').style.display = (fijo && f === 'quincenal') ? '' : 'none';
-        document.getElementById('grpFechaVenc').style.display = fijo ? '' : 'none';
+        document.getElementById('grpDia1').style.display = esFijo ? '' : 'none';
+        document.getElementById('grpDia2G').style.display = (esFijo && f === 'quincenal') ? '' : 'none';
+        document.getElementById('grpFechaVenc').style.display = esFijo ? '' : 'none';
+        // Info de anual
+        const help = document.getElementById('frec_help');
+        if (f === 'anual') {
+            help.textContent = '⚠️ Se registrará un gasto único con frecuencia anual.';
+            help.style.display = 'block';
+        } else help.style.display = 'none';
     }
     document.getElementById('g_tipo').addEventListener('change', toggleCamposGasto);
     document.getElementById('g_frec').addEventListener('change', toggleCamposGasto);
+
+    // Cuando se selecciona un colaborador, auto-fill proveedor si está vacío
+    document.getElementById('g_colab').addEventListener('change', function() {
+        const prov = document.getElementById('g_prov');
+        const nombre = this.selectedOptions[0]?.dataset.nombre || '';
+        if (!prov.value && nombre) prov.value = nombre;
+    });
 
     function limpiarModalGasto() {
         document.getElementById('formGasto').reset();
@@ -1197,7 +1311,6 @@ $total = count($gastos);
         document.getElementById('g_fecha').value = new Date().toISOString().slice(0, 10);
         toggleCamposGasto();
     }
-
     document.getElementById('btnNuevoGasto').addEventListener('click', () => {
         document.getElementById('modalGastoTitulo').innerHTML =
             '<i class="bi bi-plus-circle-fill me-2"></i>Nuevo Gasto';
@@ -1223,25 +1336,23 @@ $total = count($gastos);
             document.getElementById('g_cat').value = g.categoria_id || '';
             document.getElementById('g_prov').value = g.proveedor || '';
             document.getElementById('g_notas').value = g.notas || '';
+            document.getElementById('g_colab').value =
+                ''; // Colaborador no guardado en gastos directamente (usa proveedor)
             if (g.dia_pago) document.getElementById('g_dia1').value = g.dia_pago;
             if (g.dia_pago_2) document.getElementById('g_dia2').value = g.dia_pago_2;
             if (g.fecha_vencimiento) document.getElementById('g_venc').value = g.fecha_vencimiento;
             if (g.tipo === 'viaticos') {
                 document.getElementById('g_vdest').value = g.viatico_destino || '';
-                // Para el SELECT: selecciona la opción que coincide con el valor guardado
                 const sel = document.getElementById('g_vcolab');
-                const valActual = g.viatico_colaborador || '';
-                let encontrado = false;
+                let found = false;
                 for (let opt of sel.options) {
-                    if (opt.value === valActual) {
+                    if (opt.value === (g.viatico_colaborador || '')) {
                         opt.selected = true;
-                        encontrado = true;
+                        found = true;
                         break;
                     }
                 }
-                if (!encontrado) {
-                    sel.value = '';
-                } // Si no hay coincidencia exacta, queda en "Sin colaborador"
+                if (!found) sel.value = '';
                 document.getElementById('g_vmotivo').value = g.viatico_motivo || '';
                 document.getElementById('g_vsalida').value = g.viatico_fecha_salida || '';
                 document.getElementById('g_vregreso').value = g.viatico_fecha_regreso || '';
@@ -1264,7 +1375,8 @@ $total = count($gastos);
                 if (d.success) Swal.fire({
                     icon: 'success',
                     title: '¡Guardado!',
-                    timer: 1500,
+                    html: d.message,
+                    timer: 1800,
                     showConfirmButton: false
                 }).then(() => location.reload());
                 else Swal.fire('Error', d.error || 'No se pudo guardar.', 'error');

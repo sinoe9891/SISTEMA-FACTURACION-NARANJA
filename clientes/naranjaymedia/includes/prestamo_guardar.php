@@ -1,5 +1,5 @@
 <?php
-// includes/prestamo_guardar.php
+// clientes/naranjaymedia/includes/prestamo_guardar.php
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 
@@ -14,7 +14,6 @@ if (!$cliente_id) {
     exit;
 }
 
-// ── Recoger y validar campos ──────────────────────────────────────────────────
 $colaborador_id       = (int)($_POST['colaborador_id']       ?? 0);
 $tipo                 = trim($_POST['tipo']                  ?? '');
 $monto_total          = (float)($_POST['monto_total']        ?? 0);
@@ -28,22 +27,21 @@ $frecuencia           = in_array($_POST['frecuencia_cuota'] ?? '', ['quincenal',
 $descuento_auto       = isset($_POST['descuento_auto']) ? 1 : 0;
 $notas                = trim($_POST['notas'] ?? '');
 
-// Si no mandaron fecha_primera_cuota (adelanto/multa), usar la fecha del préstamo
 if (empty($fecha_primera_cuota)) $fecha_primera_cuota = $fecha;
 
-// Validaciones básicas
 if (!$colaborador_id || !$tipo || $monto_total <= 0 || empty($descripcion)) {
     echo json_encode(['success' => false, 'error' => 'Datos incompletos o inválidos.']);
     exit;
 }
 
-$tipos_validos = ['prestamo', 'adelanto', 'bono', 'multa'];
+// ── FIX: 'viatico' singular (coincide con el valor del formulario y la DB) ──
+$tipos_validos = ['prestamo', 'adelanto', 'bono', 'multa', 'viatico'];
+
 if (!in_array($tipo, $tipos_validos)) {
-    echo json_encode(['success' => false, 'error' => 'Tipo no válido.']);
+    echo json_encode(['success' => false, 'error' => 'Tipo no válido: ' . htmlspecialchars($tipo)]);
     exit;
 }
 
-// Verificar que el colaborador pertenece al cliente
 $stmtCheck = $pdo->prepare("SELECT id, tipo_pago FROM colaboradores WHERE id = ? AND cliente_id = ? AND activo = 1");
 $stmtCheck->execute([$colaborador_id, $cliente_id]);
 $colab = $stmtCheck->fetch(PDO::FETCH_ASSOC);
@@ -53,12 +51,15 @@ if (!$colab) {
 }
 
 // ── Lógica según tipo ─────────────────────────────────────────────────────────
-// Bono: no genera cuotas de descuento (es un pago extra, no deuda)
-// Multa/Adelanto: 1 cuota
-// Préstamo: N cuotas
+// bono:    no genera cuotas de descuento (es pago extra)
+// viatico: no genera cuotas, no descuento auto (suma a la nómina)
+// adelanto/multa: 1 cuota
+// prestamo: N cuotas
 switch ($tipo) {
     case 'bono':
-        $num_cuotas = 0;   // sin cuotas de descuento
+    case 'viatico':
+        $num_cuotas     = 0;
+        $descuento_auto = 0;  // viáticos y bonos nunca se descuentan, suman
         break;
     case 'adelanto':
     case 'multa':
@@ -69,7 +70,6 @@ switch ($tipo) {
 
 $monto_cuota = ($num_cuotas > 0) ? round($monto_total / $num_cuotas, 2) : 0;
 
-// ── Insertar préstamo ─────────────────────────────────────────────────────────
 try {
     $pdo->beginTransaction();
 
@@ -88,7 +88,8 @@ try {
         $colaborador_id,
         $tipo,
         $monto_total,
-        ($tipo === 'bono') ? 0 : $monto_total,   // bonos no tienen saldo pendiente
+        // bonos y viáticos: saldo_pendiente = 0 (no son deudas)
+        in_array($tipo, ['bono', 'viatico']) ? 0 : $monto_total,
         $descripcion,
         $fecha,
         $num_cuotas,
@@ -99,7 +100,7 @@ try {
     ]);
     $prestamo_id = (int)$pdo->lastInsertId();
 
-    // ── Generar cuotas ────────────────────────────────────────────────────────
+    // ── Generar cuotas (solo préstamo, adelanto, multa) ───────────────────────
     if ($num_cuotas > 0) {
         $stmtCuota = $pdo->prepare("
             INSERT INTO colaborador_prestamo_cuotas
@@ -107,9 +108,8 @@ try {
             VALUES (?, ?, ?, ?, ?, ?, 'pendiente')
         ");
 
-        // La base es la fecha de la PRIMERA CUOTA, no la del préstamo
         $fecha_base  = new DateTime($fecha_primera_cuota);
-        $dia_destino = (int)$fecha_base->format('d'); // ej: 28, 30, 31
+        $dia_destino = (int)$fecha_base->format('d');
 
         for ($i = 1; $i <= $num_cuotas; $i++) {
             $monto_esta_cuota = ($i === $num_cuotas)
@@ -119,16 +119,11 @@ try {
             if ($i === 1) {
                 $fecha_cuota = clone $fecha_base;
             } elseif ($frecuencia === 'quincenal') {
-                // Quincenal: sumar días desde la base, sin problema de meses
                 $fecha_cuota = clone $fecha_base;
                 $fecha_cuota->modify('+' . (($i - 1) * 15) . ' days');
             } else {
-                // Mensual: calcular año/mes destino y forzar el día correcto
                 $fecha_cuota = clone $fecha_base;
                 $fecha_cuota->modify('+' . ($i - 1) . ' month');
-
-                // Forzar el día original, capado al último día del mes destino
-                // Ej: día 31 en febrero → 28/29; día 30 en febrero → 28/29
                 $ultimo_dia_mes = (int)$fecha_cuota->format('t');
                 $dia_ajustado   = min($dia_destino, $ultimo_dia_mes);
                 $fecha_cuota->setDate(
@@ -154,15 +149,20 @@ try {
     $etiquetas = [
         'prestamo' => 'Préstamo',
         'adelanto' => 'Adelanto',
-        'bono'     => 'Bono',
-        'multa'    => 'Multa/Descuento'
+        'bono'     => 'Bono/Gratificación',
+        'viatico'  => 'Viático',
+        'multa'    => 'Multa/Descuento',
     ];
+
+    $msg = ($etiquetas[$tipo] ?? ucfirst($tipo)) . ' registrado correctamente.';
+    if ($num_cuotas > 0) $msg .= " Se generaron {$num_cuotas} cuota(s).";
+    if ($tipo === 'viatico') $msg .= " Se liquidará al procesar la nómina.";
+    if ($tipo === 'bono')    $msg .= " Se pagará al registrar la nómina.";
 
     echo json_encode([
         'success'     => true,
         'prestamo_id' => $prestamo_id,
-        'message'     => $etiquetas[$tipo] . ' registrado correctamente.'
-            . ($num_cuotas > 0 ? " Se generaron {$num_cuotas} cuota(s)." : ''),
+        'message'     => $msg,
     ]);
 } catch (Exception $e) {
     $pdo->rollBack();
