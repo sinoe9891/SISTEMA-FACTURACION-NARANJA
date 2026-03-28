@@ -621,6 +621,56 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
         border-top: 2px dashed currentColor;
         flex-shrink: 0
     }
+
+    /* ── Print ─────────────────────────────────────────────────────────────── */
+    @media print {
+        body {
+            background: #fff !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact
+        }
+
+        .no-print {
+            display: none !important
+        }
+
+        .pj-hero {
+            box-shadow: none !important
+        }
+
+        .pj-card,
+        .pj-kpi {
+            box-shadow: none !important;
+            break-inside: avoid
+        }
+
+        .pj-kpis {
+            grid-template-columns: repeat(6, 1fr) !important;
+            gap: .4rem
+        }
+
+        .pj-table {
+            font-size: .72rem
+        }
+
+        .pj-table thead th,
+        .pj-table tbody td {
+            padding: .35rem .5rem
+        }
+
+        .det-row,
+        .btn-desglose {
+            display: none !important
+        }
+
+        .pj-wrap {
+            padding: .5rem 0 1rem
+        }
+
+        a[href]:after {
+            content: '' !important
+        }
+    }
 </style>
 
 <div class="container-xxl pj-wrap">
@@ -630,13 +680,16 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
             <p style="font-size:.82rem;opacity:.78;margin:.2rem 0 0">12 meses adelante · Basada en contratos activos y
                 promedios de gastos reales</p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 flex-wrap no-print">
             <a href="financiero" class="btn btn-sm"
                 style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.3);font-weight:600"><i
                     class="bi bi-graph-up me-1"></i>Estado de Resultados</a>
             <a href="contratos" class="btn btn-sm"
                 style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.3);font-weight:600"><i
                     class="bi bi-file-earmark-text me-1"></i>Contratos</a>
+            <button onclick="window.print()" class="btn btn-sm"
+                style="background:rgba(255,255,255,.28);color:#fff;border:1px solid rgba(255,255,255,.5);font-weight:700"><i
+                    class="bi bi-printer-fill me-1"></i>Imprimir / PDF</button>
         </div>
     </div>
 
@@ -755,7 +808,7 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
                         <th class="text-end">Total Egr.</th>
                         <th class="text-end">Flujo Neto</th>
                         <th class="text-center">Estado</th>
-                        <th class="text-center">Desglose</th>
+                        <th class="text-center no-print">Desglose</th>
                     </tr>
                 </thead>
                 <tbody>

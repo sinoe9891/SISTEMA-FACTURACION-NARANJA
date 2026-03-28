@@ -652,7 +652,7 @@ for ($m = 1; $m <= 12; $m++) {
         <div class="fin-kpi" style="border-color:#a7f3d0">
             <div class="fin-kpi-icon ki-g"><i class="bi bi-arrow-up-circle-fill"></i></div>
             <div style="min-width:0">
-                <div class="fin-kpi-val" style="color:#059669">L <?= number_format($ingresos_netos, 0) ?></div>
+                <div class="fin-kpi-val" style="color:#059669">L <?= number_format($ingresos_netos, 2) ?></div>
                 <div class="fin-kpi-lbl">Ingresos Netos</div>
                 <div class="fin-kpi-sub"><?= (int)$ing['qty_facturas'] ?> fact. · sin ISV
                     <?php if ($vista === 'mensual' && $ing_ant > 0): $vi = round((($ingresos_netos - $ing_ant) / $ing_ant) * 100, 1); ?>
@@ -668,7 +668,7 @@ for ($m = 1; $m <= 12; $m++) {
         <div class="fin-kpi" style="border-color:#fca5a5">
             <div class="fin-kpi-icon ki-r"><i class="bi bi-arrow-down-circle-fill"></i></div>
             <div style="min-width:0">
-                <div class="fin-kpi-val" style="color:#dc2626">L <?= number_format($egresos_totales, 0) ?></div>
+                <div class="fin-kpi-val" style="color:#dc2626">L <?= number_format($egresos_totales, 2) ?></div>
                 <div class="fin-kpi-lbl">Egresos Totales</div>
                 <div class="fin-kpi-sub"><?= (int)$egr['qty_gastos'] ?> registros
                     <?php if ($vista === 'mensual' && $egr_ant > 0): $ve = round((($egresos_totales - $egr_ant) / $egr_ant) * 100, 1); ?>
@@ -677,10 +677,16 @@ for ($m = 1; $m <= 12; $m++) {
                         </span>
                     <?php endif; ?>
                 </div>
-                <div style="font-size:.68rem;color:var(--muted);margin-top:2px">
-                    <span style="color:#7c3aed">F:L<?= number_format((float)$egr['fijos'], 0) ?></span> ·
-                    <span style="color:#1d4ed8">V:L<?= number_format((float)$egr['variables'], 0) ?></span> ·
-                    <span style="color:#d97706">E:L<?= number_format((float)$egr['extraordinarios'], 0) ?></span>
+                <div style="font-size:.67rem;color:var(--muted);margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">
+                    <span title="Gastos Fijos"
+                        style="color:#7c3aed;background:#ede9fe;padding:1px 5px;border-radius:4px;font-weight:600">🔒
+                        L<?= number_format((float)$egr['fijos'], 0) ?></span>
+                    <span title="Gastos Variables"
+                        style="color:#1d4ed8;background:#dbeafe;padding:1px 5px;border-radius:4px;font-weight:600">📊
+                        L<?= number_format((float)$egr['variables'], 0) ?></span>
+                    <span title="Gastos Extraordinarios"
+                        style="color:#d97706;background:#fef3c7;padding:1px 5px;border-radius:4px;font-weight:600">⭐
+                        L<?= number_format((float)$egr['extraordinarios'], 0) ?></span>
                 </div>
             </div>
         </div>
@@ -694,7 +700,7 @@ for ($m = 1; $m <= 12; $m++) {
             </div>
             <div>
                 <div class="fin-kpi-val" style="color:<?= $util_ok ? '#059669' : '#dc2626' ?>">
-                    <?= $utilidad_neta < 0 ? '-' : '' ?>L <?= number_format(abs($utilidad_neta), 0) ?>
+                    <?= $utilidad_neta < 0 ? '-' : '' ?>L <?= number_format(abs($utilidad_neta), 2) ?>
                 </div>
                 <div class="fin-kpi-lbl">Utilidad Neta</div>
                 <?php if ($margen_pct !== null): ?>
@@ -714,7 +720,7 @@ for ($m = 1; $m <= 12; $m++) {
             <div>
                 <div class="fin-kpi-val" style="color:#1d4ed8"><?= (int)$contratos_kpi['qty_contratos'] ?></div>
                 <div class="fin-kpi-lbl">Contratos activos</div>
-                <div class="fin-kpi-sub">L <?= number_format((float)$contratos_kpi['monto_mensual'], 0) ?>/mes</div>
+                <div class="fin-kpi-sub">L <?= number_format((float)$contratos_kpi['monto_mensual'], 2) ?>/mes</div>
             </div>
         </div>
 
@@ -723,10 +729,10 @@ for ($m = 1; $m <= 12; $m++) {
             <div class="fin-kpi-icon ki-y"><i class="bi bi-people-fill"></i></div>
             <div>
                 <div class="fin-kpi-val" style="font-size:.9rem;color:#d97706">L
-                    <?= number_format($costo_nomina_mensual, 0) ?></div>
+                    <?= number_format($costo_nomina_mensual, 2) ?></div>
                 <div class="fin-kpi-lbl">Nómina/mes</div>
                 <div class="fin-kpi-sub"><?= (int)$nomina_kpi['qty_colab'] ?> colab. · Bruto
-                    L<?= number_format((float)$nomina_kpi['masa_bruta'], 0) ?></div>
+                    L<?= number_format((float)$nomina_kpi['masa_bruta'], 2) ?></div>
             </div>
         </div>
     </div>
@@ -911,7 +917,9 @@ for ($m = 1; $m <= 12; $m++) {
         <div
             style="padding:.6rem 1.2rem;background:var(--surface-2);border-top:1px solid var(--border);font-size:.75rem;color:var(--muted)">
             <i class="bi bi-info-circle me-1 text-info"></i>
-            <strong>Nota:</strong> El ISV no forma parte del Estado de Resultados.
+            <strong>Base devengado:</strong> Ingresos = facturas <em>emitidas</em> (no requiere cobro en efectivo).
+            Egresos = gastos <em>registrados</em> (no requiere pago). ·
+            El ISV no forma parte del Estado de Resultados.
             <?php if ((float)$ing['isv'] > 0): ?>
                 ISV recaudado: <strong>L <?= number_format((float)$ing['isv'], 2) ?></strong> (excluido de ingresos y
                 egresos).
