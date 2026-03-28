@@ -11,9 +11,10 @@ $cliente_id          = (int)(USUARIO_ROL === 'superadmin'
 $establecimiento_id  = $_SESSION['establecimiento_activo'] ?? 0;
 
 // ── Filtros ───────────────────────────────────────────────────────────────────
-$anio_filtro = (int)($_GET['anio'] ?? date('Y'));
-$vista       = trim($_GET['vista'] ?? 'anual');       // 'anual' | 'mensual'
-$mes_filtro  = (int)($_GET['mes']  ?? date('n'));
+$anio_filtro      = (int)($_GET['anio']    ?? date('Y'));
+$vista            = trim($_GET['vista']    ?? 'anual');
+$mes_filtro       = (int)($_GET['mes']     ?? date('n'));
+$incl_recibos     = isset($_GET['incl_recibos']); // toggle sin_factura
 
 $meses_es = [
     '',
@@ -101,12 +102,18 @@ $top_clientes = $stmtTopCli->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Contratos activos (ingreso proyectado recurrente) ─────────────────────────
 $stmtContratos = $pdo->prepare("
-    SELECT COUNT(*) AS qty_contratos, COALESCE(SUM(monto), 0) AS monto_mensual
+    SELECT
+        COUNT(*) AS qty_contratos,
+        COALESCE(SUM(monto), 0) AS monto_mensual,
+        COALESCE(SUM(CASE WHEN tipo_contrato != 'sin_factura' THEN monto ELSE 0 END), 0) AS monto_con_factura,
+        COALESCE(SUM(CASE WHEN tipo_contrato  = 'sin_factura' THEN monto ELSE 0 END), 0) AS monto_sin_factura,
+        COUNT(CASE WHEN tipo_contrato = 'sin_factura' THEN 1 END) AS qty_sin_factura
     FROM contratos
     WHERE cliente_id = ? AND estado = 'activo'
 ");
 $stmtContratos->execute([$cliente_id]);
 $contratos_kpi = $stmtContratos->fetch(PDO::FETCH_ASSOC);
+
 
 // ── Nómina: masa salarial de colaboradores activos ────────────────────────────
 $stmtNomina = $pdo->prepare("
@@ -132,6 +139,10 @@ $costo_nomina_mensual = (float)$nomina_kpi['masa_bruta']
     + (float)$nomina_kpi['ihss_patronal']
     + (float)$nomina_kpi['rap_patronal'];
 
+// Ajustar ingreso proyectado según toggle
+$mrr_efectivo = $incl_recibos
+    ? (float)$contratos_kpi['monto_mensual']
+    : (float)$contratos_kpi['monto_con_factura'];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EGRESOS — gastos (excluye anulados)
@@ -322,14 +333,16 @@ for ($m = 1; $m <= 12; $m++) {
                     <label class="form-label small fw-semibold mb-1">Vista</label>
                     <select name="vista" id="selectVista" class="form-select form-select-sm">
                         <option value="anual" <?= $vista === 'anual'   ? 'selected' : '' ?>>📅 Año completo</option>
-                        <option value="mensual" <?= $vista === 'mensual' ? 'selected' : '' ?>>🗓️ Mes específico</option>
+                        <option value="mensual" <?= $vista === 'mensual' ? 'selected' : '' ?>>🗓️ Mes específico
+                        </option>
                     </select>
                 </div>
                 <div class="col-auto" id="grpMes" <?= $vista !== 'mensual' ? 'style="display:none"' : '' ?>>
                     <label class="form-label small fw-semibold mb-1">Mes</label>
                     <select name="mes" class="form-select form-select-sm">
                         <?php for ($m = 1; $m <= 12; $m++): ?>
-                            <option value="<?= $m ?>" <?= $m == $mes_filtro ? 'selected' : '' ?>><?= $meses_es[$m] ?></option>
+                            <option value="<?= $m ?>" <?= $m == $mes_filtro ? 'selected' : '' ?>><?= $meses_es[$m] ?>
+                            </option>
                         <?php endfor; ?>
                     </select>
                 </div>
@@ -341,11 +354,28 @@ for ($m = 1; $m <= 12; $m++) {
                         <?php endfor; ?>
                     </select>
                 </div>
-                <div class="col-auto">
+                <div class="col-auto d-flex align-items-center gap-3 flex-wrap">
+                    <!-- Toggle contratos sin factura -->
+                    <div class="form-check form-switch mb-0 d-flex align-items-center gap-2">
+                        <input class="form-check-input" type="checkbox" role="switch" id="inclRecibos"
+                            name="incl_recibos" value="1" <?= $incl_recibos ? 'checked' : '' ?>
+                            onchange="this.form.submit()">
+                        <label class="form-check-label small fw-semibold" for="inclRecibos">
+                            Incluir contratos sin facturación
+                            <?php if ((float)$contratos_kpi['monto_sin_factura'] > 0): ?>
+                                <span class="badge ms-1" style="background:#ede9fe;color:#6d28d9;font-size:.65rem">
+                                    +L <?= number_format((float)$contratos_kpi['monto_sin_factura'], 0) ?>/mes
+                                </span>
+                            <?php endif; ?>
+                        </label>
+                    </div>
                     <button type="submit" class="btn btn-primary btn-sm">
                         <i class="fa-solid fa-filter me-1"></i> Ver
                     </button>
-                    <a href="financiero" class="btn btn-outline-secondary btn-sm ms-1">Hoy</a>
+                    <a href="financiero" class="btn btn-outline-secondary btn-sm">Hoy</a>
+                    <a href="proyeccion" class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-graph-up-arrow me-1"></i>Ver Proyección →
+                    </a>
                 </div>
             </form>
         </div>
@@ -359,7 +389,8 @@ for ($m = 1; $m <= 12; $m++) {
                 <strong><?= (int)$pendientes['qty'] ?> gasto(s) pendiente(s) de pago</strong>
                 por un total de <strong>L <?= number_format((float)$pendientes['monto'], 2) ?></strong>
                 en el período — estos <u>ya están incluidos</u> en los egresos del Estado de Resultados.
-                <a href="gastos?mes=<?= $mes_filtro ?>&anio=<?= $anio_filtro ?>" class="ms-2 alert-link small">Ver gastos →</a>
+                <a href="gastos?mes=<?= $mes_filtro ?>&anio=<?= $anio_filtro ?>" class="ms-2 alert-link small">Ver gastos
+                    →</a>
             </div>
         </div>
     <?php endif; ?>
@@ -377,7 +408,8 @@ for ($m = 1; $m <= 12; $m++) {
                         <div>
                             <div class="text-muted small fw-semibold text-uppercase mb-1">Ingresos Netos</div>
                             <div class="fs-3 fw-bold text-success">L <?= number_format($ingresos_netos, 2) ?></div>
-                            <div class="text-muted" style="font-size:11px"><?= (int)$ing['qty_facturas'] ?> facturas · sin ISV</div>
+                            <div class="text-muted" style="font-size:11px"><?= (int)$ing['qty_facturas'] ?> facturas ·
+                                sin ISV</div>
                         </div>
                         <div class="rounded-circle bg-success bg-opacity-10 d-flex align-items-center justify-content-center"
                             style="width:46px;height:46px;flex-shrink:0">
@@ -403,7 +435,8 @@ for ($m = 1; $m <= 12; $m++) {
                         <div>
                             <div class="text-muted small fw-semibold text-uppercase mb-1">Egresos Totales</div>
                             <div class="fs-3 fw-bold text-danger">L <?= number_format($egresos_totales, 2) ?></div>
-                            <div class="text-muted" style="font-size:11px"><?= (int)$egr['qty_gastos'] ?> registros</div>
+                            <div class="text-muted" style="font-size:11px"><?= (int)$egr['qty_gastos'] ?> registros
+                            </div>
                         </div>
                         <div class="rounded-circle bg-danger bg-opacity-10 d-flex align-items-center justify-content-center"
                             style="width:46px;height:46px;flex-shrink:0">
@@ -428,7 +461,8 @@ for ($m = 1; $m <= 12; $m++) {
 
         <!-- Utilidad -->
         <div class="col-6 col-lg-3">
-            <div class="card border-2 shadow-sm h-100 <?= $utilidad_neta >= 0 ? 'kpi-utilidad-positiva border-success' : 'kpi-utilidad-negativa border-danger' ?>">
+            <div
+                class="card border-2 shadow-sm h-100 <?= $utilidad_neta >= 0 ? 'kpi-utilidad-positiva border-success' : 'kpi-utilidad-negativa border-danger' ?>">
                 <div class="card-body py-3 px-4">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
@@ -442,12 +476,15 @@ for ($m = 1; $m <= 12; $m++) {
                         </div>
                         <div class="rounded-circle d-flex align-items-center justify-content-center"
                             style="width:46px;height:46px;flex-shrink:0;background:<?= $utilidad_neta >= 0 ? '#d1fae5' : '#fee2e2' ?>">
-                            <i class="fa-solid fa-scale-balanced <?= $utilidad_neta >= 0 ? 'text-success' : 'text-danger' ?>"></i>
+                            <i
+                                class="fa-solid fa-scale-balanced <?= $utilidad_neta >= 0 ? 'text-success' : 'text-danger' ?>"></i>
                         </div>
                     </div>
                     <?php if ($margen_pct !== null): ?>
                         <div class="mt-2">
-                            <span class="badge rounded-pill px-3 <?= $margen_pct >= 0 ? 'badge-margen-pos' : 'badge-margen-neg' ?>" style="font-size:12px">
+                            <span
+                                class="badge rounded-pill px-3 <?= $margen_pct >= 0 ? 'badge-margen-pos' : 'badge-margen-neg' ?>"
+                                style="font-size:12px">
                                 Margen <?= $margen_pct ?>%
                             </span>
                         </div>
@@ -473,7 +510,12 @@ for ($m = 1; $m <= 12; $m++) {
                     </div>
                     <div class="mt-2 small text-muted">
                         Ingreso recurrente mensual:
-                        <span class="fw-bold text-primary">L <?= number_format((float)$contratos_kpi['monto_mensual'], 2) ?></span>
+                        <span class="fw-bold text-primary">L <?= number_format($mrr_efectivo, 2) ?></span>
+                        <?php if ($incl_recibos && (float)$contratos_kpi['monto_sin_factura'] > 0): ?>
+                            <br><small class="text-muted" style="font-size:10px">
+                                Incluye L <?= number_format((float)$contratos_kpi['monto_sin_factura'], 2) ?> de recibos
+                            </small>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -486,8 +528,10 @@ for ($m = 1; $m <= 12; $m++) {
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <div class="text-muted small fw-semibold text-uppercase mb-1">Nómina Mensual</div>
-                            <div class="fs-5 fw-bold text-warning">L <?= number_format($costo_nomina_mensual, 2) ?></div>
-                            <div class="text-muted" style="font-size:11px"><?= (int)$nomina_kpi['qty_colab'] ?> colaborador(es)</div>
+                            <div class="fs-5 fw-bold text-warning">L <?= number_format($costo_nomina_mensual, 2) ?>
+                            </div>
+                            <div class="text-muted" style="font-size:11px"><?= (int)$nomina_kpi['qty_colab'] ?>
+                                colaborador(es)</div>
                         </div>
                         <div class="rounded-circle bg-warning bg-opacity-10 d-flex align-items-center justify-content-center"
                             style="width:46px;height:46px;flex-shrink:0">
@@ -495,8 +539,10 @@ for ($m = 1; $m <= 12; $m++) {
                         </div>
                     </div>
                     <div class="mt-1 d-flex flex-column" style="font-size:10px;gap:1px">
-                        <span class="text-muted">Bruto: <strong class="text-dark">L <?= number_format((float)$nomina_kpi['masa_bruta'], 2) ?></strong></span>
-                        <span class="text-muted">Patronal IHSS+RAP: <strong class="text-danger">L <?= number_format((float)$nomina_kpi['ihss_patronal'] + (float)$nomina_kpi['rap_patronal'], 2) ?></strong></span>
+                        <span class="text-muted">Bruto: <strong class="text-dark">L
+                                <?= number_format((float)$nomina_kpi['masa_bruta'], 2) ?></strong></span>
+                        <span class="text-muted">Patronal IHSS+RAP: <strong class="text-danger">L
+                                <?= number_format((float)$nomina_kpi['ihss_patronal'] + (float)$nomina_kpi['rap_patronal'], 2) ?></strong></span>
                     </div>
                 </div>
             </div>
@@ -537,7 +583,8 @@ for ($m = 1; $m <= 12; $m++) {
                             <tr>
                                 <th style="width:160px">Concepto</th>
                                 <?php for ($m = 1; $m <= 12; $m++): ?>
-                                    <th class="text-center mes-col-header <?= ($vista === 'mensual' && $m == $mes_filtro) ? 'table-warning text-dark' : '' ?>">
+                                    <th
+                                        class="text-center mes-col-header <?= ($vista === 'mensual' && $m == $mes_filtro) ? 'table-warning text-dark' : '' ?>">
                                         <?= substr($meses_es[$m], 0, 3) ?>
                                     </th>
                                 <?php endfor; ?>
@@ -554,11 +601,13 @@ for ($m = 1; $m <= 12; $m++) {
                                 for ($m = 1; $m <= 12; $m++):
                                     $v = (float)($ing_por_mes[$m]['subtotal'] ?? 0);
                                     $total_ing_anual += $v; ?>
-                                    <td class="text-end small er-row-ingreso <?= ($vista === 'mensual' && $m == $mes_filtro) ? 'fw-bold' : '' ?>">
+                                    <td
+                                        class="text-end small er-row-ingreso <?= ($vista === 'mensual' && $m == $mes_filtro) ? 'fw-bold' : '' ?>">
                                         <?= $v > 0 ? number_format($v, 0) : '<span class="text-muted">—</span>' ?>
                                     </td>
                                 <?php endfor; ?>
-                                <td class="text-end fw-bold small er-row-ingreso text-success">L <?= number_format($total_ing_anual, 0) ?></td>
+                                <td class="text-end fw-bold small er-row-ingreso text-success">L
+                                    <?= number_format($total_ing_anual, 0) ?></td>
                             </tr>
 
                             <!-- Detalle: facturas -->
@@ -570,7 +619,8 @@ for ($m = 1; $m <= 12; $m++) {
                                         <?= $v > 0 ? number_format($v, 0) : '' ?>
                                     </td>
                                 <?php endfor; ?>
-                                <td class="text-end text-muted small er-row-ingreso">L <?= number_format($total_ing_anual, 0) ?></td>
+                                <td class="text-end text-muted small er-row-ingreso">L
+                                    <?= number_format($total_ing_anual, 0) ?></td>
                             </tr>
 
                             <!-- EGRESOS encabezado -->
@@ -582,11 +632,13 @@ for ($m = 1; $m <= 12; $m++) {
                                 for ($m = 1; $m <= 12; $m++):
                                     $v = (float)($egr_por_mes[$m]['total'] ?? 0);
                                     $total_egr_anual += $v; ?>
-                                    <td class="text-end small er-row-egreso <?= ($vista === 'mensual' && $m == $mes_filtro) ? 'fw-bold' : '' ?>">
+                                    <td
+                                        class="text-end small er-row-egreso <?= ($vista === 'mensual' && $m == $mes_filtro) ? 'fw-bold' : '' ?>">
                                         <?= $v > 0 ? number_format($v, 0) : '<span class="text-muted">—</span>' ?>
                                     </td>
                                 <?php endfor; ?>
-                                <td class="text-end fw-bold small er-row-egreso text-danger">L <?= number_format($total_egr_anual, 0) ?></td>
+                                <td class="text-end fw-bold small er-row-egreso text-danger">L
+                                    <?= number_format($total_egr_anual, 0) ?></td>
                             </tr>
 
                             <!-- Detalle: fijos -->
@@ -596,9 +648,11 @@ for ($m = 1; $m <= 12; $m++) {
                                 for ($m = 1; $m <= 12; $m++):
                                     $v = (float)($egr_por_mes[$m]['fijos'] ?? 0);
                                     $tot_fijos += $v; ?>
-                                    <td class="text-end text-muted er-row-egreso"><?= $v > 0 ? number_format($v, 0) : '' ?></td>
+                                    <td class="text-end text-muted er-row-egreso"><?= $v > 0 ? number_format($v, 0) : '' ?>
+                                    </td>
                                 <?php endfor; ?>
-                                <td class="text-end text-muted small er-row-egreso">L <?= number_format($tot_fijos, 0) ?></td>
+                                <td class="text-end text-muted small er-row-egreso">L
+                                    <?= number_format($tot_fijos, 0) ?></td>
                             </tr>
 
                             <!-- Detalle: variables -->
@@ -608,9 +662,11 @@ for ($m = 1; $m <= 12; $m++) {
                                 for ($m = 1; $m <= 12; $m++):
                                     $v = (float)($egr_por_mes[$m]['variables'] ?? 0);
                                     $tot_var += $v; ?>
-                                    <td class="text-end text-muted er-row-egreso"><?= $v > 0 ? number_format($v, 0) : '' ?></td>
+                                    <td class="text-end text-muted er-row-egreso"><?= $v > 0 ? number_format($v, 0) : '' ?>
+                                    </td>
                                 <?php endfor; ?>
-                                <td class="text-end text-muted small er-row-egreso">L <?= number_format($tot_var, 0) ?></td>
+                                <td class="text-end text-muted small er-row-egreso">L <?= number_format($tot_var, 0) ?>
+                                </td>
                             </tr>
 
                             <!-- Detalle: extraordinarios -->
@@ -620,9 +676,11 @@ for ($m = 1; $m <= 12; $m++) {
                                 for ($m = 1; $m <= 12; $m++):
                                     $v = (float)($egr_por_mes[$m]['extraordinarios'] ?? 0);
                                     $tot_ext += $v; ?>
-                                    <td class="text-end text-muted er-row-egreso"><?= $v > 0 ? number_format($v, 0) : '' ?></td>
+                                    <td class="text-end text-muted er-row-egreso"><?= $v > 0 ? number_format($v, 0) : '' ?>
+                                    </td>
                                 <?php endfor; ?>
-                                <td class="text-end text-muted small er-row-egreso">L <?= number_format($tot_ext, 0) ?></td>
+                                <td class="text-end text-muted small er-row-egreso">L <?= number_format($tot_ext, 0) ?>
+                                </td>
                             </tr>
 
                             <!-- Detalle: nómina proyectada -->
@@ -639,7 +697,7 @@ for ($m = 1; $m <= 12; $m++) {
                                     L <?= number_format($costo_nomina_mensual * 12, 0) ?>
                                 </td>
                             </tr>
-                            
+
                             <!-- UTILIDAD NETA -->
                             <tr class="er-row-utilidad">
                                 <td class="fw-bold small">
@@ -649,7 +707,8 @@ for ($m = 1; $m <= 12; $m++) {
                                 for ($m = 1; $m <= 12; $m++):
                                     $util = (float)($ing_por_mes[$m]['subtotal'] ?? 0) - (float)($egr_por_mes[$m]['total'] ?? 0);
                                     $tot_util_anual += $util; ?>
-                                    <td class="text-end fw-bold <?= ($vista === 'mensual' && $m == $mes_filtro) ? 'fs-6' : '' ?> <?= $util >= 0 ? 'text-success' : 'text-danger' ?>">
+                                    <td
+                                        class="text-end fw-bold <?= ($vista === 'mensual' && $m == $mes_filtro) ? 'fs-6' : '' ?> <?= $util >= 0 ? 'text-success' : 'text-danger' ?>">
                                         <?php if ($util == 0 && !isset($ing_por_mes[$m]) && !isset($egr_por_mes[$m])): ?>
                                             <span class="text-muted">—</span>
                                         <?php else: ?>
@@ -657,7 +716,8 @@ for ($m = 1; $m <= 12; $m++) {
                                         <?php endif; ?>
                                     </td>
                                 <?php endfor; ?>
-                                <td class="text-end fw-bold <?= $tot_util_anual >= 0 ? 'text-success' : 'text-danger' ?>">
+                                <td
+                                    class="text-end fw-bold <?= $tot_util_anual >= 0 ? 'text-success' : 'text-danger' ?>">
                                     L <?= number_format($tot_util_anual, 0) ?>
                                 </td>
                             </tr>
@@ -670,11 +730,13 @@ for ($m = 1; $m <= 12; $m++) {
                                     $egr_m = (float)($egr_por_mes[$m]['total'] ?? 0);
                                     $mgn   = $ing_m > 0 ? round((($ing_m - $egr_m) / $ing_m) * 100, 1) : null;
                                 ?>
-                                    <td class="text-center <?= $mgn === null ? '' : ($mgn >= 0 ? 'text-success' : 'text-danger') ?>">
+                                    <td
+                                        class="text-center <?= $mgn === null ? '' : ($mgn >= 0 ? 'text-success' : 'text-danger') ?>">
                                         <?= $mgn !== null ? $mgn . '%' : '' ?>
                                     </td>
                                 <?php endfor; ?>
-                                <td class="text-center <?= $margen_pct !== null ? ($margen_pct >= 0 ? 'text-success' : 'text-danger') : '' ?>">
+                                <td
+                                    class="text-center <?= $margen_pct !== null ? ($margen_pct >= 0 ? 'text-success' : 'text-danger') : '' ?>">
                                     <?= $margen_pct !== null ? $margen_pct . '%' : '—' ?>
                                 </td>
                             </tr>
@@ -686,7 +748,8 @@ for ($m = 1; $m <= 12; $m++) {
             <div class="card-footer bg-light border-top py-2 px-3">
                 <small class="text-muted">
                     <i class="fa-solid fa-circle-info me-1 text-info"></i>
-                    <strong>Nota:</strong> El ISV no forma parte del Estado de Resultados — es un impuesto recaudado a nombre del SAR.
+                    <strong>Nota:</strong> El ISV no forma parte del Estado de Resultados — es un impuesto recaudado a
+                    nombre del SAR.
                     <?php if ((float)$ing['isv'] > 0): ?>
                         ISV recaudado en el período: <strong>L <?= number_format((float)$ing['isv'], 2) ?></strong>
                         (no incluido en ingresos ni egresos).
@@ -719,14 +782,17 @@ for ($m = 1; $m <= 12; $m++) {
                             ?>
                                 <div class="mb-3">
                                     <div class="d-flex justify-content-between mb-1">
-                                        <span class="fw-semibold small text-truncate" style="max-width:200px"><?= htmlspecialchars($tc['cliente_nombre']) ?></span>
-                                        <span class="small fw-bold text-success ms-2 text-nowrap">L <?= number_format((float)$tc['subtotal'], 2) ?></span>
+                                        <span class="fw-semibold small text-truncate"
+                                            style="max-width:200px"><?= htmlspecialchars($tc['cliente_nombre']) ?></span>
+                                        <span class="small fw-bold text-success ms-2 text-nowrap">L
+                                            <?= number_format((float)$tc['subtotal'], 2) ?></span>
                                     </div>
                                     <div class="d-flex align-items-center gap-2">
                                         <div class="progress flex-grow-1" style="height:6px">
                                             <div class="progress-bar bg-success" style="width:<?= $pct ?>%"></div>
                                         </div>
-                                        <small class="text-muted" style="width:40px;text-align:right"><?= $tc['qty'] ?> fact.</small>
+                                        <small class="text-muted" style="width:40px;text-align:right"><?= $tc['qty'] ?>
+                                            fact.</small>
                                     </div>
                                 </div>
                         <?php endforeach;
@@ -757,14 +823,18 @@ for ($m = 1; $m <= 12; $m++) {
                                     <div class="d-flex align-items-center gap-2 mb-1">
                                         <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
                                             style="width:28px;height:28px;background:<?= $cat['color'] ?>20;border:1px solid <?= $cat['color'] ?>50">
-                                            <i class="fa-solid <?= htmlspecialchars($cat['icono']) ?>" style="font-size:11px;color:<?= $cat['color'] ?>"></i>
+                                            <i class="fa-solid <?= htmlspecialchars($cat['icono']) ?>"
+                                                style="font-size:11px;color:<?= $cat['color'] ?>"></i>
                                         </div>
-                                        <span class="fw-semibold small text-truncate flex-grow-1"><?= htmlspecialchars($cat['nombre']) ?></span>
+                                        <span
+                                            class="fw-semibold small text-truncate flex-grow-1"><?= htmlspecialchars($cat['nombre']) ?></span>
                                         <span class="text-muted small"><?= $pct_cat ?>%</span>
-                                        <span class="fw-bold small text-danger text-nowrap">L <?= number_format((float)$cat['total'], 2) ?></span>
+                                        <span class="fw-bold small text-danger text-nowrap">L
+                                            <?= number_format((float)$cat['total'], 2) ?></span>
                                     </div>
                                     <div class="progress ms-4" style="height:4px">
-                                        <div class="progress-bar" style="width:<?= $pct_cat ?>%;background:<?= $cat['color'] ?>"></div>
+                                        <div class="progress-bar"
+                                            style="width:<?= $pct_cat ?>%;background:<?= $cat['color'] ?>"></div>
                                     </div>
                                 </div>
                         <?php endforeach;

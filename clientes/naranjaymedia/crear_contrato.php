@@ -42,7 +42,7 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
     }
 
     .cc-wrap {
-        max-width: 860px;
+        max-width: 1100px;
         margin: 0 auto;
         padding: 1.5rem 0 4rem;
     }
@@ -759,19 +759,23 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                             </select>
                         </div>
 
-                        <!-- Frecuencia (solo periódico) -->
+                        <!-- Frecuencia (periódico y rotativo) -->
                         <div class="col-md-3 d-none" id="grp-frecuencia">
                             <label class="mf-label">Frecuencia <span class="text-danger">*</span></label>
                             <select name="frecuencia_meses" id="frecuencia_meses" class="mf-select">
+                                <option value="1">Mensual (cada mes)</option>
                                 <option value="2">Cada 2 meses</option>
                                 <option value="3">Cada 3 meses (Trimestral)</option>
                                 <option value="4">Cada 4 meses</option>
                                 <option value="6">Cada 6 meses (Semestral)</option>
                                 <option value="12">Anual</option>
                             </select>
+                            <small class="text-muted" id="lbl-frecuencia-hint" style="font-size:.72rem">
+                                Cada cuántos meses se realiza el cobro
+                            </small>
                         </div>
 
-                        <!-- Mes inicio ciclo (solo periódico) -->
+                        <!-- Mes inicio ciclo (periódico y rotativo) -->
                         <div class="col-md-3 d-none" id="grp-mes-inicio">
                             <label class="mf-label">Mes Primer Cobro <span class="text-danger">*</span></label>
                             <select name="mes_inicio_ciclo" id="mes_inicio_ciclo" class="mf-select">
@@ -797,18 +801,18 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                                 <?php endforeach; ?>
                             </select>
                             <small class="text-muted" style="font-size:.72rem">
-                                Mes en que se realiza el primer cobro del ciclo
+                                Mes en que inicia el primer ciclo
                             </small>
                         </div>
 
                     </div>
 
-                    <!-- Preview cobros periódico -->
+                    <!-- Preview cobros (periódico y rotativo) -->
                     <div id="preview-periodico" class="d-none mt-3">
                         <div class="info-box ib-blue">
                             <i class="bi bi-calendar2-week" style="flex-shrink:0;margin-top:1px"></i>
                             <div>
-                                <strong>Próximos cobros proyectados:</strong>
+                                <strong id="lbl-preview-title">Próximos cobros proyectados:</strong>
                                 <span id="txt-preview-cobros" class="ms-2 text-muted"></span>
                             </div>
                         </div>
@@ -930,12 +934,43 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
             const el = document.getElementById('info-' + t);
             if (el) el.classList.toggle('d-none', t !== (tipo === 'sin_factura' ? 'sinfact' : tipo));
         });
+        // Al cambiar de tipo: limpiar servicios para evitar estado inconsistente
+        const esTipoConTodos = (tipo === 'rotativo' || tipo === 'sin_factura');
+        const esTipoConReceptor = (tipo === 'estandar' || tipo === 'periodico');
+        if (esTipoConReceptor) {
+            // Volvemos a modo receptor: limpiar productos cargados globalmente
+            productos = [];
+            document.getElementById('contenedor-svc').innerHTML = '';
+            document.getElementById('contenedor-svc').classList.add('d-none');
+            document.getElementById('resumen-total').classList.add('d-none');
+            document.getElementById('aviso-sin-cliente').classList.remove('d-none');
+            document.getElementById('btnAgregarSvc').disabled = true;
+        }
         // Bloques condicionales
         document.getElementById('bloque-rotativos').classList.toggle('d-none', tipo !== 'rotativo');
         document.getElementById('bloque-concepto').classList.toggle('d-none', tipo !== 'sin_factura');
-        document.getElementById('grp-frecuencia').classList.toggle('d-none', tipo !== 'periodico');
-        document.getElementById('grp-mes-inicio').classList.toggle('d-none', tipo !== 'periodico');
-        document.getElementById('preview-periodico').classList.toggle('d-none', tipo !== 'periodico');
+
+        // Frecuencia y mes inicio: visible para periódico Y rotativo
+        const mostrarFrecuencia = (tipo === 'periodico' || tipo === 'rotativo');
+        document.getElementById('grp-frecuencia').classList.toggle('d-none', !mostrarFrecuencia);
+        document.getElementById('grp-mes-inicio').classList.toggle('d-none', !mostrarFrecuencia);
+        document.getElementById('preview-periodico').classList.toggle('d-none', !mostrarFrecuencia);
+
+        // Ajustar hint de frecuencia según tipo
+        const hintFrq = document.getElementById('lbl-frecuencia-hint');
+        if (hintFrq) {
+            hintFrq.textContent = tipo === 'rotativo' ?
+                'Cada cuántos meses rota el cobro entre clientes' :
+                'Cada cuántos meses se realiza el cobro';
+        }
+        // Ajustar título del preview
+        const lblPrev = document.getElementById('lbl-preview-title');
+        if (lblPrev) {
+            lblPrev.textContent = tipo === 'rotativo' ?
+                'Próximos ciclos de rotación:' :
+                'Próximos cobros proyectados:';
+        }
+
         // Label cliente principal
         document.getElementById('lbl-receptor').innerHTML =
             tipo === 'rotativo' ?
@@ -947,8 +982,38 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
             agregarRotativo();
             agregarRotativo();
         }
+        // Para rotativo/sin_factura: cargar todos los productos automáticamente
+        if ((tipo === 'rotativo' || tipo === 'sin_factura') && productos.length === 0) {
+            cargarServiciosTodos();
+        }
         // Preview cobros
-        if (tipo === 'periodico') actualizarPreviewCobros();
+        if (mostrarFrecuencia) actualizarPreviewCobros();
+    }
+
+    /* ══ CARGAR TODOS LOS SERVICIOS (rotativo / sin_factura) ════════ */
+    function cargarServiciosTodos() {
+        fetch(`../../includes/api/productos_por_receptor.php?cliente_id=${CLIE_ID}&receptor_id=0&todos=1`)
+            .then(r => r.json())
+            .then(prods => {
+                productos = prods;
+                document.getElementById('aviso-sin-cliente').classList.add('d-none');
+                document.getElementById('contenedor-svc').classList.remove('d-none');
+                document.getElementById('resumen-total').classList.remove('d-none');
+                document.getElementById('btnAgregarSvc').disabled = false;
+                if (document.querySelectorAll('#contenedor-svc .svc-item').length === 0) {
+                    if (prods.length === 0) {
+                        document.getElementById('contenedor-svc').innerHTML =
+                            '<div class="text-center py-3 text-muted" style="font-size:.85rem">' +
+                            '<i class="bi bi-box-seam d-block mb-2" style="font-size:1.5rem;opacity:.3"></i>' +
+                            'No hay servicios registrados.<br>' +
+                            '<a href="productos_clientes" class="text-success small">Agregar servicios →</a></div>';
+                    } else {
+                        agregarServicio();
+                    }
+                }
+                recalcTotal();
+            })
+            .catch(() => {});
     }
 
     /* ══ SERVICIOS POR RECEPTOR ═════════════════════════════════════ */
