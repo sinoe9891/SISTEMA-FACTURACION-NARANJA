@@ -946,23 +946,22 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                                 <td class="text-end fw-bold">L <?= number_format($vn['monto_neto'], 2) ?></td>
                                 <td class="text-center">
                                     <!-- Botón que abre el modal de pago directo con datos pre-llenados -->
-                                    <button class="btn btn-sm btn-success btn-pagar-directo-alert"
-                                        data-colab='<?= json_encode([
-                                                        'id'            => $vn['id'],
-                                                        'nombre'        => $vn['nombre_completo'],
-                                                        'tipo_pago'     => $vn['tipo_pago'],
-                                                        'dia_pago'      => $vn['dia_pago'],
-                                                        'dia_pago_2'    => $vn['dia_pago_2'],
-                                                        'salario'       => $vn['salario_base'],
-                                                        'neto_pago'     => $vn['monto_neto'],
-                                                        'bruto_pago'    => $vn['bruto_pago'],
-                                                        'ihss_emp'      => $vn['ihss_emp'],
-                                                        'rap_emp'       => $vn['rap_emp'],
-                                                        'ihss_pat'      => $vn['ihss_pat'],
-                                                        'rap_pat'       => $vn['rap_pat'],
-                                                        'fecha_esperada' => $vn['fecha_esperada'],
-                                                        'quincena_preselect' => $vn['quincena_num'],
-                                                    ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>'>
+                                    <button class="btn btn-sm btn-success btn-pagar-directo-alert" data-colab='<?= json_encode([
+                                                                                                                    'id'            => $vn['id'],
+                                                                                                                    'nombre'        => $vn['nombre_completo'],
+                                                                                                                    'tipo_pago'     => $vn['tipo_pago'],
+                                                                                                                    'dia_pago'      => $vn['dia_pago'],
+                                                                                                                    'dia_pago_2'    => $vn['dia_pago_2'],
+                                                                                                                    'salario'       => $vn['salario_base'],
+                                                                                                                    'neto_pago'     => $vn['monto_neto'],
+                                                                                                                    'bruto_pago'    => $vn['bruto_pago'],
+                                                                                                                    'ihss_emp'      => $vn['ihss_emp'],
+                                                                                                                    'rap_emp'       => $vn['rap_emp'],
+                                                                                                                    'ihss_pat'      => $vn['ihss_pat'],
+                                                                                                                    'rap_pat'       => $vn['rap_pat'],
+                                                                                                                    'fecha_esperada' => $vn['fecha_esperada'],
+                                                                                                                    'quincena_preselect' => $vn['quincena_num'],
+                                                                                                                ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>'>
                                         <i class="bi bi-cash-coin me-1"></i>Pagar
                                     </button>
                                 </td>
@@ -1005,23 +1004,22 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                                     <?= $dr === 0 ? '¡Hoy!' : $dr . ' día(s)' ?></td>
                                 <td class="text-end fw-bold">L <?= number_format($pn['monto_neto'], 2) ?></td>
                                 <td class="text-center">
-                                    <button class="btn btn-sm btn-outline-success btn-pagar-directo-alert"
-                                        data-colab='<?= json_encode([
-                                                        'id'            => $pn['id'],
-                                                        'nombre'        => $pn['nombre_completo'],
-                                                        'tipo_pago'     => $pn['tipo_pago'],
-                                                        'dia_pago'      => $pn['dia_pago'],
-                                                        'dia_pago_2'    => $pn['dia_pago_2'],
-                                                        'salario'       => $pn['salario_base'],
-                                                        'neto_pago'     => $pn['monto_neto'],
-                                                        'bruto_pago'    => $pn['bruto_pago'],
-                                                        'ihss_emp'      => $pn['ihss_emp'],
-                                                        'rap_emp'       => $pn['rap_emp'],
-                                                        'ihss_pat'      => $pn['ihss_pat'],
-                                                        'rap_pat'       => $pn['rap_pat'],
-                                                        'fecha_esperada' => $pn['fecha_esperada'],
-                                                        'quincena_preselect' => $pn['quincena_num'],
-                                                    ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>'>
+                                    <button class="btn btn-sm btn-outline-success btn-pagar-directo-alert" data-colab='<?= json_encode([
+                                                                                                                            'id'            => $pn['id'],
+                                                                                                                            'nombre'        => $pn['nombre_completo'],
+                                                                                                                            'tipo_pago'     => $pn['tipo_pago'],
+                                                                                                                            'dia_pago'      => $pn['dia_pago'],
+                                                                                                                            'dia_pago_2'    => $pn['dia_pago_2'],
+                                                                                                                            'salario'       => $pn['salario_base'],
+                                                                                                                            'neto_pago'     => $pn['monto_neto'],
+                                                                                                                            'bruto_pago'    => $pn['bruto_pago'],
+                                                                                                                            'ihss_emp'      => $pn['ihss_emp'],
+                                                                                                                            'rap_emp'       => $pn['rap_emp'],
+                                                                                                                            'ihss_pat'      => $pn['ihss_pat'],
+                                                                                                                            'rap_pat'       => $pn['rap_pat'],
+                                                                                                                            'fecha_esperada' => $pn['fecha_esperada'],
+                                                                                                                            'quincena_preselect' => $pn['quincena_num'],
+                                                                                                                        ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>'>
                                         <i class="bi bi-cash-coin me-1"></i>Pagar
                                     </button>
                                 </td>
@@ -1707,7 +1705,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
         if (diff > 0) $el.innerHTML =
             `<span class="badge bg-danger bg-opacity-15 border border-danger border-opacity-25" style="color:#dc2626"><i class="bi bi-clock-history me-1"></i>Vencido <strong>${diff} día(s)</strong></span>`;
         else if (diff === 0) $el.innerHTML =
-            `<span class="badge bg-success bg-opacity-15 border border-success border-opacity-25" style="color:#059669"><i class="bi bi-check-circle me-1"></i>En fecha programada</span>`;
+            `<span class="badge bg-success border border-success border-opacity-25" style="color:#ffffff"><i class="bi bi-check-circle me-1"></i>En fecha programada</span>`;
         else $el.innerHTML =
             `<span class="badge bg-info bg-opacity-15 border border-info border-opacity-25" style="color:#0369a1"><i class="bi bi-calendar-check me-1"></i>Adelantado ${Math.abs(diff)} día(s)</span>`;
     }

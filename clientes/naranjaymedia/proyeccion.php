@@ -623,6 +623,7 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
     }
 
     /* ── Print ─────────────────────────────────────────────────────────────── */
+    /* ── Print ─────────────────────────────────────────────────────────────── */
     @media print {
         body {
             background: #fff !important;
@@ -630,12 +631,23 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
             print-color-adjust: exact
         }
 
+        /* Ocultar chrome de la app */
+        nav.navbar,
+        .navbar,
+        footer,
+        #footer {
+            display: none !important
+        }
+
         .no-print {
             display: none !important
         }
 
+        /* Layout */
         .pj-hero {
-            box-shadow: none !important
+            box-shadow: none !important;
+            border-radius: 8px;
+            margin-top: 0
         }
 
         .pj-card,
@@ -649,18 +661,25 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
             gap: .4rem
         }
 
+        /* Tabla compacta */
         .pj-table {
-            font-size: .72rem
+            font-size: .7rem
         }
 
         .pj-table thead th,
         .pj-table tbody td {
-            padding: .35rem .5rem
+            padding: .3rem .5rem
         }
 
+        /* Ocultar elementos interactivos */
         .det-row,
         .btn-desglose {
             display: none !important
+        }
+
+        /* Supuestos compactos */
+        .pj-card:last-child .p-4 {
+            padding: .75rem !important
         }
 
         .pj-wrap {
@@ -669,6 +688,11 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
 
         a[href]:after {
             content: '' !important
+        }
+
+        /* Alertas sin sombra */
+        .alert {
+            box-shadow: none !important
         }
     }
 </style>

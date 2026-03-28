@@ -1749,7 +1749,8 @@ $tipos_btn_p = [
                                 <label class="mf-label">Año</label>
                                 <select name="anio" class="mf-select">
                                     <?php for ($a = date('Y'); $a >= date('Y') - 4; $a--): ?>
-                                        <option value="<?= $a ?>" <?= $a == $filtro_anio ? 'selected' : '' ?>><?= $a ?></option>
+                                        <option value="<?= $a ?>" <?= $a == $filtro_anio ? 'selected' : '' ?>><?= $a ?>
+                                        </option>
                                     <?php endfor; ?>
                                 </select>
                             </div>
@@ -2538,13 +2539,15 @@ $tipos_btn_p = [
                         </div>
                         <div class="dsg-sep">=</div>
                         <div class="dsg-item" id="dsg_neto_col">
-                            <div class="dsg-val text-success" id="lblNetoModal">L <?= number_format($neto_mes / $div, 2) ?>
+                            <div class="dsg-val text-success" id="lblNetoModal">L
+                                <?= number_format($neto_mes / $div, 2) ?>
                             </div>
                             <div class="dsg-lbl fw-bold" id="lblNetoLbl">✓ Neto</div>
                         </div>
                         <div class="dsg-sep">+</div>
                         <div class="dsg-item">
-                            <div class="dsg-val text-warning">L <?= number_format(($ihss_pat + $rap_pat) / $div, 2) ?></div>
+                            <div class="dsg-val text-warning">L <?= number_format(($ihss_pat + $rap_pat) / $div, 2) ?>
+                            </div>
                             <div class="dsg-lbl">Carga pat.</div>
                         </div>
                     </div>
@@ -2636,7 +2639,8 @@ $tipos_btn_p = [
                             <div class="d-flex gap-3 flex-wrap">
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="quincena" id="pq1" value="1"
-                                        <?= $quincena_sugerida === 1 ? 'checked' : '' ?> <?= $q1_pagada ? 'disabled' : '' ?>>
+                                        <?= $quincena_sugerida === 1 ? 'checked' : '' ?>
+                                        <?= $q1_pagada ? 'disabled' : '' ?>>
                                     <label class="form-check-label <?= $q1_pagada ? 'opacity-50' : '' ?>" for="pq1">
                                         <span class="badge bg-primary">1ª Quincena</span>
                                         <small class="text-muted ms-1">día <?= (int)$col['dia_pago'] ?></small>
@@ -2647,7 +2651,8 @@ $tipos_btn_p = [
                                 </div>
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="quincena" id="pq2" value="2"
-                                        <?= $quincena_sugerida === 2 ? 'checked' : '' ?> <?= $q2_pagada ? 'disabled' : '' ?>>
+                                        <?= $quincena_sugerida === 2 ? 'checked' : '' ?>
+                                        <?= $q2_pagada ? 'disabled' : '' ?>>
                                     <label class="form-check-label <?= $q2_pagada ? 'opacity-50' : '' ?>" for="pq2">
                                         <span class="badge bg-info text-dark">2ª Quincena</span>
                                         <small class="text-muted ms-1">día <?= (int)$col['dia_pago_2'] ?></small>
@@ -2780,7 +2785,8 @@ $tipos_btn_p = [
                         </div>
                         <div class="col-md-4"><label class="mf-label">Tipo de Pago</label>
                             <select name="tipo_pago" id="edit_tipo_pago" class="mf-select">
-                                <option value="quincenal" <?= $tipo_pago === 'quincenal' ? 'selected' : '' ?>>🔄 Quincenal
+                                <option value="quincenal" <?= $tipo_pago === 'quincenal' ? 'selected' : '' ?>>🔄
+                                    Quincenal
                                 </option>
                                 <option value="mensual" <?= $tipo_pago === 'mensual' ? 'selected' : ''   ?>>📅 Mensual
                                 </option>
@@ -3174,7 +3180,7 @@ $tipos_btn_p = [
         if (diff > 0) el.innerHTML =
             `<span class="badge" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca"><i class="bi bi-clock-history me-1"></i>Vencido <strong>${diff} día(s)</strong></span>`;
         else if (diff === 0) el.innerHTML =
-            `<span class="badge" style="background:#d1fae5;color:#059669;border:1px solid #a7f3d0"><i class="bi bi-check-circle me-1"></i>En fecha programada</span>`;
+            `<span class="badge" style="background:#d1fae5;color:#ffffff;border:1px solid #a7f3d0"><i class="bi bi-check-circle me-1"></i>En fecha programada</span>`;
         else el.innerHTML =
             `<span class="badge" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe"><i class="bi bi-calendar-check me-1"></i>Adelantado ${Math.abs(diff)} día(s)</span>`;
     }

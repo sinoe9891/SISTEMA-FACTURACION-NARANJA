@@ -131,9 +131,9 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 
 	<!-- CSS global -->
 	<link rel="stylesheet" href="../../clientes/css/global.css">
-<script>
-  window.APP_BASE = "<?= rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\') ?>";
-</script>
+	<script>
+		window.APP_BASE = "<?= rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\') ?>";
+	</script>
 	<style>
 		/* ─── Tokens ─────────────────────────────────── */
 		:root {
@@ -506,8 +506,7 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 		</a>
 
 		<!-- Toggler móvil -->
-		<button class="navbar-toggler ms-auto" type="button"
-			data-bs-toggle="collapse" data-bs-target="#navbarSaas"
+		<button class="navbar-toggler ms-auto" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSaas"
 			aria-controls="navbarSaas" aria-expanded="false" aria-label="Menú">
 			<span class="navbar-toggler-icon"></span>
 		</button>
@@ -517,7 +516,8 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 			<!-- ── Saludo + establecimiento (izquierda) ── -->
 			<div class="d-flex align-items-center me-auto ms-2 flex-wrap gap-1">
 				<span class="nb-greeting">
-					<?= $saludo ?> <?= $emoji ?>,&nbsp;<strong><?= htmlspecialchars(explode(' ', USUARIO_NOMBRE)[0]) ?>!</strong>
+					<?= $saludo ?>
+					<?= $emoji ?>,&nbsp;<strong><?= htmlspecialchars(explode(' ', USUARIO_NOMBRE)[0]) ?>!</strong>
 				</span>
 				<span class="nb-estab">
 					<i class="fa-solid fa-location-dot"></i>
@@ -537,8 +537,7 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 
 				<!-- Facturación -->
 				<li class="nav-item dropdown">
-					<a class="nav-link dropdown-toggle" href="#"
-						data-bs-toggle="dropdown" aria-expanded="false">
+					<a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">
 						<i class="fa-solid fa-file-invoice-dollar"></i> Facturación
 					</a>
 					<ul class="dropdown-menu">
@@ -566,8 +565,7 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 				</li>
 				<!-- Contratos -->
 				<li class="nav-item dropdown">
-					<a class="nav-link dropdown-toggle" href="#"
-						data-bs-toggle="dropdown" aria-expanded="false">
+					<a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">
 						<i class="fa-solid fa-file-contract"></i> Contratos
 					</a>
 					<ul class="dropdown-menu">
@@ -602,6 +600,11 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 							</a>
 						</li>
 						<li>
+							<a class="dropdown-item" href="proyeccion">
+								<i class="fa-solid fa-chart-area"></i> Proyección de Flujo
+							</a>
+						</li>
+						<li>
 							<hr class="dropdown-divider">
 						</li>
 						<li><span class="dropdown-section-label">Personal</span></li>
@@ -614,8 +617,7 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 				</li>
 				<!-- Gestión -->
 				<li class="nav-item dropdown">
-					<a class="nav-link dropdown-toggle" href="#"
-						data-bs-toggle="dropdown" aria-expanded="false">
+					<a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">
 						<i class="fa-solid fa-layer-group"></i> Gestión
 					</a>
 					<ul class="dropdown-menu">
@@ -658,8 +660,8 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 
 				<!-- Usuario -->
 				<li class="nav-item dropdown">
-					<a class="nav-link dropdown-toggle nb-user-btn" href="#"
-						data-bs-toggle="dropdown" aria-expanded="false">
+					<a class="nav-link dropdown-toggle nb-user-btn" href="#" data-bs-toggle="dropdown"
+						aria-expanded="false">
 						<span class="nb-avatar"><?= mb_strtoupper(mb_substr(USUARIO_NOMBRE, 0, 1)) ?></span>
 						<span class="nb-user-label"><?= htmlspecialchars(explode(' ', USUARIO_NOMBRE)[0]) ?></span>
 					</a>

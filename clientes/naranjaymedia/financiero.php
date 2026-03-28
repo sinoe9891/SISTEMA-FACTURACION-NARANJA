@@ -143,6 +143,8 @@ $stmtEgr = $pdo->prepare("
         COALESCE(SUM(CASE WHEN tipo='fijo'          THEN monto END), 0)       AS fijos,
         COALESCE(SUM(CASE WHEN tipo='variable'      THEN monto END), 0)       AS variables,
         COALESCE(SUM(CASE WHEN tipo='extraordinario' THEN monto END), 0)      AS extraordinarios,
+        COALESCE(SUM(CASE WHEN frecuencia='unico'   THEN monto END), 0)       AS unicos,
+        COALESCE(SUM(CASE WHEN frecuencia='anual'   THEN monto END), 0)       AS anuales,
         COUNT(*)                                                               AS qty_gastos
     FROM gastos
     WHERE cliente_id = ?
@@ -155,11 +157,13 @@ $egr = $stmtEgr->fetch(PDO::FETCH_ASSOC);
 // Gastos mes a mes
 $stmtEgrMes = $pdo->prepare("
     SELECT
-        MONTH(fecha)                                                           AS mes_num,
-        COALESCE(SUM(monto), 0)                                               AS total,
-        COALESCE(SUM(CASE WHEN tipo='fijo'           THEN monto END), 0)      AS fijos,
-        COALESCE(SUM(CASE WHEN tipo='variable'       THEN monto END), 0)      AS variables,
-        COALESCE(SUM(CASE WHEN tipo='extraordinario' THEN monto END), 0)      AS extraordinarios
+        MONTH(fecha)                                                                AS mes_num,
+        COALESCE(SUM(monto), 0)                                                    AS total,
+        COALESCE(SUM(CASE WHEN tipo='fijo'           THEN monto END), 0)           AS fijos,
+        COALESCE(SUM(CASE WHEN tipo='variable'       THEN monto END), 0)           AS variables,
+        COALESCE(SUM(CASE WHEN tipo='extraordinario' THEN monto END), 0)           AS extraordinarios,
+        COALESCE(SUM(CASE WHEN frecuencia='unico'    THEN monto END), 0)           AS unicos,
+        COALESCE(SUM(CASE WHEN frecuencia='anual'    THEN monto END), 0)           AS anuales
     FROM gastos
     WHERE cliente_id = ?
       AND estado != 'anulado'
@@ -199,6 +203,30 @@ $stmtPend = $pdo->prepare("
 ");
 $stmtPend->execute([$cliente_id, $fecha_ini, $fecha_fin]);
 $pendientes = $stmtPend->fetch(PDO::FETCH_ASSOC);
+
+// ── Egresos por categoría mes a mes (para tabla desglose) ────────────────────
+$stmtEgrCatMes = $pdo->prepare("
+    SELECT cg.id, cg.nombre, cg.color, cg.icono,
+           MONTH(g.fecha) AS mes_num,
+           COALESCE(SUM(g.monto), 0) AS total
+    FROM gastos g
+    INNER JOIN categorias_gastos cg ON cg.id = g.categoria_id
+    WHERE g.cliente_id = ? AND g.estado != 'anulado'
+      AND YEAR(g.fecha) = ?
+    GROUP BY cg.id, MONTH(g.fecha)
+    ORDER BY cg.id, mes_num
+");
+$stmtEgrCatMes->execute([$cliente_id, $anio_filtro]);
+$egr_cat_mes_raw = $stmtEgrCatMes->fetchAll(PDO::FETCH_ASSOC);
+
+// Construir matriz [cat_id][mes] = total + info de categoría
+$egr_cat_info   = []; // [cat_id] => ['nombre','color','icono']
+$egr_cat_matrix = []; // [cat_id][mes] = total
+foreach ($egr_cat_mes_raw as $r) {
+    $cid = (int)$r['id'];
+    $egr_cat_info[$cid] = ['nombre' => $r['nombre'], 'color' => $r['color'], 'icono' => $r['icono']];
+    $egr_cat_matrix[$cid][(int)$r['mes_num']] = (float)$r['total'];
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // UTILIDAD y CÁLCULOS
@@ -565,6 +593,75 @@ for ($m = 1; $m <= 12; $m++) {
         border-radius: 50%;
         flex-shrink: 0
     }
+
+    /* ── Cat breakdown rows ──────────────────────────────────────────────── */
+    .tr-cat td {
+        background: #fff7f0;
+        font-size: .73rem
+    }
+
+    .cat-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        flex-shrink: 0
+    }
+
+    /* ── Print ───────────────────────────────────────────────────────────── */
+    @media print {
+        body {
+            background: #fff !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact
+        }
+
+        nav.navbar,
+        .navbar,
+        footer,
+        #footer,
+        .fin-filters,
+        .no-print {
+            display: none !important
+        }
+
+        .fin-hero {
+            box-shadow: none !important;
+            border-radius: 8px
+        }
+
+        .fin-card,
+        .fin-kpi {
+            box-shadow: none !important;
+            break-inside: avoid
+        }
+
+        .fin-kpis {
+            grid-template-columns: repeat(5, 1fr) !important;
+            gap: .4rem
+        }
+
+        .fin-table {
+            font-size: .7rem
+        }
+
+        .fin-table thead th,
+        .fin-table tbody td {
+            padding: .3rem .5rem
+        }
+
+        .fin-wrap {
+            padding: .5rem 0 1rem
+        }
+
+        .row.g-3.mb-4 {
+            break-inside: avoid
+        }
+
+        a[href]:after {
+            content: '' !important
+        }
+    }
 </style>
 
 <div class="container-xxl fin-wrap">
@@ -595,6 +692,9 @@ for ($m = 1; $m <= 12; $m++) {
                 style="background:rgba(16,185,129,.25);color:#fff;border:1px solid rgba(16,185,129,.5);font-weight:600">
                 <i class="bi bi-graph-up-arrow me-1"></i>Proyección →
             </a>
+            <button onclick="window.print()" class="btn btn-sm no-print"
+                style="background:rgba(255,255,255,.28);color:#fff;border:1px solid rgba(255,255,255,.5);font-weight:700"><i
+                    class="bi bi-printer-fill me-1"></i>Imprimir / PDF</button>
         </div>
     </div>
 
@@ -860,57 +960,113 @@ for ($m = 1; $m <= 12; $m++) {
                         <?php endfor; ?>
                         <td class="text-end text-muted small">L <?= number_format($tot_ext, 0) ?></td>
                     </tr>
-                    <tr class="tr-nom" style="font-size:.74rem">
-                        <td class="ps-4 fw-semibold" style="color:#d97706">
-                            <i class="bi bi-people-fill me-1"></i>Nómina ref./mes
+                    <!-- Únicos -->
+                    <tr class="tr-sub tr-egr">
+                        <td class="ps-4" style="color:#7c3aed;font-size:.75rem">
+                            ↳ 📌 Únicos / Eventuales
+                            <span
+                                style="font-size:.63rem;background:#ede9fe;color:#7c3aed;padding:1px 5px;border-radius:4px;margin-left:3px;font-weight:600">sin
+                                recurrencia</span>
                         </td>
-                        <?php for ($m = 1; $m <= 12; $m++): ?>
-                            <td class="text-end" style="color:#d97706"><?= number_format($costo_nomina_mensual, 0) ?></td>
-                        <?php endfor; ?>
-                        <td class="text-end fw-bold" style="color:#d97706">L
-                            <?= number_format($costo_nomina_mensual * 12, 0) ?></td>
-                    </tr>
-
-                    <!-- UTILIDAD -->
-                    <tr class="tr-util">
-                        <td class="fw-bold small">
-                            <i class="bi bi-equals me-1 text-primary"></i>UTILIDAD NETA
-                        </td>
-                        <?php $tot_util_anual = 0;
-                        for ($m = 1; $m <= 12; $m++):
-                            $util = (float)($ing_por_mes[$m]['subtotal'] ?? 0) - (float)($egr_por_mes[$m]['total'] ?? 0);
-                            $tot_util_anual += $util; ?>
-                            <td class="text-end fw-bold <?= $util >= 0 ? 'text-success' : 'text-danger' ?>"
-                                style="<?= ($vista === 'mensual' && $m == $mes_filtro) ? 'background:#bfdbfe;font-size:.95rem' : '' ?>">
-                                <?php if ($util == 0 && !isset($ing_por_mes[$m]) && !isset($egr_por_mes[$m])): ?>
-                                    <span class="text-muted">—</span>
-                                <?php else: ?>
-                                    <?= number_format($util, 0) ?>
-                                <?php endif; ?>
+                        <?php $tot_uni = 0;
+                        for ($m = 1; $m <= 12; $m++): $v = (float)($egr_por_mes[$m]['unicos'] ?? 0);
+                            $tot_uni += $v; ?>
+                            <td class="text-end" style="color:#7c3aed;font-size:.77rem">
+                                <?= $v > 0 ? number_format($v, 0) : '' ?>
                             </td>
                         <?php endfor; ?>
-                        <td class="text-end fw-bold <?= $tot_util_anual >= 0 ? 'text-success' : 'text-danger' ?>">
-                            L <?= number_format($tot_util_anual, 0) ?>
+                        <td class="text-end small fw-semibold" style="color:#7c3aed">L <?= number_format($tot_uni, 0) ?>
                         </td>
                     </tr>
-
-                    <!-- MARGEN -->
-                    <tr class="tr-mgn" style="background:#f8fafc">
-                        <td class="ps-4 text-muted" style="font-size:.72rem">Margen %</td>
-                        <?php for ($m = 1; $m <= 12; $m++):
-                            $im = (float)($ing_por_mes[$m]['subtotal'] ?? 0);
-                            $em = (float)($egr_por_mes[$m]['total'] ?? 0);
-                            $mgn = $im > 0 ? round((($im - $em) / $im) * 100, 1) : null; ?>
-                            <td
-                                class="text-center <?= $mgn === null ? '' : ($mgn >= 0 ? 'text-success' : 'text-danger') ?>">
-                                <?= $mgn !== null ? $mgn . '%' : '' ?>
+                    <!-- Anuales -->
+                    <tr class="tr-sub tr-egr">
+                        <td class="ps-4" style="color:#0891b2;font-size:.75rem">
+                            ↳ 📆 Anuales
+                            <span
+                                style="font-size:.63rem;background:#e0f2fe;color:#0891b2;padding:1px 5px;border-radius:4px;margin-left:3px;font-weight:600">1
+                                vez/año</span>
+                        </td>
+                        <?php $tot_anu = 0;
+                        for ($m = 1; $m <= 12; $m++): $v = (float)($egr_por_mes[$m]['anuales'] ?? 0);
+                            $tot_anu += $v; ?>
+                            <td class="text-end" style="color:#0891b2;font-size:.77rem">
+                                <?= $v > 0 ? number_format($v, 0) : '' ?>
                             </td>
                         <?php endfor; ?>
+                        <td class="text-end small fw-semibold" style="color:#0891b2">L <?= number_format($tot_anu, 0) ?>
+                        </td>
+                    </tr>
+                    <tr <!-- ↳ Desglose por categoría -->
+                        <?php foreach ($egr_cat_info as $cid => $cat):
+                            $cat_anual_t = 0;
+                            for ($m = 1; $m <= 12; $m++) $cat_anual_t += $egr_cat_matrix[$cid][$m] ?? 0;
+                            if ($cat_anual_t <= 0) continue; ?>
+                    <tr class="tr-cat">
+                        <td class="ps-4" style="color:var(--muted)">
+                            <span class="cat-dot me-1" style="background:<?= $cat['color'] ?>"></span>
+                            <i class="fa-solid <?= htmlspecialchars($cat['icono']) ?> me-1"
+                                style="color:<?= $cat['color'] ?>;font-size:10px"></i>
+                            <?= htmlspecialchars($cat['nombre']) ?>
+                        </td>
+                        <?php for ($m = 1; $m <= 12; $m++): $vc = $egr_cat_matrix[$cid][$m] ?? 0; ?>
+                            <td class="text-end" style="color:var(--muted)"><?= $vc > 0 ? number_format($vc, 0) : '' ?></td>
+                        <?php endfor; ?>
+                        <td class="text-end fw-semibold" style="color:<?= $cat['color'] ?>">L
+                            <?= number_format($cat_anual_t, 0) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                <tr class="tr-nom" style="font-size:.74rem">
+                    <td class="ps-4 fw-semibold" style="color:#d97706">
+                        <i class="bi bi-people-fill me-1"></i>Nómina ref./mes
+                    </td>
+                    <?php for ($m = 1; $m <= 12; $m++): ?>
+                        <td class="text-end" style="color:#d97706"><?= number_format($costo_nomina_mensual, 0) ?></td>
+                    <?php endfor; ?>
+                    <td class="text-end fw-bold" style="color:#d97706">L
+                        <?= number_format($costo_nomina_mensual * 12, 0) ?>
+                    </td>
+                </tr>
+
+                <!-- UTILIDAD -->
+                <tr class="tr-util">
+                    <td class="fw-bold small">
+                        <i class="bi bi-equals me-1 text-primary"></i>UTILIDAD NETA
+                    </td>
+                    <?php $tot_util_anual = 0;
+                    for ($m = 1; $m <= 12; $m++):
+                        $util = (float)($ing_por_mes[$m]['subtotal'] ?? 0) - (float)($egr_por_mes[$m]['total'] ?? 0);
+                        $tot_util_anual += $util; ?>
+                        <td class="text-end fw-bold <?= $util >= 0 ? 'text-success' : 'text-danger' ?>"
+                            style="<?= ($vista === 'mensual' && $m == $mes_filtro) ? 'background:#bfdbfe;font-size:.95rem' : '' ?>">
+                            <?php if ($util == 0 && !isset($ing_por_mes[$m]) && !isset($egr_por_mes[$m])): ?>
+                                <span class="text-muted">—</span>
+                            <?php else: ?>
+                                <?= number_format($util, 0) ?>
+                            <?php endif; ?>
+                        </td>
+                    <?php endfor; ?>
+                    <td class="text-end fw-bold <?= $tot_util_anual >= 0 ? 'text-success' : 'text-danger' ?>">
+                        L <?= number_format($tot_util_anual, 0) ?>
+                    </td>
+                </tr>
+
+                <!-- MARGEN -->
+                <tr class="tr-mgn" style="background:#f8fafc">
+                    <td class="ps-4 text-muted" style="font-size:.72rem">Margen %</td>
+                    <?php for ($m = 1; $m <= 12; $m++):
+                        $im = (float)($ing_por_mes[$m]['subtotal'] ?? 0);
+                        $em = (float)($egr_por_mes[$m]['total'] ?? 0);
+                        $mgn = $im > 0 ? round((($im - $em) / $im) * 100, 1) : null; ?>
                         <td
-                            class="text-center <?= $margen_pct !== null ? ($margen_pct >= 0 ? 'text-success' : 'text-danger') : '' ?>">
-                            <?= $margen_pct !== null ? $margen_pct . '%' : '—' ?>
+                            class="text-center <?= $mgn === null ? '' : ($mgn >= 0 ? 'text-success' : 'text-danger') ?>">
+                            <?= $mgn !== null ? $mgn . '%' : '' ?>
                         </td>
-                    </tr>
+                    <?php endfor; ?>
+                    <td
+                        class="text-center <?= $margen_pct !== null ? ($margen_pct >= 0 ? 'text-success' : 'text-danger') : '' ?>">
+                        <?= $margen_pct !== null ? $margen_pct . '%' : '—' ?>
+                    </td>
+                </tr>
                 </tbody>
             </table>
         </div>
