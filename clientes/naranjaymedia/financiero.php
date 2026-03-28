@@ -8,13 +8,18 @@ require_once '../../includes/templates/header.php';
 $cliente_id          = (int)(USUARIO_ROL === 'superadmin'
     ? ($_SESSION['cliente_seleccionado'] ?? 0)
     : CLIENTE_ID);
-$establecimiento_id  = $_SESSION['establecimiento_activo'] ?? 0;
+// establecimiento_id: si no hay sesión activa, usar el primero del cliente
+$establecimiento_id  = (int)($_SESSION['establecimiento_activo'] ?? 0);
+if (!$establecimiento_id) {
+    $stmtEst = $pdo->prepare("SELECT id FROM establecimientos WHERE cliente_id=? AND activo=1 ORDER BY id ASC LIMIT 1");
+    $stmtEst->execute([$cliente_id]);
+    $establecimiento_id = (int)($stmtEst->fetchColumn() ?: 0);
+}
 
 // ── Filtros ───────────────────────────────────────────────────────────────────
-$anio_filtro      = (int)($_GET['anio']    ?? date('Y'));
-$vista            = trim($_GET['vista']    ?? 'anual');
-$mes_filtro       = (int)($_GET['mes']     ?? date('n'));
-$incl_recibos     = isset($_GET['incl_recibos']); // toggle sin_factura
+$anio_filtro = (int)($_GET['anio'] ?? date('Y'));
+$vista       = trim($_GET['vista'] ?? 'anual');       // 'anual' | 'mensual'
+$mes_filtro  = (int)($_GET['mes']  ?? date('n'));
 
 $meses_es = [
     '',
@@ -102,18 +107,12 @@ $top_clientes = $stmtTopCli->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Contratos activos (ingreso proyectado recurrente) ─────────────────────────
 $stmtContratos = $pdo->prepare("
-    SELECT
-        COUNT(*) AS qty_contratos,
-        COALESCE(SUM(monto), 0) AS monto_mensual,
-        COALESCE(SUM(CASE WHEN tipo_contrato != 'sin_factura' THEN monto ELSE 0 END), 0) AS monto_con_factura,
-        COALESCE(SUM(CASE WHEN tipo_contrato  = 'sin_factura' THEN monto ELSE 0 END), 0) AS monto_sin_factura,
-        COUNT(CASE WHEN tipo_contrato = 'sin_factura' THEN 1 END) AS qty_sin_factura
+    SELECT COUNT(*) AS qty_contratos, COALESCE(SUM(monto), 0) AS monto_mensual
     FROM contratos
     WHERE cliente_id = ? AND estado = 'activo'
 ");
 $stmtContratos->execute([$cliente_id]);
 $contratos_kpi = $stmtContratos->fetch(PDO::FETCH_ASSOC);
-
 
 // ── Nómina: masa salarial de colaboradores activos ────────────────────────────
 $stmtNomina = $pdo->prepare("
@@ -139,10 +138,6 @@ $costo_nomina_mensual = (float)$nomina_kpi['masa_bruta']
     + (float)$nomina_kpi['ihss_patronal']
     + (float)$nomina_kpi['rap_patronal'];
 
-// Ajustar ingreso proyectado según toggle
-$mrr_efectivo = $incl_recibos
-    ? (float)$contratos_kpi['monto_mensual']
-    : (float)$contratos_kpi['monto_con_factura'];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EGRESOS — gastos (excluye anulados)
@@ -354,27 +349,13 @@ for ($m = 1; $m <= 12; $m++) {
                         <?php endfor; ?>
                     </select>
                 </div>
-                <div class="col-auto d-flex align-items-center gap-3 flex-wrap">
-                    <!-- Toggle contratos sin factura -->
-                    <div class="form-check form-switch mb-0 d-flex align-items-center gap-2">
-                        <input class="form-check-input" type="checkbox" role="switch" id="inclRecibos"
-                            name="incl_recibos" value="1" <?= $incl_recibos ? 'checked' : '' ?>
-                            onchange="this.form.submit()">
-                        <label class="form-check-label small fw-semibold" for="inclRecibos">
-                            Incluir contratos sin facturación
-                            <?php if ((float)$contratos_kpi['monto_sin_factura'] > 0): ?>
-                                <span class="badge ms-1" style="background:#ede9fe;color:#6d28d9;font-size:.65rem">
-                                    +L <?= number_format((float)$contratos_kpi['monto_sin_factura'], 0) ?>/mes
-                                </span>
-                            <?php endif; ?>
-                        </label>
-                    </div>
+                <div class="col-auto">
                     <button type="submit" class="btn btn-primary btn-sm">
                         <i class="fa-solid fa-filter me-1"></i> Ver
                     </button>
-                    <a href="financiero" class="btn btn-outline-secondary btn-sm">Hoy</a>
-                    <a href="proyeccion" class="btn btn-sm btn-outline-success">
-                        <i class="bi bi-graph-up-arrow me-1"></i>Ver Proyección →
+                    <a href="financiero" class="btn btn-outline-secondary btn-sm ms-1">Hoy</a>
+                    <a href="proyeccion" class="btn btn-sm btn-outline-success ms-1">
+                        <i class="fa-solid fa-chart-line me-1"></i>Ver Proyección →
                     </a>
                 </div>
             </form>
@@ -510,12 +491,8 @@ for ($m = 1; $m <= 12; $m++) {
                     </div>
                     <div class="mt-2 small text-muted">
                         Ingreso recurrente mensual:
-                        <span class="fw-bold text-primary">L <?= number_format($mrr_efectivo, 2) ?></span>
-                        <?php if ($incl_recibos && (float)$contratos_kpi['monto_sin_factura'] > 0): ?>
-                            <br><small class="text-muted" style="font-size:10px">
-                                Incluye L <?= number_format((float)$contratos_kpi['monto_sin_factura'], 2) ?> de recibos
-                            </small>
-                        <?php endif; ?>
+                        <span class="fw-bold text-primary">L
+                            <?= number_format((float)$contratos_kpi['monto_mensual'], 2) ?></span>
                     </div>
                 </div>
             </div>
@@ -561,6 +538,26 @@ for ($m = 1; $m <= 12; $m++) {
             <div class="card-body p-3">
                 <div style="height:280px">
                     <canvas id="chartFinanciero"></canvas>
+                </div>
+                <!-- Leyenda personalizada -->
+                <div
+                    style="display:flex;gap:1.25rem;flex-wrap:wrap;justify-content:center;padding:.6rem 0 .3rem;font-size:.78rem;color:#64748b">
+                    <span style="display:flex;align-items:center;gap:.4rem">
+                        <span
+                            style="width:10px;height:10px;border-radius:50%;background:rgba(16,185,129,.7);flex-shrink:0"></span>Ingresos
+                    </span>
+                    <span style="display:flex;align-items:center;gap:.4rem">
+                        <span
+                            style="width:10px;height:10px;border-radius:50%;background:rgba(239,68,68,.7);flex-shrink:0"></span>Egresos
+                    </span>
+                    <span style="display:flex;align-items:center;gap:.4rem">
+                        <span
+                            style="width:10px;height:10px;border-radius:50%;background:#3b82f6;flex-shrink:0"></span>Utilidad
+                        neta
+                    </span>
+                    <span style="display:flex;align-items:center;gap:.4rem;color:#f59e0b">
+                        <span style="width:16px;border-top:2px dashed #f59e0b;flex-shrink:0"></span>Nómina mensual
+                    </span>
                 </div>
             </div>
         </div>
@@ -848,8 +845,8 @@ for ($m = 1; $m <= 12; $m++) {
 
     <script>
         // ── Vista filtro: mostrar/ocultar campo mes ───────────────────────────────────
-        $('#selectVista').on('change', function() {
-            $('#grpMes').toggle($(this).val() === 'mensual');
+        document.getElementById('selectVista').addEventListener('change', function() {
+            document.getElementById('grpMes').style.display = this.value === 'mensual' ? '' : 'none';
         });
 
         // ── Chart.js: Ingresos vs Egresos vs Utilidad ─────────────────────────────────
@@ -859,40 +856,58 @@ for ($m = 1; $m <= 12; $m++) {
             const ingresos = <?= json_encode($chart_ingresos) ?>;
             const egresos = <?= json_encode($chart_egresos) ?>;
             const utilidad = <?= json_encode($chart_utilidad) ?>;
+            const nomina = Array(12).fill(<?= round($costo_nomina_mensual, 2) ?>);
 
             new Chart(ctx, {
-                type: 'bar',
                 data: {
                     labels,
                     datasets: [{
+                            type: 'bar',
                             label: 'Ingresos',
                             data: ingresos,
-                            backgroundColor: 'rgba(16,185,129,0.7)',
+                            backgroundColor: 'rgba(16,185,129,.65)',
                             borderColor: '#10b981',
                             borderWidth: 1,
-                            borderRadius: 4,
+                            borderRadius: 5,
                             order: 2
                         },
                         {
+                            type: 'bar',
                             label: 'Egresos',
                             data: egresos,
-                            backgroundColor: 'rgba(239,68,68,0.7)',
+                            backgroundColor: 'rgba(239,68,68,.55)',
                             borderColor: '#ef4444',
                             borderWidth: 1,
-                            borderRadius: 4,
+                            borderRadius: 5,
                             order: 2
                         },
                         {
+                            type: 'line',
                             label: 'Utilidad',
                             data: utilidad,
-                            type: 'line',
                             borderColor: '#3b82f6',
-                            backgroundColor: 'rgba(59,130,246,0.1)',
+                            backgroundColor: 'rgba(59,130,246,.08)',
                             borderWidth: 2.5,
                             pointBackgroundColor: utilidad.map(v => v >= 0 ? '#3b82f6' : '#ef4444'),
-                            pointRadius: 4,
+                            pointBorderColor: utilidad.map(v => v >= 0 ? '#3b82f6' : '#ef4444'),
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
                             fill: false,
-                            tension: 0.3,
+                            tension: 0.35,
+                            order: 1
+                        },
+                        {
+                            type: 'line',
+                            label: 'Nómina',
+                            data: nomina,
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'transparent',
+                            borderWidth: 1.5,
+                            borderDash: [5, 4],
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                            fill: false,
+                            tension: 0,
                             order: 1
                         }
                     ]
@@ -906,17 +921,23 @@ for ($m = 1; $m <= 12; $m++) {
                     },
                     plugins: {
                         legend: {
-                            position: 'bottom',
-                            labels: {
-                                usePointStyle: true,
-                                padding: 20
-                            }
+                            display: false
                         },
                         tooltip: {
+                            backgroundColor: 'rgba(15,23,42,.92)',
+                            titleColor: '#f8fafc',
+                            bodyColor: '#cbd5e1',
+                            padding: 12,
+                            cornerRadius: 10,
                             callbacks: {
-                                label: ctx => ' L ' + ctx.parsed.y.toLocaleString('es-HN', {
-                                    minimumFractionDigits: 2
-                                })
+                                label: ctx => {
+                                    const sign = ctx.dataset.label === 'Utilidad' && ctx.parsed.y < 0 ? '' :
+                                        '';
+                                    return '  ' + ctx.dataset.label + ': L ' + ctx.parsed.y.toLocaleString(
+                                        'es-HN', {
+                                            minimumFractionDigits: 2
+                                        });
+                                }
                             }
                         }
                     },
@@ -924,15 +945,28 @@ for ($m = 1; $m <= 12; $m++) {
                         y: {
                             beginAtZero: true,
                             grid: {
-                                color: 'rgba(0,0,0,0.05)'
+                                color: 'rgba(0,0,0,.04)'
+                            },
+                            border: {
+                                dash: [3, 3]
                             },
                             ticks: {
-                                callback: v => 'L ' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v)
+                                font: {
+                                    size: 11
+                                },
+                                color: '#94a3b8',
+                                callback: v => 'L' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v)
                             }
                         },
                         x: {
                             grid: {
                                 display: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 11
+                                },
+                                color: '#94a3b8'
                             }
                         }
                     }
