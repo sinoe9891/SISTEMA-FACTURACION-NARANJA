@@ -59,7 +59,6 @@ foreach ($facturas as $f) {
 $fechaInicio = new DateTime($contrato['fecha_inicio']);
 $fechaRef    = $contrato['fecha_fin'] ? new DateTime($contrato['fecha_fin']) : new DateTime();
 $fechaRef    = min($fechaRef, new DateTime());
-$fechaRef->setTime(0, 0, 0); // forzar medianoche
 $tipo_ct     = $contrato['tipo_contrato'] ?? 'estandar';
 $frecuencia  = max(1, (int)($contrato['frecuencia_meses'] ?? 1));
 $mesIniCiclo = (int)($contrato['mes_inicio_ciclo'] ?? (int)$fechaInicio->format('n'));
@@ -938,9 +937,11 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 $turnoLabel = '';
                                 $turnoFull  = '';
                                 if ($tipo_ct === 'rotativo' && !empty($turnosRotativos)) {
-                                    $nTurnos  = count($turnosRotativos);
-                                    $idxMes   = ($anio - $anioIniCiclo) * 12 + ((int)$m - $mesIniCiclo);
-                                    $turnoIdx = (($idxMes % $nTurnos) + $nTurnos) % $nTurnos;
+                                    $nTurnos    = count($turnosRotativos);
+                                    $cicloTotal = $nTurnos * $frecuencia; // ej: 3 clientes × 2 meses = ciclo 6
+                                    $idxMes     = ($anio - $anioIniCiclo) * 12 + ((int)$m - $mesIniCiclo);
+                                    $posCiclo   = (($idxMes % $cicloTotal) + $cicloTotal) % $cicloTotal;
+                                    $turnoIdx   = (int)floor($posCiclo / $frecuencia);
                                     $turnoFull  = $turnosRotativos[$turnoIdx]['receptor_nombre'];
                                     $partes     = explode(' ', $turnoFull);
                                     $turnoLabel = $partes[0];

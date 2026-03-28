@@ -53,13 +53,28 @@ $stmtN->execute([$cliente_id]);
 $nom = $stmtN->fetch(PDO::FETCH_ASSOC);
 $nomina_mensual = (float)$nom['bruto'] + (float)$nom['ihss_pat'] + (float)$nom['rap_pat'];
 
+// IDs de categorías de nómina (para excluir del promedio de gastos)
+$stmtCatNom = $pdo->prepare("
+    SELECT id FROM categorias_gastos
+    WHERE cliente_id = ?
+      AND (nombre LIKE '%Nómin%' OR nombre LIKE '%Sueldo%' OR nombre LIKE '%Nomina%')
+");
+$stmtCatNom->execute([$cliente_id]);
+$cats_nom = $stmtCatNom->fetchAll(PDO::FETCH_COLUMN);
+$excl_sql = !empty($cats_nom) ? implode(',', array_map('intval', $cats_nom)) : '0';
+
+
+
+
+
 // ── 3. Promedio gastos fijos últimos 3 meses ─────────────────────────────────
 $stmtFij = $pdo->prepare("
     SELECT COALESCE(AVG(tot),0) AS prom FROM (
         SELECT MONTH(fecha) mes, YEAR(fecha) anio, SUM(monto) tot
         FROM gastos
-        WHERE cliente_id=? AND tipo='fijo' AND estado!='anulado'
-          AND fecha >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
+    WHERE cliente_id=? AND tipo='fijo' AND estado!='anulado'
+      AND fecha BETWEEN DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND CURDATE()
+      AND categoria_id NOT IN ($excl_sql)
         GROUP BY YEAR(fecha), MONTH(fecha)
     ) t
 ");
@@ -71,8 +86,9 @@ $stmtVar = $pdo->prepare("
     SELECT COALESCE(AVG(tot),0) AS prom FROM (
         SELECT MONTH(fecha) mes, YEAR(fecha) anio, SUM(monto) tot
         FROM gastos
-        WHERE cliente_id=? AND tipo='variable' AND estado!='anulado'
-          AND fecha >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
+    WHERE cliente_id=? AND tipo='variable' AND estado!='anulado'
+      AND fecha BETWEEN DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND CURDATE()
+      AND categoria_id NOT IN ($excl_sql)
         GROUP BY YEAR(fecha), MONTH(fecha)
     ) t
 ");
@@ -137,7 +153,10 @@ for ($offset = 0; $offset < 12; $offset++) {
                     $stRot->execute([$ct['id']]);
                     $turnos = $stRot->fetchAll(PDO::FETCH_ASSOC);
                     if (!empty($turnos)) {
-                        $turno_idx = $mesesDesde % count($turnos);
+                        $freq_rot   = max(1, (int)($ct['frecuencia_meses'] ?? 1));
+                        $cicloTotal = count($turnos) * $freq_rot;
+                        $posCiclo   = (($mesesDesde % $cicloTotal) + $cicloTotal) % $cicloTotal;
+                        $turno_idx  = (int)floor($posCiclo / $freq_rot);
                         $ing_estandar += (float)$turnos[$turno_idx]['monto'];
                     }
                 }
