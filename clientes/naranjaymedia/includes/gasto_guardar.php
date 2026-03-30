@@ -61,6 +61,22 @@ try {
 
     $usuario_id = defined('USUARIO_ID') ? (int)USUARIO_ID : (int)($_SESSION['usuario_id'] ?? 0);
 
+    // ── Archivo adjunto ──────────────────────────────────────────────────────
+    $arch_adj = null;
+    $arch_nom = null;
+    if (!empty($_FILES['archivo_adjunto']['name']) && $_FILES['archivo_adjunto']['error'] === UPLOAD_ERR_OK) {
+        $uploadDir = __DIR__ . '/uploads/gastos/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0775, true);
+        $file = $_FILES['archivo_adjunto'];
+        $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'])) throw new Exception("Tipo de archivo no permitido.");
+        if ($file['size'] > 5 * 1024 * 1024) throw new Exception("El archivo supera 5 MB.");
+        $arch_adj = 'gasto_' . $cid . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+        if (!move_uploaded_file($file['tmp_name'], $uploadDir . $arch_adj))
+            throw new Exception("Error al guardar el archivo.");
+        $arch_nom = basename($file['name']);
+    }
+
     $pdo->beginTransaction();
 
     // ── Campos comunes para INSERT ────────────────────────────────────────
@@ -84,11 +100,18 @@ try {
         $viatico_colaborador,
         $viatico_motivo,
         $viatico_fecha_salida,
-        $viatico_fecha_regreso
+        $viatico_fecha_regreso,
+        $arch_adj,
+        $arch_nom
     ) {
         $cols = "cliente_id,categoria_id,descripcion,monto,fecha,frecuencia,dia_pago,dia_pago_2,
                  gasto_grupo_id,quincena_num,fecha_vencimiento,tipo,metodo_pago,proveedor,factura_ref,notas,estado,usuario_id";
         $vals = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?";
+        // Archivo adjunto (closure tiene acceso a $arch_adj/$arch_nom del scope externo)
+        if ($arch_adj) {
+            $cols .= ",archivo_adjunto,archivo_nombre";
+            $vals .= ",?,?";
+        }
         $params = [
             $cid,
             $categoria_id,
@@ -109,7 +132,10 @@ try {
             $estado,
             $usuario_id
         ];
-        // Columnas de viáticos si existen (opcional - skip si no están en la tabla)
+        if ($arch_adj) {
+            $params[] = $arch_adj;
+            $params[] = $arch_nom;
+        }
         $pdo->prepare("INSERT INTO gastos ($cols) VALUES ($vals)")->execute($params);
         return (int)$pdo->lastInsertId();
     };

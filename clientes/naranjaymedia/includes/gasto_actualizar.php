@@ -113,6 +113,22 @@ try {
     $grupoId  = (int)($gastoActual['gasto_grupo_id'] ?? 0);
     $usarGrupo = ($actualizar_grupo && $grupoId && $frecuencia === 'quincenal');
 
+    // ── Archivo adjunto (actualización completa) ──────────────────────────
+    $arch_adj = null;
+    $arch_nom = null;
+    if (!empty($_FILES['archivo_adjunto']['name']) && $_FILES['archivo_adjunto']['error'] === UPLOAD_ERR_OK) {
+        $uploadDir = __DIR__ . '/uploads/gastos/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0775, true);
+        $file = $_FILES['archivo_adjunto'];
+        $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'])) throw new Exception("Tipo de archivo no permitido.");
+        if ($file['size'] > 5 * 1024 * 1024) throw new Exception("El archivo supera 5 MB.");
+        $arch_adj = 'gasto_' . $cid . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+        if (!move_uploaded_file($file['tmp_name'], $uploadDir . $arch_adj))
+            throw new Exception("No se pudo guardar el archivo.");
+        $arch_nom = basename($file['name']);
+    }
+
     $pdo->beginTransaction();
 
     $campos = [
@@ -133,19 +149,31 @@ try {
     ];
 
     if ($usarGrupo) {
-        $pdo->prepare("UPDATE gastos SET categoria_id=?,descripcion=?,monto=?,fecha=?,
+        $sqlGrp = "UPDATE gastos SET categoria_id=?,descripcion=?,monto=?,fecha=?,
             frecuencia=?,dia_pago=?,dia_pago_2=?,fecha_vencimiento=?,tipo=?,metodo_pago=?,
-            proveedor=?,factura_ref=?,notas=?,estado=?
-            WHERE gasto_grupo_id=? AND cliente_id=?")
-            ->execute(array_merge($campos, [$grupoId, $cid]));
+            proveedor=?,factura_ref=?,notas=?,estado=?";
+        $paramsGrp = $campos;
+        if ($arch_adj) {
+            $sqlGrp .= ",archivo_adjunto=?,archivo_nombre=?";
+            $paramsGrp[] = $arch_adj;
+            $paramsGrp[] = $arch_nom;
+        }
+        $sqlGrp .= " WHERE gasto_grupo_id=? AND cliente_id=?";
+        $pdo->prepare($sqlGrp)->execute(array_merge($paramsGrp, [$grupoId, $cid]));
         $pdo->commit();
         echo json_encode(['success' => true, 'message' => 'Ambas quincenas del grupo actualizadas correctamente.']);
     } else {
-        $pdo->prepare("UPDATE gastos SET categoria_id=?,descripcion=?,monto=?,fecha=?,
+        $sqlUpd = "UPDATE gastos SET categoria_id=?,descripcion=?,monto=?,fecha=?,
             frecuencia=?,dia_pago=?,dia_pago_2=?,fecha_vencimiento=?,tipo=?,metodo_pago=?,
-            proveedor=?,factura_ref=?,notas=?,estado=?
-            WHERE id=? AND cliente_id=?")
-            ->execute(array_merge($campos, [$gasto_id, $cid]));
+            proveedor=?,factura_ref=?,notas=?,estado=?";
+        $paramsUpd = $campos;
+        if ($arch_adj) {
+            $sqlUpd .= ",archivo_adjunto=?,archivo_nombre=?";
+            $paramsUpd[] = $arch_adj;
+            $paramsUpd[] = $arch_nom;
+        }
+        $sqlUpd .= " WHERE id=? AND cliente_id=?";
+        $pdo->prepare($sqlUpd)->execute(array_merge($paramsUpd, [$gasto_id, $cid]));
         $pdo->commit();
         echo json_encode(['success' => true, 'message' => 'Gasto actualizado correctamente.']);
     }

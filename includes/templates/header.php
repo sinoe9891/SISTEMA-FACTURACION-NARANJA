@@ -590,6 +590,11 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 							</a>
 						</li>
 						<li>
+							<a class="dropdown-item" href="tarjetas">
+								<i class="fa-solid fa-credit-card"></i> Tarjetas
+							</a>
+						</li>
+						<li>
 							<a class="dropdown-item" href="categorias_gastos">
 								<i class="fa-solid fa-tags"></i> Categorías de Gastos
 							</a>

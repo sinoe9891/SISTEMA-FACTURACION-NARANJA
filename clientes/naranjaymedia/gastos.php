@@ -65,6 +65,11 @@ $stmtColabs = $pdo->prepare("SELECT id, CONCAT(nombre,' ',apellido) AS nombre_co
 $stmtColabs->execute([$cliente_id]);
 $colaboradores_lista = $stmtColabs->fetchAll(PDO::FETCH_ASSOC);
 
+/* ── Tarjetas activas ────────────────────────────────────────────────────── */
+$stmtTarjGasto = $pdo->prepare("SELECT id, banco, tipo, ultimos_digitos FROM tarjetas WHERE cliente_id=? AND activa=1 ORDER BY banco");
+$stmtTarjGasto->execute([$cliente_id]);
+$tarjetas_gasto = $stmtTarjGasto->fetchAll(PDO::FETCH_ASSOC);
+
 /* ── Gastos con filtros ───────────────────────────────────────────────────── */
 $sql    = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono
            FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id
@@ -597,6 +602,17 @@ $total  = count($gastos);
         color: #fff;
     }
 
+    .btn-ver {
+        background: #dbeafe;
+        color: #1d4ed8;
+        border-color: rgba(29, 78, 216, .2);
+    }
+
+    .btn-ver:hover {
+        background: #1d4ed8;
+        color: #fff;
+    }
+
     .gs-pagination {
         display: flex;
         align-items: center;
@@ -936,6 +952,9 @@ $total  = count($gastos);
                             </td>
                             <td>
                                 <div class="gs-actions">
+                                    <a href="gasto_ver?id=<?= $g['id'] ?>" class="btn-a btn-ver" title="Ver detalle">
+                                        <i class="bi bi-eye-fill"></i>
+                                    </a>
                                     <button class="btn-a btn-edit btn-editar-gasto"
                                         data-gasto='<?= json_encode($g, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>'
                                         title="Editar"><i class="bi bi-pencil-fill"></i></button>
@@ -988,7 +1007,7 @@ $total  = count($gastos);
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
-                <form id="formGasto">
+                <form id="formGasto" enctype="multipart/form-data">
                     <input type="hidden" name="gasto_id" id="g_id">
                     <div class="row g-3">
                         <div class="col-12"><label class="mf-label">Descripción *</label><input type="text"
@@ -1057,6 +1076,41 @@ $total  = count($gastos);
                                 name="proveedor" id="g_prov" class="mf-input" placeholder="Nombre del proveedor"
                                 maxlength="200"></div>
 
+                        <!-- Método de pago + Tarjeta -->
+                        <div class="col-md-6"><label class="mf-label">Método de pago</label>
+                            <select name="metodo_pago" id="g_metodo" class="mf-select">
+                                <option value="efectivo">💵 Efectivo</option>
+                                <option value="transferencia">🏦 Transferencia</option>
+                                <option value="tarjeta">💳 Tarjeta</option>
+                                <option value="cheque">📝 Cheque</option>
+                                <option value="otro">🔷 Otro</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6" id="grpTarjetaGasto" style="display:none">
+                            <label class="mf-label">Tarjeta usada
+                                <a href="tarjetas" target="_blank" class="ms-2 text-primary"
+                                    style="font-size:.72rem;font-weight:normal;text-transform:none;letter-spacing:0">
+                                    <i class="bi bi-plus-circle me-1"></i>Gestionar
+                                </a>
+                            </label>
+                            <?php if (!empty($tarjetas_gasto)): ?>
+                                <select name="tarjeta_id" id="g_tarjeta" class="mf-select">
+                                    <option value="">— Seleccionar —</option>
+                                    <?php foreach ($tarjetas_gasto as $t): ?>
+                                        <option value="<?= $t['id'] ?>">
+                                            <?= htmlspecialchars($t['banco']) ?> — <?= ucfirst($t['tipo']) ?> ····
+                                            <?= htmlspecialchars($t['ultimos_digitos']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            <?php else: ?>
+                                <div
+                                    style="font-size:.8rem;color:#64748b;padding:.5rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+                                    Sin tarjetas. <a href="tarjetas" target="_blank">Registrar →</a>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+
                         <!-- Días de pago (solo fijo mensual/quincenal) -->
                         <div class="col-md-3" id="grpDia1" style="display:none"><label class="mf-label">Día de
                                 pago</label><input type="number" name="dia_pago" id="g_dia1" class="mf-input" min="1"
@@ -1108,6 +1162,61 @@ $total  = count($gastos);
                             </div>
                         </div>
 
+                        <!-- Comprobante adjunto -->
+                        <div class="col-12" id="grpArchivoGasto">
+                            <label class="mf-label">Comprobante
+                                <span class="text-muted fw-normal"
+                                    style="text-transform:none;letter-spacing:0;font-size:.72rem">(opcional · JPG, PNG,
+                                    PDF · máx 5MB)</span>
+                            </label>
+                            <!-- Comprobante existente (edit mode) -->
+                            <div id="gsCompActual"
+                                style="display:none;background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:10px;padding:12px;margin-bottom:8px;align-items:center;gap:12px">
+                                <div id="gsCompActualIcon" style="font-size:1.6rem;flex-shrink:0">🖼️</div>
+                                <div style="flex:1;overflow:hidden;min-width:0">
+                                    <div id="gsCompActualNom" class="fw-semibold small text-truncate"></div>
+                                    <a id="gsCompActualLink" href="#" target="_blank" class="text-success small">Ver
+                                        comprobante actual →</a>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-warning flex-shrink-0"
+                                    onclick="gsOcultarActual()" title="Reemplazar">
+                                    <i class="bi bi-arrow-repeat me-1"></i>Reemplazar
+                                </button>
+                            </div>
+                            <!-- Zona upload -->
+                            <div id="gsZonaCompWrap">
+                                <div id="gsZonaComp" class="border rounded-3 text-center p-3"
+                                    style="cursor:pointer;border-style:dashed!important;border-color:#e2e8f0!important;transition:all .2s"
+                                    ondragover="event.preventDefault();this.style.borderColor='#d97706';this.style.background='#fffbeb'"
+                                    ondragleave="this.style.borderColor='';this.style.background=''"
+                                    ondrop="gsHandleDrop(event)">
+                                    <i class="bi bi-cloud-upload d-block mb-1"
+                                        style="font-size:1.8rem;color:#d97706;opacity:.5"></i>
+                                    <div class="small text-muted">Arrastra aquí o
+                                        <span class="fw-semibold" style="color:#d97706;cursor:pointer"
+                                            onclick="document.getElementById('gsArchivo').click()">selecciona
+                                            archivo</span>
+                                    </div>
+                                    <input type="file" id="gsArchivo" name="archivo_adjunto"
+                                        accept=".jpg,.jpeg,.png,.webp,.pdf" class="d-none">
+                                </div>
+                                <div id="gsPrevWrap" class="mt-2 d-none">
+                                    <div class="d-flex align-items-center gap-2 p-2 rounded-2 border"
+                                        style="background:#f8f9fa">
+                                        <div id="gsPrevIcon" style="font-size:20px"></div>
+                                        <div class="flex-grow-1 overflow-hidden">
+                                            <div id="gsPrevNom" class="small fw-semibold text-truncate"></div>
+                                            <div id="gsPrevTam" class="text-muted" style="font-size:11px"></div>
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-danger"
+                                            onclick="gsLimpiarComp()">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="col-12"><label class="mf-label">Notas</label><textarea name="notas" id="g_notas"
                                 class="mf-input" rows="2" style="height:auto;resize:vertical;"
                                 maxlength="500"></textarea></div>
@@ -1129,6 +1238,80 @@ $total  = count($gastos);
     document.getElementById('sVista').addEventListener('change', function() {
         document.getElementById('grpMesFiltro').style.display = this.value === 'mensual' ? '' : 'none';
     });
+
+    /* ══ COMPROBANTE UPLOAD (modal gastos) ═══════════════════════════════════ */
+    document.getElementById('gsArchivo').addEventListener('change', function() {
+        if (this.files[0]) gsMostrarComp(this.files[0]);
+    });
+
+    function gsMostrarComp(file) {
+        const esPdf = file.type === 'application/pdf';
+        document.getElementById('gsPrevIcon').innerHTML = esPdf ?
+            '<i class="bi bi-file-pdf text-danger" style="font-size:1.4rem"></i>' :
+            '<i class="bi bi-image text-primary" style="font-size:1.4rem"></i>';
+        document.getElementById('gsPrevNom').textContent = file.name;
+        document.getElementById('gsPrevTam').textContent = (file.size < 1048576 ?
+            (file.size / 1024).toFixed(1) + ' KB' :
+            (file.size / 1048576).toFixed(2) + ' MB') + ' · ' + (esPdf ? 'PDF' : 'Imagen');
+        document.getElementById('gsPrevWrap').classList.remove('d-none');
+        document.getElementById('gsZonaComp').style.cssText = 'border-color:#d97706!important;background:#fffbeb';
+    }
+
+    function gsLimpiarComp() {
+        const inp = document.getElementById('gsArchivo');
+        if (inp) inp.value = '';
+        document.getElementById('gsPrevWrap')?.classList.add('d-none');
+        document.getElementById('gsZonaComp').style.cssText =
+            'border-style:dashed!important;border-color:#e2e8f0!important';
+    }
+
+    function gsOcultarActual() {
+        document.getElementById('gsCompActual').style.display = 'none';
+        document.getElementById('gsZonaCompWrap').style.display = '';
+    }
+
+    function gsMostrarActual(archivo, nombre, url) {
+        const esPdf = archivo.toLowerCase().endsWith('.pdf');
+        document.getElementById('gsCompActualIcon').textContent = esPdf ? '📄' : '🖼️';
+        document.getElementById('gsCompActualNom').textContent = nombre || archivo;
+        document.getElementById('gsCompActualLink').href = url;
+        const el = document.getElementById('gsCompActual');
+        el.style.cssText =
+            'display:flex;background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:10px;padding:12px;margin-bottom:8px;align-items:center;gap:12px';
+        document.getElementById('gsZonaCompWrap').style.display = 'none';
+    }
+
+    function gsHandleDrop(ev) {
+        ev.preventDefault();
+        document.getElementById('gsZonaComp').style.cssText =
+            'border-style:dashed!important;border-color:#e2e8f0!important';
+        const file = ev.dataTransfer.files[0];
+        if (!file) return;
+        if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Tipo no permitido',
+                text: 'Solo JPG, PNG, WEBP o PDF.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Archivo muy grande',
+                text: 'Máximo 5 MB.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+            return;
+        }
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        document.getElementById('gsArchivo').files = dt.files;
+        gsMostrarComp(file);
+    }
 
     /* ══ TABLE ENGINE ══════════════════════════════════════════════════════════ */
     (() => {
@@ -1282,12 +1465,14 @@ $total  = count($gastos);
     function toggleCamposGasto() {
         const t = document.getElementById('g_tipo').value;
         const f = document.getElementById('g_frec').value;
+        const m = document.getElementById('g_metodo').value;
         const esFijo = t === 'fijo';
         document.getElementById('panelViaticos').style.display = (t === 'viaticos') ? '' : 'none';
         document.getElementById('grpFrecuencia').style.display = (t !== 'viaticos') ? '' : 'none';
         document.getElementById('grpDia1').style.display = esFijo ? '' : 'none';
         document.getElementById('grpDia2G').style.display = (esFijo && f === 'quincenal') ? '' : 'none';
         document.getElementById('grpFechaVenc').style.display = esFijo ? '' : 'none';
+        document.getElementById('grpTarjetaGasto').style.display = m === 'tarjeta' ? '' : 'none';
         // Info de anual
         const help = document.getElementById('frec_help');
         if (f === 'anual') {
@@ -1297,6 +1482,7 @@ $total  = count($gastos);
     }
     document.getElementById('g_tipo').addEventListener('change', toggleCamposGasto);
     document.getElementById('g_frec').addEventListener('change', toggleCamposGasto);
+    document.getElementById('g_metodo').addEventListener('change', toggleCamposGasto);
 
     // Cuando se selecciona un colaborador, auto-fill proveedor si está vacío
     document.getElementById('g_colab').addEventListener('change', function() {
@@ -1309,6 +1495,10 @@ $total  = count($gastos);
         document.getElementById('formGasto').reset();
         document.getElementById('g_id').value = '';
         document.getElementById('g_fecha').value = new Date().toISOString().slice(0, 10);
+        gsLimpiarComp();
+        // Reset comprobante actual section
+        document.getElementById('gsCompActual').style.display = 'none';
+        document.getElementById('gsZonaCompWrap').style.display = '';
         toggleCamposGasto();
     }
     document.getElementById('btnNuevoGasto').addEventListener('click', () => {
@@ -1338,6 +1528,16 @@ $total  = count($gastos);
             document.getElementById('g_notas').value = g.notas || '';
             document.getElementById('g_colab').value =
                 ''; // Colaborador no guardado en gastos directamente (usa proveedor)
+            document.getElementById('g_metodo').value = g.metodo_pago || 'efectivo';
+            document.getElementById('g_metodo').dispatchEvent(new Event('change'));
+            if (g.tarjeta_id) document.getElementById('g_tarjeta').value = g.tarjeta_id;
+            // Comprobante actual
+            if (g.archivo_adjunto) {
+                const subDir = (g.descripcion || '').startsWith('Sueldo ') ? 'comprobantes_nomina' :
+                    'gastos';
+                const url = 'includes/uploads/' + subDir + '/' + g.archivo_adjunto;
+                gsMostrarActual(g.archivo_adjunto, g.archivo_nombre || g.archivo_adjunto, url);
+            }
             if (g.dia_pago) document.getElementById('g_dia1').value = g.dia_pago;
             if (g.dia_pago_2) document.getElementById('g_dia2').value = g.dia_pago_2;
             if (g.fecha_vencimiento) document.getElementById('g_venc').value = g.fecha_vencimiento;
