@@ -80,6 +80,9 @@ try {
     $dia_pago_2     = filter_input(INPUT_POST, 'dia_pago_2', FILTER_VALIDATE_INT) ?: null;
     $tipo           = trim($_POST['tipo']         ?? 'variable');
     $metodo_pago    = trim($_POST['metodo_pago']  ?? 'efectivo');
+    $tarjeta_id     = ($metodo_pago === 'tarjeta')
+        ? (filter_input(INPUT_POST, 'tarjeta_id', FILTER_VALIDATE_INT) ?: null)
+        : null;
     $categoria_id   = filter_input(INPUT_POST, 'categoria_id', FILTER_VALIDATE_INT) ?: null;
     $proveedor      = trim($_POST['proveedor']    ?? '') ?: null;
     $factura_ref    = trim($_POST['factura_ref']  ?? '') ?: null;
@@ -142,6 +145,7 @@ try {
         $fecha_venc,
         $tipo,
         $metodo_pago,
+        $tarjeta_id,
         $proveedor,
         $factura_ref,
         $notas,
@@ -150,7 +154,7 @@ try {
 
     if ($usarGrupo) {
         $sqlGrp = "UPDATE gastos SET categoria_id=?,descripcion=?,monto=?,fecha=?,
-            frecuencia=?,dia_pago=?,dia_pago_2=?,fecha_vencimiento=?,tipo=?,metodo_pago=?,
+            frecuencia=?,dia_pago=?,dia_pago_2=?,fecha_vencimiento=?,tipo=?,metodo_pago=?,tarjeta_id=?,
             proveedor=?,factura_ref=?,notas=?,estado=?";
         $paramsGrp = $campos;
         if ($arch_adj) {
@@ -164,7 +168,7 @@ try {
         echo json_encode(['success' => true, 'message' => 'Ambas quincenas del grupo actualizadas correctamente.']);
     } else {
         $sqlUpd = "UPDATE gastos SET categoria_id=?,descripcion=?,monto=?,fecha=?,
-            frecuencia=?,dia_pago=?,dia_pago_2=?,fecha_vencimiento=?,tipo=?,metodo_pago=?,
+            frecuencia=?,dia_pago=?,dia_pago_2=?,fecha_vencimiento=?,tipo=?,metodo_pago=?,tarjeta_id=?,
             proveedor=?,factura_ref=?,notas=?,estado=?";
         $paramsUpd = $campos;
         if ($arch_adj) {

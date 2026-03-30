@@ -30,6 +30,9 @@ try {
     $viatico_motivo       = trim($_POST['viatico_motivo']        ?? '') ?: null;
     $viatico_fecha_salida = trim($_POST['viatico_fecha_salida']  ?? '') ?: null;
     $viatico_fecha_regreso = trim($_POST['viatico_fecha_regreso'] ?? '') ?: null;
+    $tarjeta_id  = ($metodo_pago === 'tarjeta')
+        ? (filter_input(INPUT_POST, 'tarjeta_id', FILTER_VALIDATE_INT) ?: null)
+        : null;
 
     // ── Validaciones básicas ──────────────────────────────────────────────
     if (!$descripcion) throw new Exception("La descripción es obligatoria.");
@@ -102,11 +105,12 @@ try {
         $viatico_fecha_salida,
         $viatico_fecha_regreso,
         $arch_adj,
-        $arch_nom
+        $arch_nom,
+        $tarjeta_id
     ) {
         $cols = "cliente_id,categoria_id,descripcion,monto,fecha,frecuencia,dia_pago,dia_pago_2,
-                 gasto_grupo_id,quincena_num,fecha_vencimiento,tipo,metodo_pago,proveedor,factura_ref,notas,estado,usuario_id";
-        $vals = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?";
+                 gasto_grupo_id,quincena_num,fecha_vencimiento,tipo,metodo_pago,tarjeta_id,proveedor,factura_ref,notas,estado,usuario_id";
+        $vals = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?";
         // Archivo adjunto (closure tiene acceso a $arch_adj/$arch_nom del scope externo)
         if ($arch_adj) {
             $cols .= ",archivo_adjunto,archivo_nombre";
@@ -126,6 +130,7 @@ try {
             $fecha_venc,
             $tipo,
             $metodo_pago,
+            $tarjeta_id,
             $proveedor,
             $factura_ref,
             $notas,
