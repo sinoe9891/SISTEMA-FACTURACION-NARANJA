@@ -113,7 +113,7 @@ foreach ($colabs_activos as $col) {
         ]
         : [0 => ['dia' => (int)$col['dia_pago'],  'suffix' => '',              'label' => 'Mensual']];
 
-    for ($offset = -2; $offset <= 0; $offset++) {
+    for ($offset = -1; $offset <= 0; $offset++) {
         $ref    = clone $hoy_dt;
         if ($offset < 0) $ref->modify("$offset month");
         $anio   = (int)$ref->format('Y');
@@ -130,7 +130,7 @@ foreach ($colabs_activos as $col) {
             if (isset($pagos_reg[$key])) continue;
 
             $diff   = (int)$hoy_dt->diff($fp)->days;
-            $es_fut = ($fp > $hoy_dt);
+            $es_fut = ($fp >= $hoy_dt); // Hoy mismo = próximo, no vencido
 
             $row = array_merge($col, [
                 'nombre_completo' => $nc,
@@ -146,8 +146,10 @@ foreach ($colabs_activos as $col) {
                 'periodo_label'   => $meses_abr[$mes] . ' ' . $anio,
             ]);
 
-            if (!$es_fut)       $vencidos[] = array_merge($row, ['dias_atraso'    => $diff]);
-            elseif ($diff <= 3) $proximos[] = array_merge($row, ['dias_restantes' => $diff]);
+            if (!$es_fut)                      $vencidos[] = array_merge($row, ['dias_atraso'    => $diff]);
+            elseif ($diff <= 3 && $offset === 0) $proximos[] = array_merge($row, ['dias_restantes' => $diff]);
+            // $offset === 0 evita duplicados por overflow de PHP en fechas día 30/31:
+            // modify("-1 month") desde el día 30 puede aterrizar en el mes actual en vez del anterior
         }
     }
 }
@@ -1705,7 +1707,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
         if (diff > 0) $el.innerHTML =
             `<span class="badge bg-danger bg-opacity-15 border border-danger border-opacity-25" style="color:#dc2626"><i class="bi bi-clock-history me-1"></i>Vencido <strong>${diff} día(s)</strong></span>`;
         else if (diff === 0) $el.innerHTML =
-            `<span class="badge bg-success border border-success border-opacity-25" style="color:#ffffff"><i class="bi bi-check-circle me-1"></i>En fecha programada</span>`;
+            `<span class="badge bg-success bg-opacity-15 border border-success border-opacity-25" style="color:#059669"><i class="bi bi-check-circle me-1"></i>En fecha programada</span>`;
         else $el.innerHTML =
             `<span class="badge bg-info bg-opacity-15 border border-info border-opacity-25" style="color:#0369a1"><i class="bi bi-calendar-check me-1"></i>Adelantado ${Math.abs(diff)} día(s)</span>`;
     }

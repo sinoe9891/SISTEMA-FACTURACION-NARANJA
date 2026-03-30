@@ -65,17 +65,17 @@ if (!$es_superadmin) {
 
 $cliente_id = (USUARIO_ROL === 'superadmin') ? (int)$_SESSION['cliente_seleccionado'] : (int)$datos['cliente_id'];
 
-// 1. Rango de fechas (por GET o mes actual por defecto)  âœ… (NO volver a sobrescribirlo despuÃ©s)
-// 1. Rango de fechas (POST primero, luego GET, luego mes actual)
+// ✅ Primero leer $_POST/$_GET
 $fecha_inicio = $_POST['fecha_inicio'] ?? $_GET['fecha_inicio'] ?? date('Y-m-01');
-$fecha_fin    = $_POST['fecha_fin'] ?? $_GET['fecha_fin'] ?? date('Y-m-t');
+$fecha_fin    = $_POST['fecha_fin']    ?? $_GET['fecha_fin']    ?? date('Y-m-t');
 
-// Normalizar y validar (evita rangos invertidos o valores raros)
+// Luego validar con DateTime
+/** @var string $fecha_inicio */
+/** @var string $fecha_fin */
 $fi = DateTime::createFromFormat('Y-m-d', $fecha_inicio);
 $ff = DateTime::createFromFormat('Y-m-d', $fecha_fin);
-
-$fecha_inicio = ($fi && $fi->format('Y-m-d') === $fecha_inicio) ? $fecha_inicio : date('Y-m-01');
-$fecha_fin    = ($ff && $ff->format('Y-m-d') === $fecha_fin) ? $fecha_fin : date('Y-m-t');
+$fecha_inicio = ($fi instanceof DateTime) ? (string)$fecha_inicio : date('Y-m-01');
+$fecha_fin    = ($ff instanceof DateTime) ? (string)$fecha_fin    : date('Y-m-t');
 
 if ($fecha_inicio > $fecha_fin) {
 	$tmp = $fecha_inicio;
@@ -394,8 +394,14 @@ $stmtResumenReceptores = $pdo->prepare("
 	ORDER BY r.total DESC
 ");
 $stmtResumenReceptores->execute([
-	$cliente_id, $establecimiento_activo, $fecha_inicio, $fecha_fin,
-	$cliente_id, $establecimiento_activo, $fecha_inicio, $fecha_fin
+	$cliente_id,
+	$establecimiento_activo,
+	$fecha_inicio,
+	$fecha_fin,
+	$cliente_id,
+	$establecimiento_activo,
+	$fecha_inicio,
+	$fecha_fin
 ]);
 $resumen_receptores = $stmtResumenReceptores->fetchAll(PDO::FETCH_ASSOC);
 
@@ -502,6 +508,7 @@ $stmtContratosAlerta = $pdo->prepare("
         SELECT
             c.id, c.cliente_id, c.receptor_id, c.producto_id, c.nombre_contrato, c.monto,
             c.fecha_inicio, c.fecha_fin, c.dia_pago, c.estado,
+            c.tipo_contrato,
             cf.nombre   AS receptor_nombre,
             cf.telefono AS receptor_tel,
             p.nombre    AS servicio_nombre,
@@ -566,7 +573,9 @@ $stmtContratosAlerta->execute([$cliente_id]);
 $contratos_dashboard = $stmtContratosAlerta->fetchAll(PDO::FETCH_ASSOC);
 
 // Separar: por vencer (contrato termina en ≤3 días) vs próximos pagos
-$contratos_por_vencer = array_filter($contratos_dashboard, fn($c) =>
-    $c['fecha_fin'] !== null && (int)$c['dias_restantes'] <= 3 && (int)$c['dias_restantes'] >= 0
+$contratos_por_vencer = array_filter(
+	$contratos_dashboard,
+	fn($c) =>
+	$c['fecha_fin'] !== null && (int)$c['dias_restantes'] <= 3 && (int)$c['dias_restantes'] >= 0
 );
 $contratos_proximos_pagos = array_slice($contratos_dashboard, 0, 8);
