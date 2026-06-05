@@ -66,6 +66,26 @@ $esAnulada = strtolower($factura['estado']) === 'anulada';
 $rangoCAIInicio = htmlspecialchars($factura['rango_cai_inicio']);
 $rangoCAIFin    = htmlspecialchars($factura['rango_cai_fin']);
 
+/* ── Condición de pago (Contado / Crédito / Mixto) ─────────────────────── */
+$cond_pago_raw = strtolower(trim($factura['condicion_pago'] ?? 'contado'));
+switch ($cond_pago_raw) {
+	case 'credito':
+	case 'crédito':
+		$cond_pago_label = 'Crédito';
+		break;
+	case 'credito/contado':
+	case 'crédito/contado':
+		$cond_pago_label = 'Crédito / Contado';
+		break;
+	case 'contado':
+	default:
+		$cond_pago_label = 'Contado';
+		break;
+}
+
+/* ── Estado de pago ────────────────────────────────────────────────────── */
+$estado_pago_label = !empty($factura['pagada']) ? 'Pagada' : 'Pendiente de pago';
+
 if (!$factura) {
 	die("Factura no encontrada o no autorizada.");
 }
@@ -405,6 +425,8 @@ function formatFecha($fecha)
 			Factura <strong><?= htmlspecialchars($factura['correlativo']) ?></strong>
 			&nbsp;·&nbsp; <?= htmlspecialchars($factura['receptor_nombre']) ?>
 			&nbsp;·&nbsp; <?= ucfirst($factura['estado']) ?>
+			&nbsp;·&nbsp; <strong><?= $cond_pago_label ?></strong>
+			&nbsp;·&nbsp; <strong><?= $estado_pago_label ?></strong>
 		</div>
 		<div class="action-bar-btns">
 			<a href="lista_facturas" class="btn-ab btn-ab-back">← Volver</a>
@@ -448,7 +470,7 @@ function formatFecha($fecha)
 
 		<hr>
 
-		<div>
+		<div class="d-flex justify-content-between align-items-start">
 			<div class="infocliente">
 				<strong>Cliente:</strong> <?= htmlspecialchars($factura['receptor_nombre']) ?><br>
 				<strong>RTN:</strong> <?= htmlspecialchars($factura['receptor_rtn'] ?? '') ?><br>
@@ -456,8 +478,14 @@ function formatFecha($fecha)
 				<strong>Teléfono:</strong> <?= htmlspecialchars($factura['receptor_telefono'] ?? '') ?><br>
 				<strong>Email:</strong> <?= htmlspecialchars($factura['receptor_email'] ?? '') ?><br>
 				<strong>Fecha de emisión:</strong> <?= formatFecha($factura['fecha_emision']) ?><br>
+				<strong>Condición de pago:</strong> <strong><?= $cond_pago_label ?></strong>
+				<span class="no-print"><br>
+					<strong>Estado de pago:</strong> <strong><?= $estado_pago_label ?></strong>
+				</span>
 			</div>
-			<div class="factura"><strong>Factura N.°:</strong> <?= htmlspecialchars($factura['correlativo']) ?></div>
+			<div class="text-end">
+				<div class="factura"><strong>Factura N.°:</strong> <?= htmlspecialchars($factura['correlativo']) ?></div>
+			</div>
 		</div>
 
 		<hr>
@@ -557,11 +585,40 @@ function formatFecha($fecha)
 		<p class="agradecimiento">
 			Gracias por su preferencia.
 		</p>
-		<div class="footer-text">
-			<strong>Certificador:</strong> <?= htmlspecialchars($configuracion['certificador_nombre']) ?><br>
-			<strong>RTN Certificador:</strong> <?= htmlspecialchars($configuracion['certificador_rtn']) ?><br>
-			<strong>Número Certificado:</strong> <?= htmlspecialchars($configuracion['numero_certificado']) ?><br>
-			<div><?= nl2br(htmlspecialchars($configuracion['footer_factura'])) ?></div>
+		<div class="footer-text" style="margin-top: 24px; padding-top: 10px; border-top: 2px solid #e36f1f;">
+			<div style="font-size: 9px; color: #444; text-align: center; line-height: 1.8;">
+
+				<strong style="font-size: 10px;">— INFORMACIÓN DEL EMISOR AUTORIZADO —</strong><br>
+
+				<strong>Imprenta:</strong> <?= htmlspecialchars($configuracion['certificador_nombre']) ?>
+				&nbsp;|&nbsp;
+				<strong>RTN Imprenta:</strong> <?= htmlspecialchars($configuracion['certificador_rtn']) ?>
+				&nbsp;|&nbsp;
+				<strong>N.° Certificado:</strong> <?= htmlspecialchars($configuracion['numero_certificado']) ?>
+				<br>
+
+				<?php if (!empty($configuracion['imprenta_direccion'])): ?>
+					<strong>Dir. Imprenta:</strong> <?= htmlspecialchars($configuracion['imprenta_direccion']) ?>
+					&nbsp;|&nbsp;
+				<?php endif; ?>
+
+				<?php if (!empty($configuracion['imprenta_telefono'])): ?>
+					<strong>Tel:</strong> <?= htmlspecialchars($configuracion['imprenta_telefono']) ?>
+					&nbsp;|&nbsp;
+				<?php endif; ?>
+
+				<?php if (!empty($configuracion['imprenta_correo'])): ?>
+					<?= htmlspecialchars($configuracion['imprenta_correo']) ?>
+				<?php endif; ?>
+				<br>
+
+				<?php if (!empty($configuracion['footer_factura'])): ?>
+					<em><?= nl2br(htmlspecialchars($configuracion['footer_factura'])) ?></em><br>
+				<?php endif; ?>
+				<!-- 
+                🔍 Esta factura puede ser verificada en
+                <strong>www.sar.gob.hn</strong> -->
+			</div>
 		</div>
 		<a href="./lista_facturas" class="btn btn-secondary mt-3 no-print">Volver al listado</a>
 	</div>

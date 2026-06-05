@@ -257,6 +257,23 @@ $no_declaradas = $stmtNoDeclaradas->fetch(PDO::FETCH_ASSOC);
 $cant_no_declaradas = (int)$no_declaradas['cantidad'];
 $isv_pendiente = (float)$no_declaradas['isv_pendiente'];
 
+/// ==============================
+/// Pendientes de pago (facturas emitidas no pagadas)
+/// ==============================
+$stmtPendientesPago = $pdo->prepare("
+	SELECT COUNT(*) AS cantidad,
+	       IFNULL(SUM(total), 0) AS monto_pendiente
+	FROM facturas
+	WHERE cliente_id = ?
+	  AND establecimiento_id = ?
+	  AND estado = 'emitida'
+	  AND (pagada = 0 OR pagada IS NULL)
+");
+$stmtPendientesPago->execute([$cliente_id, $establecimiento_activo]);
+$pendientes_pago = $stmtPendientesPago->fetch(PDO::FETCH_ASSOC);
+$cant_pendientes_pago  = (int)($pendientes_pago['cantidad'] ?? 0);
+$monto_pendientes_pago = (float)($pendientes_pago['monto_pendiente'] ?? 0);
+
 // LÃ³gica para color de alerta segÃºn dÃ­a del mes
 $dia_hoy = (int)date('d');
 $color_alerta = 'success';

@@ -306,9 +306,9 @@ require_once '../../includes/templates/header.php';
 
     <?php if (!empty($ingresos)): ?>
 
-    <!-- Totales mes / año / no declaradas -->
+    <!-- Totales mes / año / pendientes de pago / no declaradas -->
     <div class="row g-3 mb-4">
-        <div class="col-md-4">
+        <div class="col-md-6 col-lg-3">
             <div class="db-card mb-0 h-100">
                 <div class="db-card-header"><span class="db-card-title"><i
                             class="bi bi-currency-dollar me-2 text-success"></i>Totales <?= date('F Y') ?></span></div>
@@ -323,7 +323,7 @@ require_once '../../includes/templates/header.php';
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-6 col-lg-3">
             <div class="db-card mb-0 h-100">
                 <div class="db-card-header"><span class="db-card-title"><i
                             class="bi bi-calendar3 me-2 text-primary"></i>Año a la fecha <?= date('Y') ?></span></div>
@@ -338,7 +338,26 @@ require_once '../../includes/templates/header.php';
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-6 col-lg-3">
+            <div class="db-card mb-0 h-100"
+                style="border-color:<?= ($cant_pendientes_pago ?? 0) > 0 ? '#fecaca' : 'var(--border)' ?>">
+                <div class="db-card-header"><span class="db-card-title"><i
+                            class="bi bi-hourglass-split me-2 text-danger"></i>Pendientes de pago</span></div>
+                <div class="card-body px-4 py-3">
+                    <?php if (($cant_pendientes_pago ?? 0) > 0): ?>
+                    <div class="d-flex justify-content-between mb-1"><span class="text-muted small">Facturas</span><span
+                            class="fw-semibold"><?= (int)$cant_pendientes_pago ?></span></div>
+                    <div class="d-flex justify-content-between pt-2 border-top mt-1"><span
+                            class="fw-bold">Monto adeudado</span><span class="fw-bold text-danger">L
+                            <?= number_format($monto_pendientes_pago ?? 0, 2) ?></span></div>
+                    <?php else: ?>
+                    <div class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>No hay facturas
+                        pendientes de pago.</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
             <div class="db-card mb-0 h-100"
                 style="border-color:<?= ($cant_no_declaradas ?? 0) > 0 ? '#fecaca' : 'var(--border)' ?>">
                 <div class="db-card-header"><span class="db-card-title"><i

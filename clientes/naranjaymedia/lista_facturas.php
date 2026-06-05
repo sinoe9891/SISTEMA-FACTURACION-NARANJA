@@ -82,12 +82,15 @@ if ($caix) {
 	$ultimoCorrelativoCAI = $stmtUltimo->fetchColumn();
 }
 
-$total_facturas = count($facturas);
-$emitidas_count = count(array_filter($facturas, fn($f) => $f['estado'] === 'emitida'));
-$anuladas_count = count(array_filter($facturas, fn($f) => $f['estado'] === 'anulada'));
-$pagadas_count  = count(array_filter($facturas, fn($f) => $f['pagada'] == 1));
-$total_monto    = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
-$esAdmin        = in_array($datos['rol'], ['admin', 'superadmin']);
+$total_facturas    = count($facturas);
+$emitidas_count    = count(array_filter($facturas, fn($f) => $f['estado'] === 'emitida'));
+$anuladas_count    = count(array_filter($facturas, fn($f) => $f['estado'] === 'anulada'));
+$pagadas_count     = count(array_filter($facturas, fn($f) => $f['pagada'] == 1));
+$pendientes_facts  = array_filter($facturas, fn($f) => $f['estado'] === 'emitida' && $f['pagada'] != 1);
+$pendientes_count  = count($pendientes_facts);
+$pendientes_monto  = array_sum(array_map(fn($f) => (float)$f['total'], $pendientes_facts));
+$total_monto       = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
+$esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
 ?>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -845,6 +848,13 @@ $esAdmin        = in_array($datos['rol'], ['admin', 'superadmin']);
 			<div>
 				<div class="fh-stat-val"><?= $pagadas_count ?></div>
 				<div class="fh-stat-lbl">Pagadas</div>
+			</div>
+		</div>
+		<div class="fh-stat">
+			<div class="fh-stat-icon red"><i class="bi bi-hourglass-split"></i></div>
+			<div>
+				<div class="fh-stat-val"><?= $pendientes_count ?></div>
+				<div class="fh-stat-lbl">Pendientes de pago<?php if ($pendientes_monto > 0): ?> · L <?= number_format($pendientes_monto, 2) ?><?php endif; ?></div>
 			</div>
 		</div>
 		<!-- ← FIX: número_format con 2 decimales ↓ -->

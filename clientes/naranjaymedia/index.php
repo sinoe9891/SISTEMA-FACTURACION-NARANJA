@@ -105,8 +105,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmtEstab->execute([$usuario['id']]);
         $establecimientos = $stmtEstab->fetchAll(PDO::FETCH_COLUMN);
 
+        // ── Fallback: si el usuario no tiene sucursales asignadas, usar las del cliente ──
+        // Esto permite que un usuario único (sin sucursales) pueda iniciar sesión
+        // siempre que el cliente tenga al menos un establecimiento creado.
+        if (empty($establecimientos) && !empty($usuario['cliente_id'])) {
+            $stmtFallback = $pdo->prepare("SELECT establecimiento_id FROM establecimientos WHERE cliente_id = ?");
+            $stmtFallback->execute([$usuario['cliente_id']]);
+            $establecimientos = $stmtFallback->fetchAll(PDO::FETCH_COLUMN);
+        }
+
         if (count($establecimientos) === 1) {
-            $_SESSION['establecimiento_activo'] = $establecimientos[0];
+            // Único establecimiento → entra directo, sin pasar por selector.
+            $_SESSION['establecimiento_activo'] = (int)$establecimientos[0];
             header("Location: ./dashboard");
             exit;
         } elseif (count($establecimientos) > 1) {
@@ -114,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: ./seleccionar_establecimiento");
             exit;
         } else {
-            $error = "No tiene establecimientos asignados.";
+            $error = "No hay establecimientos disponibles para tu cliente. Contacta al administrador para crear al menos uno.";
         }
     } else {
         $error = "Credenciales inválidas.";

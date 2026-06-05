@@ -594,14 +594,25 @@ require_once '../../includes/templates/header.php';
 	});
 
 	document.getElementById('productos-container').addEventListener('input', function(e) {
-		if (e.target.name?.includes('[cantidad]')) {
-			const item = e.target.closest('.producto-item');
-			const cantidad = parseFloat(e.target.value) || 1;
-			const sel = item.querySelector('select[name$="[id]"]');
-			const precio = parseFloat(sel?.selectedOptions[0]?.getAttribute('data-precio')) || 0;
-			const stInput = item.querySelector('input[name$="[precio]"]');
-			if (stInput) stInput.value = (cantidad * precio).toFixed(2);
+		const item = e.target.closest('.producto-item');
+		if (!item) return;
+
+		const cantInp = item.querySelector('input[name$="[cantidad]"]');
+		const puInp   = item.querySelector('input.precio-unitario');
+		const stInp   = item.querySelector('input.subtotal-producto');
+		const cantidad = parseFloat(cantInp?.value) || 0;
+
+		// Cambió cantidad o precio unitario → recalcular subtotal de la línea
+		if (e.target === cantInp || e.target === puInp) {
+			const pu = parseFloat(puInp?.value) || 0;
+			if (stInp) stInp.value = (cantidad * pu).toFixed(2);
 		}
+		// El usuario editó el subtotal directamente → recalcular precio unitario
+		else if (e.target === stInp) {
+			const sub = parseFloat(stInp.value) || 0;
+			if (puInp && cantidad > 0) puInp.value = (sub / cantidad).toFixed(2);
+		}
+
 		calcularTotalYLetra();
 	});
 
