@@ -1,49 +1,20 @@
 # ==========================================================
 #  NARANJA - clientes/naranjaymedia/.htaccess
-#  URLs amigables SOLO para páginas públicas
-#  NO aplicar a /includes ni /acciones
+#  Funciona en local (XAMPP) y en producción (LiteSpeed/cPanel)
+#  SIN redirects externos para evitar loops en LiteSpeed
 # ==========================================================
 
 RewriteEngine On
 
-# -----------------------------
-# 1) NO REWRITE para /includes y /acciones
-#    (ni redirecciones, ni quitar .php, ni nada)
-# -----------------------------
+# Pasar directo sin modificar
 RewriteRule ^includes/ - [L]
 RewriteRule ^acciones/ - [L]
 
-# -----------------------------
-# 2) Quitar index.php (si alguien lo pide explícitamente)
-# -----------------------------
-RewriteCond %{THE_REQUEST} \s/+(.*/)?index\.php[\s?] [NC]
-RewriteRule ^(.*/)?index\.php$ /$1 [R=301,L]
-
-# -----------------------------
-# 3) Quitar .php SOLO para páginas públicas
-#    (excluye /includes y /acciones)
-# -----------------------------
-RewriteCond %{THE_REQUEST} \s/+(.+?)\.php[\s?] [NC]
-RewriteCond %{REQUEST_URI} !^/proyectos/NARANJA/sistemafacturacion/clientes/naranjaymedia/includes/ [NC]
-RewriteCond %{REQUEST_URI} !^/proyectos/NARANJA/sistemafacturacion/clientes/naranjaymedia/acciones/ [NC]
-RewriteRule ^(.+)\.php$ /proyectos/NARANJA/sistemafacturacion/clientes/naranjaymedia/$1 [R=301,L]
-
-# -----------------------------
-# 4) Resolver /ruta a /ruta.php (solo si el archivo existe)
-#    (excluye /includes y /acciones)
-# -----------------------------
-RewriteCond %{REQUEST_URI} !^/proyectos/NARANJA/sistemafacturacion/clientes/naranjaymedia/includes/ [NC]
-RewriteCond %{REQUEST_URI} !^/proyectos/NARANJA/sistemafacturacion/clientes/naranjaymedia/acciones/ [NC]
-
-# si NO es folder real
+# Rewrite interno: /pagina → /pagina.php
+# Solo si el archivo .php existe y no es directorio ni archivo real
 RewriteCond %{REQUEST_FILENAME} !-d
-# si NO es archivo real
 RewriteCond %{REQUEST_FILENAME} !-f
-# pero SI existe el .php equivalente dentro del mismo directorio
-RewriteCond %{DOCUMENT_ROOT}/proyectos/NARANJA/sistemafacturacion/clientes/naranjaymedia/$1.php -f
-RewriteRule ^([a-zA-Z0-9_-]+)$ $1.php [L]
+RewriteCond %{REQUEST_FILENAME}\.php -f
+RewriteRule ^(.+)$ $1.php [L]
 
-# -----------------------------
-# 5) Seguridad / defaults
-# -----------------------------
 Options -Indexes
