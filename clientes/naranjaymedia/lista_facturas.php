@@ -66,7 +66,9 @@ if ($fecha_hasta) {
 
 $stmtFacturas = $pdo->prepare("
     SELECT f.id, f.correlativo, f.fecha_emision, f.total,
-           f.estado, f.pagada, f.enviada_receptor, cf.nombre AS receptor
+           f.estado, f.pagada, f.enviada_receptor, f.estado_declarada,
+           (f.isv_15 + f.isv_18) AS isv_total,
+           cf.nombre AS receptor
     FROM facturas f
     INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
     WHERE f.cliente_id = ? AND f.establecimiento_id = ?
@@ -85,12 +87,17 @@ if ($caix) {
 $total_facturas    = count($facturas);
 $emitidas_count    = count(array_filter($facturas, fn($f) => $f['estado'] === 'emitida'));
 $anuladas_count    = count(array_filter($facturas, fn($f) => $f['estado'] === 'anulada'));
-$pagadas_count     = count(array_filter($facturas, fn($f) => $f['pagada'] == 1));
+$pagadas_count     = count(array_filter($facturas, fn($f) => $f['pagada'] == 1 && $f['estado'] === 'emitida'));
 $pendientes_facts  = array_filter($facturas, fn($f) => $f['estado'] === 'emitida' && $f['pagada'] != 1);
 $pendientes_count  = count($pendientes_facts);
 $pendientes_monto  = array_sum(array_map(fn($f) => (float)$f['total'], $pendientes_facts));
 $total_monto       = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
 $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
+
+// Facturas emitidas no declaradas (anuladas excluidas correctamente)
+$no_declaradas_facts = array_filter($facturas, fn($f) => $f['estado'] === 'emitida' && ($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no'));
+$no_declaradas_count = count($no_declaradas_facts);
+$no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no_declaradas_facts));
 ?>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -774,6 +781,68 @@ $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
 		color: #1e293b;
 	}
 
+	/* Badge declarada */
+	.dec-si {
+		background: #ecfdf5;
+		color: #059669;
+		border: 1px solid #a7f3d0;
+	}
+
+	.dec-no {
+		background: #fff7ed;
+		color: #c2410c;
+		border: 1px solid #fed7aa;
+	}
+
+	/* Alerta ISV no declarado */
+	.isv-alert-card {
+		background: #fff7ed;
+		border: 1.5px solid #fed7aa;
+		border-left: 4px solid #f97316;
+		border-radius: var(--radius);
+		padding: 1rem 1.25rem;
+		margin-bottom: 1.25rem;
+		display: flex;
+		align-items: flex-start;
+		gap: .85rem;
+	}
+
+	.isv-alert-icon {
+		font-size: 1.5rem;
+		flex-shrink: 0;
+		margin-top: 2px;
+	}
+
+	.isv-alert-title {
+		font-weight: 700;
+		color: #9a3412;
+		font-size: .95rem;
+		margin-bottom: .3rem;
+	}
+
+	.isv-alert-body {
+		font-size: .83rem;
+		color: #7c2d12;
+		line-height: 1.5;
+	}
+
+	.isv-fact-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: .4rem;
+		margin-top: .5rem;
+	}
+
+	.isv-chip {
+		background: #ffedd5;
+		border: 1px solid #fdba74;
+		color: #9a3412;
+		border-radius: 6px;
+		padding: .2rem .55rem;
+		font-size: .75rem;
+		font-weight: 600;
+	}
+
 	@media(max-width:768px) {
 		.fh-filter-grid {
 			grid-template-columns: 1fr 1fr;
@@ -865,6 +934,15 @@ $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
 				<div class="fh-stat-lbl">Monto emitido</div>
 			</div>
 		</div>
+		<?php if ($no_declaradas_count > 0): ?>
+		<div class="fh-stat" style="border-color:#fed7aa;background:#fff7ed;">
+			<div class="fh-stat-icon" style="background:#ffedd5;color:#c2410c;"><i class="bi bi-exclamation-triangle-fill"></i></div>
+			<div>
+				<div class="fh-stat-val" style="font-size:.95rem;color:#c2410c;">L <?= number_format($no_declaradas_isv, 2) ?></div>
+				<div class="fh-stat-lbl" style="color:#9a3412;"><?= $no_declaradas_count ?> sin declarar (ISV)</div>
+			</div>
+		</div>
+		<?php endif; ?>
 	</div>
 
 	<!-- Filter card -->
@@ -907,6 +985,28 @@ $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
 		</div>
 	<?php endif; ?>
 
+	<!-- Alerta facturas no declaradas -->
+	<?php if ($no_declaradas_count > 0): ?>
+	<div class="isv-alert-card">
+		<div class="isv-alert-icon">⚠️</div>
+		<div style="flex:1">
+			<div class="isv-alert-title">
+				<?= $no_declaradas_count ?> factura<?= $no_declaradas_count > 1 ? 's' : '' ?> emitida<?= $no_declaradas_count > 1 ? 's' : '' ?> sin declarar — ISV pendiente: L <?= number_format($no_declaradas_isv, 2) ?>
+			</div>
+			<div class="isv-alert-body">
+				Las siguientes facturas están emitidas pero aún no han sido declaradas ante SAR. El ISV debe declararse cuando se emite la factura, independientemente de si el cliente la ha pagado.
+			</div>
+			<div class="isv-fact-chips">
+				<?php foreach ($no_declaradas_facts as $nd): ?>
+					<span class="isv-chip" title="<?= htmlspecialchars($nd['receptor']) ?> — L <?= number_format($nd['isv_total'], 2) ?> ISV">
+						<?= htmlspecialchars($nd['correlativo']) ?>
+					</span>
+				<?php endforeach; ?>
+			</div>
+		</div>
+	</div>
+	<?php endif; ?>
+
 	<!-- Table card -->
 	<div class="fh-card">
 		<div class="fh-card-header">
@@ -945,6 +1045,7 @@ $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
 						</th>
 						<th data-col="6"><i class="bi bi-check2 me-1"></i>Pagada<i class="bi bi-arrow-up sort-icon"></i>
 						</th>
+						<th data-col="7"><i class="bi bi-journal-check me-1"></i>Declarada SAR<i class="bi bi-arrow-up sort-icon"></i></th>
 						<th>Acciones</th>
 						<th>PDF</th>
 					</tr>
@@ -979,6 +1080,17 @@ $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
 							</td>
 							<td><span
 									class="yn-badge <?= $f['pagada'] == 1 ? 'yn-yes' : 'yn-no' ?>"><?= $f['pagada'] == 1 ? '<i class="bi bi-check-lg"></i> Sí' : '<i class="bi bi-x-lg"></i> No' ?></span>
+							</td>
+							<td>
+								<?php if ($f['estado'] === 'anulada'): ?>
+									<span class="yn-badge" style="background:#f1f5f9;color:#94a3b8;border:1px solid #e2e8f0;">
+										<i class="bi bi-dash"></i> N/A
+									</span>
+								<?php elseif ($f['estado_declarada'] == 1 || $f['estado_declarada'] === 'si'): ?>
+									<span class="yn-badge dec-si"><i class="bi bi-patch-check-fill"></i> Declarada</span>
+								<?php else: ?>
+									<span class="yn-badge dec-no"><i class="bi bi-exclamation-circle-fill"></i> Pendiente</span>
+								<?php endif; ?>
 							</td>
 							<td>
 								<div class="fh-actions">
