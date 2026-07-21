@@ -94,8 +94,31 @@ $pendientes_monto  = array_sum(array_map(fn($f) => (float)$f['total'], $pendient
 $total_monto       = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
 $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
 
-// Facturas emitidas no declaradas (anuladas excluidas correctamente)
-$no_declaradas_facts = array_filter($facturas, fn($f) => $f['estado'] === 'emitida' && ($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no'));
+// Facturas emitidas no declaradas — semáforo por días restantes del mes
+$hoy              = new DateTime();
+$fin_de_mes       = new DateTime($hoy->format('Y-m-t'));
+$dias_restantes   = (int)$hoy->diff($fin_de_mes)->days; // 0 = hoy es el último día
+
+if (!$fecha_desde && !$fecha_hasta) {
+	// Sin filtro: solo mes actual; la alerta se muestra únicamente los últimos 3 días
+	$alerta_desde = $hoy->format('Y-m-01');
+	$alerta_hasta = $hoy->format('Y-m-t');
+	$no_declaradas_facts = array_filter($facturas, fn($f) =>
+		$f['estado'] === 'emitida' &&
+		($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no') &&
+		$f['fecha_emision'] >= $alerta_desde &&
+		$f['fecha_emision'] <= $alerta_hasta
+	);
+	$mostrar_alerta_isv = $dias_restantes <= 3;
+} else {
+	// Con filtro de fecha: siempre mostrar si hay sin declarar en ese rango
+	$no_declaradas_facts = array_filter($facturas, fn($f) =>
+		$f['estado'] === 'emitida' &&
+		($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no')
+	);
+	$mostrar_alerta_isv  = true;
+	$dias_restantes      = null; // no aplica semáforo cuando hay filtro explícito
+}
 $no_declaradas_count = count($no_declaradas_facts);
 $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no_declaradas_facts));
 ?>
@@ -794,18 +817,36 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 		border: 1px solid #fed7aa;
 	}
 
-	/* Alerta ISV no declarado */
+	/* Alerta ISV no declarado — semáforo */
 	.isv-alert-card {
-		background: #fff7ed;
-		border: 1.5px solid #fed7aa;
-		border-left: 4px solid #f97316;
 		border-radius: var(--radius);
 		padding: 1rem 1.25rem;
 		margin-bottom: 1.25rem;
 		display: flex;
 		align-items: flex-start;
 		gap: .85rem;
+		border-left-width: 4px;
+		border-left-style: solid;
 	}
+	.isv-alert-card.semaforo-green  { background:#f0fdf4; border-color:#86efac; border-left-color:#16a34a; }
+	.isv-alert-card.semaforo-yellow { background:#fefce8; border-color:#fde047; border-left-color:#ca8a04; }
+	.isv-alert-card.semaforo-orange { background:#fff7ed; border-color:#fed7aa; border-left-color:#f97316; }
+	.isv-alert-card.semaforo-red    { background:#fef2f2; border-color:#fca5a5; border-left-color:#dc2626; }
+
+	.isv-alert-card.semaforo-green  .isv-alert-title { color:#15803d; }
+	.isv-alert-card.semaforo-yellow .isv-alert-title { color:#854d0e; }
+	.isv-alert-card.semaforo-orange .isv-alert-title { color:#9a3412; }
+	.isv-alert-card.semaforo-red    .isv-alert-title { color:#991b1b; }
+
+	.isv-alert-card.semaforo-green  .isv-alert-body { color:#166534; }
+	.isv-alert-card.semaforo-yellow .isv-alert-body { color:#713f12; }
+	.isv-alert-card.semaforo-orange .isv-alert-body { color:#7c2d12; }
+	.isv-alert-card.semaforo-red    .isv-alert-body { color:#7f1d1d; }
+
+	.isv-alert-card.semaforo-green  .isv-chip { background:#dcfce7; border-color:#86efac; color:#15803d; }
+	.isv-alert-card.semaforo-yellow .isv-chip { background:#fef9c3; border-color:#fde047; color:#854d0e; }
+	.isv-alert-card.semaforo-orange .isv-chip { background:#ffedd5; border-color:#fdba74; color:#9a3412; }
+	.isv-alert-card.semaforo-red    .isv-chip { background:#fee2e2; border-color:#fca5a5; color:#991b1b; }
 
 	.isv-alert-icon {
 		font-size: 1.5rem;
@@ -815,14 +856,12 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 
 	.isv-alert-title {
 		font-weight: 700;
-		color: #9a3412;
 		font-size: .95rem;
 		margin-bottom: .3rem;
 	}
 
 	.isv-alert-body {
 		font-size: .83rem;
-		color: #7c2d12;
 		line-height: 1.5;
 	}
 
@@ -834,13 +873,12 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 	}
 
 	.isv-chip {
-		background: #ffedd5;
-		border: 1px solid #fdba74;
-		color: #9a3412;
 		border-radius: 6px;
 		padding: .2rem .55rem;
 		font-size: .75rem;
 		font-weight: 600;
+		border-width: 1px;
+		border-style: solid;
 	}
 
 	@media(max-width:768px) {
@@ -986,15 +1024,50 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 	<?php endif; ?>
 
 	<!-- Alerta facturas no declaradas -->
-	<?php if ($no_declaradas_count > 0): ?>
-	<div class="isv-alert-card">
-		<div class="isv-alert-icon">⚠️</div>
+	<?php if ($no_declaradas_count > 0 && $mostrar_alerta_isv): ?>
+	<?php
+		// Período descriptivo
+		if (!$fecha_desde && !$fecha_hasta) {
+			$periodoAlerta = 'mes actual (' . $hoy->format('m/Y') . ')';
+		} elseif ($fecha_desde && $fecha_hasta) {
+			$periodoAlerta = htmlspecialchars($fecha_desde) . ' al ' . htmlspecialchars($fecha_hasta);
+		} elseif ($fecha_desde) {
+			$periodoAlerta = 'desde ' . htmlspecialchars($fecha_desde);
+		} else {
+			$periodoAlerta = 'hasta ' . htmlspecialchars($fecha_hasta);
+		}
+
+		// Clase semáforo
+		if ($dias_restantes === null) {
+			$semaforoClass = 'semaforo-orange'; // filtro manual, color neutro
+			$semaforoIcon  = '⚠️';
+			$diasTexto     = '';
+		} elseif ($dias_restantes === 0) {
+			$semaforoClass = 'semaforo-red';
+			$semaforoIcon  = '🔴';
+			$diasTexto     = ' · Hoy vence el plazo de declaración';
+		} elseif ($dias_restantes === 1) {
+			$semaforoClass = 'semaforo-orange';
+			$semaforoIcon  = '🟠';
+			$diasTexto     = ' · Queda 1 día para declarar';
+		} elseif ($dias_restantes === 2) {
+			$semaforoClass = 'semaforo-yellow';
+			$semaforoIcon  = '🟡';
+			$diasTexto     = ' · Quedan 2 días para declarar';
+		} else {
+			$semaforoClass = 'semaforo-green';
+			$semaforoIcon  = '🟢';
+			$diasTexto     = ' · Quedan ' . $dias_restantes . ' días para declarar';
+		}
+	?>
+	<div class="isv-alert-card <?= $semaforoClass ?>">
+		<div class="isv-alert-icon"><?= $semaforoIcon ?></div>
 		<div style="flex:1">
 			<div class="isv-alert-title">
-				<?= $no_declaradas_count ?> factura<?= $no_declaradas_count > 1 ? 's' : '' ?> emitida<?= $no_declaradas_count > 1 ? 's' : '' ?> sin declarar — ISV pendiente: L <?= number_format($no_declaradas_isv, 2) ?>
+				<?= $no_declaradas_count ?> factura<?= $no_declaradas_count > 1 ? 's' : '' ?> emitida<?= $no_declaradas_count > 1 ? 's' : '' ?> sin declarar — ISV pendiente: L <?= number_format($no_declaradas_isv, 2) ?><?= $diasTexto ?>
 			</div>
 			<div class="isv-alert-body">
-				Las siguientes facturas están emitidas pero aún no han sido declaradas ante SAR. El ISV debe declararse cuando se emite la factura, independientemente de si el cliente la ha pagado.
+				Período: <?= $periodoAlerta ?>. Las siguientes facturas están emitidas pero aún no han sido declaradas ante SAR. El ISV debe declararse cuando se emite la factura, independientemente de si el cliente la ha pagado.
 			</div>
 			<div class="isv-fact-chips">
 				<?php foreach ($no_declaradas_facts as $nd): ?>
