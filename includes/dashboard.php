@@ -516,6 +516,152 @@ $stmtPromedioMensual = $pdo->prepare("
 $stmtPromedioMensual->execute([$cliente_id, $establecimiento_activo, $anio_promedio]);
 $promedio_mensual = $stmtPromedioMensual->fetchAll(PDO::FETCH_ASSOC);
 
+// ── Reportes periódicos (Trimestral / Semestral / Anual / Comparativo) ───────
+$anio_reporte = (int)($_GET['anio_reporte'] ?? $anio_promedio);
+
+// ── Tab "Por Fecha": patrón PRG (POST → Session → Redirect GET) ──────────────
+// Así la URL queda limpia y el tab se restaura correctamente sin reenvío de form.
+$tabs_validos = ['tab-trim','tab-sem','tab-anual','tab-fecha','tab-comp'];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['fecha_desde_rep'])) {
+    $fd = !empty($_POST['fecha_desde_rep']) ? $_POST['fecha_desde_rep'] : null;
+    $fh = !empty($_POST['fecha_hasta_rep']) ? $_POST['fecha_hasta_rep'] : null;
+    if ($fd && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fd)) $fd = null;
+    if ($fh && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fh)) $fh = null;
+    $_SESSION['rep_fecha_desde'] = $fd;
+    $_SESSION['rep_fecha_hasta'] = $fh;
+    // Redirigir a GET preservando otros params, forzando tab-fecha
+    $p = array_filter($_GET, fn($k) => !in_array($k, ['clear_fecha_rep']), ARRAY_FILTER_USE_KEY);
+    $p['active_tab_rep'] = 'tab-fecha';
+    header('Location: ?' . http_build_query($p));
+    exit;
+}
+
+// Limpiar datos de sesión si se solicita
+if (isset($_GET['clear_fecha_rep'])) {
+    unset($_SESSION['rep_fecha_desde'], $_SESSION['rep_fecha_hasta']);
+}
+
+// Leer fechas desde sesión (POST ya redirigió, aquí siempre es GET)
+$fecha_desde_rep = isset($_SESSION['rep_fecha_desde']) ? $_SESSION['rep_fecha_desde'] : null;
+$fecha_hasta_rep = isset($_SESSION['rep_fecha_hasta']) ? $_SESSION['rep_fecha_hasta'] : null;
+
+// Tab activo desde GET param
+$active_tab_rep = in_array($_GET['active_tab_rep'] ?? '', $tabs_validos)
+    ? $_GET['active_tab_rep']
+    : 'tab-trim';
+
+// Si hay rango → úsalo; si no → año completo seleccionado
+$usar_rango_rep = ($fecha_desde_rep !== null || $fecha_hasta_rep !== null);
+$rep_desde = $fecha_desde_rep ?? "{$anio_reporte}-01-01";
+$rep_hasta = $fecha_hasta_rep ?? "{$anio_reporte}-12-31";
+
+$stmtTrimestral = $pdo->prepare("
+    SELECT
+        QUARTER(fecha_emision) AS trimestre,
+        COUNT(*) AS facturas,
+        IFNULL(SUM(subtotal), 0) AS subtotal,
+        IFNULL(SUM(isv_15 + isv_18), 0) AS isv,
+        IFNULL(SUM(total), 0) AS total
+    FROM facturas
+    WHERE cliente_id = ?
+      AND establecimiento_id = ?
+      AND estado = 'emitida'
+      AND DATE(fecha_emision) BETWEEN ? AND ?
+    GROUP BY trimestre
+    ORDER BY trimestre
+");
+$stmtTrimestral->execute([$cliente_id, $establecimiento_activo, $rep_desde, $rep_hasta]);
+$datos_trimestrales = $stmtTrimestral->fetchAll(PDO::FETCH_ASSOC);
+
+$stmtSemestral = $pdo->prepare("
+    SELECT
+        IF(MONTH(fecha_emision) <= 6, 1, 2) AS semestre,
+        COUNT(*) AS facturas,
+        IFNULL(SUM(subtotal), 0) AS subtotal,
+        IFNULL(SUM(isv_15 + isv_18), 0) AS isv,
+        IFNULL(SUM(total), 0) AS total
+    FROM facturas
+    WHERE cliente_id = ?
+      AND establecimiento_id = ?
+      AND estado = 'emitida'
+      AND DATE(fecha_emision) BETWEEN ? AND ?
+    GROUP BY semestre
+    ORDER BY semestre
+");
+$stmtSemestral->execute([$cliente_id, $establecimiento_activo, $rep_desde, $rep_hasta]);
+$datos_semestrales = $stmtSemestral->fetchAll(PDO::FETCH_ASSOC);
+
+$stmtAnualReporte = $pdo->prepare("
+    SELECT
+        YEAR(fecha_emision) AS anio,
+        COUNT(*) AS facturas,
+        IFNULL(SUM(subtotal), 0) AS subtotal,
+        IFNULL(SUM(isv_15 + isv_18), 0) AS isv,
+        IFNULL(SUM(total), 0) AS total
+    FROM facturas
+    WHERE cliente_id = ?
+      AND establecimiento_id = ?
+      AND estado = 'emitida'
+    GROUP BY anio
+    ORDER BY anio ASC
+");
+$stmtAnualReporte->execute([$cliente_id, $establecimiento_activo]);
+$datos_anuales_reporte = $stmtAnualReporte->fetchAll(PDO::FETCH_ASSOC);
+
+// ── Comparativo: últimos 4 años con datos ────────────────────────────────────
+$stmtAniosDisp = $pdo->prepare("
+    SELECT DISTINCT YEAR(fecha_emision) AS anio
+    FROM facturas
+    WHERE cliente_id = ? AND establecimiento_id = ? AND estado = 'emitida'
+    ORDER BY anio DESC LIMIT 4
+");
+$stmtAniosDisp->execute([$cliente_id, $establecimiento_activo]);
+$anios_disponibles = array_reverse($stmtAniosDisp->fetchAll(PDO::FETCH_COLUMN));
+
+$datos_comp_trim = [];
+$datos_comp_sem  = [];
+
+if (!empty($anios_disponibles)) {
+    $ph_anios = implode(',', array_fill(0, count($anios_disponibles), '?'));
+
+    $stmtCompTrim = $pdo->prepare("
+        SELECT
+            YEAR(fecha_emision)    AS anio,
+            QUARTER(fecha_emision) AS trimestre,
+            COUNT(*)               AS facturas,
+            IFNULL(SUM(subtotal), 0)          AS subtotal,
+            IFNULL(SUM(isv_15 + isv_18), 0)   AS isv,
+            IFNULL(SUM(total), 0)              AS total
+        FROM facturas
+        WHERE cliente_id = ? AND establecimiento_id = ?
+          AND estado = 'emitida'
+          AND YEAR(fecha_emision) IN ($ph_anios)
+        GROUP BY anio, trimestre
+        ORDER BY anio, trimestre
+    ");
+    $stmtCompTrim->execute(array_merge([$cliente_id, $establecimiento_activo], $anios_disponibles));
+    $datos_comp_trim = $stmtCompTrim->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmtCompSem = $pdo->prepare("
+        SELECT
+            YEAR(fecha_emision)                  AS anio,
+            IF(MONTH(fecha_emision) <= 6, 1, 2)  AS semestre,
+            COUNT(*)                             AS facturas,
+            IFNULL(SUM(subtotal), 0)             AS subtotal,
+            IFNULL(SUM(isv_15 + isv_18), 0)      AS isv,
+            IFNULL(SUM(total), 0)                AS total
+        FROM facturas
+        WHERE cliente_id = ? AND establecimiento_id = ?
+          AND estado = 'emitida'
+          AND YEAR(fecha_emision) IN ($ph_anios)
+        GROUP BY anio, semestre
+        ORDER BY anio, semestre
+    ");
+    $stmtCompSem->execute(array_merge([$cliente_id, $establecimiento_activo], $anios_disponibles));
+    $datos_comp_sem = $stmtCompSem->fetchAll(PDO::FETCH_ASSOC);
+}
+
 // ── Contratos por vencer (alertas dashboard) ────────────────────────────────
 $stmtContratosAlerta = $pdo->prepare("
     SELECT x.*,
