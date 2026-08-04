@@ -25,6 +25,7 @@ $stmt = $pdo->prepare("SELECT rol, cliente_id FROM usuarios WHERE id=?");
 $stmt->execute([$usuario_id]);
 $user      = $stmt->fetch();
 $es_admin  = in_array($user['rol'], ['admin', 'superadmin']);
+$es_superadmin = $user['rol'] === 'superadmin';
 $cliente_id = $user['cliente_id'];
 
 $stmt = $pdo->prepare("SELECT * FROM facturas WHERE id=?");
@@ -32,9 +33,20 @@ $stmt->execute([$factura_id]);
 $factura = $stmt->fetch();
 if (!$factura || (!$es_admin && $factura['cliente_id'] != $cliente_id)) die("Acceso no autorizado");
 
+$facturaDeclarada = ($factura['estado_declarada'] == 1 || $factura['estado_declarada'] === 'si');
+// admin solo si NO está declarada; superadmin siempre puede (con advertencia)
+$puedeEditarReceptor = $es_superadmin || ($es_admin && !$facturaDeclarada);
+
 $stmtClientes = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cliente_id=?");
 $stmtClientes->execute([$cliente_id]);
 $clientes = $stmtClientes->fetchAll();
+
+$contratoVinculado = null;
+if (!empty($factura['contrato_id'])) {
+	$stmtContrato = $pdo->prepare("SELECT c.id, cf.nombre AS receptor_nombre FROM contratos c LEFT JOIN clientes_factura cf ON cf.id = c.receptor_id WHERE c.id = ?");
+	$stmtContrato->execute([$factura['contrato_id']]);
+	$contratoVinculado = $stmtContrato->fetch(PDO::FETCH_ASSOC);
+}
 
 $stmtProductos = $pdo->prepare("SELECT p.id, p.nombre, p.precio AS precio_base, p.tipo_isv,
     (SELECT precio_especial FROM precios_especiales WHERE producto_id=p.id AND cliente_id=? LIMIT 1) AS precio_especial
@@ -289,14 +301,25 @@ require_once '../../includes/templates/header.php';
 				<div class="fe-card">
 					<div class="fe-card-header"><i class="bi bi-person-fill text-primary"></i>Cliente (Receptor)</div>
 					<div class="fe-card-body">
-						<select name="receptor_id" class="form-select" disabled>
+						<select name="receptor_id" id="receptorSelect" class="form-select"
+							data-original="<?= $factura['receptor_id'] ?>" <?= $puedeEditarReceptor ? '' : 'disabled' ?>>
 							<?php foreach ($clientes as $cl): ?>
 								<option value="<?= $cl['id'] ?>" <?= $cl['id'] == $factura['receptor_id'] ? 'selected' : '' ?>>
 									<?= htmlspecialchars($cl['nombre']) ?></option>
 							<?php endforeach; ?>
 						</select>
-						<small class="text-muted"><i class="bi bi-lock me-1"></i>El receptor no se puede cambiar al
-							editar una factura.</small>
+						<?php if ($puedeEditarReceptor): ?>
+							<small class="text-muted"><i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>Puedes
+								cambiar el receptor. Se te pedirá confirmación porque afecta datos legales de la
+								factura.</small>
+						<?php elseif ($facturaDeclarada && $es_admin): ?>
+							<small class="text-muted"><i class="bi bi-lock-fill text-danger me-1"></i>Esta factura ya fue
+								<strong>declarada</strong> ante SAR: el receptor ya no se puede cambiar (solo un superadmin
+								puede hacerlo).</small>
+						<?php else: ?>
+							<small class="text-muted"><i class="bi bi-lock me-1"></i>El receptor no se puede cambiar al
+								editar una factura.</small>
+						<?php endif; ?>
 					</div>
 				</div>
 
@@ -777,6 +800,54 @@ require_once '../../includes/templates/header.php';
 				});
 			}).catch(err => console.error('Error cargando productos por receptor:', err));
 	});
+
+	/* ── Confirmación al cambiar el receptor (solo superadmin) ────────────────── */
+	(() => {
+		const $receptor = document.getElementById('receptorSelect');
+		if (!$receptor || $receptor.disabled) return;
+
+		const contratoInfo = <?= json_encode($contratoVinculado ? [
+									'id' => $contratoVinculado['id'],
+									'receptor_nombre' => $contratoVinculado['receptor_nombre']
+								] : null) ?>;
+
+		let valorConfirmado = $receptor.dataset.original;
+
+		$receptor.addEventListener('change', function() {
+			const nuevoValor = this.value;
+			const nuevoNombre = this.options[this.selectedIndex].text;
+			if (nuevoValor === valorConfirmado) return;
+
+			let advertencias = `
+				<ul style="text-align:left;margin:.5rem 0 0;padding-left:1.2rem;">
+					<li>Se actualizará el nombre, RTN, dirección, teléfono y correo que aparecen en el PDF de la factura (se muestran en vivo desde el receptor).</li>
+					<li>Los productos de la factura son exclusivos de algunos receptores; si el nuevo receptor no tiene esos productos asignados, podrían dejar de coincidir con su catálogo.</li>
+				</ul>`;
+			<?php if ($facturaDeclarada): ?>
+				advertencias += `<p style="text-align:left;margin-top:.6rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.6rem .8rem;color:#991b1b;"><strong>Esta factura ya fue declarada ante SAR.</strong> Estás forzando el cambio de receptor como superadmin sobre un documento ya declarado — esto puede generar una inconsistencia legal con lo reportado.</p>`;
+			<?php endif; ?>
+			if (contratoInfo) {
+				advertencias += `<p style="text-align:left;margin-top:.6rem;"><strong>Esta factura está vinculada al contrato #${contratoInfo.id}</strong>, asociado a "${contratoInfo.receptor_nombre ?? 'receptor original'}". Cambiar el receptor aquí <u>no actualiza el contrato</u> y puede descuadrar sus reportes/totales.</p>`;
+			}
+
+			Swal.fire({
+				title: `¿Cambiar receptor a "${nuevoNombre}"?`,
+				html: `<div style="text-align:left;">Esto cambiará:${advertencias}</div>`,
+				icon: 'warning',
+				showCancelButton: true,
+				confirmButtonText: 'Sí, cambiar receptor',
+				cancelButtonText: 'Cancelar',
+				confirmButtonColor: '#dc2626',
+				width: 560
+			}).then(result => {
+				if (result.isConfirmed) {
+					valorConfirmado = nuevoValor;
+				} else {
+					this.value = valorConfirmado;
+				}
+			});
+		});
+	})();
 
 	/* ── Número a letras ─────────────────────────────────────────────────────── */
 	function numeroALetras(num) {

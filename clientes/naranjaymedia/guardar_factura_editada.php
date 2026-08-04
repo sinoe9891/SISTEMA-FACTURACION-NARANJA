@@ -87,6 +87,26 @@ if (!$es_admin) {
 	}
 }
 
+// Cambiar el receptor: admin y superadmin, pero si la factura ya fue declarada ante SAR,
+// solo el superadmin puede forzar el cambio.
+$es_superadmin_receptor = $usuario['rol'] === 'superadmin';
+$facturaYaDeclarada = ($factura['estado_declarada'] == 1 || $factura['estado_declarada'] === 'si');
+$puedeEditarReceptor = $es_superadmin_receptor || (in_array($usuario['rol'], ['admin', 'superadmin']) && !$facturaYaDeclarada);
+$cambiar_receptor = $puedeEditarReceptor && $receptor_id && (int)$receptor_id !== (int)$factura['receptor_id'];
+
+if (!$puedeEditarReceptor && $receptor_id && (int)$receptor_id !== (int)$factura['receptor_id']) {
+	die("Esta factura ya fue declarada ante SAR: solo un superadmin puede cambiar el receptor.");
+}
+
+if ($cambiar_receptor) {
+	$stmtRecep = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE id = ? AND cliente_id = ?");
+	$stmtRecep->execute([$receptor_id, $factura['cliente_id']]);
+	$nuevoReceptor = $stmtRecep->fetch(PDO::FETCH_ASSOC);
+	if (!$nuevoReceptor) {
+		die("Receptor inválido.");
+	}
+}
+
 try {
 	$pdo->beginTransaction();
 
@@ -156,29 +176,35 @@ try {
 	$monto_letras = numeroALetras($total);
 
 	// Actualizar factura
+	$setReceptor = $cambiar_receptor ? "receptor_id = ?,\n        " : "";
 	$stmt = $pdo->prepare("
     UPDATE facturas
-    SET fecha_emision        = ?, 
-        condicion_pago       = ?, 
-        exonerado            = ?, 
-        orden_compra_exenta  = ?, 
-        constancia_exoneracion = ?, 
-        registro_sag         = ?, 
-        subtotal             = ?, 
-        isv_15               = ?, 
-        isv_18               = ?, 
-        total                = ?, 
-        monto_letras         = ?, 
-        gravado_total        = ?, 
-        importe_gravado_15   = ?, 
+    SET $setReceptor fecha_emision        = ?,
+        condicion_pago       = ?,
+        exonerado            = ?,
+        orden_compra_exenta  = ?,
+        constancia_exoneracion = ?,
+        registro_sag         = ?,
+        subtotal             = ?,
+        isv_15               = ?,
+        isv_18               = ?,
+        total                = ?,
+        monto_letras         = ?,
+        gravado_total        = ?,
+        importe_gravado_15   = ?,
         importe_gravado_18   = ?,
-        estado               = ?,       
-        estado_declarada     = ?,        
-        pagada               = ?,        
-        enviada_receptor     = ?       
+        estado               = ?,
+        estado_declarada     = ?,
+        pagada               = ?,
+        enviada_receptor     = ?
     WHERE id = ?
 ");
-	$stmt->execute([
+	$valoresUpdate = [];
+	if ($cambiar_receptor) {
+		$valoresUpdate[] = (int) $receptor_id;
+	}
+	array_push(
+		$valoresUpdate,
 		$fecha_emision,
 		$condicion_pago,
 		$exonerado,
@@ -198,7 +224,15 @@ try {
 		$pagada,
 		$enviada_receptor,
 		$factura_id
-	]);
+	);
+	$stmt->execute($valoresUpdate);
+
+	if ($cambiar_receptor) {
+		$motivoReceptor = 'Receptor cambiado de #' . $factura['receptor_id'] . ' a #' . $nuevoReceptor['id'] . ' (' . $nuevoReceptor['nombre'] . '). Motivo: ' . $motivo;
+		$pdo->prepare("INSERT INTO bitacora_facturas (factura_id, usuario_id, autorizador_id, accion, motivo, fecha)
+			VALUES (?, ?, ?, ?, ?, NOW())")
+			->execute([$factura_id, $usuario_id, $autorizador['id'], 'receptor_cambiado', $motivoReceptor]);
+	}
 
 
 	/* ---------- detectar cambios de estado ---------- */

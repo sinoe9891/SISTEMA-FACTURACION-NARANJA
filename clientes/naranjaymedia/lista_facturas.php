@@ -103,26 +103,60 @@ if (!$fecha_desde && !$fecha_hasta) {
 	// Sin filtro: solo mes actual; la alerta se muestra únicamente los últimos 3 días
 	$alerta_desde = $hoy->format('Y-m-01');
 	$alerta_hasta = $hoy->format('Y-m-t');
-	$no_declaradas_facts = array_filter($facturas, fn($f) =>
+	$no_declaradas_facts = array_filter(
+		$facturas,
+		fn($f) =>
 		$f['estado'] === 'emitida' &&
-		($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no') &&
-		$f['fecha_emision'] >= $alerta_desde &&
-		$f['fecha_emision'] <= $alerta_hasta
+			($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no') &&
+			$f['fecha_emision'] >= $alerta_desde &&
+			$f['fecha_emision'] <= $alerta_hasta
 	);
 	$mostrar_alerta_isv = $dias_restantes <= 3;
 } else {
 	// Con filtro de fecha: siempre mostrar si hay sin declarar en ese rango
-	$no_declaradas_facts = array_filter($facturas, fn($f) =>
+	$no_declaradas_facts = array_filter(
+		$facturas,
+		fn($f) =>
 		$f['estado'] === 'emitida' &&
-		($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no')
+			($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no')
 	);
 	$mostrar_alerta_isv  = true;
 	$dias_restantes      = null; // no aplica semáforo cuando hay filtro explícito
 }
 $no_declaradas_count = count($no_declaradas_facts);
 $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no_declaradas_facts));
+
+// Resumen "Facturas no declaradas" — mismas reglas que el dashboard (independiente de los filtros de la tabla):
+// "atrasadas" = emitidas antes del mes actual y aún sin declarar; "mes actual" = emitidas este mes y sin declarar (informativo).
+$primer_dia_mes_actual = date('Y-m-01');
+$ultimo_dia_mes_actual = date('Y-m-t');
+
+$stmtNoDeclAtrasadas = $pdo->prepare("
+	SELECT COUNT(*) AS cantidad, IFNULL(SUM(isv_15 + isv_18), 0) AS isv_pendiente
+	FROM facturas
+	WHERE cliente_id = ? AND establecimiento_id = ?
+	  AND estado = 'emitida' AND estado_declarada = 'no'
+	  AND fecha_emision < ?
+");
+$stmtNoDeclAtrasadas->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual]);
+$noDeclAtrasadas = $stmtNoDeclAtrasadas->fetch(PDO::FETCH_ASSOC);
+$cant_no_decl_atrasadas = (int)$noDeclAtrasadas['cantidad'];
+$isv_no_decl_atrasadas  = (float)$noDeclAtrasadas['isv_pendiente'];
+
+$stmtNoDeclMesActual = $pdo->prepare("
+	SELECT COUNT(*) AS cantidad, IFNULL(SUM(isv_15 + isv_18), 0) AS isv_mes_actual
+	FROM facturas
+	WHERE cliente_id = ? AND establecimiento_id = ?
+	  AND estado = 'emitida' AND estado_declarada = 'no'
+	  AND fecha_emision >= ? AND fecha_emision <= ?
+");
+$stmtNoDeclMesActual->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual, $ultimo_dia_mes_actual]);
+$noDeclMesActual = $stmtNoDeclMesActual->fetch(PDO::FETCH_ASSOC);
+$cant_no_decl_mes_actual = (int)$noDeclMesActual['cantidad'];
+$isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 ?>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
 <style>
@@ -639,6 +673,35 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 		flex-wrap: wrap;
 	}
 
+	.fh-select-col {
+		width: 42px;
+		text-align: center;
+	}
+
+	.fh-row-check {
+		width: 16px;
+		height: 16px;
+		cursor: pointer;
+		accent-color: #1d4ed8;
+	}
+
+	.fh-bulk-actions {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: .75rem;
+		padding: .85rem 1rem;
+		border-top: 1px solid var(--border);
+		background: #f8fafc;
+		flex-wrap: wrap;
+	}
+
+	.fh-bulk-text {
+		font-size: .82rem;
+		font-weight: 600;
+		color: var(--text-main);
+	}
+
 	.btn-fa {
 		display: inline-flex;
 		align-items: center;
@@ -828,25 +891,86 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 		border-left-width: 4px;
 		border-left-style: solid;
 	}
-	.isv-alert-card.semaforo-green  { background:#f0fdf4; border-color:#86efac; border-left-color:#16a34a; }
-	.isv-alert-card.semaforo-yellow { background:#fefce8; border-color:#fde047; border-left-color:#ca8a04; }
-	.isv-alert-card.semaforo-orange { background:#fff7ed; border-color:#fed7aa; border-left-color:#f97316; }
-	.isv-alert-card.semaforo-red    { background:#fef2f2; border-color:#fca5a5; border-left-color:#dc2626; }
 
-	.isv-alert-card.semaforo-green  .isv-alert-title { color:#15803d; }
-	.isv-alert-card.semaforo-yellow .isv-alert-title { color:#854d0e; }
-	.isv-alert-card.semaforo-orange .isv-alert-title { color:#9a3412; }
-	.isv-alert-card.semaforo-red    .isv-alert-title { color:#991b1b; }
+	.isv-alert-card.semaforo-green {
+		background: #f0fdf4;
+		border-color: #86efac;
+		border-left-color: #16a34a;
+	}
 
-	.isv-alert-card.semaforo-green  .isv-alert-body { color:#166534; }
-	.isv-alert-card.semaforo-yellow .isv-alert-body { color:#713f12; }
-	.isv-alert-card.semaforo-orange .isv-alert-body { color:#7c2d12; }
-	.isv-alert-card.semaforo-red    .isv-alert-body { color:#7f1d1d; }
+	.isv-alert-card.semaforo-yellow {
+		background: #fefce8;
+		border-color: #fde047;
+		border-left-color: #ca8a04;
+	}
 
-	.isv-alert-card.semaforo-green  .isv-chip { background:#dcfce7; border-color:#86efac; color:#15803d; }
-	.isv-alert-card.semaforo-yellow .isv-chip { background:#fef9c3; border-color:#fde047; color:#854d0e; }
-	.isv-alert-card.semaforo-orange .isv-chip { background:#ffedd5; border-color:#fdba74; color:#9a3412; }
-	.isv-alert-card.semaforo-red    .isv-chip { background:#fee2e2; border-color:#fca5a5; color:#991b1b; }
+	.isv-alert-card.semaforo-orange {
+		background: #fff7ed;
+		border-color: #fed7aa;
+		border-left-color: #f97316;
+	}
+
+	.isv-alert-card.semaforo-red {
+		background: #fef2f2;
+		border-color: #fca5a5;
+		border-left-color: #dc2626;
+	}
+
+	.isv-alert-card.semaforo-green .isv-alert-title {
+		color: #15803d;
+	}
+
+	.isv-alert-card.semaforo-yellow .isv-alert-title {
+		color: #854d0e;
+	}
+
+	.isv-alert-card.semaforo-orange .isv-alert-title {
+		color: #9a3412;
+	}
+
+	.isv-alert-card.semaforo-red .isv-alert-title {
+		color: #991b1b;
+	}
+
+	.isv-alert-card.semaforo-green .isv-alert-body {
+		color: #166534;
+	}
+
+	.isv-alert-card.semaforo-yellow .isv-alert-body {
+		color: #713f12;
+	}
+
+	.isv-alert-card.semaforo-orange .isv-alert-body {
+		color: #7c2d12;
+	}
+
+	.isv-alert-card.semaforo-red .isv-alert-body {
+		color: #7f1d1d;
+	}
+
+	.isv-alert-card.semaforo-green .isv-chip {
+		background: #dcfce7;
+		border-color: #86efac;
+		color: #15803d;
+	}
+
+	.isv-alert-card.semaforo-yellow .isv-chip {
+		background: #fef9c3;
+		border-color: #fde047;
+		color: #854d0e;
+	}
+
+	.isv-alert-card.semaforo-orange .isv-chip {
+		background: #ffedd5;
+		border-color: #fdba74;
+		color: #9a3412;
+	}
+
+	.isv-alert-card.semaforo-red .isv-chip {
+		background: #fee2e2;
+		border-color: #fca5a5;
+		color: #991b1b;
+	}
 
 	.isv-alert-icon {
 		font-size: 1.5rem;
@@ -961,7 +1085,8 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 			<div class="fh-stat-icon red"><i class="bi bi-hourglass-split"></i></div>
 			<div>
 				<div class="fh-stat-val"><?= $pendientes_count ?></div>
-				<div class="fh-stat-lbl">Pendientes de pago<?php if ($pendientes_monto > 0): ?> · L <?= number_format($pendientes_monto, 2) ?><?php endif; ?></div>
+				<div class="fh-stat-lbl">Pendientes de pago<?php if ($pendientes_monto > 0): ?> · L
+					<?= number_format($pendientes_monto, 2) ?><?php endif; ?></div>
 			</div>
 		</div>
 		<!-- ← FIX: número_format con 2 decimales ↓ -->
@@ -972,15 +1097,35 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 				<div class="fh-stat-lbl">Monto emitido</div>
 			</div>
 		</div>
-		<?php if ($no_declaradas_count > 0): ?>
-		<div class="fh-stat" style="border-color:#fed7aa;background:#fff7ed;">
-			<div class="fh-stat-icon" style="background:#ffedd5;color:#c2410c;"><i class="bi bi-exclamation-triangle-fill"></i></div>
-			<div>
-				<div class="fh-stat-val" style="font-size:.95rem;color:#c2410c;">L <?= number_format($no_declaradas_isv, 2) ?></div>
-				<div class="fh-stat-lbl" style="color:#9a3412;"><?= $no_declaradas_count ?> sin declarar (ISV)</div>
-			</div>
+	</div>
+
+	<!-- Facturas no declaradas -->
+	<?php
+	$hayAtrasadas = $cant_no_decl_atrasadas > 0;
+	$colorNoDecl = $hayAtrasadas ? '#c2410c' : '#15803d';
+	$borderNoDecl = $hayAtrasadas ? '#fed7aa' : 'var(--border)';
+	$bgNoDecl = $hayAtrasadas ? '#fff7ed' : '#fff';
+	?>
+	<div class="fh-card" style="border-color:<?= $borderNoDecl ?>;background:<?= $bgNoDecl ?>;margin-bottom:1.25rem;">
+		<div class="fh-card-header">
+			<span class="fh-card-title" style="color:<?= $colorNoDecl ?>;"><i class="bi bi-exclamation-triangle-fill"></i>
+				Facturas no declaradas</span>
 		</div>
-		<?php endif; ?>
+		<div style="padding:.25rem 1.25rem 1.1rem;color:<?= $colorNoDecl ?>;">
+			<?php if ($hayAtrasadas): ?>
+				<div class="mb-1"><strong><?= $cant_no_decl_atrasadas ?></strong> factura<?= $cant_no_decl_atrasadas > 1 ? 's' : '' ?> atrasada<?= $cant_no_decl_atrasadas > 1 ? 's' : '' ?></div>
+				<div class="mb-1">ISV pendiente: <strong>L <?= number_format($isv_no_decl_atrasadas, 2) ?></strong></div>
+			<?php else: ?>
+				<div><i class="bi bi-check-circle-fill"></i> No hay meses pendientes de declaración.</div>
+			<?php endif; ?>
+			<?php if ($cant_no_decl_mes_actual > 0): ?>
+				<hr style="opacity:.25;margin:.6rem 0;">
+				<div style="font-size:.9rem;"><strong>Mes actual:</strong> <?= $cant_no_decl_mes_actual ?> factura<?= $cant_no_decl_mes_actual > 1 ? 's' : '' ?> · ISV est. L
+					<?= number_format($isv_no_decl_mes_actual, 2) ?></div>
+				<div style="font-size:.82rem;color:#78716c;margin-top:.3rem;"><i class="bi bi-lightbulb"></i> Recuerda declarar
+					antes del 30.</div>
+			<?php endif; ?>
+		</div>
 	</div>
 
 	<!-- Filter card -->
@@ -1025,7 +1170,7 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 
 	<!-- Alerta facturas no declaradas -->
 	<?php if ($no_declaradas_count > 0 && $mostrar_alerta_isv): ?>
-	<?php
+		<?php
 		// Período descriptivo
 		if (!$fecha_desde && !$fecha_hasta) {
 			$periodoAlerta = 'mes actual (' . $hoy->format('m/Y') . ')';
@@ -1059,25 +1204,30 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 			$semaforoIcon  = '🟢';
 			$diasTexto     = ' · Quedan ' . $dias_restantes . ' días para declarar';
 		}
-	?>
-	<div class="isv-alert-card <?= $semaforoClass ?>">
-		<div class="isv-alert-icon"><?= $semaforoIcon ?></div>
-		<div style="flex:1">
-			<div class="isv-alert-title">
-				<?= $no_declaradas_count ?> factura<?= $no_declaradas_count > 1 ? 's' : '' ?> emitida<?= $no_declaradas_count > 1 ? 's' : '' ?> sin declarar — ISV pendiente: L <?= number_format($no_declaradas_isv, 2) ?><?= $diasTexto ?>
-			</div>
-			<div class="isv-alert-body">
-				Período: <?= $periodoAlerta ?>. Las siguientes facturas están emitidas pero aún no han sido declaradas ante SAR. El ISV debe declararse cuando se emite la factura, independientemente de si el cliente la ha pagado.
-			</div>
-			<div class="isv-fact-chips">
-				<?php foreach ($no_declaradas_facts as $nd): ?>
-					<span class="isv-chip" title="<?= htmlspecialchars($nd['receptor']) ?> — L <?= number_format($nd['isv_total'], 2) ?> ISV">
-						<?= htmlspecialchars($nd['correlativo']) ?>
-					</span>
-				<?php endforeach; ?>
+		?>
+		<div class="isv-alert-card <?= $semaforoClass ?>">
+			<div class="isv-alert-icon"><?= $semaforoIcon ?></div>
+			<div style="flex:1">
+				<div class="isv-alert-title">
+					<?= $no_declaradas_count ?> factura<?= $no_declaradas_count > 1 ? 's' : '' ?>
+					emitida<?= $no_declaradas_count > 1 ? 's' : '' ?> sin declarar — ISV pendiente: L
+					<?= number_format($no_declaradas_isv, 2) ?><?= $diasTexto ?>
+				</div>
+				<div class="isv-alert-body">
+					Período: <?= $periodoAlerta ?>. Las siguientes facturas están emitidas pero aún no han sido declaradas
+					ante SAR. El ISV debe declararse cuando se emite la factura, independientemente de si el cliente la ha
+					pagado.
+				</div>
+				<div class="isv-fact-chips">
+					<?php foreach ($no_declaradas_facts as $nd): ?>
+						<span class="isv-chip"
+							title="<?= htmlspecialchars($nd['receptor']) ?> — L <?= number_format($nd['isv_total'], 2) ?> ISV">
+							<?= htmlspecialchars($nd['correlativo']) ?>
+						</span>
+					<?php endforeach; ?>
+				</div>
 			</div>
 		</div>
-	</div>
 	<?php endif; ?>
 
 	<!-- Table card -->
@@ -1101,9 +1251,21 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 		</div>
 
 		<div class="fh-table-wrap">
+			<div class="fh-bulk-actions" id="fhBulkActions" style="display:none;">
+				<span class="fh-bulk-text" id="fhBulkText">No hay facturas seleccionadas</span>
+				<div class="fh-actions">
+					<button type="button" id="fhBulkPdfBtn" class="btn-fa btn-fa-view"><i
+							class="bi bi-file-earmark-pdf"></i> Descargar PDFs</button>
+					<button type="button" id="fhBulkAnularBtn" class="btn-fa btn-fa-warn"><i
+							class="bi bi-slash-circle"></i> Anular seleccionadas</button>
+					<button type="button" id="fhBulkEditBtn" class="btn-fa btn-fa-edit"><i
+							class="bi bi-pencil-fill"></i> Editar estado</button>
+				</div>
+			</div>
 			<table class="fh-table" id="fhTable">
 				<thead>
 					<tr>
+						<th class="fh-select-col"><input type="checkbox" id="fhSelectAll" class="fh-row-check"></th>
 						<th data-col="0"><i class="bi bi-hash me-1"></i>Correlativo<i
 								class="bi bi-arrow-up sort-icon"></i></th>
 						<th data-col="1"><i class="bi bi-calendar3 me-1"></i>Fecha<i
@@ -1118,7 +1280,8 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 						</th>
 						<th data-col="6"><i class="bi bi-check2 me-1"></i>Pagada<i class="bi bi-arrow-up sort-icon"></i>
 						</th>
-						<th data-col="7"><i class="bi bi-journal-check me-1"></i>Declarada SAR<i class="bi bi-arrow-up sort-icon"></i></th>
+						<th data-col="7"><i class="bi bi-journal-check me-1"></i>Declarada SAR<i
+								class="bi bi-arrow-up sort-icon"></i></th>
 						<th>Acciones</th>
 						<th>PDF</th>
 					</tr>
@@ -1136,6 +1299,8 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 					?>
 						<tr
 							data-search="<?= strtolower(htmlspecialchars($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision'])))) ?>">
+							<td class="fh-select-col"><input type="checkbox" class="fh-row-check fh-row-select"
+									data-factura-id="<?= $f['id'] ?>"></td>
 							<td><span class="corr-mono" data-col="corr"><?= htmlspecialchars($f['correlativo']) ?></span>
 							</td>
 							<td data-col="fecha"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
@@ -1171,8 +1336,8 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 										<button onclick="accionFactura(<?= $f['id'] ?>,'anular')" class="btn-fa btn-fa-warn"><i
 												class="bi bi-slash-circle"></i> Anular</button>
 										<?php if ($puedeElim || $esAdmin): ?>
-											<a href="editar_factura?id=<?= $f['id'] ?>" class="btn-fa btn-fa-edit"><i
-													class="bi bi-pencil-fill"></i> Editar</a>
+											<button type="button" onclick="editarFacturaMenu(<?= $f['id'] ?>, <?= (int)$f['pagada'] ?>, <?= ($f['estado_declarada'] == 1 || $f['estado_declarada'] === 'si') ? 1 : 0 ?>, <?= (int)$f['enviada_receptor'] ?>)"
+												class="btn-fa btn-fa-edit"><i class="bi bi-pencil-fill"></i> Editar</button>
 											<button onclick="accionFactura(<?= $f['id'] ?>,'eliminar')"
 												class="btn-fa btn-fa-danger"><i class="bi bi-trash3-fill"></i> Eliminar</button>
 										<?php endif; ?>
@@ -1193,7 +1358,9 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 								<?php endif; ?>
 							</td>
 							<td>
-								<a href="ver_factura?id=<?= $f['id'] ?>" class="btn-fa btn-fa-view" target="_blank"><i
+								<a href="ver_factura?id=<?= $f['id'] ?>" class="btn-fa btn-fa-view" target="_blank"
+									rel="noopener noreferrer"
+									onclick="window.open(this.href, '_blank', 'noopener,noreferrer'); return false;"><i
 										class="bi bi-printer-fill"></i> Ver/PDF</a>
 							</td>
 						</tr>
@@ -1225,6 +1392,14 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 		const $s = document.getElementById('fhSearch'),
 			$cl = document.getElementById('fhClear'),
 			$pp = document.getElementById('fhPerPage');
+		const $bulkActions = document.getElementById('fhBulkActions'),
+			$bulkText = document.getElementById('fhBulkText'),
+			$bulkPdfBtn = document.getElementById('fhBulkPdfBtn'),
+			$bulkAnularBtn = document.getElementById('fhBulkAnularBtn'),
+			$bulkEditBtn = document.getElementById('fhBulkEditBtn'),
+			$selectAll = document.getElementById('fhSelectAll');
+		const rowCheckboxes = Array.from(document.querySelectorAll('.fh-row-select'));
+		const selectedIds = new Set();
 		const $empty = document.getElementById('fhEmpty'),
 			$sub = document.getElementById('fhEmptySub');
 		const $info = document.getElementById('fhPageInfo'),
@@ -1252,6 +1427,19 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 			th.classList.remove('sort-asc', 'sort-desc');
 			if (i === sortCol) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
 		});
+		const updateBulkState = () => {
+			const count = selectedIds.size;
+			$bulkText.textContent = count ?
+				`${count} factura${count !== 1 ? 's' : ''} seleccionada${count !== 1 ? 's' : ''}` :
+				'No hay facturas seleccionadas';
+			$bulkActions.style.display = count ? 'flex' : 'none';
+			if ($selectAll) {
+				const allChecked = rowCheckboxes.length > 0 && rowCheckboxes.every(cb => cb.checked);
+				const someChecked = rowCheckboxes.some(cb => cb.checked);
+				$selectAll.checked = allChecked;
+				$selectAll.indeterminate = someChecked && !allChecked;
+			}
+		};
 		const render = () => {
 			const rows = filtered(),
 				total = rows.length,
@@ -1341,9 +1529,331 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 			page = 1;
 			render();
 		});
+		rowCheckboxes.forEach(cb => cb.addEventListener('change', () => {
+			const id = cb.dataset.facturaId;
+			if (cb.checked) selectedIds.add(id);
+			else selectedIds.delete(id);
+			updateBulkState();
+		}));
+		if ($selectAll) {
+			$selectAll.addEventListener('change', () => {
+				const checked = $selectAll.checked;
+				rowCheckboxes.forEach(cb => {
+					cb.checked = checked;
+					const id = cb.dataset.facturaId;
+					if (checked) selectedIds.add(id);
+					else selectedIds.delete(id);
+				});
+				updateBulkState();
+			});
+		}
+		$bulkPdfBtn?.addEventListener('click', () => {
+			const ids = Array.from(selectedIds);
+			if (!ids.length) return;
+			bulkPdfMenu(ids);
+		});
+		$bulkAnularBtn?.addEventListener('click', () => {
+			const ids = Array.from(selectedIds);
+			if (!ids.length) return;
+			bulkAccionFactura(ids, 'anular');
+		});
+		$bulkEditBtn?.addEventListener('click', () => {
+			const ids = Array.from(selectedIds);
+			if (!ids.length) return;
+			bulkEditarEstados(ids);
+		});
 		updIcons();
+		updateBulkState();
 		render();
 	})();
+
+	function bulkPdfMenu(facturaIds) {
+		if (!facturaIds.length) return;
+		const esUna = facturaIds.length === 1;
+
+		Swal.fire({
+			title: esUna ? 'Factura seleccionada' : `${facturaIds.length} facturas seleccionadas`,
+			text: esUna ?
+				'¿Qué deseas hacer con esta factura?' :
+				'¿Deseas ver todas las facturas o descargarlas en un ZIP?',
+			icon: 'question',
+			showDenyButton: true,
+			showCancelButton: true,
+			confirmButtonText: esUna ? 'Descargar factura' : 'Descargar todo',
+			denyButtonText: esUna ? 'Ver factura' : 'Ver todas las facturas',
+			cancelButtonText: 'Cancelar',
+			confirmButtonColor: '#1e40af',
+			denyButtonColor: '#0891b2'
+		}).then(result => {
+			if (result.isConfirmed) {
+				bulkDescargarPdf(facturaIds);
+			} else if (result.isDenied) {
+				facturaIds.forEach(id => {
+					window.open(`ver_factura?id=${id}`, '_blank', 'noopener,noreferrer');
+				});
+			}
+		});
+	}
+
+	async function bulkDescargarPdf(facturaIds) {
+		if (!facturaIds.length) return;
+		const total = facturaIds.length;
+
+		Swal.fire({
+			title: 'Generando facturas',
+			html: `
+				<div style="margin-top:10px;">
+					<div id="fhPdfProgressLabel" style="font-size:.9rem;color:#555;margin-bottom:8px;">Preparando 0 de ${total}...</div>
+					<div style="background:#e5e7eb;border-radius:8px;overflow:hidden;height:14px;">
+						<div id="fhPdfProgressBar" style="background:#1e40af;height:100%;width:0%;transition:width .25s;"></div>
+					</div>
+				</div>
+			`,
+			showConfirmButton: false,
+			allowOutsideClick: false,
+			allowEscapeKey: false
+		});
+
+		const $bar = () => document.getElementById('fhPdfProgressBar');
+		const $label = () => document.getElementById('fhPdfProgressLabel');
+		const updateProgress = (done) => {
+			const pct = Math.round((done / total) * 100);
+			if ($bar()) $bar().style.width = pct + '%';
+			if ($label()) $label().textContent = `Procesando ${done} de ${total}...`;
+		};
+
+		try {
+			const zip = new JSZip();
+			let done = 0;
+
+			for (const id of facturaIds) {
+				const response = await fetch(`procesar_accion_factura.php?accion=exportar_pdf_single&factura_id=${encodeURIComponent(id)}`, {
+					method: 'GET',
+					credentials: 'same-origin'
+				});
+				const contentType = response.headers.get('content-type') || '';
+				if (!response.ok || !contentType.includes('application/pdf')) {
+					const rawText = await response.text();
+					let data = null;
+					try {
+						data = JSON.parse(rawText);
+					} catch (e) {
+						console.error(`exportar_pdf_single (factura ${id}): respuesta no válida (status ${response.status}):`, rawText);
+					}
+					throw new Error(data?.error || `No se pudo generar el PDF de la factura ${id}.`);
+				}
+
+				const disposition = response.headers.get('content-disposition') || '';
+				const match = disposition.match(/filename="?([^"]+)"?/);
+				const filename = match ? match[1] : `factura_${id}.pdf`;
+				const buffer = await response.arrayBuffer();
+				zip.file(filename, buffer);
+
+				done++;
+				updateProgress(done);
+			}
+
+			if ($label()) $label().textContent = 'Comprimiendo ZIP...';
+			const blob = await zip.generateAsync({
+				type: 'blob'
+			}, meta => {
+				if ($label()) $label().textContent = `Comprimiendo ZIP... ${Math.round(meta.percent)}%`;
+			});
+
+			const url = window.URL.createObjectURL(blob);
+			const link = document.createElement('a');
+			link.href = url;
+			link.download = `facturas_${total}.zip`;
+			link.click();
+			window.URL.revokeObjectURL(url);
+
+			Swal.fire({
+				title: 'Descarga lista',
+				text: 'El ZIP con las facturas se descargó correctamente.',
+				icon: 'success',
+				confirmButtonColor: '#1e40af'
+			});
+		} catch (error) {
+			console.error('exportar_pdf_single error:', error);
+			Swal.fire({
+				title: 'Error',
+				text: error.message,
+				icon: 'error',
+				confirmButtonColor: '#1e40af'
+			});
+		}
+	}
+
+	function bulkAccionFactura(facturaIds, accion) {
+		Swal.fire({
+			title: accion === 'anular' ?
+				`¿Anular ${facturaIds.length} factura${facturaIds.length > 1 ? 's' : ''}?` : 'Confirmar acción',
+			html: `<input type="text" id="motivo" class="swal2-input" placeholder="Motivo (obligatorio)"><input type="text" id="usuario" class="swal2-input" placeholder="Usuario admin/superadmin"><input type="password" id="clave" class="swal2-input" placeholder="Contraseña">`,
+			icon: 'warning',
+			showCancelButton: true,
+			confirmButtonText: 'Confirmar',
+			cancelButtonText: 'Cancelar',
+			confirmButtonColor: '#1e40af',
+			focusConfirm: false,
+			preConfirm: () => {
+				const motivo = document.getElementById('motivo').value.trim(),
+					usuario = document.getElementById('usuario').value.trim(),
+					clave = document.getElementById('clave').value.trim();
+				if (!motivo || !usuario || !clave) {
+					Swal.showValidationMessage('Todos los campos son obligatorios.');
+					return false;
+				}
+				return {
+					motivo,
+					usuario,
+					clave
+				};
+			}
+		}).then(result => {
+			if (!result.isConfirmed) return;
+			fetch('procesar_accion_factura.php', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					factura_ids: facturaIds,
+					action: accion,
+					accion,
+					motivo: result.value.motivo,
+					usuario_autoriza: result.value.usuario,
+					clave_autoriza: result.value.clave
+				})
+			}).then(r => r.json()).then(data => {
+				if (data.success) Swal.fire('Correcto', data.message, 'success').then(() => location
+					.reload());
+				else Swal.fire('Error', data.error, 'error');
+			});
+		});
+	}
+
+	function editarFacturaMenu(facturaId, pagada, declarada, enviada) {
+		Swal.fire({
+			title: 'Editar factura',
+			text: '¿Qué deseas editar?',
+			icon: 'question',
+			showDenyButton: true,
+			showCancelButton: true,
+			confirmButtonText: 'Editar estado',
+			denyButtonText: 'Editar todo',
+			cancelButtonText: 'Cancelar',
+			confirmButtonColor: '#1e40af',
+			denyButtonColor: '#0891b2'
+		}).then(result => {
+			if (result.isConfirmed) {
+				bulkEditarEstados([facturaId], {
+					pagada,
+					declarada,
+					enviada
+				});
+			} else if (result.isDenied) {
+				window.location.href = `editar_factura?id=${facturaId}`;
+			}
+		});
+	}
+
+	function bulkEditarEstados(facturaIds, presetEstados = null) {
+		Swal.fire({
+			title: `Editar estado de ${facturaIds.length} factura${facturaIds.length > 1 ? 's' : ''}`,
+			html: `
+				<div style="text-align:left;display:grid;gap:.65rem;margin:.25rem 0 1rem;">
+					<label style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;"><strong>Pagada</strong>
+						<select id="swal_pagada" class="swal2-select" style="margin:0;">
+							<option value="">No cambiar</option>
+							<option value="1">Sí</option>
+							<option value="0">No</option>
+						</select>
+					</label>
+					<label style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;"><strong>Declarada</strong>
+						<select id="swal_declarada" class="swal2-select" style="margin:0;">
+							<option value="">No cambiar</option>
+							<option value="1">Sí</option>
+							<option value="0">No</option>
+						</select>
+					</label>
+					<label style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;"><strong>Enviada</strong>
+						<select id="swal_enviada" class="swal2-select" style="margin:0;">
+							<option value="">No cambiar</option>
+							<option value="1">Sí</option>
+							<option value="0">No</option>
+						</select>
+					</label>
+				</div>
+				<div style="font-size:.78rem;color:#6b7280;margin:-.4rem 0 .8rem;">${presetEstados ? 'Se muestra el estado actual de la factura. Deja un campo igual para no modificarlo.' : 'Los campos en "No cambiar" no se modifican.'}</div>
+				<input type="text" id="motivo" class="swal2-input" placeholder="Motivo (obligatorio)">
+				<input type="text" id="usuario" class="swal2-input" placeholder="Usuario admin/superadmin">
+				<input type="password" id="clave" class="swal2-input" placeholder="Contraseña">
+			`,
+			icon: 'info',
+			showCancelButton: true,
+			confirmButtonText: 'Guardar cambios',
+			cancelButtonText: 'Cancelar',
+			confirmButtonColor: '#1e40af',
+			focusConfirm: false,
+			willOpen: () => {
+				if (presetEstados) {
+					document.getElementById('swal_pagada').value = String(presetEstados.pagada);
+					document.getElementById('swal_declarada').value = String(presetEstados.declarada);
+					document.getElementById('swal_enviada').value = String(presetEstados.enviada);
+				}
+			},
+			preConfirm: () => {
+				const motivo = document.getElementById('motivo').value.trim(),
+					usuario = document.getElementById('usuario').value.trim(),
+					clave = document.getElementById('clave').value.trim();
+				if (!motivo || !usuario || !clave) {
+					Swal.showValidationMessage('Todos los campos son obligatorios.');
+					return false;
+				}
+				const pagada = document.getElementById('swal_pagada').value,
+					declarada = document.getElementById('swal_declarada').value,
+					enviada = document.getElementById('swal_enviada').value;
+				if (!presetEstados && pagada === '' && declarada === '' && enviada === '') {
+					Swal.showValidationMessage('Selecciona al menos un estado para cambiar.');
+					return false;
+				}
+				return {
+					motivo,
+					usuario,
+					clave,
+					pagada,
+					declarada,
+					enviada
+				};
+			}
+		}).then(result => {
+			if (!result.isConfirmed) return;
+			const estados = {};
+			if (result.value.pagada !== '') estados.pagada = parseInt(result.value.pagada, 10);
+			if (result.value.declarada !== '') estados.estado_declarada = parseInt(result.value.declarada, 10);
+			if (result.value.enviada !== '') estados.enviada_receptor = parseInt(result.value.enviada, 10);
+			fetch('procesar_accion_factura.php', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					factura_ids: facturaIds,
+					accion: 'editar_estados',
+					motivo: result.value.motivo,
+					usuario_autoriza: result.value.usuario,
+					clave_autoriza: result.value.clave,
+					estados
+				})
+			}).then(r => r.json()).then(data => {
+				if (data.success) Swal.fire('Correcto', data.message, 'success').then(() => location
+					.reload());
+				else Swal.fire('Error', data.error, 'error');
+			});
+		});
+	}
 
 	function accionFactura(facturaId, accion) {
 		Swal.fire({
@@ -1371,8 +1881,9 @@ $no_declaradas_isv   = array_sum(array_map(fn($f) => (float)$f['isv_total'], $no
 			}
 		}).then(result => {
 			if (!result.isConfirmed) return;
-			fetch('procesar_accion_factura', {
+			fetch('procesar_accion_factura.php', {
 					method: 'POST',
+					credentials: 'same-origin',
 					headers: {
 						'Content-Type': 'application/json'
 					},

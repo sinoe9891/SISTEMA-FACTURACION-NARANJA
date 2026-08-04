@@ -3,8 +3,19 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 
+$modo_pdf = !empty($_GET['modo_pdf']);
+$modo_pdf_bytes = !empty($_GET['pdf_bytes']);
+$modo_render_html = !empty($_GET['render_only']);
+$modo_exportar = $modo_pdf || $modo_pdf_bytes || $modo_render_html;
+
+if ($modo_exportar) {
+	ob_start();
+}
+
 if (!isset($_GET['id']) || !ctype_digit($_GET['id'])) {
-	die("ID de factura inválido.");
+	http_response_code(400);
+	echo "ID de factura inválido.";
+	return;
 }
 
 $factura_id = intval($_GET['id']);
@@ -87,7 +98,9 @@ switch ($cond_pago_raw) {
 $estado_pago_label = !empty($factura['pagada']) ? 'Pagada' : 'Pendiente de pago';
 
 if (!$factura) {
-	die("Factura no encontrada o no autorizada.");
+	http_response_code(404);
+	echo "Factura no encontrada o no autorizada.";
+	return;
 }
 
 // Obtener ítems de la factura junto con el nombre del producto
@@ -104,31 +117,35 @@ $stmtConfig = $pdo->prepare("SELECT * FROM configuracion_sistema WHERE id = 1");
 $stmtConfig->execute();
 $configuracion = $stmtConfig->fetch();
 
-function formatMoneda($monto)
-{
-	return 'L ' . number_format($monto, 2, '.', ',');
+if (!function_exists('formatMoneda')) {
+	function formatMoneda($monto)
+	{
+		return 'L ' . number_format($monto, 2, '.', ',');
+	}
 }
 
-function formatFecha($fecha)
-{
-	$meses = [
-		'January' => 'enero',
-		'February' => 'febrero',
-		'March' => 'marzo',
-		'April' => 'abril',
-		'May' => 'mayo',
-		'June' => 'junio',
-		'July' => 'julio',
-		'August' => 'agosto',
-		'September' => 'septiembre',
-		'October' => 'octubre',
-		'November' => 'noviembre',
-		'December' => 'diciembre'
-	];
-	$date = new DateTime($fecha);
-	$mes_en = $date->format('F');
-	$mes_es = $meses[$mes_en] ?? $mes_en;
-	return $date->format('d') . ' de ' . $mes_es . ' de ' . $date->format('Y');
+if (!function_exists('formatFecha')) {
+	function formatFecha($fecha)
+	{
+		$meses = [
+			'January' => 'enero',
+			'February' => 'febrero',
+			'March' => 'marzo',
+			'April' => 'abril',
+			'May' => 'mayo',
+			'June' => 'junio',
+			'July' => 'julio',
+			'August' => 'agosto',
+			'September' => 'septiembre',
+			'October' => 'octubre',
+			'November' => 'noviembre',
+			'December' => 'diciembre'
+		];
+		$date = new DateTime($fecha);
+		$mes_en = $date->format('F');
+		$mes_es = $meses[$mes_en] ?? $mes_en;
+		return $date->format('d') . ' de ' . $mes_es . ' de ' . $date->format('Y');
+	}
 }
 ?>
 
@@ -144,7 +161,9 @@ function formatFecha($fecha)
 	if (!empty($items) && !empty($items[0]['descripcion_html'])) $titulo_factura .= ' - Corresponde a ' . htmlspecialchars($items[0]['descripcion_html']);
 	?>
 	<title><?= $titulo_factura ?></title>
-	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+	<?php if (!($modo_pdf || $modo_pdf_bytes)): ?>
+		<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+	<?php endif; ?>
 
 	<style>
 		/* ══════════════════════════════════════════
@@ -265,6 +284,8 @@ function formatFecha($fecha)
 
 		.factura {
 			font-size: 14px;
+			white-space: nowrap;
+			flex-shrink: 0;
 		}
 
 		.table thead th {
@@ -408,6 +429,99 @@ function formatFecha($fecha)
 		.text-end-factura-titulo {
 			width: 60%;
 		}
+
+		<?php if ($modo_pdf || $modo_pdf_bytes): ?>
+			/* Bootstrap se omite en modo PDF (usa variables CSS que Dompdf no soporta).
+			   Reemplazo mínimo, sin variables ni flexbox, de las clases usadas en esta plantilla. */
+			* {
+				font-family: Arial, Helvetica, sans-serif !important;
+			}
+
+			/* Dompdf no soporta flexbox: los .d-flex pasan a layout de tabla */
+			.d-flex {
+				display: table !important;
+				width: 100%;
+			}
+
+			.d-flex.justify-content-between>* {
+				display: table-cell;
+				vertical-align: top;
+			}
+
+			.d-flex.justify-content-between>*:last-child {
+				text-align: right;
+			}
+
+			.container {
+				width: 100%;
+			}
+
+			.border {
+				border: 1px solid #dee2e6;
+			}
+
+			.p-4 {
+				padding: 1.5rem;
+			}
+
+			.mt-2 {
+				margin-top: .5rem;
+			}
+
+			.mt-3 {
+				margin-top: 1rem;
+			}
+
+			.mb-2 {
+				margin-bottom: .5rem;
+			}
+
+			.text-end {
+				text-align: right;
+			}
+
+			.text-center {
+				text-align: center;
+			}
+
+			.text-uppercase {
+				text-transform: uppercase;
+			}
+
+			table.table {
+				width: 100%;
+				border-collapse: collapse;
+				margin-bottom: 1rem;
+			}
+
+			table.table th,
+			table.table td {
+				padding: .5rem;
+				vertical-align: top;
+			}
+
+			table.table-bordered th,
+			table.table-bordered td {
+				border: 1px solid #dee2e6;
+			}
+
+			table.table-borderless th,
+			table.table-borderless td {
+				border: none;
+			}
+
+			.alert {
+				padding: .75rem 1.25rem;
+				border: 1px solid transparent;
+				border-radius: .25rem;
+			}
+
+			.alert-warning {
+				color: #664d03;
+				background-color: #fff3cd;
+				border-color: #ffecb5;
+			}
+		<?php endif; ?>
 	</style>
 </head>
 
@@ -420,26 +534,28 @@ function formatFecha($fecha)
 	<!-- ══════════════════════════════════════
 	     BARRA DE ACCIONES (no se imprime)
 	══════════════════════════════════════ -->
-	<div class="action-bar no-print">
-		<div class="action-bar-info">
-			Factura <strong><?= htmlspecialchars($factura['correlativo']) ?></strong>
-			&nbsp;·&nbsp; <?= htmlspecialchars($factura['receptor_nombre']) ?>
-			&nbsp;·&nbsp; <?= ucfirst($factura['estado']) ?>
-			&nbsp;·&nbsp; <strong><?= $cond_pago_label ?></strong>
-			&nbsp;·&nbsp; <strong><?= $estado_pago_label ?></strong>
+	<?php if (!$modo_exportar): ?>
+		<div class="action-bar no-print">
+			<div class="action-bar-info">
+				Factura <strong><?= htmlspecialchars($factura['correlativo']) ?></strong>
+				&nbsp;·&nbsp; <?= htmlspecialchars($factura['receptor_nombre']) ?>
+				&nbsp;·&nbsp; <?= ucfirst($factura['estado']) ?>
+				&nbsp;·&nbsp; <strong><?= $cond_pago_label ?></strong>
+				&nbsp;·&nbsp; <strong><?= $estado_pago_label ?></strong>
+			</div>
+			<div class="action-bar-btns">
+				<a href="lista_facturas" class="btn-ab btn-ab-back">← Volver</a>
+				<?php if ($esAdmin): ?>
+					<a href="editar_factura?id=<?= $factura_id ?>" class="btn-ab btn-ab-edit">
+						✏️ Editar Factura
+					</a>
+				<?php endif; ?>
+				<button onclick="window.print()" class="btn-ab btn-ab-print">
+					🖨️ Imprimir / PDF
+				</button>
+			</div>
 		</div>
-		<div class="action-bar-btns">
-			<a href="lista_facturas" class="btn-ab btn-ab-back">← Volver</a>
-			<?php if ($esAdmin): ?>
-				<a href="editar_factura?id=<?= $factura_id ?>" class="btn-ab btn-ab-edit">
-					✏️ Editar Factura
-				</a>
-			<?php endif; ?>
-			<button onclick="window.print()" class="btn-ab btn-ab-print">
-				🖨️ Imprimir / PDF
-			</button>
-		</div>
-	</div>
+	<?php endif; ?>
 
 	<!-- ══════════════════════════════════════
 	     CONTENIDO ORIGINAL DE LA FACTURA
@@ -620,7 +736,9 @@ function formatFecha($fecha)
                 <strong>www.sar.gob.hn</strong> -->
 			</div>
 		</div>
-		<a href="./lista_facturas" class="btn btn-secondary mt-3 no-print">Volver al listado</a>
+		<?php if (!$modo_exportar): ?>
+			<a href="./lista_facturas" class="btn btn-secondary mt-3 no-print">Volver al listado</a>
+		<?php endif; ?>
 	</div>
 
 	<script>
@@ -629,3 +747,30 @@ function formatFecha($fecha)
 </body>
 
 </html>
+<?php
+if ($modo_exportar) {
+	$html = ob_get_clean();
+	if ($modo_pdf || $modo_pdf_bytes) {
+		require_once '../../vendor/autoload.php';
+
+		$options = new \Dompdf\Options();
+		$options->set('isRemoteEnabled', true);
+		$options->set('defaultFont', 'Arial');
+		$options->set('defaultMediaType', 'print');
+		$dompdf = new \Dompdf\Dompdf($options);
+		$dompdf->loadHtml($html, 'UTF-8');
+		$dompdf->setPaper('letter', 'portrait');
+		$dompdf->render();
+
+		$filename = 'factura_' . preg_replace('/[^A-Za-z0-9._-]/', '_', $factura['correlativo'] ?? $factura_id) . '.pdf';
+		if ($modo_pdf_bytes) {
+			echo $dompdf->output();
+			return;
+		}
+		$dompdf->stream($filename, ['Attachment' => true]);
+		return;
+	}
+
+	echo $html;
+	return;
+}
