@@ -423,6 +423,17 @@ if ($establecimiento_activo) {
 
 				<div class="cf-field-grid" style="margin-top:.9rem;">
 
+					<!-- Contacto -->
+					<div class="cf-field">
+						<label class="cf-label" for="contacto_nombre">
+							<i class="bi bi-person-lines-fill"></i> Contacto
+						</label>
+						<input type="text" id="contacto_nombre" name="contacto_nombre" class="cf-input"
+							placeholder="Ej: Kevin" autocomplete="off">
+						<span class="cf-field-hint">Nombre de la persona a quien se dirigen los correos (ej. "Buen día,
+							Kevin"). Si se deja vacío, se usará "Estimado equipo de [Cliente]".</span>
+					</div>
+
 					<!-- Email -->
 					<div class="cf-field">
 						<label class="cf-label" for="email">

@@ -143,6 +143,193 @@ try {
 		unlink($zipPath);
 		exit;
 	}
+
+	if ($accion === 'generar_mensaje') {
+		header('Content-Type: application/json; charset=utf-8');
+
+		$tipo = $data['tipo'] ?? '';
+		if (!in_array($tipo, ['envio_factura', 'saldo_pendiente'])) {
+			throw new Exception('Tipo de mensaje inválido.');
+		}
+		if (!is_array($factura_ids) || empty($factura_ids)) {
+			throw new Exception('Debes seleccionar al menos una factura.');
+		}
+		$factura_ids = array_values(array_unique(array_filter(array_map('intval', $factura_ids))));
+		if (empty($factura_ids)) {
+			throw new Exception('Debes seleccionar al menos una factura.');
+		}
+
+		$stmtUser = $pdo->prepare("SELECT cliente_id, rol FROM usuarios WHERE id = ?");
+		$stmtUser->execute([$facturador_id]);
+		$usuario = $stmtUser->fetch(PDO::FETCH_ASSOC);
+		if (!$usuario || !in_array($usuario['rol'], ['admin', 'superadmin'])) {
+			throw new Exception('No tienes permisos para esta acción.');
+		}
+
+		$placeholders = implode(',', array_fill(0, count($factura_ids), '?'));
+		$stmtFacturas = $pdo->prepare("
+			SELECT f.id, f.correlativo, f.total, f.receptor_id, f.cliente_id,
+			       cf.nombre AS receptor_nombre, cf.contacto_nombre
+			FROM facturas f
+			INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
+			WHERE f.id IN ($placeholders)
+		");
+		$stmtFacturas->execute($factura_ids);
+		$facturasSel = $stmtFacturas->fetchAll(PDO::FETCH_ASSOC);
+
+		if (empty($facturasSel)) {
+			throw new Exception('No se encontraron las facturas seleccionadas.');
+		}
+
+		$cliente_id_factura = (int) $facturasSel[0]['cliente_id'];
+		foreach ($facturasSel as $f) {
+			if ($usuario['rol'] !== 'superadmin' && (int)$usuario['cliente_id'] !== (int)$f['cliente_id']) {
+				throw new Exception('No tienes permisos sobre alguna de las facturas seleccionadas.');
+			}
+		}
+
+		$receptorIds = array_unique(array_column($facturasSel, 'receptor_id'));
+		if (count($receptorIds) > 1) {
+			throw new Exception('Selecciona facturas de un solo cliente para redactar el mensaje.');
+		}
+
+		$receptor_nombre = $facturasSel[0]['receptor_nombre'];
+		$contacto_nombre = trim($facturasSel[0]['contacto_nombre'] ?? '');
+		$saludo = $contacto_nombre !== ''
+			? 'Buen día, ' . $contacto_nombre . ':'
+			: 'Estimado equipo de ' . $receptor_nombre . ':';
+
+		$total = array_sum(array_map(fn($f) => (float)$f['total'], $facturasSel));
+
+		$mesesEs = [
+			1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio',
+			7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'
+		];
+		$mes_actual = $mesesEs[(int) date('n')];
+		$anio_actual = date('Y');
+
+		// h() = escapa para HTML; b() = escapa y envuelve en <strong> para la versión enriquecida
+		$h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+		$b = fn($v) => '<strong>' . htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8') . '</strong>';
+
+		if ($tipo === 'envio_factura') {
+			$conceptos = [];
+			foreach ($facturasSel as $f) {
+				$stmtItems = $pdo->prepare("
+					SELECT fi.descripcion_html, p.nombre AS nombre_producto
+					FROM factura_items_receptor fi
+					LEFT JOIN productos_clientes p ON fi.producto_id = p.id
+					WHERE fi.factura_id = ?
+				");
+				$stmtItems->execute([$f['id']]);
+				foreach ($stmtItems->fetchAll(PDO::FETCH_ASSOC) as $item) {
+					$linea = $item['nombre_producto'] ?: 'Servicio';
+					if (!empty($item['descripcion_html'])) {
+						$linea .= ' - ' . strip_tags($item['descripcion_html']);
+					}
+					$conceptos[] = $linea;
+				}
+			}
+			$conceptos = array_values(array_unique($conceptos));
+
+			if (count($facturasSel) === 1) {
+				$intro = 'la factura correspondiente al N.° ' . $facturasSel[0]['correlativo'] . ', que incluye los siguientes conceptos:';
+				$introHtml = 'la factura correspondiente al N.° ' . $b($facturasSel[0]['correlativo']) . ', que incluye los siguientes conceptos:';
+			} else {
+				$numeros = implode(', ', array_map(fn($f) => 'N.° ' . $f['correlativo'], $facturasSel));
+				$numerosHtml = implode(', ', array_map(fn($f) => 'N.° ' . $b($f['correlativo']), $facturasSel));
+				$intro = 'las ' . count($facturasSel) . ' facturas correspondientes (' . $numeros . '), que incluyen los siguientes conceptos:';
+				$introHtml = 'las ' . count($facturasSel) . ' facturas correspondientes (' . $numerosHtml . '), que incluyen los siguientes conceptos:';
+			}
+			$listaConceptos = implode("\n", array_map(fn($c) => '- ' . $c, $conceptos));
+			$listaConceptosHtml = implode("\n", array_map(fn($c) => '- ' . $h($c), $conceptos));
+			$detalle_facturas = $intro . "\n\n" . $listaConceptos;
+			$detalle_facturas_html = $introHtml . "\n\n" . $listaConceptosHtml;
+		} else {
+			$lineas = array_map(
+				fn($f) => 'Factura N.° ' . $f['correlativo'] . ': L ' . number_format((float)$f['total'], 2),
+				$facturasSel
+			);
+			$lineasHtml = array_map(
+				fn($f) => 'Factura N.° ' . $b($f['correlativo']) . ': ' . $b('L ' . number_format((float)$f['total'], 2)),
+				$facturasSel
+			);
+			$detalle_facturas = implode("\n", $lineas);
+			$detalle_facturas_html = implode("\n", $lineasHtml);
+		}
+
+		$stmtCuentas = $pdo->prepare("SELECT * FROM configuracion_cuentas_pago WHERE cliente_id = ? AND activo = 1 ORDER BY orden, id");
+		$stmtCuentas->execute([$cliente_id_factura]);
+		$cuentas = $stmtCuentas->fetchAll(PDO::FETCH_ASSOC);
+		if (!empty($cuentas)) {
+			$lineasCuentas = array_map(function ($c) {
+				$tipo_txt = !empty($c['tipo_cuenta']) ? $c['tipo_cuenta'] . ' ' : '';
+				return '- ' . $c['banco'] . ' (' . $tipo_txt . $c['numero_cuenta'] . ') a nombre de ' . $c['titular'];
+			}, $cuentas);
+			$lineasCuentasHtml = array_map(function ($c) use ($h, $b) {
+				$tipo_txt = !empty($c['tipo_cuenta']) ? $h($c['tipo_cuenta']) . ' ' : '';
+				return '- ' . $b($c['banco']) . ' (' . $tipo_txt . $h($c['numero_cuenta']) . ') a nombre de ' . $h($c['titular']);
+			}, $cuentas);
+			$cuentas_pago = "Formas de pago:\n" . implode("\n", $lineasCuentas);
+			$cuentas_pago_html = '<strong>Formas de pago:</strong>' . "\n" . implode("\n", $lineasCuentasHtml);
+		} else {
+			$cuentas_pago = '';
+			$cuentas_pago_html = '';
+		}
+
+		$stmtPlantilla = $pdo->prepare("SELECT * FROM configuracion_mensajes WHERE cliente_id = ? AND tipo = ?");
+		$stmtPlantilla->execute([$cliente_id_factura, $tipo]);
+		$plantilla = $stmtPlantilla->fetch(PDO::FETCH_ASSOC);
+
+		if (!$plantilla) {
+			$defaults = [
+				'envio_factura' => "{{saludo}}\n\nEspero que se encuentre bien.\n\nAdjunto {{detalle_facturas}}\n\n{{cuentas_pago}}\n\nQuedo atento a cualquier consulta o confirmación de recepción.\n\nSaludos cordiales,",
+				'saldo_pendiente' => "{{saludo}}\n\nEspero que se encuentre muy bien.\n\nLe escribo para darle seguimiento a las siguientes facturas pendientes de pago:\n\n{{detalle_facturas}}\n\nPor lo anterior, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,"
+			];
+			$contenido = $defaults[$tipo];
+			$asunto = $tipo === 'envio_factura'
+				? 'Facturas {{cliente_nombre}} - Mes de {{mes_actual}} de {{anio_actual}}'
+				: 'Saldo pendiente de pago - {{cliente_nombre}}';
+		} else {
+			$contenido = $plantilla['contenido'];
+			$asunto = $plantilla['asunto'];
+		}
+
+		// Versión texto plano (sin etiquetas, para pegar en editores de texto simple)
+		$reemplazos = [
+			'{{saludo}}' => $saludo,
+			'{{cliente_nombre}}' => $receptor_nombre,
+			'{{detalle_facturas}}' => $detalle_facturas,
+			'{{total}}' => number_format($total, 2),
+			'{{cuentas_pago}}' => $cuentas_pago,
+			'{{mes_actual}}' => $mes_actual,
+			'{{anio_actual}}' => $anio_actual,
+		];
+		$textoFinal = strtr($contenido, $reemplazos);
+		$asunto = strtr($asunto, $reemplazos);
+
+		// Versión HTML con negritas (para pegar en Gmail/Outlook con formato)
+		$contenidoEscapado = htmlspecialchars($contenido, ENT_QUOTES, 'UTF-8');
+		$reemplazosHtml = [
+			'{{saludo}}' => $b($saludo),
+			'{{cliente_nombre}}' => $h($receptor_nombre),
+			'{{detalle_facturas}}' => $detalle_facturas_html,
+			'{{total}}' => $b(number_format($total, 2)),
+			'{{cuentas_pago}}' => $cuentas_pago_html,
+			'{{mes_actual}}' => $h($mes_actual),
+			'{{anio_actual}}' => $h($anio_actual),
+		];
+		$textoFinalHtml = nl2br(strtr($contenidoEscapado, $reemplazosHtml), false);
+
+		echo json_encode([
+			'success' => true,
+			'asunto' => $asunto,
+			'mensaje' => $textoFinal,
+			'mensaje_html' => $textoFinalHtml,
+		]);
+		exit;
+	}
+
 	$motivo = trim($data['motivo'] ?? '');
 	$usuario_autoriza = trim($data['usuario_autoriza'] ?? '');
 	$clave_autoriza = $data['clave_autoriza'] ?? '';

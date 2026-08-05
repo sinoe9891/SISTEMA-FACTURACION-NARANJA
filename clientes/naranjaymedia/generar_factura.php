@@ -251,8 +251,8 @@ require_once '../../includes/templates/header.php';
     <div class="fv-header">
         <div>
             <div class="d-flex align-items-center gap-2 mb-1">
-                <a href="lista_facturas" class="btn btn-sm btn-light btn-outline-light opacity-80"
-                    style="color:#fff;border-color:rgba(255,255,255,.4)">
+                <a href="lista_facturas" class="btn btn-sm btn-outline-light"
+                    style="color:#fff;border-color:rgba(255,255,255,.6);background:rgba(255,255,255,.08)">
                     <i class="bi bi-arrow-left me-1"></i>Volver
                 </a>
             </div>

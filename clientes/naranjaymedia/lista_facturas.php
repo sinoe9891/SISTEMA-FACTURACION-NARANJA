@@ -65,7 +65,7 @@ if ($fecha_hasta) {
 }
 
 $stmtFacturas = $pdo->prepare("
-    SELECT f.id, f.correlativo, f.fecha_emision, f.total,
+    SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.subtotal,
            f.estado, f.pagada, f.enviada_receptor, f.estado_declarada,
            (f.isv_15 + f.isv_18) AS isv_total,
            cf.nombre AS receptor
@@ -93,6 +93,39 @@ $pendientes_count  = count($pendientes_facts);
 $pendientes_monto  = array_sum(array_map(fn($f) => (float)$f['total'], $pendientes_facts));
 $total_monto       = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
 $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
+
+// Tarjeta "Totales": respeta el filtro de fecha/CAI activo; sin filtro, muestra el mes actual (igual que el dashboard).
+if ($fecha_desde || $fecha_hasta || $caix) {
+	$facturasTotales = array_filter($facturas, fn($f) => $f['estado'] === 'emitida');
+	$totales_subtotal = array_sum(array_map(fn($f) => (float)$f['subtotal'], $facturasTotales));
+	$totales_isv      = array_sum(array_map(fn($f) => (float)$f['isv_total'], $facturasTotales));
+	$totales_total    = array_sum(array_map(fn($f) => (float)$f['total'], $facturasTotales));
+
+	if ($fecha_desde && $fecha_hasta) {
+		$totalesLabel = 'Totales ' . date('d/m/Y', strtotime($fecha_desde)) . ' – ' . date('d/m/Y', strtotime($fecha_hasta));
+	} elseif ($fecha_desde) {
+		$totalesLabel = 'Totales desde ' . date('d/m/Y', strtotime($fecha_desde));
+	} elseif ($fecha_hasta) {
+		$totalesLabel = 'Totales hasta ' . date('d/m/Y', strtotime($fecha_hasta));
+	} else {
+		$totalesLabel = 'Totales (filtro aplicado)';
+	}
+} else {
+	$stmtTotalesMesLista = $pdo->prepare("
+		SELECT IFNULL(SUM(subtotal), 0) AS subtotal,
+		       IFNULL(SUM(isv_15 + isv_18), 0) AS isv,
+		       IFNULL(SUM(total), 0) AS total
+		FROM facturas
+		WHERE cliente_id = ? AND establecimiento_id = ? AND estado = 'emitida'
+		  AND fecha_emision BETWEEN ? AND ?
+	");
+	$stmtTotalesMesLista->execute([$cliente_id, $establecimiento_activo, date('Y-m-01'), date('Y-m-t')]);
+	$totalesMesLista = $stmtTotalesMesLista->fetch(PDO::FETCH_ASSOC);
+	$totales_subtotal = (float)$totalesMesLista['subtotal'];
+	$totales_isv      = (float)$totalesMesLista['isv'];
+	$totales_total    = (float)$totalesMesLista['total'];
+	$totalesLabel     = 'Totales ' . date('F Y');
+}
 
 // Facturas emitidas no declaradas — semáforo por días restantes del mes
 $hoy              = new DateTime();
@@ -1005,7 +1038,24 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		border-style: solid;
 	}
 
+	.fh-dual-card-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr 1fr;
+		gap: 1.25rem;
+		margin-bottom: 1.25rem;
+	}
+
+	@media(max-width:1024px) {
+		.fh-dual-card-row {
+			grid-template-columns: 1fr 1fr;
+		}
+	}
+
 	@media(max-width:768px) {
+		.fh-dual-card-row {
+			grid-template-columns: 1fr;
+		}
+
 		.fh-filter-grid {
 			grid-template-columns: 1fr 1fr;
 		}
@@ -1042,9 +1092,9 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			<h4 class="fh-header-title">📜 Historial de Facturas</h4>
 			<p class="fh-header-sub">
 				Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> &nbsp;·&nbsp;
-				Rol: <?= htmlspecialchars(ucfirst($datos['rol'])) ?> &nbsp;·&nbsp;
-				<?= htmlspecialchars($datos['cliente_nombre']) ?>
+				Rol: <?= htmlspecialchars(ucfirst($datos['rol'])) ?>
 			</p>
+			<p class="fh-header-sub" style="margin-top:.15rem;"><?= htmlspecialchars($datos['cliente_nombre']) ?></p>
 		</div>
 		<?php if (!empty($datos['logo_url'])): ?>
 			<img src="<?= htmlspecialchars($datos['logo_url']) ?>" alt="Logo" class="fh-header-logo">
@@ -1099,32 +1149,68 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		</div>
 	</div>
 
-	<!-- Facturas no declaradas -->
+	<!-- Pendientes de pago / Totales -->
 	<?php
 	$hayAtrasadas = $cant_no_decl_atrasadas > 0;
 	$colorNoDecl = $hayAtrasadas ? '#c2410c' : '#15803d';
 	$borderNoDecl = $hayAtrasadas ? '#fed7aa' : 'var(--border)';
 	$bgNoDecl = $hayAtrasadas ? '#fff7ed' : '#fff';
 	?>
-	<div class="fh-card" style="border-color:<?= $borderNoDecl ?>;background:<?= $bgNoDecl ?>;margin-bottom:1.25rem;">
-		<div class="fh-card-header">
-			<span class="fh-card-title" style="color:<?= $colorNoDecl ?>;"><i class="bi bi-exclamation-triangle-fill"></i>
-				Facturas no declaradas</span>
+	<div class="fh-dual-card-row">
+		<div class="fh-card" style="margin-bottom:0;<?= $pendientes_count > 0 ? 'border-color:#fecaca;' : '' ?>">
+			<div class="fh-card-header">
+				<span class="fh-card-title"><i class="bi bi-hourglass-split text-danger"></i> Pendientes de pago</span>
+			</div>
+			<div style="padding:.25rem 1.25rem 1.1rem;">
+				<?php if ($pendientes_count > 0): ?>
+					<div style="display:flex;justify-content:space-between;margin-bottom:.35rem;"><span
+							class="text-muted" style="font-size:.85rem;">Facturas</span><strong><?= $pendientes_count ?></strong>
+					</div>
+					<div style="display:flex;justify-content:space-between;padding-top:.5rem;border-top:1px solid var(--border);">
+						<strong>Monto adeudado</strong><strong style="color:#dc2626;">L
+							<?= number_format($pendientes_monto, 2) ?></strong>
+					</div>
+				<?php else: ?>
+					<div style="color:#15803d;"><i class="bi bi-check-circle-fill"></i> No hay facturas pendientes de pago.
+					</div>
+				<?php endif; ?>
+			</div>
 		</div>
-		<div style="padding:.25rem 1.25rem 1.1rem;color:<?= $colorNoDecl ?>;">
-			<?php if ($hayAtrasadas): ?>
-				<div class="mb-1"><strong><?= $cant_no_decl_atrasadas ?></strong> factura<?= $cant_no_decl_atrasadas > 1 ? 's' : '' ?> atrasada<?= $cant_no_decl_atrasadas > 1 ? 's' : '' ?></div>
-				<div class="mb-1">ISV pendiente: <strong>L <?= number_format($isv_no_decl_atrasadas, 2) ?></strong></div>
-			<?php else: ?>
-				<div><i class="bi bi-check-circle-fill"></i> No hay meses pendientes de declaración.</div>
-			<?php endif; ?>
-			<?php if ($cant_no_decl_mes_actual > 0): ?>
-				<hr style="opacity:.25;margin:.6rem 0;">
-				<div style="font-size:.9rem;"><strong>Mes actual:</strong> <?= $cant_no_decl_mes_actual ?> factura<?= $cant_no_decl_mes_actual > 1 ? 's' : '' ?> · ISV est. L
-					<?= number_format($isv_no_decl_mes_actual, 2) ?></div>
-				<div style="font-size:.82rem;color:#78716c;margin-top:.3rem;"><i class="bi bi-lightbulb"></i> Recuerda declarar
-					antes del 30.</div>
-			<?php endif; ?>
+		<div class="fh-card" style="margin-bottom:0;">
+			<div class="fh-card-header">
+				<span class="fh-card-title"><i class="bi bi-currency-dollar text-success"></i> <?= htmlspecialchars($totalesLabel) ?></span>
+			</div>
+			<div style="padding:.25rem 1.25rem 1.1rem;">
+				<div style="display:flex;justify-content:space-between;margin-bottom:.35rem;"><span class="text-muted"
+						style="font-size:.85rem;">Subtotal</span><strong>L <?= number_format($totales_subtotal, 2) ?></strong>
+				</div>
+				<div style="display:flex;justify-content:space-between;margin-bottom:.35rem;"><span class="text-muted"
+						style="font-size:.85rem;">ISV</span><strong>L <?= number_format($totales_isv, 2) ?></strong></div>
+				<div style="display:flex;justify-content:space-between;padding-top:.5rem;border-top:1px solid var(--border);">
+					<strong>Total</strong><strong style="color:#15803d;">L <?= number_format($totales_total, 2) ?></strong>
+				</div>
+			</div>
+		</div>
+		<div class="fh-card" style="margin-bottom:0;border-color:<?= $borderNoDecl ?>;background:<?= $bgNoDecl ?>;">
+			<div class="fh-card-header">
+				<span class="fh-card-title" style="color:<?= $colorNoDecl ?>;"><i
+						class="bi bi-exclamation-triangle-fill"></i> Facturas no declaradas</span>
+			</div>
+			<div style="padding:.25rem 1.25rem 1.1rem;color:<?= $colorNoDecl ?>;">
+				<?php if ($hayAtrasadas): ?>
+					<div class="mb-1"><strong><?= $cant_no_decl_atrasadas ?></strong> factura<?= $cant_no_decl_atrasadas > 1 ? 's' : '' ?> atrasada<?= $cant_no_decl_atrasadas > 1 ? 's' : '' ?></div>
+					<div class="mb-1">ISV pendiente: <strong>L <?= number_format($isv_no_decl_atrasadas, 2) ?></strong></div>
+				<?php else: ?>
+					<div><i class="bi bi-check-circle-fill"></i> No hay meses pendientes de declaración.</div>
+				<?php endif; ?>
+				<?php if ($cant_no_decl_mes_actual > 0): ?>
+					<hr style="opacity:.25;margin:.6rem 0;">
+					<div style="font-size:.85rem;"><strong>Mes actual:</strong> <?= $cant_no_decl_mes_actual ?> factura<?= $cant_no_decl_mes_actual > 1 ? 's' : '' ?> · ISV est. L
+						<?= number_format($isv_no_decl_mes_actual, 2) ?></div>
+					<div style="font-size:.78rem;color:#78716c;margin-top:.3rem;"><i class="bi bi-lightbulb"></i> Recuerda
+						declarar antes del 30.</div>
+				<?php endif; ?>
+			</div>
 		</div>
 	</div>
 
@@ -1235,6 +1321,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		<div class="fh-card-header">
 			<span class="fh-card-title"><i class="bi bi-table"></i> Facturas</span>
 			<div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+				<a href="generar_factura" class="btn-filter" style="text-decoration:none;"><i class="bi bi-plus-lg"></i>
+					Nueva Factura</a>
 				<div class="fh-search-wrap">
 					<i class="bi bi-search"></i>
 					<input type="text" id="fhSearch" class="fh-search"
@@ -1256,6 +1344,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 				<div class="fh-actions">
 					<button type="button" id="fhBulkPdfBtn" class="btn-fa btn-fa-view"><i
 							class="bi bi-file-earmark-pdf"></i> Descargar PDFs</button>
+					<button type="button" id="fhBulkMensajeBtn" class="btn-fa btn-fa-edit"><i
+							class="bi bi-envelope-fill"></i> Redactar correo</button>
 					<button type="button" id="fhBulkAnularBtn" class="btn-fa btn-fa-warn"><i
 							class="bi bi-slash-circle"></i> Anular seleccionadas</button>
 					<button type="button" id="fhBulkEditBtn" class="btn-fa btn-fa-edit"><i
@@ -1395,6 +1485,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		const $bulkActions = document.getElementById('fhBulkActions'),
 			$bulkText = document.getElementById('fhBulkText'),
 			$bulkPdfBtn = document.getElementById('fhBulkPdfBtn'),
+			$bulkMensajeBtn = document.getElementById('fhBulkMensajeBtn'),
 			$bulkAnularBtn = document.getElementById('fhBulkAnularBtn'),
 			$bulkEditBtn = document.getElementById('fhBulkEditBtn'),
 			$selectAll = document.getElementById('fhSelectAll');
@@ -1552,6 +1643,11 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			if (!ids.length) return;
 			bulkPdfMenu(ids);
 		});
+		$bulkMensajeBtn?.addEventListener('click', () => {
+			const ids = Array.from(selectedIds);
+			if (!ids.length) return;
+			bulkRedactarMensaje(ids);
+		});
 		$bulkAnularBtn?.addEventListener('click', () => {
 			const ids = Array.from(selectedIds);
 			if (!ids.length) return;
@@ -1566,6 +1662,122 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		updateBulkState();
 		render();
 	})();
+
+	function bulkRedactarMensaje(facturaIds) {
+		Swal.fire({
+			title: 'Redactar correo',
+			text: '¿Qué tipo de mensaje quieres generar?',
+			icon: 'question',
+			showDenyButton: true,
+			showCancelButton: true,
+			confirmButtonText: 'Envío de factura(s)',
+			denyButtonText: 'Saldo pendiente',
+			cancelButtonText: 'Cancelar',
+			confirmButtonColor: '#1e40af',
+			denyButtonColor: '#c2410c'
+		}).then(result => {
+			if (result.isConfirmed) {
+				generarMensajeFactura(facturaIds, 'envio_factura');
+			} else if (result.isDenied) {
+				generarMensajeFactura(facturaIds, 'saldo_pendiente');
+			}
+		});
+	}
+
+	function generarMensajeFactura(facturaIds, tipo) {
+		Swal.fire({
+			title: 'Generando mensaje…',
+			showConfirmButton: false,
+			allowOutsideClick: false,
+			willOpen: () => Swal.showLoading()
+		});
+
+		fetch('procesar_accion_factura.php', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					accion: 'generar_mensaje',
+					factura_ids: facturaIds,
+					tipo
+				})
+			})
+			.then(r => r.json())
+			.then(data => {
+				if (!data.success) {
+					throw new Error(data.error || 'No se pudo generar el mensaje.');
+				}
+				const escapeHtml = s => String(s).replace(/[&<>]/g, c => ({
+					'&': '&amp;',
+					'<': '&lt;',
+					'>': '&gt;'
+				} [c]));
+				const asuntoEscapado = escapeHtml(data.asunto || '');
+
+				Swal.fire({
+					title: 'Mensaje generado',
+					html: `
+						<div style="text-align:left;">
+							<div style="display:flex;justify-content:flex-end;margin-bottom:.5rem;">
+								<button type="button" id="fhBtnVerPdf" class="btn-fa btn-fa-view" style="border:none;">
+									<i class="bi bi-file-earmark-pdf"></i> Generar PDF
+								</button>
+							</div>
+							<label style="font-size:.78rem;font-weight:700;color:#64748b;">Asunto</label>
+							<input id="fhMensajeAsunto" type="text" value="${asuntoEscapado}"
+								style="width:100%;padding:.55rem .7rem;border:1px solid #e2e8f0;border-radius:8px;font-size:.88rem;margin:.25rem 0 .9rem;box-sizing:border-box;">
+							<label style="font-size:.78rem;font-weight:700;color:#64748b;">Mensaje</label>
+							<div id="fhMensajeTexto" contenteditable="true"
+								style="width:100%;min-height:340px;max-height:50vh;overflow-y:auto;font-size:.85rem;padding:.75rem;border:1px solid #e2e8f0;border-radius:8px;font-family:inherit;margin-top:.25rem;box-sizing:border-box;text-align:left;">${data.mensaje_html}</div>
+						</div>
+					`,
+					width: 640,
+					showCancelButton: true,
+					confirmButtonText: '<i class="bi bi-clipboard-check"></i> Copiar',
+					cancelButtonText: 'Cerrar',
+					confirmButtonColor: '#1e40af',
+					didOpen: () => {
+						document.getElementById('fhBtnVerPdf')?.addEventListener('click', () => {
+							facturaIds.forEach(id => {
+								window.open(`ver_factura?id=${id}`, '_blank', 'noopener,noreferrer');
+							});
+						});
+					},
+					preConfirm: () => {
+						const $cuerpo = document.getElementById('fhMensajeTexto');
+						const htmlTexto = $cuerpo.innerHTML;
+						const planoTexto = $cuerpo.innerText;
+						if (window.ClipboardItem) {
+							const item = new ClipboardItem({
+								'text/html': new Blob([htmlTexto], {
+									type: 'text/html'
+								}),
+								'text/plain': new Blob([planoTexto], {
+									type: 'text/plain'
+								})
+							});
+							navigator.clipboard.write([item]).catch(() => navigator.clipboard.writeText(planoTexto));
+						} else {
+							navigator.clipboard.writeText(planoTexto);
+						}
+						const $btn = Swal.getConfirmButton();
+						if ($btn) {
+							const original = $btn.innerHTML;
+							$btn.innerHTML = '<i class="bi bi-check2"></i> ¡Copiado!';
+							setTimeout(() => {
+								$btn.innerHTML = original;
+							}, 1500);
+						}
+						return false; // no cerrar el modal al copiar
+					}
+				});
+			})
+			.catch(error => {
+				Swal.fire('Error', error.message, 'error');
+			});
+	}
 
 	function bulkPdfMenu(facturaIds) {
 		if (!facturaIds.length) return;

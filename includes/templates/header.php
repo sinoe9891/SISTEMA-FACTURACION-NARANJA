@@ -561,6 +561,11 @@ $alias = $datos['cliente_alias'] ?? $datos['cliente_nombre'] ?? 'Sistema';
 								<i class="fa-solid fa-key"></i> Configuración CAI
 							</a>
 						</li>
+						<li>
+							<a class="dropdown-item" href="configuracion_mensajes">
+								<i class="fa-solid fa-envelope"></i> Mensajes y cuentas de pago
+							</a>
+						</li>
 					</ul>
 				</li>
 				<!-- Contratos -->
