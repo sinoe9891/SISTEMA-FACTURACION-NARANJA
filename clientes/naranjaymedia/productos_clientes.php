@@ -743,12 +743,8 @@ require_once '../../includes/templates/header.php';
 	<!-- Header -->
 	<div class="pc-header">
 		<div>
-			<h4 class="pc-header-title">🌍 Productos por Cliente</h4>
-			<p class="pc-header-sub">
-				<?= htmlspecialchars($cliente['nombre']) ?> &nbsp;·&nbsp;
-				Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> &nbsp;·&nbsp;
-				Rol: <?= htmlspecialchars(ucfirst($usuario['rol'] ?? '')) ?>
-			</p>
+			<h4 class="pc-header-title"><i class="bi bi-person-lines-fill me-2"></i>Productos por Cliente</h4>
+			<p class="pc-header-sub">Precios y productos asignados a cada cliente.</p>
 		</div>
 		<?php if (!empty($cliente['logo_url'])): ?>
 			<img src="<?= htmlspecialchars($cliente['logo_url']) ?>" alt="Logo" class="pc-header-logo">

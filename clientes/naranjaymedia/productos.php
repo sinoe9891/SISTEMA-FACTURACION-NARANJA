@@ -30,48 +30,48 @@ if (!$es_superadmin) {
 require_once '../../includes/templates/header.php';
 
 // Obtener productos
-$stmt = $pdo->prepare("SELECT * FROM productos WHERE cliente_id = ?");
+$stmt = $pdo->prepare("SELECT * FROM productos WHERE cliente_id = ? ORDER BY nombre");
 $stmt->execute([$cliente_id]);
 $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
-<div class="container mt-4">
-	<div class="d-flex justify-content-between align-items-center mb-3">
-		<h4>🛍️ Productos de <?= htmlspecialchars($cliente['nombre']) ?></h4>
-		<?php if ($cliente['logo_url']): ?>
-			<img src="<?= $cliente['logo_url'] ?>" alt="Logo Cliente" style="max-height: 50px;">
-		<?php endif; ?>
+<div class="app-page-header">
+	<div>
+		<h1 class="app-page-title">Productos y servicios</h1>
+		<p class="app-page-sub">Catálogo base con precio e ISV para facturar.</p>
 	</div>
+	<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalAgregarProducto"><i class="bi bi-plus-lg me-1"></i> Agregar producto</button>
+</div>
 
-	<!-- Botón agregar -->
-	<div class="mb-3">
-		<button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalAgregarProducto">➕ Agregar Producto</button>
+<div class="app-card">
+	<div class="app-card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+		<span><i class="bi bi-box-seam me-1"></i> <?= count($productos) ?> producto<?= count($productos) === 1 ? '' : 's' ?></span>
+		<input type="search" id="buscarProducto" class="form-control form-control-sm" style="max-width:280px" placeholder="Buscar por nombre o descripción…">
 	</div>
-
-	<!-- Tabla -->
 	<div class="table-responsive">
-		<table class="table table-bordered" id="tabla-productos">
-			<thead class="table-dark">
+		<table class="table app-table mb-0" id="tabla-productos">
+			<thead>
 				<tr>
-					<th>ID</th>
 					<th>Nombre</th>
 					<th>Descripción</th>
-					<th>Precio</th>
-					<th>ISV (%)</th>
-					<th>Acciones</th>
+					<th class="app-num">Precio</th>
+					<th class="text-center">ISV</th>
+					<th class="text-end">Acciones</th>
 				</tr>
 			</thead>
 			<tbody>
+				<?php if (!$productos): ?>
+					<tr><td colspan="5" class="text-center text-muted py-4">Aún no hay productos. Usa «Agregar producto».</td></tr>
+				<?php endif; ?>
 				<?php foreach ($productos as $p): ?>
 					<tr>
-						<td><?= $p['id'] ?></td>
-						<td><?= htmlspecialchars($p['nombre']) ?></td>
-						<td><?= htmlspecialchars($p['descripcion']) ?></td>
-						<td>L <?= number_format($p['precio'], 2) ?></td>
-						<td><?= $p['tipo_isv'] ?>%</td>
-						<td>
-							<button class="btn btn-sm btn-info" onclick="editarProducto(<?= htmlspecialchars(json_encode($p)) ?>)">✏️</button>
-							<button class="btn btn-sm btn-danger" onclick="eliminarProducto(<?= $p['id'] ?>)">🗑️</button>
+						<td class="fw-semibold"><?= htmlspecialchars($p['nombre'] ?? '') ?></td>
+						<td class="small text-muted"><?= htmlspecialchars($p['descripcion'] ?? '') ?></td>
+						<td class="app-num">L <?= number_format($p['precio'], 2) ?></td>
+						<td class="text-center"><span class="app-badge"><?= (int)$p['tipo_isv'] ?>%</span></td>
+						<td class="text-end text-nowrap">
+							<button class="btn btn-sm btn-outline-secondary" title="Editar" onclick="editarProducto(<?= htmlspecialchars(json_encode($p)) ?>)"><i class="bi bi-pencil"></i></button>
+							<button class="btn btn-sm btn-outline-danger" title="Eliminar" onclick="eliminarProducto(<?= (int)$p['id'] ?>)"><i class="bi bi-trash"></i></button>
 						</td>
 					</tr>
 				<?php endforeach; ?>
@@ -91,19 +91,19 @@ $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 			<div class="modal-body">
 				<input type="hidden" name="cliente_id" value="<?= $cliente_id ?>">
 				<div class="mb-2">
-					<label>Nombre</label>
+					<label class="form-label">Nombre</label>
 					<input type="text" name="nombre" class="form-control" required>
 				</div>
 				<div class="mb-2">
-					<label>Descripción</label>
+					<label class="form-label">Descripción</label>
 					<textarea name="descripcion" class="form-control" required></textarea>
 				</div>
 				<div class="mb-2">
-					<label>Precio</label>
+					<label class="form-label">Precio</label>
 					<input type="number" step="0.01" name="precio" class="form-control" required>
 				</div>
 				<div class="mb-2">
-					<label>ISV</label>
+					<label class="form-label">ISV</label>
 					<select name="tipo_isv" class="form-select" required>
 						<option value="15">15%</option>
 						<option value="18">18%</option>
@@ -130,19 +130,19 @@ $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 				<input type="hidden" name="id" id="editar_id">
 				<input type="hidden" name="cliente_id" value="<?= $cliente_id ?>">
 				<div class="mb-2">
-					<label>Nombre</label>
+					<label class="form-label">Nombre</label>
 					<input type="text" name="nombre" id="editar_nombre" class="form-control" required>
 				</div>
 				<div class="mb-2">
-					<label>Descripción</label>
+					<label class="form-label">Descripción</label>
 					<textarea name="descripcion" id="editar_descripcion" class="form-control" required></textarea>
 				</div>
 				<div class="mb-2">
-					<label>Precio</label>
+					<label class="form-label">Precio</label>
 					<input type="number" step="0.01" name="precio" id="editar_precio" class="form-control" required>
 				</div>
 				<div class="mb-2">
-					<label>ISV</label>
+					<label class="form-label">ISV</label>
 					<select name="tipo_isv" id="editar_tipo_isv" class="form-select" required>
 						<option value="15">15%</option>
 						<option value="18">18%</option>
@@ -190,13 +190,13 @@ $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 		});
 	}
 
-	// Activar DataTable
-	$(document).ready(function () {
-		$('#tabla-productos').DataTable({
-			language: {
-				url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json'
-			},
-			responsive: true
+	// Búsqueda rápida en la tabla
+	document.getElementById('buscarProducto').addEventListener('input', function () {
+		const q = this.value.trim().toLowerCase();
+		document.querySelectorAll('#tabla-productos tbody tr').forEach(tr => {
+			tr.style.display = !q || tr.textContent.toLowerCase().includes(q) ? '' : 'none';
 		});
 	});
 </script>
+
+<?php require_once '../../includes/templates/footer.php'; ?>

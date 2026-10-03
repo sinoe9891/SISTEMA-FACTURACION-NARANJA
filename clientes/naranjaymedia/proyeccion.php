@@ -704,7 +704,7 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
 <div class="container-xxl pj-wrap">
     <div class="pj-hero">
         <div>
-            <h4 style="font-size:1.35rem;font-weight:800;margin:0">📈 Proyección de Flujo de Caja</h4>
+            <h4 style="font-size:1.35rem;font-weight:800;margin:0"><i class="bi bi-graph-up-arrow me-2"></i>Proyección de Flujo de Caja</h4>
             <p style="font-size:.82rem;opacity:.78;margin:.2rem 0 0">12 meses adelante · Basada en contratos activos y
                 promedios de gastos reales</p>
         </div>

@@ -781,11 +781,8 @@ require_once '../../includes/templates/header.php';
     <!-- Header -->
     <div class="ug-header">
         <div>
-            <h4 class="ug-header-title">👥 Gestión de Usuarios</h4>
-            <p class="ug-header-sub">
-                <?= $es_superadmin ? 'Vista global · Todos los clientes' : 'Cliente: ' . htmlspecialchars($mi_usuario['cliente_nombre'] ?? '') ?>
-                &nbsp;·&nbsp; Acceso: <?= ucfirst($rol_actual) ?>
-            </p>
+            <h4 class="ug-header-title"><i class="bi bi-people me-2"></i>Gestión de Usuarios</h4>
+            <p class="ug-header-sub"><?= $es_superadmin ? 'Usuarios de todas las empresas.' : 'Usuarios con acceso al sistema y sus roles.' ?></p>
         </div>
         <?php if (!empty($mi_usuario['logo_url'])): ?>
             <img src="<?= htmlspecialchars($mi_usuario['logo_url']) ?>" alt="Logo" class="ug-header-logo">

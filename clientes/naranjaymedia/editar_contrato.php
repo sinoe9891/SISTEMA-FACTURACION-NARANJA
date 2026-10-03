@@ -533,7 +533,7 @@ require_once '../../includes/templates/header.php';
     <!-- Hero -->
     <div class="ec-hero">
         <div>
-            <h4 class="ec-hero-title">✏️ Editar Contrato</h4>
+            <h4 class="ec-hero-title"><i class="bi bi-pencil-square me-2"></i>Editar Contrato</h4>
             <p class="ec-hero-sub">
                 <?= htmlspecialchars($contrato['nombre_contrato']) ?> &nbsp;·&nbsp; ID #<?= $contrato['id'] ?>
             </p>

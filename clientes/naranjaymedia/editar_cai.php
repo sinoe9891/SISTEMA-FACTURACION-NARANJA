@@ -477,11 +477,7 @@ require_once '../../includes/templates/header.php';
                     <?= $activo ? '✅ Activo' : '⛔ Vencido' ?>
                 </span>
             </h4>
-            <p class="ec-header-sub">
-                Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> &nbsp;·&nbsp;
-                Rol: <?= htmlspecialchars(ucfirst($rol)) ?> &nbsp;·&nbsp;
-                <?= htmlspecialchars($datos['cliente_nombre']) ?>
-            </p>
+            <p class="ec-header-sub">Solo se pueden cambiar los datos que aún no se usaron en facturas.</p>
         </div>
         <?php if (!empty($datos['logo_url'])): ?>
             <img src="<?= htmlspecialchars($navbarLogo ?? "") ?>" alt="Logo" class="ec-header-logo">

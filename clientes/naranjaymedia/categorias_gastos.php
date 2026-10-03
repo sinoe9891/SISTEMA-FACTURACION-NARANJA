@@ -476,7 +476,7 @@ require_once '../../includes/templates/header.php';
     <!-- Header -->
     <div class="cg-header">
         <div>
-            <h4 class="cg-header-title">🏷️ Categorías de Gastos</h4>
+            <h4 class="cg-header-title"><i class="bi bi-tags me-2"></i>Categorías de Gastos</h4>
             <p class="cg-header-sub">Organiza tus gastos por categorías para mejor análisis</p>
         </div>
         <a href="gastos" class="d-flex align-items-center gap-2 text-white text-decoration-none"

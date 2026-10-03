@@ -161,6 +161,7 @@ body.app-body {
 	background: var(--app-accent-lt);
 	color: var(--app-accent);
 	font-weight: 600;
+	box-shadow: inset 3px 0 0 var(--app-accent);
 }
 
 .app-nav-link.app-nav-danger:hover {
@@ -711,4 +712,214 @@ body.app-login {
 
 .app-select-go {
 	color: var(--app-muted);
+}
+
+/* ==========================================================================
+   Capa de unificación de páginas antiguas
+   Las páginas viejas traen su propio <style> con un encabezado de color
+   distinto por módulo. Aquí se igualan todos al estilo de .app-page-header
+   (tarjeta clara con acento de marca). Prefijo .app-body = más especificidad
+   que los estilos de la página; !important solo donde hay estilos en línea.
+   ========================================================================== */
+
+.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+	.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+	.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header) {
+	background: var(--app-surface) !important;
+	color: var(--app-text) !important;
+	border: 1px solid var(--app-border);
+	border-left: 4px solid var(--app-accent);
+	border-radius: var(--app-radius);
+	box-shadow: var(--app-shadow);
+	padding: 16px 20px !important;
+	margin-bottom: 20px;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	min-height: 0;
+	position: relative;
+	overflow: hidden;
+}
+
+.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+	.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+	.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header)::before,
+.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+	.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+	.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header)::after {
+	display: none !important;
+}
+
+/* Título y subtítulo */
+.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+	.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+	.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header)
+	:is(h1, h2, h3, h4, h5, [class$="-title"]) {
+	color: var(--app-text) !important;
+	font-size: 20px !important;
+	font-weight: 700 !important;
+	line-height: 1.3;
+	margin: 0 !important;
+	opacity: 1 !important;
+}
+
+.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+	.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+	.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header)
+	:is(p, small, [class$="-sub"]) {
+	color: var(--app-muted) !important;
+	opacity: 1 !important;
+	font-size: 13px !important;
+	margin: 2px 0 0 !important;
+}
+
+.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+	.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+	.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header)
+	:is(h1, h2, h3, h4, h5, [class$="-title"]) .bi {
+	color: var(--app-accent);
+}
+
+/* Logo y adornos repetidos (el logo ya está en la barra lateral) */
+.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+	.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+	.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header)
+	:is(img[class*="logo"], > div[style*="font-size:3rem"], > div[style*="font-size: 3rem"]) {
+	display: none !important;
+}
+
+/* Botones dentro del encabezado: los "blancos sobre color" pasan a secundarios */
+.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+	.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+	.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header)
+	.btn:not(.btn-primary):not(.btn-success):not(.btn-danger):not(.btn-warning) {
+	background: var(--app-surface) !important;
+	color: var(--app-text) !important;
+	border: 1px solid var(--app-border) !important;
+}
+
+.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+	.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+	.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header)
+	.btn:not(.btn-primary):not(.btn-success):not(.btn-danger):not(.btn-warning):hover {
+	background: var(--app-hover) !important;
+}
+
+.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+	.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+	.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header)
+	:is(button:not(.btn), a[class^="btn-"]) {
+	background: var(--app-accent) !important;
+	color: #fff !important;
+	border: 1px solid var(--app-accent) !important;
+}
+
+@media (max-width: 575.98px) {
+	.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+		.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+		.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header) {
+		padding: 14px 16px !important;
+	}
+	.app-body :is(.db-header, .fv-header, .fh-header, .ct-header, .cc-hero, .ec-hero, .fc-hero,
+		.gs-header, .tj-hero, .cg-header, .fin-hero, .pj-hero, .cl-header, .cv-hero, .pc-header,
+		.cf-header-card, .cc-header, .ec-header, .cm-header, .ug-header, .rc-hero, .fe-header)
+		:is(h1, h2, h3, h4, h5, [class$="-title"]) {
+		font-size: 17px !important;
+	}
+}
+
+/* Cifras: nunca partir "L 12,345.00" en dos líneas */
+.app-body table :is(td, th).text-end,
+.app-body .app-num,
+.app-body [class*="stat-val"],
+.app-body [class*="kpi-val"] {
+	white-space: nowrap;
+}
+
+/* Adorno grande (emoji/ícono al 20 %) que algunas cabeceras traen a la derecha */
+.app-body :is(.db-header, .gs-header, .tj-hero, .fin-hero, .pj-hero, .cl-header, .cm-header, .rc-hero, .fe-header, .fv-header)
+	> :is(div, i)[style*="opacity:.2"],
+.app-body :is(.db-header, .gs-header, .tj-hero, .fin-hero, .pj-hero, .cl-header, .cm-header, .rc-hero, .fe-header, .fv-header)
+	> :is(div, i)[style*="opacity: .2"],
+.app-body :is(.db-header, .gs-header, .tj-hero, .fin-hero, .pj-hero, .cl-header, .cm-header, .rc-hero, .fe-header, .fv-header)
+	> :is(div, i)[style*="font-size:3rem"] {
+	display: none !important;
+}
+
+/* Contenedores de página antiguos: el espacio exterior ya lo da body.app-body */
+.app-body :is(.cg-page, .cf-page, .cl-page, .cc-page, .cm-page, .ct-page, .cc-wrap, .ec-page, .ec-wrap,
+	.fe-page, .fc-wrap, .fin-wrap, .gs-page, .fv-page, .rc-wrap, .fh-page, .pc-page, .pj-wrap, .tj-page, .ug-page) {
+	padding-top: 0 !important;
+	padding-bottom: 0 !important;
+}
+
+/* Botón de acción principal: un solo color (el acento de la empresa) en todos los módulos */
+body.app-body :is(.btn-nuevo-tj, .btn-nuevo-gs, .btn-nuevo-colab, .btn-new-user, .btn-new-ct, .btn-new-cat,
+	.btn-new-cai, .btn-new, .btn-save, .btn-modal-save, .btn-guardar, .btn-guardar-edit, .btn-update,
+	.btn-create-prod, .btn-rc-primary, .btn-facturar, .btn-assign) {
+	background: var(--app-accent) !important;
+	border-color: var(--app-accent) !important;
+	color: #fff !important;
+	box-shadow: none !important;
+}
+
+body.app-body :is(.btn-nuevo-tj, .btn-nuevo-gs, .btn-nuevo-colab, .btn-new-user, .btn-new-ct, .btn-new-cat,
+	.btn-new-cai, .btn-new, .btn-save, .btn-modal-save, .btn-guardar, .btn-guardar-edit, .btn-update,
+	.btn-create-prod, .btn-rc-primary, .btn-facturar, .btn-assign):hover {
+	background: var(--app-accent-h) !important;
+	border-color: var(--app-accent-h) !important;
+}
+
+/* En celular las cifras grandes de las tarjetas se achican en vez de salirse */
+@media (max-width: 575.98px) {
+	.app-body [class*="stat-val"],
+	.app-body [class*="kpi-val"] {
+		font-size: clamp(.85rem, 4vw, 1.25rem) !important;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+}
+
+/* Mismo ancho en todas las páginas: las viejas usaban .container / .container-xxl (1320 px)
+   y algunas un tope propio (960, 1100, 1200 px). Ahora todas ocupan el ancho disponible,
+   igual que los módulos nuevos; el margen exterior lo da body.app-body. */
+body.app-body > :is(.container, .container-sm, .container-md, .container-lg, .container-xl, .container-xxl),
+body.app-body :is(.cg-page, .cf-page, .cl-page, .cc-page, .cm-page, .ct-page, .cc-wrap, .ec-page, .ec-wrap,
+	.fe-page, .fc-wrap, .fin-wrap, .gs-page, .fv-page, .rc-wrap, .fh-page, .pc-page, .pj-wrap, .tj-page, .ug-page) {
+	max-width: none !important;
+	width: auto !important;
+	margin-left: 0 !important;
+	margin-right: 0 !important;
+	padding-left: 0 !important;
+	padding-right: 0 !important;
+}
+
+/* El dashboard traía margen superior propio */
+body.app-body > .container-xxl.mt-4 {
+	margin-top: 0 !important;
+}
+
+/* Encabezado de los módulos nuevos con la misma tarjeta que las páginas viejas */
+body.app-body .app-page-header {
+	background: var(--app-surface);
+	border: 1px solid var(--app-border);
+	border-left: 4px solid var(--app-accent);
+	border-radius: var(--app-radius);
+	box-shadow: var(--app-shadow);
+	padding: 16px 20px;
+}
+
+body.app-body .app-page-title {
+	font-size: 20px;
+}
+
+@media (max-width: 575.98px) {
+	body.app-body .app-page-header { padding: 14px 16px; }
+	body.app-body .app-page-title { font-size: 17px; }
+}
+
+@media print {
+	body.app-body .app-page-header { border: 0; box-shadow: none; padding: 0; }
 }

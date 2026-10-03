@@ -22,20 +22,30 @@ Actualizado: 2026-10-03 (tarde). Orden = prioridad sugerida.
 
 ## 🟡 Interfaz (revisión UX/UI del 2026-10-03, en producción)
 
-Hay **tres estilos de pantalla** conviviendo: (a) cabecera tipo «banner» con degradado, (b) cabecera simple de los módulos nuevos (`app-page-header`), (c) página sin diseño (Productos). Unificar todo al estilo (b) + componentes de `app.css`:
+Unificación hecha con una «capa» en `clientes/css/app.css` (sin reescribir cada página) + ajustes puntuales:
 
-- [ ] **Cabeceras:** cada módulo usa un color distinto (azul: dashboard, facturas, historial, tarjetas, estado de resultados · naranja: gastos · morado: categorías, CAI, clientes · verde: contratos, colaboradores, productos por cliente, proyección · turquesa: mensajes · rojo: usuarios). Además repiten «Sucursal · Rol · nombre de la empresa» y el logo, que ya están en el menú lateral.
-- [ ] **Botón principal de color distinto en cada pantalla:** naranja (Nuevo gasto), morado (Nueva categoría, Nuevo rango CAI, Nuevo cliente), verde (Asignar producto, Nuevo colaborador), **rojo** (Nuevo usuario: el rojo debería ser solo para eliminar), azul (módulos nuevos). Unificar a azul.
-- [ ] **Tarjetas de indicadores:** montos partidos en dos líneas («L» arriba y la cifra abajo) en dashboard, historial, gastos, colaboradores y proyección. Pasar a `app-kpi`.
-- [ ] **Tablas:** montos partidos («L / 9,000.00») en contratos, productos y gastos; columnas cortadas a la derecha en clientes y usuarios; en usuarios el nombre largo de la empresa ocupa 6 líneas.
-- [ ] **Productos (catálogo base):** es la pantalla más vieja (tabla DataTables cruda, título gigante, botones celeste/rojo). Rediseñar.
-- [ ] **Iconos:** emojis en títulos (📄 👥 💸) mezclados con Bootstrap Icons → solo Bootstrap Icons.
-- [ ] **Fechas:** formatos mezclados (2026-10-10 · 15/09/2026 · 03 de octubre de 2026) → dd/mm/aaaa en tablas.
-- [ ] **Paginación y búsqueda:** DataTables en productos, paginación propia «10/pág» en el resto → un solo componente.
+- [x] **Cabeceras:** todas con el mismo estilo (tarjeta clara con acento de marca); sin logo ni «Sucursal · Rol · empresa» repetidos; subtítulo descriptivo.
+- [x] **Botón principal:** un solo color (acento de la empresa) en todos los módulos; rojo solo para eliminar.
+- [x] **Cifras:** montos sin partir en tarjetas y tablas; en celular las cifras grandes se achican.
+- [x] **Productos (catálogo base):** rediseñado con los componentes comunes y búsqueda rápida (sin DataTables).
+- [x] **Iconos:** emojis de los títulos → Bootstrap Icons.
+- [x] Espacio sobrante arriba de las páginas viejas eliminado.
+- [x] **Mismo ancho en todas las páginas** (antes 960 / 1100 / 1200 / 1320 px según la página) y mismo encabezado en módulos viejos y nuevos.
+- [x] **Menú lateral:** al cambiar de página conserva su posición y centra el ítem activo (antes volvía arriba y el activo quedaba fuera de la vista); el activo lleva una barra de color.
+- [x] **Estado de resultados:** los meses futuros ya no se grafican como cero y el mes actual se marca «(en curso)».
+- [ ] **Estado de resultados:** la nómina solo está registrada como gasto de enero a marzo 2026; de abril en adelante los egresos no incluyen sueldos (margen irreal de ~98 %). Registrar la nómina mensual o calcularla desde colaboradores.
+- [ ] **Proyección de flujo de caja:** revisar al final (pedido del usuario).
+- [ ] **Fechas:** formatos mezclados (2026-10-10 · 15/09/2026) → dd/mm/aaaa en tablas (CAI, contratos).
+- [ ] **Tablas anchas:** clientes/usuarios/CAI tienen muchas columnas; en pantallas medianas hay que desplazar a la derecha. Evaluar ocultar columnas secundarias.
+- [ ] **Paginación:** cada página vieja tiene su propia paginación «10/pág» → un solo componente.
 - [ ] Quitar los `<style>` propios de cada página (400–1 200 líneas) a medida que se migra.
 - [ ] Documentos imprimibles: `gasto_ver` usa cabecera roja y la factura naranja → mismo color de marca.
 - [ ] Dashboard: agrupar sus ~26 consultas.
 - [x] Login, selección de empresa/establecimiento, menú lateral, márgenes globales, módulos nuevos (bancos, cuentas, inventario, POS, empresas) ya con el estilo común.
+
+## 📤 Exportaciones
+
+- [x] **Historial → Descargar XLSX** (facturas seleccionadas): una fila por factura con cliente, RTN, sucursal, contrato, detalle enumerado en una celda, importes exento/exonerado/gravados, subtotal, ISV 15/18, total, total en letras, CAI y rango; fila final de totales (sin anuladas). Generador propio `includes/xlsx.php` (no requiere librerías en el servidor).
 
 ## 🧩 Plataforma
 

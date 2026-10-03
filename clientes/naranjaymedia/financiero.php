@@ -255,8 +255,15 @@ $chart_labels   = [];
 $chart_ingresos = [];
 $chart_egresos  = [];
 $chart_utilidad = [];
+// Año en curso: los meses futuros no se grafican (no son "cero ventas") y el mes actual va marcado como parcial
+$mes_tope = ((int)$anio_filtro === (int)date('Y')) ? (int)date('n') : 12;
 for ($m = 1; $m <= 12; $m++) {
-    $chart_labels[]   = substr($meses_es[$m], 0, 3);
+    if ($m > $mes_tope) {
+        $chart_labels[]   = substr($meses_es[$m], 0, 3);
+        $chart_ingresos[] = $chart_egresos[] = $chart_utilidad[] = null;
+        continue;
+    }
+    $chart_labels[]   = substr($meses_es[$m], 0, 3) . ($m === $mes_tope && $mes_tope < 12 && (int)$anio_filtro === (int)date('Y') ? ' (en curso)' : '');
     $chart_ingresos[] = round((float)($ing_por_mes[$m]['subtotal'] ?? 0), 2);
     $chart_egresos[]  = round((float)($egr_por_mes[$m]['total']    ?? 0), 2);
     $chart_utilidad[] = round(

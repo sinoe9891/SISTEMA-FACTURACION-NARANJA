@@ -858,7 +858,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
     <!-- Header -->
     <div class="cl-header">
         <div>
-            <h4 style="font-size:1.35rem;font-weight:700;margin:0">👥 Gestión de Colaboradores</h4>
+            <h4 style="font-size:1.35rem;font-weight:700;margin:0"><i class="bi bi-people me-2"></i>Gestión de Colaboradores</h4>
             <p style="font-size:.82rem;opacity:.8;margin:.25rem 0 0">Nómina, pagos, préstamos y viáticos del equipo</p>
         </div>
         <div style="font-size:3rem;opacity:.2;font-weight:900;line-height:1">👥</div>

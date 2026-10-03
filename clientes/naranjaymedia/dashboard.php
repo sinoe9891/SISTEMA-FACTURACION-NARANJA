@@ -252,11 +252,7 @@ require_once '../../includes/templates/header.php';
         <div>
             <h4 style="font-size:1.35rem;font-weight:700;margin:0"><?= $emoji ?> <?= $saludo ?>,
                 <?= htmlspecialchars(USUARIO_NOMBRE) ?></h4>
-            <p style="font-size:.82rem;opacity:.8;margin:.3rem 0 0">
-                Sucursal: <strong><?= htmlspecialchars($nombre_establecimiento) ?></strong>
-                &nbsp;·&nbsp; Rol: <?= htmlspecialchars(ucfirst($datos['rol'])) ?>
-                &nbsp;·&nbsp; <?= htmlspecialchars($datos['cliente_nombre']) ?>
-            </p>
+            <p style="font-size:.82rem;opacity:.8;margin:.3rem 0 0">Resumen de <?= htmlspecialchars($nombre_establecimiento) ?> al <?= date('d/m/Y') ?>.</p>
         </div>
         <?php if (!empty($datos['logo_url'])): ?>
             <img src="<?= htmlspecialchars($datos['logo_url']) ?>" alt="Logo" class="db-header-logo">

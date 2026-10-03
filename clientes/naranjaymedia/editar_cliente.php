@@ -529,12 +529,8 @@ if ($establecimiento_activo) {
 	<!-- Header -->
 	<div class="cf-header-card">
 		<div>
-			<h4 class="cf-header-title">✏️ Editar Cliente</h4>
-			<p class="cf-header-sub">
-				Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> &nbsp;·&nbsp;
-				Rol: <?= htmlspecialchars(ucfirst($datos['rol'])) ?> &nbsp;·&nbsp;
-				<?= htmlspecialchars($datos['cliente_nombre']) ?>
-			</p>
+			<h4 class="cf-header-title"><i class="bi bi-pencil-square me-2"></i>Editar Cliente</h4>
+			<p class="cf-header-sub">Actualiza los datos fiscales y de contacto del cliente.</p>
 		</div>
 		<?php if (!empty($datos['logo_url'])): ?>
 			<img src="<?= htmlspecialchars($navbarLogo ?? "") ?>" alt="Logo" class="cf-header-logo">

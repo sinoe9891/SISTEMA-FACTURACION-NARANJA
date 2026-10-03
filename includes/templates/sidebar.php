@@ -42,6 +42,23 @@
 				<?php endforeach; ?>
 			<?php endforeach; ?>
 		</nav>
+		<script>
+			// Al cambiar de página el menú volvía arriba y el ítem activo quedaba fuera de la vista:
+			// se conserva la posición del menú y, si el activo no se ve, se centra.
+			(function () {
+				var nav = document.currentScript.previousElementSibling, aside = document.getElementById('appSidebar');
+				function mostrarActivo() {
+					var a = nav.querySelector('.app-nav-link.active');
+					if (!a || !nav.clientHeight) return;
+					var r = a.getBoundingClientRect(), b = nav.getBoundingClientRect();
+					if (r.top < b.top || r.bottom > b.bottom) nav.scrollTop += r.top - b.top - (b.height - r.height) / 2;
+				}
+				try { var y = sessionStorage.getItem('app_nav_y'); if (y !== null) nav.scrollTop = +y; } catch (e) {}
+				mostrarActivo();
+				nav.addEventListener('scroll', function () { try { sessionStorage.setItem('app_nav_y', nav.scrollTop); } catch (e) {} }, { passive: true });
+				aside && aside.addEventListener('shown.bs.offcanvas', mostrarActivo);   // menú en celular
+			})();
+		</script>
 
 		<div class="app-sidebar-user">
 			<span class="app-avatar"><?= htmlspecialchars(mb_strtoupper(mb_substr(USUARIO_NOMBRE, 0, 1))) ?></span>

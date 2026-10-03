@@ -620,12 +620,8 @@ require_once '../../includes/templates/header.php';
     <!-- Header -->
     <div class="cc-header">
         <div>
-            <h4 class="cc-header-title">🔐 Configuración de Rangos CAI</h4>
-            <p class="cc-header-sub">
-                Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> &nbsp;·&nbsp;
-                Rol: <?= htmlspecialchars(ucfirst($rol_usuario)) ?> &nbsp;·&nbsp;
-                <?= htmlspecialchars($cliente_nombre) ?>
-            </p>
+            <h4 class="cc-header-title"><i class="bi bi-shield-lock me-2"></i>Configuración de Rangos CAI</h4>
+            <p class="cc-header-sub">Rangos de facturación autorizados por el SAR.</p>
         </div>
         <?php if ($logo_url): ?>
             <img src="<?= htmlspecialchars($logo_url) ?>" alt="Logo" class="cc-header-logo">

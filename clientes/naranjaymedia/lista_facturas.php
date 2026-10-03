@@ -1087,12 +1087,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 	<!-- Header -->
 	<div class="fh-header">
 		<div>
-			<h4 class="fh-header-title">📜 Historial de Facturas</h4>
-			<p class="fh-header-sub">
-				Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> &nbsp;·&nbsp;
-				Rol: <?= htmlspecialchars(ucfirst($datos['rol'])) ?>
-			</p>
-			<p class="fh-header-sub" style="margin-top:.15rem;"><?= htmlspecialchars($datos['cliente_nombre']) ?></p>
+			<h4 class="fh-header-title"><i class="bi bi-clock-history me-2"></i>Historial de Facturas</h4>
+			<p class="fh-header-sub">Busca, filtra, imprime y descarga las facturas emitidas.</p>
 		</div>
 		<?php if (!empty($datos['logo_url'])): ?>
 			<img src="<?= htmlspecialchars($datos['logo_url']) ?>" alt="Logo" class="fh-header-logo">
@@ -1342,6 +1338,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 				<div class="fh-actions">
 					<button type="button" id="fhBulkPdfBtn" class="btn-fa btn-fa-view"><i
 							class="bi bi-file-earmark-pdf"></i> Descargar PDFs</button>
+					<button type="button" id="fhBulkXlsxBtn" class="btn-fa btn-fa-view"><i
+							class="bi bi-file-earmark-excel"></i> Descargar XLSX</button>
 					<button type="button" id="fhBulkMensajeBtn" class="btn-fa btn-fa-edit"><i
 							class="bi bi-envelope-fill"></i> Redactar correo</button>
 					<button type="button" id="fhBulkAnularBtn" class="btn-fa btn-fa-warn"><i
@@ -1640,6 +1638,12 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			const ids = Array.from(selectedIds);
 			if (!ids.length) return;
 			bulkPdfMenu(ids);
+		});
+		document.getElementById('fhBulkXlsxBtn')?.addEventListener('click', () => {
+			const ids = Array.from(selectedIds);
+			if (!ids.length) return;
+			// Descarga directa: el servidor arma el .xlsx con las facturas de esta empresa
+			window.location.href = 'includes/facturas_xlsx.php?ids=' + encodeURIComponent(ids.join(','));
 		});
 		$bulkMensajeBtn?.addEventListener('click', () => {
 			const ids = Array.from(selectedIds);

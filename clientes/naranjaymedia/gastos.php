@@ -717,7 +717,7 @@ $total  = count($gastos);
     <!-- Header -->
     <div class="gs-header">
         <div>
-            <h4 style="font-size:1.35rem;font-weight:700;margin:0">💸 Gestión de Gastos</h4>
+            <h4 style="font-size:1.35rem;font-weight:700;margin:0"><i class="bi bi-cash-stack me-2"></i>Gestión de Gastos</h4>
             <p style="font-size:.82rem;opacity:.8;margin:.25rem 0 0"><?= $periodo ?> — egresos, viáticos y gastos
                 recurrentes</p>
         </div>

@@ -692,7 +692,7 @@ $total_contratos = count($contratos);
     <!-- Header -->
     <div class="ct-header">
         <div>
-            <h4 class="ct-header-title">📄 Contratos</h4>
+            <h4 class="ct-header-title"><i class="bi bi-file-earmark-text me-2"></i>Contratos</h4>
             <p class="ct-header-sub">Gestión de contratos de servicio &nbsp;·&nbsp; <?= date('F Y') ?></p>
         </div>
         <a href="crear_contrato" class="btn-new-ct">

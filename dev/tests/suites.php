@@ -986,3 +986,33 @@ suite('PDF de facturas (descarga individual y ZIP)', function () {
     $r = $ccic->get('procesar_accion_factura.php', ['accion' => 'exportar_pdf_single', 'factura_id' => $ids[0]]);
     check('otra empresa no puede descargar el PDF', !str_contains($r['head'], 'application/pdf'));
 });
+
+suite('Exportar facturas a XLSX', function () {
+    $c = login('qa.admin@local.test');
+    $ids = db()->query("SELECT id FROM facturas WHERE cliente_id=2 ORDER BY id DESC LIMIT 4")->fetchAll(PDO::FETCH_COLUMN);
+    $r = $c->get('includes/facturas_xlsx.php', ['ids' => implode(',', $ids)]);
+    check('descarga un .xlsx', str_contains($r['head'], 'spreadsheetml.sheet') && str_starts_with($r['body'], "PK\x03\x04"), substr($r['body'], 0, 120));
+    $tmp = tempnam(sys_get_temp_dir(), 'xl') . '.xlsx';
+    file_put_contents($tmp, $r['body']);
+    $z = new ZipArchive();
+    $abre = $z->open($tmp) === true;
+    $hoja = $abre ? (string)$z->getFromName('xl/worksheets/sheet1.xml') : '';
+    check('el ZIP del .xlsx es válido y trae la hoja', $abre && $hoja !== '');
+    $xml = @simplexml_load_string($hoja);
+    check('la hoja es XML válido', $xml !== false);
+    $corr = db()->query("SELECT correlativo FROM facturas WHERE id=" . (int)$ids[0])->fetchColumn();
+    check('incluye el correlativo y la fila de totales', str_contains($hoja, $corr) && str_contains($hoja, 'TOTALES'));
+    check('una fila por factura + encabezado + vacía + totales', $xml && count($xml->sheetData->row) === count($ids) + 3);
+    $total = (float)db()->query("SELECT SUM(total) FROM facturas WHERE estado<>'anulada' AND id IN (" . implode(',', array_map('intval', $ids)) . ")")->fetchColumn();
+    $ult = $xml ? $xml->sheetData->row[count($xml->sheetData->row) - 1] : null;
+    $vals = [];
+    if ($ult) foreach ($ult->c as $cel) $vals[(string)$cel['r']] = (string)$cel->v;
+    $fila = count($ids) + 3;
+    check('el total a pagar coincide con la BD', abs((float)($vals["W$fila"] ?? -1) - round($total, 2)) < 0.01, json_encode($vals));
+    @unlink($tmp);
+    $ccic = login('qa.ccic@local.test', 3);
+    $r = $ccic->get('includes/facturas_xlsx.php', ['ids' => implode(',', $ids)]);
+    check('otra empresa no puede exportar esas facturas', $r['code'] === 404 && !str_contains($r['head'], 'spreadsheetml'));
+    $r = $c->get('includes/facturas_xlsx.php', ['ids' => 'abc']);
+    check('ids inválidos → 400', $r['code'] === 400);
+});

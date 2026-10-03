@@ -502,7 +502,7 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
     <!-- Hero -->
     <div class="cc-hero">
         <div>
-            <h4 class="cc-hero-title">📄 Nuevo Contrato</h4>
+            <h4 class="cc-hero-title"><i class="bi bi-file-earmark-text me-2"></i>Nuevo Contrato</h4>
             <p class="cc-hero-sub">Define el tipo, servicios, vigencia y condiciones de cobro</p>
         </div>
         <a href="contratos" class="btn btn-sm"

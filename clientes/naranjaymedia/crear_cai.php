@@ -418,12 +418,8 @@ require_once '../../includes/templates/header.php';
     <!-- Header -->
     <div class="cc-header">
         <div>
-            <h4 class="cc-header-title">🔑 Crear Nuevo Rango CAI</h4>
-            <p class="cc-header-sub">
-                Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> &nbsp;·&nbsp;
-                Rol: <?= htmlspecialchars(ucfirst($rol_usuario)) ?> &nbsp;·&nbsp;
-                <?= htmlspecialchars($cliente_nombre) ?>
-            </p>
+            <h4 class="cc-header-title"><i class="bi bi-key me-2"></i>Crear Nuevo Rango CAI</h4>
+            <p class="cc-header-sub">Registra un nuevo rango autorizado por el SAR.</p>
         </div>
         <?php if ($logo_url): ?>
             <img src="<?= htmlspecialchars($logo_url) ?>" alt="Logo" class="cc-header-logo">

@@ -67,7 +67,7 @@ $tipoLabel = ['visa'=>'Visa','mastercard'=>'Mastercard','amex'=>'Amex','debito'=
 <div class="tj-page container-xxl">
     <div class="tj-hero">
         <div>
-            <h4 style="font-size:1.35rem;font-weight:700;margin:0">💳 Tarjetas Registradas</h4>
+            <h4 style="font-size:1.35rem;font-weight:700;margin:0"><i class="bi bi-credit-card me-2"></i>Tarjetas Registradas</h4>
             <p style="font-size:.82rem;opacity:.8;margin:.25rem 0 0">Tarjetas de crédito y débito para registrar pagos</p>
         </div>
         <div class="d-flex gap-2">

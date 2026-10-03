@@ -642,12 +642,8 @@ $total_clientes = count($clientes);
 	<!-- Header -->
 	<div class="cf-header-card">
 		<div>
-			<h4 class="cf-header-title">📄 Clientes de Facturación</h4>
-			<p class="cf-header-sub">
-				Sucursal: <?= htmlspecialchars($nombre_establecimiento) ?> &nbsp;·&nbsp;
-				Rol: <?= htmlspecialchars(ucfirst($datos['rol'])) ?> &nbsp;·&nbsp;
-				<?= htmlspecialchars($datos['cliente_nombre']) ?>
-			</p>
+			<h4 class="cf-header-title"><i class="bi bi-file-earmark-text me-2"></i>Clientes de Facturación</h4>
+			<p class="cf-header-sub">Clientes a los que se les emite factura.</p>
 		</div>
 		<?php if (!empty($datos['logo_url'])): ?>
 			<img src="<?= htmlspecialchars($navbarLogo ?? "") ?>" alt="Logo" class="cf-header-logo">

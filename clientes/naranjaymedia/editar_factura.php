@@ -273,18 +273,7 @@ require_once '../../includes/templates/header.php';
 			<h4 style="font-size:1.35rem;font-weight:700;margin:0">
 				<i class="bi bi-pencil-square me-2"></i>Editar Factura #<?= htmlspecialchars($factura['correlativo']) ?>
 			</h4>
-			<p style="font-size:.82rem;opacity:.8;margin:.25rem 0 0">
-				<?= htmlspecialchars($nombre_establecimiento) ?> &nbsp;·&nbsp;
-				<?= htmlspecialchars(ucfirst($datos['rol'])) ?> &nbsp;·&nbsp;
-				<?= htmlspecialchars($datos['cliente_nombre']) ?>
-			</p>
-		</div>
-		<div class="d-flex align-items-center gap-3">
-			<?php if (!empty($datos['logo_url'])): ?>
-				<img src="<?= htmlspecialchars($datos['logo_url']) ?>" alt="Logo"
-					style="max-height:48px;border-radius:8px;background:#fff;padding:4px;">
-			<?php endif; ?>
-			<div style="font-size:2.8rem;opacity:.2;font-weight:900;line-height:1">✏️</div>
+			<p style="font-size:.82rem;opacity:.8;margin:.25rem 0 0">Los cambios recalculan totales e inventario.</p>
 		</div>
 	</div>
 

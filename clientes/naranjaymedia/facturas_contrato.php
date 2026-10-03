@@ -578,7 +578,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
     <!-- Hero -->
     <div class="fc-hero">
         <div>
-            <h4 class="fc-hero-title">🧾 Facturas del Contrato</h4>
+            <h4 class="fc-hero-title"><i class="bi bi-receipt me-2"></i>Facturas del Contrato</h4>
             <p class="fc-hero-sub">
                 <?= htmlspecialchars($contrato['nombre_contrato']) ?> &nbsp;·&nbsp;
                 <?= htmlspecialchars($contrato['receptor_nombre']) ?>
