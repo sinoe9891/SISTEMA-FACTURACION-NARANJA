@@ -20,13 +20,22 @@ Actualizado: 2026-10-03 (tarde). Orden = prioridad sugerida.
 - [x] Sesión: cookies seguras, `session_regenerate_id()`, límite de intentos (login y clave autorizadora; requiere `sql/migraciones/2026-10-03_login_intentos.sql`), usuarios inactivos bloqueados, logout completo.
 - [x] Superadmin: facturación, CAI y selección de establecimientos con la empresa seleccionada.
 
-## 🟡 Interfaz
+## 🟡 Interfaz (revisión UX/UI del 2026-10-03, en producción)
 
-- [x] **Login mejorado** (ojo, Bloq Mayús, responsive) y pantallas de selección de empresa/establecimiento.
-- [ ] Migrar cada página a `app.css` (quitar `<style>` propios de 400–1 200 líneas); espaciados y mejoras visuales.
-- [x] `index` y `seleccionar_*` con el estilo común. `gasto_ver`, `ver_factura`, `colaborador_reporte` quedan como documentos imprimibles independientes (a propósito).
-- [x] Corregir textos con codificación rota (mojibake) en `includes/dashboard.php`.
+Hay **tres estilos de pantalla** conviviendo: (a) cabecera tipo «banner» con degradado, (b) cabecera simple de los módulos nuevos (`app-page-header`), (c) página sin diseño (Productos). Unificar todo al estilo (b) + componentes de `app.css`:
+
+- [ ] **Cabeceras:** cada módulo usa un color distinto (azul: dashboard, facturas, historial, tarjetas, estado de resultados · naranja: gastos · morado: categorías, CAI, clientes · verde: contratos, colaboradores, productos por cliente, proyección · turquesa: mensajes · rojo: usuarios). Además repiten «Sucursal · Rol · nombre de la empresa» y el logo, que ya están en el menú lateral.
+- [ ] **Botón principal de color distinto en cada pantalla:** naranja (Nuevo gasto), morado (Nueva categoría, Nuevo rango CAI, Nuevo cliente), verde (Asignar producto, Nuevo colaborador), **rojo** (Nuevo usuario: el rojo debería ser solo para eliminar), azul (módulos nuevos). Unificar a azul.
+- [ ] **Tarjetas de indicadores:** montos partidos en dos líneas («L» arriba y la cifra abajo) en dashboard, historial, gastos, colaboradores y proyección. Pasar a `app-kpi`.
+- [ ] **Tablas:** montos partidos («L / 9,000.00») en contratos, productos y gastos; columnas cortadas a la derecha en clientes y usuarios; en usuarios el nombre largo de la empresa ocupa 6 líneas.
+- [ ] **Productos (catálogo base):** es la pantalla más vieja (tabla DataTables cruda, título gigante, botones celeste/rojo). Rediseñar.
+- [ ] **Iconos:** emojis en títulos (📄 👥 💸) mezclados con Bootstrap Icons → solo Bootstrap Icons.
+- [ ] **Fechas:** formatos mezclados (2026-10-10 · 15/09/2026 · 03 de octubre de 2026) → dd/mm/aaaa en tablas.
+- [ ] **Paginación y búsqueda:** DataTables en productos, paginación propia «10/pág» en el resto → un solo componente.
+- [ ] Quitar los `<style>` propios de cada página (400–1 200 líneas) a medida que se migra.
+- [ ] Documentos imprimibles: `gasto_ver` usa cabecera roja y la factura naranja → mismo color de marca.
 - [ ] Dashboard: agrupar sus ~26 consultas.
+- [x] Login, selección de empresa/establecimiento, menú lateral, márgenes globales, módulos nuevos (bancos, cuentas, inventario, POS, empresas) ya con el estilo común.
 
 ## 🧩 Plataforma
 
@@ -52,6 +61,8 @@ Actualizado: 2026-10-03 (tarde). Orden = prioridad sugerida.
 
 ## 🛒 Punto de Venta (POS)
 
+- [ ] **Modo táctil:** botón «Modo táctil» (recordado por navegador): pantalla completa sin menú, tarjetas de producto más grandes con categorías y foto, botones + / − para cantidad, teclado numérico en pantalla para el efectivo, más botones rápidos (L 50/100/200/500), botones de quitar grandes, sin zoom accidental. Probar en tablet y celular.
+
 Especificación completa: [ESPECIFICACION_POS.md](ESPECIFICACION_POS.md). Migración `sql/migraciones/2026-10-03_pos.sql`.
 
 - [x] **Fase 1:** turnos de caja (apertura con fondo, una caja = un punto de emisión, un turno por caja y por cajero), venta con buscador y lector de código de barras, cobro en efectivo con cambio / tarjeta (autorización) / transferencia / mixto, factura con el CAI de la caja a CONSUMIDOR FINAL o a un cliente, descuento de inventario, envío repetido sin doble cobro (idempotencia), entradas/retiros de efectivo (el cajero necesita autorización de un admin), Corte X, cierre con arqueo ciego y justificación de diferencias, Corte Z imprimible, historial de turnos. Responsive.
@@ -62,7 +73,10 @@ Especificación completa: [ESPECIFICACION_POS.md](ESPECIFICACION_POS.md). Migrac
 
 ---
 
-## ✅ Hecho (sin commit, 2026-10-03)
+## ✅ Hecho (2026-10-03)
+
+- Migraciones aplicadas en producción (con respaldo verificado) y código desplegado.
+- Descarga de varias facturas en ZIP: PDF corregido (error de dompdf) y ajustado para verse igual que «Imprimir / PDF», con texto real.
 
 - Borrado de facturas: solo la última del CAI (evita correlativos duplicados).
 - Aislamiento por empresa en productos y en las APIs de contratos y puntos de emisión.

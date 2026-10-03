@@ -521,6 +521,71 @@ if (!function_exists('formatFecha')) {
 				background-color: #fff3cd;
 				border-color: #ffecb5;
 			}
+
+			/* ── Igualar a la impresión del navegador (Bootstrap + @media print) ── */
+			body {
+				line-height: 1.5;
+			}
+
+			/* Centrado en la hoja: un solo margen igual en los 4 lados (Dompdf aplica el margen
+			   de página al <html>); el body no suma margen extra y el recuadro mide el ancho útil */
+			@page {
+				margin: 0;
+			}
+
+			html {
+				margin: 1.2cm !important;
+				padding: 0 !important;
+			}
+
+			body {
+				margin: 0 !important;
+				padding: 0 !important;
+			}
+
+			.container {
+				width: auto !important;
+				margin: 0 !important;
+				box-sizing: border-box;
+			}
+
+			/* Bootstrap: títulos con peso medio (no negrita) y sin margen superior */
+			h2, h5, h6 {
+				font-weight: normal;
+				margin: 0 0 .5rem 0;
+				line-height: 1.2;
+			}
+
+			.factura-header h2 {
+				font-weight: bold;
+			}
+
+			/* Bootstrap: <hr> es una línea fina gris, no el doble borde por defecto */
+			hr {
+				border: 0;
+				border-top: 1px solid #c8c8c8;
+				height: 0;
+				margin: 9px 0;
+			}
+
+			/* Bootstrap: párrafos y tablas sin márgenes extra */
+			p {
+				margin: 0 0 1rem 0;
+			}
+
+			table.table.table-borderless td {
+				padding: 2px 4px;
+			}
+
+			/* Filas de la tabla de artículos tan compactas como en la impresión */
+			table.table-bordered th,
+			table.table-bordered td {
+				padding: .3rem .5rem;
+			}
+
+			.text-end-factura-titulo div {
+				line-height: 1.5;
+			}
 		<?php endif; ?>
 	</style>
 </head>
