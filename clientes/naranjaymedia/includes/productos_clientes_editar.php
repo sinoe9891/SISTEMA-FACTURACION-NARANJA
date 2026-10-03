@@ -8,7 +8,10 @@ try {
 	}
 
 	$id             = $_POST['id'] ?? null;
-	$cliente_id     = $_POST['cliente_id'] ?? null;
+	// El cliente sale de la sesión, nunca del formulario
+	$cliente_id     = (int)(USUARIO_ROL === 'superadmin'
+		? ($_SESSION['cliente_seleccionado'] ?? 0)
+		: CLIENTE_ID);
 	$nombre         = trim($_POST['nombre'] ?? '');
 	$descripcion    = trim($_POST['descripcion'] ?? '');
 	$precio         = floatval($_POST['precio'] ?? 0);

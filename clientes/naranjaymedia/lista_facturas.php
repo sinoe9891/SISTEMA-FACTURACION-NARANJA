@@ -188,9 +188,7 @@ $noDeclMesActual = $stmtNoDeclMesActual->fetch(PDO::FETCH_ASSOC);
 $cant_no_decl_mes_actual = (int)$noDeclMesActual['cantidad'];
 $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 ?>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
 <style>
 	:root {

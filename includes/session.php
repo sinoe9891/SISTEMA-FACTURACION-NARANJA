@@ -1,6 +1,6 @@
 <?php
-ini_set('session.cookie_path', '/');
-session_start();
+require_once __DIR__ . '/sesion_inicio.php';
+iniciarSesionSegura();
 
 require_once __DIR__ . '/db.php';
 
@@ -21,9 +21,12 @@ if (!isset($_SESSION['usuario_id'])) {
 
 $usuario_id = (int)$_SESSION['usuario_id'];
 
-// Traer usuario + subdominio asignado
+// Traer usuario + subdominio asignado (+ marca del cliente, que reutiliza el header
+// para no repetir esta consulta en cada página)
 $stmt = $pdo->prepare("
-    SELECT u.*, c.subdominio 
+    SELECT u.*, c.subdominio, c.estado AS cliente_estado,
+           c.nombre AS cliente_nombre, c.alias AS cliente_alias, c.logo_url,
+           c.og_image_url, c.favicon_url, c.apple_touch_icon_url
     FROM usuarios u
     LEFT JOIN clientes_saas c ON u.cliente_id = c.id
     WHERE u.id = ?
@@ -41,6 +44,20 @@ if (!$usuario) {
         exit;
     }
     header("Location: /");
+    exit;
+}
+
+// Usuario desactivado o empresa desactivada (excepto superadmin): cerrar la sesión
+if (($usuario['estado'] ?? 'activo') !== 'activo'
+    || (($usuario['rol'] ?? '') !== 'superadmin' && ($usuario['cliente_estado'] ?? 'activo') === 'inactivo')) {
+    session_destroy();
+    if ($isApi) {
+        http_response_code(403);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'Cuenta o empresa desactivada']);
+        exit;
+    }
+    header("Location: ./");
     exit;
 }
 
@@ -88,6 +105,9 @@ if (($usuario['rol'] ?? '') !== 'superadmin' && $cliente_detectado && $cliente_d
     exit;
 }
 
+// Copia para el header (algunas páginas reutilizan la variable $usuario)
+$__usuarioSesion = $usuario;
+
 // Constantes
 define('USUARIO_ID', $usuario['id']);
 define('USUARIO_NOMBRE', $usuario['nombre']);
@@ -119,3 +139,16 @@ if (!isset($_SESSION['establecimientos'])) {
     $_SESSION['establecimientos'] = $stmtEstab->fetchAll(PDO::FETCH_COLUMN);
 }
 define('USUARIO_ESTABLECIMIENTOS', $_SESSION['establecimientos'] ?? []);
+
+/**
+ * Empresa (cliente_saas) con la que se trabaja: la del usuario, o la seleccionada si es
+ * superadmin. Usar siempre esta función para filtrar datos por empresa.
+ */
+function cliente_actual(): int
+{
+    return (int)(USUARIO_ROL === 'superadmin' ? ($_SESSION['cliente_seleccionado'] ?? 0) : CLIENTE_ID);
+}
+
+// Protección CSRF: todo POST/PUT/PATCH/DELETE autenticado debe traer el token de la sesión
+require_once __DIR__ . '/csrf.php';
+csrf_verificar();

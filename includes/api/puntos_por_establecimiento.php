@@ -6,7 +6,7 @@
  *
  * GET params:
  *   establecimiento_id  (requerido)
- *   cliente_id          (opcional, para validar pertenencia)
+ *   cliente_id          (solo superadmin; el resto usa el cliente de la sesión)
  */
 
 require_once dirname(__DIR__) . '/db.php';        // ../../includes/db.php
@@ -26,9 +26,13 @@ $establecimiento_id = isset($_GET['establecimiento_id']) && ctype_digit((string)
     ? (int)$_GET['establecimiento_id']
     : null;
 
-$cliente_id = isset($_GET['cliente_id']) && ctype_digit((string)$_GET['cliente_id'])
-    ? (int)$_GET['cliente_id']
-    : null;
+// Usuarios normales: siempre el cliente de la sesión.
+// Superadmin (acceso global): puede indicar ?cliente_id, si no usa el seleccionado.
+$cliente_id = (int)(USUARIO_ROL === 'superadmin'
+    ? (ctype_digit((string)($_GET['cliente_id'] ?? '')) && (int)$_GET['cliente_id'] > 0
+        ? $_GET['cliente_id']
+        : ($_SESSION['cliente_seleccionado'] ?? 0))
+    : CLIENTE_ID);
 
 if (!$establecimiento_id) {
     http_response_code(400);
@@ -36,23 +40,26 @@ if (!$establecimiento_id) {
     exit;
 }
 
+if (!$cliente_id) {
+    http_response_code(403);
+    echo json_encode(['error' => 'Cliente no identificado']);
+    exit;
+}
+
 // ── Consulta ──────────────────────────────────────────────────────────────────
-// Si se pasa cliente_id, verificamos que el establecimiento pertenezca al cliente
+// Siempre verificamos que el establecimiento pertenezca al cliente de la sesión
 // para evitar que un cliente vea puntos de otro cliente.
 try {
-    if ($cliente_id) {
-        // Verificar que el establecimiento pertenezca al cliente
-        $stmtCheck = $pdo->prepare("
-            SELECT COUNT(*) FROM establecimientos
-            WHERE establecimiento_id = ? AND cliente_id = ?
-        ");
-        $stmtCheck->execute([$establecimiento_id, $cliente_id]);
+    $stmtCheck = $pdo->prepare("
+        SELECT COUNT(*) FROM establecimientos
+        WHERE establecimiento_id = ? AND cliente_id = ?
+    ");
+    $stmtCheck->execute([$establecimiento_id, $cliente_id]);
 
-        if ((int)$stmtCheck->fetchColumn() === 0) {
-            http_response_code(403);
-            echo json_encode(['error' => 'Establecimiento no pertenece al cliente']);
-            exit;
-        }
+    if ((int)$stmtCheck->fetchColumn() === 0) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Establecimiento no pertenece al cliente']);
+        exit;
     }
 
     $stmt = $pdo->prepare("

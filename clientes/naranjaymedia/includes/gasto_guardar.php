@@ -2,6 +2,7 @@
 // clientes/naranjaymedia/includes/gasto_guardar.php
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
+require_once __DIR__ . '/_gasto_adjuntos.php';
 header('Content-Type: application/json; charset=utf-8');
 
 try {
@@ -41,6 +42,11 @@ try {
     if (!in_array($tipo,       ['variable', 'fijo', 'extraordinario', 'viaticos'])) throw new Exception("Tipo inválido.");
     if (!in_array($frecuencia, ['unico', 'mensual', 'quincenal', 'anual']))          throw new Exception("Frecuencia inválida.");
     if (!in_array($estado,     ['pagado', 'pendiente']))                            throw new Exception("Estado inválido.");
+    if (!in_array($metodo_pago, GASTO_METODOS_PAGO))                                throw new Exception("Método de pago inválido.");
+
+    // Categoría y tarjeta deben pertenecer al cliente
+    $categoria_id = categoriaGastoValida($pdo, $categoria_id, $cid);
+    $tarjeta_id   = tarjetaGastoValida($pdo, $tarjeta_id, $cid);
 
     // ── Días de pago según frecuencia ────────────────────────────────────
     if ($frecuencia === 'mensual') {
@@ -64,21 +70,8 @@ try {
 
     $usuario_id = defined('USUARIO_ID') ? (int)USUARIO_ID : (int)($_SESSION['usuario_id'] ?? 0);
 
-    // ── Archivo adjunto ──────────────────────────────────────────────────────
-    $arch_adj = null;
-    $arch_nom = null;
-    if (!empty($_FILES['archivo_adjunto']['name']) && $_FILES['archivo_adjunto']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = __DIR__ . '/uploads/gastos/';
-        if (!is_dir($uploadDir)) mkdir($uploadDir, 0775, true);
-        $file = $_FILES['archivo_adjunto'];
-        $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'])) throw new Exception("Tipo de archivo no permitido.");
-        if ($file['size'] > 5 * 1024 * 1024) throw new Exception("El archivo supera 5 MB.");
-        $arch_adj = 'gasto_' . $cid . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-        if (!move_uploaded_file($file['tmp_name'], $uploadDir . $arch_adj))
-            throw new Exception("Error al guardar el archivo.");
-        $arch_nom = basename($file['name']);
-    }
+    // ── Comprobante (opcional) ───────────────────────────────────────────────
+    [$arch_adj, $arch_nom] = guardarAdjuntoGasto($_FILES['archivo_adjunto'] ?? null, $cid) ?? [null, null];
 
     $pdo->beginTransaction();
 
@@ -181,6 +174,8 @@ try {
     ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    // Si el gasto no se guardó, no dejar el comprobante huérfano en disco
+    if (!empty($arch_adj)) borrarAdjuntoGastoSiHuerfano($pdo, $arch_adj);
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

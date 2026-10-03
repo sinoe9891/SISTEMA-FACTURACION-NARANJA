@@ -2,6 +2,8 @@
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/intentos.php';
+require_once '../../includes/inventario.php';
 
 function renderFacturaPdfToString($factura_id)
 {
@@ -358,28 +360,29 @@ try {
 		header('Content-Type: application/json; charset=utf-8');
 	}
 
-	// Validar usuario que autoriza
-	$stmt = $pdo->prepare("SELECT id, rol, cliente_id, clave FROM usuarios WHERE correo = ?");
+	// Validar usuario que autoriza (con límite de intentos fallidos)
+	if ($min = intentosBloqueado($pdo, 'autoriza', $usuario_autoriza)) {
+		throw new Exception("Demasiados intentos fallidos de autorización. Intenta de nuevo en $min minuto(s).");
+	}
+	$stmt = $pdo->prepare("SELECT id, rol, cliente_id, clave, estado FROM usuarios WHERE correo = ?");
 	$stmt->execute([$usuario_autoriza]);
 	$autorizador = $stmt->fetch(PDO::FETCH_ASSOC);
 
-	if (!$autorizador || !password_verify($clave_autoriza, $autorizador['clave'])) {
+	if (!$autorizador || !password_verify($clave_autoriza, $autorizador['clave']) || ($autorizador['estado'] ?? 'activo') !== 'activo') {
+		intentosRegistrarFallo($pdo, 'autoriza', $usuario_autoriza);
 		throw new Exception('Credenciales inválidas.');
 	}
+	intentosLimpiar($pdo, 'autoriza', $usuario_autoriza);
 
 	if (!in_array($autorizador['rol'], ['admin', 'superadmin'])) {
 		throw new Exception('El usuario no tiene permisos para autorizar.');
 	}
 
-	// Verificar si es última factura solo para usuarios normales
-	$es_superadmin = ($autorizador['rol'] === 'superadmin');
-	$es_ultima = true; // Por defecto permitir al superadmin
-
 	$pdo->beginTransaction();
 
 	try {
 		foreach ($factura_ids as $factura_id_iter) {
-			$stmt = $pdo->prepare("SELECT id, correlativo, cai_id, estado, cliente_id FROM facturas WHERE id = ?");
+			$stmt = $pdo->prepare("SELECT id, correlativo, cai_id, estado, cliente_id, establecimiento_id FROM facturas WHERE id = ?");
 			$stmt->execute([$factura_id_iter]);
 			$factura = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -394,9 +397,25 @@ try {
 
 			// ELIMINAR FACTURA
 			if ($accion === 'eliminar') {
-				if (!$es_ultima && !$es_superadmin) {
-					throw new Exception('Solo puede eliminarse la última factura del CAI.');
+				// Solo se puede eliminar la última factura emitida con el CAI (aplica también
+				// a superadmin): retroceder el correlativo por una factura intermedia haría
+				// que la siguiente factura reutilice un número ya emitido.
+				$stmtCAI = $pdo->prepare("SELECT rango_inicio, correlativo_actual FROM cai_rangos WHERE id = ? FOR UPDATE");
+				$stmtCAI->execute([$factura['cai_id']]);
+				$caiRow = $stmtCAI->fetch(PDO::FETCH_ASSOC);
+				if (!$caiRow || (int)$caiRow['correlativo_actual'] < 1) {
+					throw new Exception('No se encontró el CAI de la factura.');
 				}
+
+				$partesCorrelativo = explode('-', (string)$factura['correlativo']);
+				$numeroFactura = (int)end($partesCorrelativo);
+				$numeroUltimo = (int)$caiRow['rango_inicio'] + (int)$caiRow['correlativo_actual'] - 1;
+				if ($numeroFactura !== $numeroUltimo) {
+					throw new Exception('Solo puede eliminarse la última factura emitida con este CAI (' . $factura['correlativo'] . ' no lo es). Para las demás usa "Anular".');
+				}
+
+				// Inventario: devolver lo que la factura había descontado
+				invRevertirFactura($pdo, (int)$factura['cliente_id'], (int)$factura_id_iter, (int)$facturador_id, 'Factura eliminada');
 
 				// Eliminar factura e items
 				$pdo->prepare("DELETE FROM factura_items_receptor WHERE factura_id = ?")->execute([$factura_id_iter]);
@@ -436,6 +455,7 @@ try {
 				}
 
 				$pdo->prepare("UPDATE facturas SET estado = 'anulada' WHERE id = ?")->execute([$factura_id_iter]);
+				invRevertirFactura($pdo, (int)$factura['cliente_id'], (int)$factura_id_iter, (int)$facturador_id, 'Factura anulada: ' . $motivo);
 
 				$pdo->prepare("INSERT INTO bitacora_facturas (factura_id, usuario_id, autorizador_id, accion, motivo, fecha)
 				VALUES (?, ?, ?, ?, ?, NOW())")
@@ -450,6 +470,8 @@ try {
 				}
 
 				$pdo->prepare("UPDATE facturas SET estado = 'emitida' WHERE id = ?")->execute([$factura_id_iter]);
+				// Restaurada: vuelve a descontar del inventario (falla si ya no hay existencia)
+				invDescontarFactura($pdo, (int)$factura['cliente_id'], (int)$factura_id_iter, (int)$factura['establecimiento_id'], (int)$facturador_id);
 
 				$pdo->prepare("INSERT INTO bitacora_facturas (factura_id, usuario_id, autorizador_id, accion, motivo, fecha)
 				VALUES (?, ?, ?, ?, ?, NOW())")

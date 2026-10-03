@@ -1,0 +1,8 @@
+# Hojas de estilo del sistema: comprimidas y en caché (header.php agrega ?v=fecha para refrescar)
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/css
+</IfModule>
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 30 days"
+</IfModule>

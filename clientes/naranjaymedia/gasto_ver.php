@@ -72,7 +72,8 @@ if ($g['frecuencia'] === 'quincenal') {
 // Archivo adjunto
 $archivoRaw    = $g['archivo_adjunto'] ?? '';
 $subDir        = (strpos($g['descripcion'], 'Sueldo ') === 0) ? 'comprobantes_nomina' : 'gastos';
-$uploadUrl     = 'includes/uploads/' . $subDir . '/' . $archivoRaw;
+// Se sirve por gasto_archivo.php (verifica sesión y empresa); uploads/ está bloqueado
+$uploadUrl     = 'gasto_archivo?id=' . (int)$g['id'];
 $uploadPath    = __DIR__ . '/includes/uploads/' . $subDir . '/' . $archivoRaw;
 $tieneArchivo  = !empty($archivoRaw) && file_exists($uploadPath);
 $extArchivo    = $tieneArchivo ? strtolower(pathinfo($archivoRaw, PATHINFO_EXTENSION)) : '';
@@ -84,6 +85,7 @@ $archivoNombre = $g['archivo_nombre'] ?? basename($archivoRaw);
 <html lang="es">
 
 <head>
+    <?= csrf_script() /* token CSRF para fetch/formularios (esta página no usa header.php) */ ?>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Comprobante #<?= $g['id'] ?> — <?= htmlspecialchars($g['descripcion']) ?></title>

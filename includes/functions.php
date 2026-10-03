@@ -152,3 +152,32 @@ function traducirMeses(array $lista_meses_en): array
 		return strtr($mes, $traducciones);
 	}, $lista_meses_en);
 }
+
+/**
+ * Valida un rango CAI antes de guardarlo (crear o editar).
+ * - rango_cai_inicio / rango_cai_fin con formato 000-000-00-00000000 y el mismo prefijo
+ * - sus números coinciden con rango_inicio / rango_fin
+ * - no se traslapa con otro CAI del mismo cliente y prefijo (establecimiento-punto-tipo):
+ *   dos CAI con números en común generarían facturas con el mismo número fiscal.
+ */
+function validarRangoCai(PDO $pdo, int $cliente_id, int $rango_inicio, int $rango_fin, string $rango_cai_inicio, string $rango_cai_fin, ?int $excluir_id = null): void
+{
+	if (!preg_match('/^(\d{3}-\d{3}-\d{2})-(\d{8})$/', $rango_cai_inicio, $a))
+		throw new Exception("Formato del rango CAI inicial inválido (ejemplo: 000-001-01-00000001).");
+	if (!preg_match('/^(\d{3}-\d{3}-\d{2})-(\d{8})$/', $rango_cai_fin, $b))
+		throw new Exception("Formato del rango CAI final inválido (ejemplo: 000-001-01-00000100).");
+	if ($a[1] !== $b[1])
+		throw new Exception("El rango CAI inicial y final deben tener el mismo prefijo ({$a[1]} ≠ {$b[1]}).");
+	if ((int)$a[2] !== $rango_inicio || (int)$b[2] !== $rango_fin)
+		throw new Exception("Los números del rango CAI ({$a[2]} – {$b[2]}) no coinciden con el rango inicio/fin ($rango_inicio – $rango_fin).");
+
+	$stmt = $pdo->prepare("
+		SELECT cai, rango_inicio, rango_fin FROM cai_rangos
+		WHERE cliente_id = ? AND LEFT(rango_cai_inicio, 10) = ?
+		  AND rango_inicio <= ? AND rango_fin >= ? AND id <> ?
+		LIMIT 1
+	");
+	$stmt->execute([$cliente_id, $a[1], $rango_fin, $rango_inicio, (int)$excluir_id]);
+	if ($otro = $stmt->fetch(PDO::FETCH_ASSOC))
+		throw new Exception("El rango se traslapa con el CAI {$otro['cai']} ({$a[1]}: {$otro['rango_inicio']} – {$otro['rango_fin']}).");
+}

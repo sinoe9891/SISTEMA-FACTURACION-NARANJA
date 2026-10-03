@@ -28,8 +28,6 @@ $iconos_predefinidos  = ['fa-tag', 'fa-users', 'fa-building', 'fa-bolt', 'fa-bul
 require_once '../../includes/templates/header.php';
 // header already included above... let me fix:
 ?>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
 <style>
 :root {

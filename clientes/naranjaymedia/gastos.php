@@ -70,6 +70,12 @@ $stmtTarjGasto = $pdo->prepare("SELECT id, banco, tipo, ultimos_digitos FROM tar
 $stmtTarjGasto->execute([$cliente_id]);
 $tarjetas_gasto = $stmtTarjGasto->fetchAll(PDO::FETCH_ASSOC);
 
+// Cuentas bancarias en lempiras (para registrar de qué cuenta salió el pago)
+require_once '../../includes/bancos.php';
+$cuentas_pago = bancosDisponible($pdo)
+    ? array_values(array_filter(bancoCuentas($pdo, cliente_actual(), true), fn($c) => $c['moneda'] === 'HNL'))
+    : [];
+
 /* ── Gastos con filtros ───────────────────────────────────────────────────── */
 $sql    = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono
            FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id
@@ -96,8 +102,6 @@ $gastos = $stmtG->fetchAll(PDO::FETCH_ASSOC);
 $total  = count($gastos);
 ?>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <style>
     :root {
@@ -1533,9 +1537,7 @@ $total  = count($gastos);
             if (g.tarjeta_id) document.getElementById('g_tarjeta').value = g.tarjeta_id;
             // Comprobante actual
             if (g.archivo_adjunto) {
-                const subDir = (g.descripcion || '').startsWith('Sueldo ') ? 'comprobantes_nomina' :
-                    'gastos';
-                const url = 'includes/uploads/' + subDir + '/' + g.archivo_adjunto;
+                const url = 'gasto_archivo?id=' + encodeURIComponent(g.id);
                 gsMostrarActual(g.archivo_adjunto, g.archivo_nombre || g.archivo_adjunto, url);
             }
             if (g.dia_pago) document.getElementById('g_dia1').value = g.dia_pago;
@@ -1591,26 +1593,74 @@ $total  = count($gastos);
 
     document.querySelectorAll('.btn-pagar-gasto').forEach(btn => {
         btn.addEventListener('click', () => {
+            // Registrar el pago: fecha, método (tarjeta opcional) y comprobante opcional
+            const hoy = new Date().toLocaleDateString('sv-SE'); // AAAA-MM-DD en hora local
+            const tarjetas = <?= json_encode(array_map(fn($t) => ['id' => (int)$t['id'], 'txt' => trim(($t['banco'] ?? '') . ' ' . ($t['tipo'] ?? '') . ' ••' . ($t['ultimos_digitos'] ?? ''))], $tarjetas_gasto), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+            const cuentasPago = <?= json_encode(array_map(fn($c) => ['id' => (int)$c['id'], 'txt' => $c['banco'] . ' ' . $c['numero']], $cuentas_pago), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+            const optsTarjeta = tarjetas.map(t => `<option value="${t.id}">${t.txt.replace(/[<>&"]/g, '')}</option>`).join('');
             Swal.fire({
-                title: '¿Marcar como pagado?',
-                icon: 'question',
+                title: 'Registrar pago',
+                html: `
+                    <div class="text-start">
+                        <label class="form-label mt-1" for="qp_fecha">Fecha de pago</label>
+                        <input type="date" id="qp_fecha" class="form-control" value="${hoy}">
+                        <label class="form-label mt-3" for="qp_metodo">Método de pago</label>
+                        <select id="qp_metodo" class="form-select">
+                            <option value="transferencia">Transferencia</option>
+                            <option value="efectivo">Efectivo</option>
+                            <option value="tarjeta">Tarjeta</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="otro">Otro</option>
+                        </select>
+                        ${cuentasPago.length ? `<label class="form-label mt-3" for="qp_cuenta">Sale de la cuenta</label>
+                        <select id="qp_cuenta" class="form-select"><option value="">— No registrar en banco —</option>${cuentasPago.map(c => `<option value="${c.id}">${c.txt.replace(/[<>&"]/g, '')}</option>`).join('')}</select>` : ''}
+                        <div id="qp_tarjeta_wrap" class="d-none">
+                            <label class="form-label mt-3" for="qp_tarjeta">Tarjeta</label>
+                            <select id="qp_tarjeta" class="form-select">
+                                <option value="">— Sin especificar —</option>${optsTarjeta}
+                            </select>
+                        </div>
+                        <label class="form-label mt-3" for="qp_archivo">Comprobante <span class="text-muted fw-normal">(opcional · JPG, PNG, WEBP o PDF · máx. 5 MB)</span></label>
+                        <input type="file" id="qp_archivo" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf">
+                    </div>`,
                 showCancelButton: true,
                 confirmButtonColor: '#059669',
-                confirmButtonText: 'Sí, pagado',
-                cancelButtonText: 'No'
+                confirmButtonText: 'Marcar pagado',
+                cancelButtonText: 'Cancelar',
+                focusConfirm: false,
+                didOpen: () => {
+                    const met = document.getElementById('qp_metodo');
+                    met.addEventListener('change', () =>
+                        document.getElementById('qp_tarjeta_wrap').classList.toggle('d-none', met.value !== 'tarjeta'));
+                },
+                preConfirm: () => {
+                    const fecha = document.getElementById('qp_fecha').value;
+                    const arch = document.getElementById('qp_archivo').files[0];
+                    if (!fecha) return Swal.showValidationMessage('Indica la fecha de pago.');
+                    if (arch && arch.size > 5 * 1024 * 1024) return Swal.showValidationMessage('El comprobante supera 5 MB.');
+                    const fd = new FormData();
+                    fd.append('gasto_id', btn.dataset.id);
+                    fd.append('fecha', fecha);
+                    fd.append('metodo_pago', document.getElementById('qp_metodo').value);
+                    fd.append('tarjeta_id', document.getElementById('qp_tarjeta').value);
+                    if (document.getElementById('qp_cuenta')) fd.append('cuenta_id', document.getElementById('qp_cuenta').value);
+                    if (arch) fd.append('archivo_adjunto', arch);
+                    return fetch('includes/gasto_marcar_pagado.php', {
+                        method: 'POST',
+                        body: fd
+                    }).then(r => r.json()).then(d => {
+                        if (!d.success) throw new Error(d.error || 'No se pudo registrar el pago.');
+                        return d;
+                    }).catch(err => Swal.showValidationMessage(err.message));
+                }
             }).then(r => {
                 if (!r.isConfirmed) return;
-                const fd = new FormData();
-                fd.append('gasto_id', btn.dataset.id);
-                fd.append('_solo_estado', 1);
-                fd.append('estado', 'pagado');
-                fetch('includes/gasto_actualizar.php', {
-                    method: 'POST',
-                    body: fd
-                }).then(r => r.json()).then(d => {
-                    if (d.success) location.reload();
-                    else Swal.fire('Error', d.error, 'error');
-                });
+                // Si era recurrente, avisar que se programó el siguiente período
+                if (r.value && r.value.siguiente) {
+                    Swal.fire('Pago registrado', r.value.message, 'success').then(() => location.reload());
+                } else {
+                    location.reload();
+                }
             });
         });
     });

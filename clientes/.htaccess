@@ -1,0 +1,29 @@
+# ==========================================================
+#  clientes/.htaccess — Multiempresa con una sola aplicación
+#
+#  Cada empresa entra por /clientes/<subdominio>/ (el "subdominio" de clientes_saas).
+#  Todas usan el mismo código (carpeta naranjaymedia): la URL conserva la empresa y
+#  session.php / index.php detectan la empresa desde la URL.
+# ==========================================================
+
+Options -Indexes
+RewriteEngine On
+
+# Nunca servir respaldos de base de datos ni archivos de configuración
+<FilesMatch "\.(sql|sqlite|bak|env|ini|log|sh)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# /clientes/<empresa>  →  /clientes/<empresa>/
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([a-z0-9][a-z0-9-]{1,39})$ %{REQUEST_URI}/ [R=301,L]
+
+# /clientes/<empresa>/…  →  app común (salvo carpetas reales: naranjaymedia/, css/, js/)
+RewriteCond %{REQUEST_URI} !/clientes/(naranjaymedia|css|js)/
+RewriteRule ^([a-z0-9][a-z0-9-]{1,39})/(.*)$ naranjaymedia/$2 [L]

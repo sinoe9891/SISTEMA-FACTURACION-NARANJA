@@ -247,9 +247,7 @@ $tipos_btn_p = [
     ['val' => 'multa',   'label' => 'Multa/Descuento',  'icon' => 'fa-ban',               'color' => 'secondary', 'desc' => 'Descuento único'],
 ];
 ?>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
@@ -276,7 +274,7 @@ $tipos_btn_p = [
     /* ── Toolbar ───────────────────────────────────────────────────────────── */
     .cv-toolbar {
         position: sticky;
-        top: 0;
+        top: var(--app-topbar-h, 0);
         z-index: 80;
         background: rgba(255, 255, 255, .92);
         backdrop-filter: blur(12px);

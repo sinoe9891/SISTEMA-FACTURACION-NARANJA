@@ -42,8 +42,6 @@ $clientes = $stmtClientes->fetchAll();
 $total_clientes = count($clientes);
 ?>
 
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
 <?php if (isset($_GET['created'])): ?>
 	<script>
@@ -652,7 +650,7 @@ $total_clientes = count($clientes);
 			</p>
 		</div>
 		<?php if (!empty($datos['logo_url'])): ?>
-			<img src="https://www.naranjaymediahn.com/wp-content/uploads/2023/06/logo-naranja.svg" alt="Logo" class="cf-header-logo">
+			<img src="<?= htmlspecialchars($navbarLogo ?? "") ?>" alt="Logo" class="cf-header-logo">
 		<?php endif; ?>
 	</div>
 

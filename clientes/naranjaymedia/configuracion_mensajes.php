@@ -102,8 +102,6 @@ $defaults = [
 
 require_once '../../includes/templates/header.php';
 ?>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
 <style>
 	:root {
@@ -304,6 +302,7 @@ require_once '../../includes/templates/header.php';
 	<div class="cm-card">
 		<div class="cm-card-header"><i class="bi bi-bank"></i> Cuentas de pago</div>
 		<div class="cm-card-body">
+			<div class="table-responsive">
 			<table class="cm-table">
 				<thead>
 					<tr>
@@ -354,6 +353,7 @@ require_once '../../includes/templates/header.php';
 					<?php endif; ?>
 				</tbody>
 			</table>
+			</div>
 
 			<hr>
 

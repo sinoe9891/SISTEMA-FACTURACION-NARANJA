@@ -477,7 +477,7 @@ $uploadBase = 'includes/uploads/comprobantes_nomina/';
 
                         // Comprobante
                         $archRaw = $p['archivo_adjunto'] ?? '';
-                        $archUrl = !empty($archRaw) ? $uploadBase . $archRaw : '';
+                        $archUrl = !empty($archRaw) ? 'gasto_archivo?id=' . (int)$p['id'] : ''; // sirve con control de acceso
                         $archPath = !empty($archRaw) ? __DIR__ . '/' . $uploadBase . $archRaw : '';
                         $tieneComp = !empty($archRaw) && file_exists($archPath);
                         $extComp = $tieneComp ? strtolower(pathinfo($archRaw, PATHINFO_EXTENSION)) : '';

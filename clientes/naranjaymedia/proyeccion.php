@@ -144,6 +144,16 @@ $colabs_json = json_encode($colabs_desglose, JSON_UNESCAPED_UNICODE);
 $gastos_json = json_encode($gastos_desglose, JSON_UNESCAPED_UNICODE);
 
 // 5. Proyección 12 meses
+// Turnos de contratos rotativos: se cargan una sola vez (antes: 1 consulta por contrato y por mes)
+$turnosRotativos = [];
+$idsRotativos = array_column(array_filter($contratos, fn($c) => $c['tipo_contrato'] === 'rotativo'), 'id');
+if ($idsRotativos) {
+    $ph = implode(',', array_fill(0, count($idsRotativos), '?'));
+    $stRot = $pdo->prepare("SELECT contrato_id, monto, orden FROM contratos_clientes_rotativos WHERE contrato_id IN ($ph) AND activo=1 ORDER BY contrato_id, orden ASC");
+    $stRot->execute(array_values($idsRotativos));
+    foreach ($stRot->fetchAll(PDO::FETCH_ASSOC) as $t) $turnosRotativos[$t['contrato_id']][] = $t;
+}
+
 $proyeccion = [];
 for ($offset = 0; $offset < 12; $offset++) {
     $mes  = (($hoy_mes - 1 + $offset) % 12) + 1;
@@ -172,9 +182,7 @@ for ($offset = 0; $offset < 12; $offset++) {
                 $anioI_r = (int)$fi->format('Y');
                 $od = ($anio - $anioI_r) * 12 + ($mes - $mesI_r);
                 if ($od >= 0) {
-                    $stRot = $pdo->prepare("SELECT monto,orden FROM contratos_clientes_rotativos WHERE contrato_id=? AND activo=1 ORDER BY orden ASC");
-                    $stRot->execute([$ct['id']]);
-                    $turnos = $stRot->fetchAll(PDO::FETCH_ASSOC);
+                    $turnos = $turnosRotativos[$ct['id']] ?? [];
                     if (!empty($turnos)) {
                         $fr = max(1, (int)($ct['frecuencia_meses'] ?? 1));
                         $ct2 = count($turnos) * $fr;
@@ -232,11 +240,8 @@ for ($offset = 0; $offset < 12; $offset++) {
     ];
 }
 
-// Cache
-$stCache = $pdo->prepare("INSERT INTO proyecciones_cache (cliente_id,anio,mes,ing_contratos_estandar,ing_contratos_periodicos,ing_contratos_recibo,ing_total_proyectado,egr_nomina,egr_gastos_fijos_prom,egr_gastos_var_prom,egr_total_proyectado,flujo_neto,alerta_nivel,recomendacion) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE ing_contratos_estandar=VALUES(ing_contratos_estandar),ing_contratos_periodicos=VALUES(ing_contratos_periodicos),ing_contratos_recibo=VALUES(ing_contratos_recibo),ing_total_proyectado=VALUES(ing_total_proyectado),egr_nomina=VALUES(egr_nomina),egr_gastos_fijos_prom=VALUES(egr_gastos_fijos_prom),egr_gastos_var_prom=VALUES(egr_gastos_var_prom),egr_total_proyectado=VALUES(egr_total_proyectado),flujo_neto=VALUES(flujo_neto),alerta_nivel=VALUES(alerta_nivel),recomendacion=VALUES(recomendacion),generado_en=CURRENT_TIMESTAMP");
-foreach ($proyeccion as $p) {
-    $stCache->execute([$cliente_id, $p['anio'], $p['mes'], $p['ing_estandar'], $p['ing_periodico'], $p['ing_recibo'], $p['ing_total'], $p['egr_nomina'], $p['egr_fijos'], $p['egr_variables'], $p['egr_total'], $p['flujo'], $p['alerta'], $p['recomendacion']]);
-}
+// (Se eliminó la escritura a proyecciones_cache en cada visita: ninguna parte del
+// sistema lee esa tabla y costaba una escritura por mes proyectado en cada carga.)
 
 $total_ing_proy = array_sum(array_column($proyeccion, 'ing_total'));
 $total_egr_proy = array_sum(array_column($proyeccion, 'egr_total'));
@@ -248,7 +253,6 @@ $chart_ing    = array_map(fn($p) => round($p['ing_total'], 2), $proyeccion);
 $chart_egr    = array_map(fn($p) => round($p['egr_total'], 2), $proyeccion);
 $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
 ?>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">

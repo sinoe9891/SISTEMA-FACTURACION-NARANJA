@@ -44,7 +44,7 @@ if ($rol_usuario === 'superadmin') {
 			   cf.email AS receptor_email,
 			   c.logo_url, c.nombre AS cliente_nombre, c.rtn, c.direccion, c.telefono, c.email,
 			   cai.cai, cai.rango_inicio, cai.rango_fin, cai.fecha_limite, cai.fecha_recepcion,
-			   cai.rango_cai_inicio, cai.rango_cai_fin
+			   cai.rango_cai_inicio, cai.rango_cai_fin, cai.numero_certificado AS cai_numero_certificado
 		FROM facturas f
 		INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
 		INNER JOIN clientes_saas c ON f.cliente_id = c.id
@@ -62,7 +62,7 @@ if ($rol_usuario === 'superadmin') {
            cf.email AS receptor_email,
            c.logo_url, c.nombre AS cliente_nombre, c.rtn, c.direccion, c.telefono, c.email,
            cai.cai, cai.rango_inicio, cai.rango_fin, cai.fecha_limite, cai.fecha_recepcion,
-           cai.rango_cai_inicio, cai.rango_cai_fin
+           cai.rango_cai_inicio, cai.rango_cai_fin, cai.numero_certificado AS cai_numero_certificado
     FROM facturas f
     INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
     INNER JOIN clientes_saas c ON f.cliente_id = c.id
@@ -643,12 +643,15 @@ if (!function_exists('formatFecha')) {
 		<div class="d-flex justify-content-between">
 			<div class="mt-2 mb-2">
 				<h6 class="text-uppercase" style="font-size: 14px;">Datos del Adquiriente Exonerado</h6>
-				<div><strong>Orden de Compra Exenta:</strong> <?= htmlspecialchars($factura['orden_compra_exenta']) ?>
+				<div><strong>Orden de Compra Exenta:</strong> <?= htmlspecialchars($factura['orden_compra_exenta'] ?? '') ?>
 				</div>
 				<div><strong>Constancia de Registro Exonerado:</strong>
-					<?= htmlspecialchars($factura['constancia_exoneracion']) ?></div>
-				<div><strong>Registro SAG:</strong> <?= htmlspecialchars($factura['registro_sag']) ?></div>
+					<?= htmlspecialchars($factura['constancia_exoneracion'] ?? '') ?></div>
+				<div><strong>Registro SAG:</strong> <?= htmlspecialchars($factura['registro_sag'] ?? '') ?></div>
 			</div>
+			<!-- La tabla va dentro de un div: en modo PDF los hijos de .d-flex se vuelven celdas de tabla
+			     y Dompdf no puede convertir una <table> en celda ("Min/max width is undefined for table rows") -->
+			<div>
 			<table class="table table-borderless" style="max-width: 400px; float: right; text-align: right;">
 				<tbody>
 					<tr>
@@ -693,6 +696,7 @@ if (!function_exists('formatFecha')) {
 					</tr>
 				</tbody>
 			</table>
+			</div>
 		</div>
 		<div style="clear: both;"></div>
 		<h5>
@@ -710,7 +714,7 @@ if (!function_exists('formatFecha')) {
 				&nbsp;|&nbsp;
 				<strong>RTN Imprenta:</strong> <?= htmlspecialchars($configuracion['certificador_rtn']) ?>
 				&nbsp;|&nbsp;
-				<strong>N.° Certificado:</strong> <?= htmlspecialchars($configuracion['numero_certificado']) ?>
+				<strong>N.° Certificado:</strong> <?= htmlspecialchars($factura['cai_numero_certificado'] ?: $configuracion['numero_certificado']) ?>
 				<br>
 
 				<?php if (!empty($configuracion['imprenta_direccion'])): ?>

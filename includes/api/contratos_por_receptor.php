@@ -2,7 +2,7 @@
 /**
  * API: Contratos activos de un receptor
  * Ruta: ../../includes/api/contratos_por_receptor.php
- * GET: ?receptor_id=X&cliente_id=Y
+ * GET: ?receptor_id=X   (cliente de la sesión; ?cliente_id solo aplica a superadmin)
  */
 require_once '../db.php';
 require_once '../session.php';
@@ -10,7 +10,13 @@ require_once '../session.php';
 header('Content-Type: application/json; charset=utf-8');
 
 $receptor_id = (int)($_GET['receptor_id'] ?? 0);
-$cliente_id  = (int)($_GET['cliente_id']  ?? 0);
+// Usuarios normales: siempre el cliente de la sesión.
+// Superadmin (acceso global): puede indicar ?cliente_id, si no usa el seleccionado.
+$cliente_id  = (int)(USUARIO_ROL === 'superadmin'
+    ? (ctype_digit((string)($_GET['cliente_id'] ?? '')) && (int)$_GET['cliente_id'] > 0
+        ? $_GET['cliente_id']
+        : ($_SESSION['cliente_seleccionado'] ?? 0))
+    : CLIENTE_ID);
 
 if (!$receptor_id || !$cliente_id) {
     echo json_encode([]);

@@ -2,18 +2,24 @@
 // clientes/naranjaymedia/includes/gasto_actualizar.php
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
+require_once __DIR__ . '/_gasto_adjuntos.php';
+require_once __DIR__ . '/_gasto_recurrencia.php';
 header('Content-Type: application/json; charset=utf-8');
 
+$arch_adj = null;
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception("Método no permitido.");
     $cid      = (int)(USUARIO_ROL === 'superadmin' ? ($_SESSION['cliente_seleccionado'] ?? 0) : CLIENTE_ID);
     $gasto_id = filter_input(INPUT_POST, 'gasto_id', FILTER_VALIDATE_INT);
     if (!$gasto_id) throw new Exception("Gasto no identificado.");
 
-    $svCheck = $pdo->prepare("SELECT id, gasto_grupo_id, quincena_num, frecuencia FROM gastos WHERE id=? AND cliente_id=?");
+    $svCheck = $pdo->prepare("SELECT * FROM gastos WHERE id=? AND cliente_id=?");
     $svCheck->execute([$gasto_id, $cid]);
     $gastoActual = $svCheck->fetch(PDO::FETCH_ASSOC);
     if (!$gastoActual) throw new Exception("Gasto no encontrado o sin permiso.");
+    $archivoAnterior = $gastoActual['archivo_adjunto'] ?? null;
+    $usuario_id = (int)($_SESSION['usuario_id'] ?? 0);
+    $siguiente  = null;
 
     /* ── Solo estado (botón Marcar pagado / modal pago) ──────────────────── */
     if (!empty($_POST['_solo_estado'])) {
@@ -23,26 +29,11 @@ try {
         $fecha_real = trim($_POST['fecha_pago_real'] ?? '') ?: null;
         if ($fecha_real && !DateTime::createFromFormat('Y-m-d', $fecha_real)) $fecha_real = null;
         $met_pago   = trim($_POST['metodo_pago_reg'] ?? '') ?: null;
+        if ($met_pago && !in_array($met_pago, GASTO_METODOS_PAGO)) throw new Exception("Método de pago inválido.");
         $notas_pago = trim($_POST['notas_pago']      ?? '') ?: null;
 
-        // Archivo adjunto
-        $arch_adj = null;
-        $arch_nom = null;
-        $uploadDir = __DIR__ . '/uploads/gastos/';
-        if (!is_dir($uploadDir)) mkdir($uploadDir, 0775, true);
-        if (!is_writable($uploadDir)) throw new Exception("La carpeta no tiene permisos de escritura: $uploadDir");
-
-        if (!empty($_FILES['archivo_adjunto']['name'])) {
-            $file = $_FILES['archivo_adjunto'];
-            if ($file['error'] !== UPLOAD_ERR_OK) throw new Exception("Error PHP upload: " . $file['error']);
-            if (!is_uploaded_file($file['tmp_name']))  throw new Exception("tmp_name inválido.");
-            $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-            if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'])) throw new Exception("Archivo no permitido.");
-            if ($file['size'] > 5 * 1024 * 1024) throw new Exception("Archivo supera 5 MB.");
-            $arch_adj = 'gasto_' . $cid . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-            if (!move_uploaded_file($file['tmp_name'], $uploadDir . $arch_adj)) throw new Exception("No se pudo guardar el archivo.");
-            $arch_nom = basename($file['name']);
-        }
+        // Comprobante (opcional)
+        [$arch_adj, $arch_nom] = guardarAdjuntoGasto($_FILES['archivo_adjunto'] ?? null, $cid) ?? [null, null];
 
         $sets   = ['estado=?'];
         $params = [$estado];
@@ -66,8 +57,18 @@ try {
         }
         $params[] = $gasto_id;
         $params[] = $cid;
+        $pdo->beginTransaction();
         $pdo->prepare("UPDATE gastos SET " . implode(',', $sets) . " WHERE id=? AND cliente_id=?")->execute($params);
-        echo json_encode(['success' => true, 'message' => 'Pago registrado correctamente.']);
+        // Gasto recurrente pagado: programar el del período siguiente
+        if ($estado === 'pagado') $siguiente = programarSiguienteGastoRecurrente($pdo, $gastoActual, $cid, $usuario_id);
+        $pdo->commit();
+
+        // Si se reemplazó el comprobante, borrar el anterior si ya nadie lo usa
+        if ($arch_adj && $archivoAnterior !== $arch_adj) borrarAdjuntoGastoSiHuerfano($pdo, $archivoAnterior);
+
+        $msg = 'Pago registrado correctamente.';
+        if ($siguiente) $msg .= ' Se programó el siguiente pago para el ' . date('d/m/Y', strtotime($siguiente)) . '.';
+        echo json_encode(['success' => true, 'message' => $msg, 'siguiente' => $siguiente]);
         exit;
     }
 
@@ -94,7 +95,10 @@ try {
 
     if (!$descripcion) throw new Exception("La descripción es obligatoria.");
     if ($monto <= 0)   throw new Exception("El monto debe ser mayor a 0.");
-    if (!$fecha)       throw new Exception("La fecha es obligatoria.");
+    if (!$fecha || !DateTime::createFromFormat('Y-m-d', $fecha)) throw new Exception("Fecha inválida.");
+    if (!in_array($tipo, ['variable', 'fijo', 'extraordinario', 'viaticos'])) throw new Exception("Tipo inválido.");
+    if (!in_array($estado, ['pendiente', 'pagado', 'anulado'])) throw new Exception("Estado inválido.");
+    if (!in_array($metodo_pago, GASTO_METODOS_PAGO)) throw new Exception("Método de pago inválido.");
 
     /* ── FIX: 'anual' añadido a frecuencias válidas ──────────────────────── */
     if (!in_array($frecuencia, ['unico', 'mensual', 'quincenal', 'anual'])) {
@@ -113,64 +117,76 @@ try {
         $dia_pago = $dia_pago_2 = null;
     }
 
+    // Categoría y tarjeta deben pertenecer al cliente (la tarjeta puede estar desactivada en gastos viejos)
+    $categoria_id = categoriaGastoValida($pdo, $categoria_id, $cid);
+    $tarjeta_id   = tarjetaGastoValida($pdo, $tarjeta_id, $cid, false);
+
     $grupoId  = (int)($gastoActual['gasto_grupo_id'] ?? 0);
     $usarGrupo = ($actualizar_grupo && $grupoId && $frecuencia === 'quincenal');
 
-    // ── Archivo adjunto (actualización completa) ──────────────────────────
-    $arch_adj = null;
-    $arch_nom = null;
-    if (!empty($_FILES['archivo_adjunto']['name']) && $_FILES['archivo_adjunto']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = __DIR__ . '/uploads/gastos/';
-        if (!is_dir($uploadDir)) mkdir($uploadDir, 0775, true);
-        $file = $_FILES['archivo_adjunto'];
-        $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'])) throw new Exception("Tipo de archivo no permitido.");
-        if ($file['size'] > 5 * 1024 * 1024) throw new Exception("El archivo supera 5 MB.");
-        $arch_adj = 'gasto_' . $cid . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-        if (!move_uploaded_file($file['tmp_name'], $uploadDir . $arch_adj))
-            throw new Exception("No se pudo guardar el archivo.");
-        $arch_nom = basename($file['name']);
-    }
+    // ── Comprobante (opcional) ────────────────────────────────────────────
+    [$arch_adj, $arch_nom] = guardarAdjuntoGasto($_FILES['archivo_adjunto'] ?? null, $cid) ?? [null, null];
 
     $pdo->beginTransaction();
 
-    $campos = [
-        $categoria_id,
-        $descripcion,
-        $monto,
-        $fecha,
-        $frecuencia,
-        $dia_pago,
-        $dia_pago_2,
-        $fecha_venc,
-        $tipo,
-        $metodo_pago,
-        $tarjeta_id,
-        $proveedor,
-        $factura_ref,
-        $notas,
-        $estado
-    ];
-
     if ($usarGrupo) {
-        $sqlGrp = "UPDATE gastos SET categoria_id=?,descripcion=?,monto=?,fecha=?,
-            frecuencia=?,dia_pago=?,dia_pago_2=?,fecha_vencimiento=?,tipo=?,metodo_pago=?,tarjeta_id=?,
-            proveedor=?,factura_ref=?,notas=?,estado=?";
-        $paramsGrp = $campos;
+        // 1) Datos compartidos por ambas quincenas
+        $pdo->prepare("UPDATE gastos SET categoria_id=?, monto=?, frecuencia=?, dia_pago=?, dia_pago_2=?,
+                fecha_vencimiento=?, tipo=?, proveedor=?
+            WHERE gasto_grupo_id=? AND cliente_id=?")
+            ->execute([$categoria_id, $monto, $frecuencia, $dia_pago, $dia_pago_2, $fecha_venc, $tipo, $proveedor, $grupoId, $cid]);
+
+        // 2) Descripción: misma base, pero cada registro conserva su sufijo de quincena
+        $base = preg_replace('/\s*—\s*[12]ª Quincena$/u', '', $descripcion);
+        $pdo->prepare("UPDATE gastos SET descripcion = CONCAT(?, CASE quincena_num
+                    WHEN 1 THEN ' — 1ª Quincena' WHEN 2 THEN ' — 2ª Quincena' ELSE '' END)
+            WHERE gasto_grupo_id=? AND cliente_id=?")
+            ->execute([$base, $grupoId, $cid]);
+
+        // 3) Datos propios del pago editado: fecha, estado, forma de pago y comprobante
+        //    (antes se copiaban a la otra quincena: ambas quedaban con la misma fecha,
+        //    el mismo estado y el mismo comprobante)
+        $sqlFila = "UPDATE gastos SET fecha=?, metodo_pago=?, tarjeta_id=?, factura_ref=?, notas=?, estado=?";
+        $paramsFila = [$fecha, $metodo_pago, $tarjeta_id, $factura_ref, $notas, $estado];
         if ($arch_adj) {
-            $sqlGrp .= ",archivo_adjunto=?,archivo_nombre=?";
-            $paramsGrp[] = $arch_adj;
-            $paramsGrp[] = $arch_nom;
+            $sqlFila .= ", archivo_adjunto=?, archivo_nombre=?";
+            $paramsFila[] = $arch_adj;
+            $paramsFila[] = $arch_nom;
         }
-        $sqlGrp .= " WHERE gasto_grupo_id=? AND cliente_id=?";
-        $pdo->prepare($sqlGrp)->execute(array_merge($paramsGrp, [$grupoId, $cid]));
+        $pdo->prepare($sqlFila . " WHERE id=? AND cliente_id=?")->execute(array_merge($paramsFila, [$gasto_id, $cid]));
+        // Si pasó de pendiente a pagado y es recurrente, programar el período siguiente
+        // (con los datos ya editados: monto, día de pago, vencimiento, etc.)
+        if ($estado === 'pagado') {
+            $siguiente = programarSiguienteGastoRecurrente($pdo, array_merge($gastoActual, [
+                'categoria_id' => $categoria_id, 'descripcion' => $descripcion, 'monto' => $monto,
+                'frecuencia' => $frecuencia, 'dia_pago' => $dia_pago, 'dia_pago_2' => $dia_pago_2,
+                'fecha_vencimiento' => $fecha_venc, 'tipo' => $tipo, 'metodo_pago' => $metodo_pago,
+                'tarjeta_id' => $tarjeta_id, 'proveedor' => $proveedor,
+            ]), $cid, $usuario_id);
+        }
         $pdo->commit();
-        echo json_encode(['success' => true, 'message' => 'Ambas quincenas del grupo actualizadas correctamente.']);
+        $mensaje = 'Ambas quincenas del grupo actualizadas correctamente.';
     } else {
         $sqlUpd = "UPDATE gastos SET categoria_id=?,descripcion=?,monto=?,fecha=?,
             frecuencia=?,dia_pago=?,dia_pago_2=?,fecha_vencimiento=?,tipo=?,metodo_pago=?,tarjeta_id=?,
             proveedor=?,factura_ref=?,notas=?,estado=?";
-        $paramsUpd = $campos;
+        $paramsUpd = [
+            $categoria_id,
+            $descripcion,
+            $monto,
+            $fecha,
+            $frecuencia,
+            $dia_pago,
+            $dia_pago_2,
+            $fecha_venc,
+            $tipo,
+            $metodo_pago,
+            $tarjeta_id,
+            $proveedor,
+            $factura_ref,
+            $notas,
+            $estado
+        ];
         if ($arch_adj) {
             $sqlUpd .= ",archivo_adjunto=?,archivo_nombre=?";
             $paramsUpd[] = $arch_adj;
@@ -178,11 +194,29 @@ try {
         }
         $sqlUpd .= " WHERE id=? AND cliente_id=?";
         $pdo->prepare($sqlUpd)->execute(array_merge($paramsUpd, [$gasto_id, $cid]));
+        // Si pasó de pendiente a pagado y es recurrente, programar el período siguiente
+        // (con los datos ya editados: monto, día de pago, vencimiento, etc.)
+        if ($estado === 'pagado') {
+            $siguiente = programarSiguienteGastoRecurrente($pdo, array_merge($gastoActual, [
+                'categoria_id' => $categoria_id, 'descripcion' => $descripcion, 'monto' => $monto,
+                'frecuencia' => $frecuencia, 'dia_pago' => $dia_pago, 'dia_pago_2' => $dia_pago_2,
+                'fecha_vencimiento' => $fecha_venc, 'tipo' => $tipo, 'metodo_pago' => $metodo_pago,
+                'tarjeta_id' => $tarjeta_id, 'proveedor' => $proveedor,
+            ]), $cid, $usuario_id);
+        }
         $pdo->commit();
-        echo json_encode(['success' => true, 'message' => 'Gasto actualizado correctamente.']);
+        $mensaje = 'Gasto actualizado correctamente.';
     }
+
+    // Si se reemplazó el comprobante, borrar el anterior si ya nadie lo usa
+    if ($arch_adj && $archivoAnterior !== $arch_adj) borrarAdjuntoGastoSiHuerfano($pdo, $archivoAnterior);
+
+    if ($siguiente) $mensaje .= ' Se programó el siguiente pago para el ' . date('d/m/Y', strtotime($siguiente)) . '.';
+    echo json_encode(['success' => true, 'message' => $mensaje, 'siguiente' => $siguiente]);
 } catch (Exception $e) {
-    if ($pdo->inTransaction()) $pdo->rollBack();
+    if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    // Si no se guardó el cambio, no dejar el comprobante nuevo huérfano en disco
+    if ($arch_adj && isset($pdo)) borrarAdjuntoGastoSiHuerfano($pdo, $arch_adj);
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

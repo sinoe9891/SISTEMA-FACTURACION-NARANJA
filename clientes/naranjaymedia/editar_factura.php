@@ -15,11 +15,7 @@ if ($establecimiento_activo) {
 	$nombre_establecimiento = $st->fetchColumn() ?: 'No asignado';
 }
 
-$stmt = $pdo->prepare("SELECT u.nombre AS usuario_nombre, u.rol, c.id AS cliente_id, c.logo_url, c.nombre AS cliente_nombre
-    FROM usuarios u INNER JOIN clientes_saas c ON u.cliente_id=c.id WHERE u.id=?");
-$stmt->execute([$usuario_id]);
-$datos = $stmt->fetch();
-$_SESSION['usuario_rol'] = $datos['rol'];
+$_SESSION['usuario_rol'] = USUARIO_ROL;
 
 $stmt = $pdo->prepare("SELECT rol, cliente_id FROM usuarios WHERE id=?");
 $stmt->execute([$usuario_id]);
@@ -31,7 +27,10 @@ $cliente_id = $user['cliente_id'];
 $stmt = $pdo->prepare("SELECT * FROM facturas WHERE id=?");
 $stmt->execute([$factura_id]);
 $factura = $stmt->fetch();
-if (!$factura || (!$es_admin && $factura['cliente_id'] != $cliente_id)) die("Acceso no autorizado");
+// Solo el superadmin puede abrir facturas de otra empresa (antes cualquier admin podía)
+if (!$factura || (!$es_superadmin && (int)$factura['cliente_id'] !== (int)$cliente_id)) die("Acceso no autorizado");
+// Listas (receptores, productos) de la empresa de la factura
+$cliente_id = (int)$factura['cliente_id'];
 
 $facturaDeclarada = ($factura['estado_declarada'] == 1 || $factura['estado_declarada'] === 'si');
 // admin solo si NO está declarada; superadmin siempre puede (con advertencia)
@@ -61,8 +60,6 @@ $items = $stmt->fetchAll();
 require_once '../../includes/templates/header.php';
 ?>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <style>
 	:root {
@@ -513,7 +510,7 @@ require_once '../../includes/templates/header.php';
 
 			<!-- Totales sidebar -->
 			<div class="col-lg-4">
-				<div class="fe-card" style="position:sticky;top:1rem;">
+				<div class="fe-card" style="position:sticky;top:calc(var(--app-topbar-h) + 1rem);">
 					<div class="fe-card-header"><i class="bi bi-receipt text-success me-1"></i>Resumen de Totales</div>
 					<div class="fe-card-body">
 						<div class="totales-row"><span class="totales-label">Subtotal</span><span class="totales-val"

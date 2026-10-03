@@ -2,6 +2,8 @@
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/intentos.php';
+require_once '../../includes/inventario.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 	die("Método no permitido.");
@@ -39,14 +41,19 @@ if (!$motivo || !$usuario_autoriza || !$clave_autoriza) {
 $usuario_id = $_SESSION['usuario_id'];
 $ip = $_SERVER['REMOTE_ADDR'];
 
-// Validar autorizador
-$stmt = $pdo->prepare("SELECT id, rol, clave FROM usuarios WHERE correo = ?");
+// Validar autorizador (con límite de intentos fallidos)
+if ($min = intentosBloqueado($pdo, 'autoriza', $usuario_autoriza)) {
+	die("Demasiados intentos fallidos de autorización. Intenta de nuevo en $min minuto(s).");
+}
+$stmt = $pdo->prepare("SELECT id, rol, clave, cliente_id, estado FROM usuarios WHERE correo = ?");
 $stmt->execute([$usuario_autoriza]);
 $autorizador = $stmt->fetch();
 
-if (!$autorizador || !password_verify($clave_autoriza, $autorizador['clave'])) {
+if (!$autorizador || !password_verify($clave_autoriza, $autorizador['clave']) || ($autorizador['estado'] ?? 'activo') !== 'activo') {
+	intentosRegistrarFallo($pdo, 'autoriza', $usuario_autoriza);
 	die("Usuario o contraseña incorrecta.");
 }
+intentosLimpiar($pdo, 'autoriza', $usuario_autoriza);
 
 if (!in_array($autorizador['rol'], ['admin', 'superadmin'])) {
 	die("Solo un admin o superadmin puede autorizar cambios.");
@@ -72,8 +79,30 @@ if (!$factura) {
 	die("Factura no encontrada.");
 }
 
-if (!$es_admin && $factura['cliente_id'] != $cliente_id) {
+// Solo el superadmin puede editar facturas de otra empresa (antes cualquier admin podía)
+if ($usuario['rol'] !== 'superadmin' && (int)$factura['cliente_id'] !== (int)$cliente_id) {
 	die("Acceso no autorizado.");
+}
+// Quien autoriza también debe ser de la empresa de la factura (o superadmin)
+if ($autorizador['rol'] !== 'superadmin' && (int)$autorizador['cliente_id'] !== (int)$factura['cliente_id']) {
+	die("El usuario que autoriza no pertenece a la empresa de esta factura.");
+}
+// A partir de aquí todo se calcula con la empresa de la factura
+$cliente_factura = (int)$factura['cliente_id'];
+
+if ($fecha_emision !== null && !DateTime::createFromFormat('Y-m-d H:i:s', $fecha_emision) && !DateTime::createFromFormat('Y-m-d\TH:i', $fecha_emision) && !DateTime::createFromFormat('Y-m-d', $fecha_emision)) {
+	die("Fecha de emisión inválida.");
+}
+if (empty($productos) || !is_array($productos)) {
+	die("La factura debe tener al menos un producto.");
+}
+foreach ($productos as $i => $item) {
+	$n = $i + 1;
+	if (!is_numeric($item['cantidad'] ?? null) || (float)$item['cantidad'] <= 0) die("Línea $n: la cantidad debe ser mayor que 0.");
+	if (!is_numeric($item['precio_unitario'] ?? null) || (float)$item['precio_unitario'] < 0) die("Línea $n: el precio no puede ser negativo.");
+	$stmtP = $pdo->prepare("SELECT COUNT(*) FROM productos_clientes WHERE id = ? AND cliente_id = ?");
+	$stmtP->execute([(int)($item['id'] ?? 0), $cliente_factura]);
+	if (!$stmtP->fetchColumn()) die("Línea $n: producto inválido.");
 }
 
 // Solo puede editar la última factura si no es admin
@@ -110,6 +139,9 @@ if ($cambiar_receptor) {
 try {
 	$pdo->beginTransaction();
 
+	// Inventario: devolver lo que descontaban los productos anteriores (se vuelve a descontar al final)
+	invRevertirFactura($pdo, $cliente_factura, (int)$factura_id, (int)$usuario_id, 'Factura editada');
+
 	// Eliminar productos previos
 	$stmt = $pdo->prepare("DELETE FROM factura_items_receptor WHERE factura_id = ?");
 	$stmt->execute([$factura_id]);
@@ -131,7 +163,7 @@ try {
 		$subtotal += $subtotal_item;
 
 		$stmtISV = $pdo->prepare("SELECT tipo_isv FROM productos_clientes WHERE id = ? AND cliente_id = ?");
-		$stmtISV->execute([$producto_id, $cliente_id]);
+		$stmtISV->execute([$producto_id, $cliente_factura]);
 		$tipo_isv = (int) $stmtISV->fetchColumn();
 
 		$isv_aplicado_item = 0;
@@ -172,7 +204,9 @@ try {
 	}
 
 	$gravado_total = $importe_gravado_15 + $importe_gravado_18;
-	$total = $subtotal + $isv_15;
+	// Total con ISV 15 % y 18 % (antes las letras omitían el 18 % y no coincidían con el total)
+	$total = $subtotal + $isv_15 + $isv_18;
+	if ($total <= 0) throw new Exception("El total de la factura debe ser mayor que 0.");
 	$monto_letras = numeroALetras($total);
 
 	// Actualizar factura
@@ -214,7 +248,7 @@ try {
 		$subtotal,
 		$isv_15,
 		$isv_18,
-		$subtotal + $isv_15 + $isv_18,
+		$total,
 		$monto_letras,
 		$gravado_total,
 		$importe_gravado_15,
@@ -277,11 +311,16 @@ try {
 		$ip
 	]);
 
+	// Inventario: descontar los productos nuevos si la factura sigue emitida
+	if ($estado === 'emitida') {
+		invDescontarFactura($pdo, $cliente_factura, (int)$factura_id, (int)$factura['establecimiento_id'], (int)$usuario_id);
+	}
+
 	$pdo->commit();
 
 	header("Location: lista_facturas?success=1");
 	exit;
 } catch (Exception $e) {
-	$pdo->rollBack();
-	die("Error al guardar cambios: " . $e->getMessage());
+	if ($pdo->inTransaction()) $pdo->rollBack();
+	die("Error al guardar cambios: " . htmlspecialchars($e->getMessage()));
 }

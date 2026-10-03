@@ -5,12 +5,8 @@ require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 
 $usuario_id = $_SESSION['usuario_id'];
-$stmt = $pdo->prepare("
-    SELECT u.nombre AS usuario_nombre, u.rol, c.id AS cliente_id, c.logo_url, c.nombre AS cliente_nombre
-    FROM usuarios u INNER JOIN clientes_saas c ON u.cliente_id = c.id WHERE u.id = ?");
-$stmt->execute([$usuario_id]);
-$datos = $stmt->fetch();
-$cliente_id = $datos['cliente_id'];
+// Cliente activo: el del usuario, o el seleccionado si es superadmin
+$cliente_id = (int)(USUARIO_ROL === 'superadmin' ? ($_SESSION['cliente_seleccionado'] ?? 0) : CLIENTE_ID);
 $_SESSION['cliente_id'] = $cliente_id;
 
 $establecimiento_activo = $_SESSION['establecimiento_activo'] ?? null;
@@ -62,8 +58,6 @@ if ($get_receptor_id) {
 require_once '../../includes/templates/header.php';
 ?>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <style>
     :root {
@@ -437,7 +431,7 @@ require_once '../../includes/templates/header.php';
 
             <!-- Totales sidebar -->
             <div class="col-lg-4">
-                <div class="fv-card" style="position:sticky;top:1rem;">
+                <div class="fv-card" style="position:sticky;top:calc(var(--app-topbar-h) + 1rem);">
                     <div class="fv-card-header"><i class="bi bi-receipt text-success me-1"></i>Resumen de Totales</div>
                     <div class="fv-card-body">
                         <div class="totales-row"><span class="totales-label">Subtotal</span><span class="totales-val"

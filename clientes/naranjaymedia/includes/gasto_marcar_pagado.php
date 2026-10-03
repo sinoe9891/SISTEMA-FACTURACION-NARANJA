@@ -2,17 +2,22 @@
 // clientes/naranjaymedia/includes/gasto_marcar_pagado.php
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
+require_once __DIR__ . '/_gasto_adjuntos.php';
+require_once __DIR__ . '/_gasto_recurrencia.php';
+require_once '../../../includes/bancos.php';
 header('Content-Type: application/json; charset=utf-8');
 
+$arch_adj = null;
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception("Método no permitido.");
     $cid      = (int)(USUARIO_ROL === 'superadmin' ? ($_SESSION['cliente_seleccionado'] ?? 0) : CLIENTE_ID);
     $gasto_id = filter_input(INPUT_POST, 'gasto_id', FILTER_VALIDATE_INT);
     if (!$gasto_id) throw new Exception("Gasto inválido.");
 
-    $stmtCk = $pdo->prepare("SELECT id FROM gastos WHERE id=? AND cliente_id=? AND estado!='anulado'");
+    $stmtCk = $pdo->prepare("SELECT * FROM gastos WHERE id=? AND cliente_id=? AND estado!='anulado'");
     $stmtCk->execute([$gasto_id, $cid]);
-    if (!$stmtCk->fetchColumn()) throw new Exception("Gasto no encontrado.");
+    $gastoActual = $stmtCk->fetch(PDO::FETCH_ASSOC);
+    if (!$gastoActual) throw new Exception("Gasto no encontrado.");
 
     $fecha       = trim($_POST['fecha']       ?? '') ?: date('Y-m-d');
     $metodo      = trim($_POST['metodo_pago'] ?? 'efectivo');
@@ -21,7 +26,7 @@ try {
     $factura_ref = $tiene_fact ? (trim($_POST['factura_ref'] ?? '') ?: null) : null;
     $notas       = trim($_POST['notas'] ?? '') ?: null;
 
-    if (!in_array($metodo, ['efectivo','transferencia','tarjeta','cheque','otro']))
+    if (!in_array($metodo, GASTO_METODOS_PAGO))
         throw new Exception("Método de pago inválido.");
     if (!DateTime::createFromFormat('Y-m-d', $fecha))
         throw new Exception("Fecha inválida.");
@@ -37,24 +42,8 @@ try {
         $tarjeta_id = null;
     }
 
-    // Manejo de archivo adjunto
-    $arch_adj = null;
-    $arch_nom = null;
-    $uploadDir = __DIR__ . '/uploads/gastos/';
-    if (!is_dir($uploadDir)) mkdir($uploadDir, 0775, true);
-
-    if (!empty($_FILES['archivo_adjunto']['name']) && $_FILES['archivo_adjunto']['error'] === UPLOAD_ERR_OK) {
-        $file = $_FILES['archivo_adjunto'];
-        $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        if (!in_array($ext, ['jpg','jpeg','png','webp','pdf']))
-            throw new Exception("Tipo de archivo no permitido.");
-        if ($file['size'] > 5 * 1024 * 1024)
-            throw new Exception("El archivo supera 5 MB.");
-        $arch_adj = 'gasto_' . $cid . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-        if (!move_uploaded_file($file['tmp_name'], $uploadDir . $arch_adj))
-            throw new Exception("Error al guardar el archivo.");
-        $arch_nom = basename($file['name']);
-    }
+    // Comprobante (opcional)
+    [$arch_adj, $arch_nom] = guardarAdjuntoGasto($_FILES['archivo_adjunto'] ?? null, $cid) ?? [null, null];
 
     $sets   = ['estado=?', 'fecha=?', 'metodo_pago=?', 'tarjeta_id=?'];
     $params = ['pagado', $fecha, $metodo, $tarjeta_id];
@@ -65,10 +54,35 @@ try {
     $params[] = $gasto_id;
     $params[] = $cid;
 
+    $pdo->beginTransaction();
     $pdo->prepare("UPDATE gastos SET " . implode(',', $sets) . " WHERE id=? AND cliente_id=?")->execute($params);
-    echo json_encode(['success' => true, 'message' => 'Gasto marcado como pagado.']);
+    $usuario_id = (int)($_SESSION['usuario_id'] ?? 0);
+    // Opcional: el pago sale de una cuenta bancaria (queda como movimiento "pago de gasto")
+    $cuentaPago = filter_input(INPUT_POST, 'cuenta_id', FILTER_VALIDATE_INT) ?: null;
+    if ($cuentaPago) {
+        if ($gastoActual['estado'] === 'pagado') throw new Exception("Este gasto ya está pagado: registrar otra salida del banco lo pagaría dos veces.");
+        if (!bancosDisponible($pdo)) throw new Exception("El módulo de bancos no está instalado.");
+        $cuenta = bancoCuenta($pdo, $cid, $cuentaPago, true);
+        if ($cuenta['moneda'] !== 'HNL') throw new Exception("Los gastos son en lempiras: elige una cuenta en lempiras.");
+        bancoInsertarMovimiento($pdo, $cid, $cuentaPago, [
+            'fecha' => $fecha, 'sentido' => 'salida', 'tipo' => 'pago_gasto', 'monto' => (float)$gastoActual['monto'],
+            'descripcion' => mb_substr('Pago: ' . $gastoActual['descripcion'], 0, 255),
+            'referencia' => $factura_ref, 'gasto_id' => $gasto_id, 'usuario_id' => $usuario_id,
+        ]);
+    }
+    // Gasto recurrente: programar el del período siguiente
+    $siguiente  = programarSiguienteGastoRecurrente($pdo, $gastoActual, $cid, $usuario_id);
+    $pdo->commit();
+    // Si se reemplazó el comprobante, borrar el anterior si ya nadie lo usa
+    if ($arch_adj && $gastoActual['archivo_adjunto'] !== $arch_adj) borrarAdjuntoGastoSiHuerfano($pdo, $gastoActual['archivo_adjunto']);
+
+    $msg = 'Gasto marcado como pagado.';
+    if ($siguiente) $msg .= ' Se programó el siguiente pago para el ' . date('d/m/Y', strtotime($siguiente)) . '.';
+    echo json_encode(['success' => true, 'message' => $msg, 'siguiente' => $siguiente]);
 
 } catch (Exception $e) {
+    if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    if ($arch_adj) borrarAdjuntoGastoSiHuerfano($pdo, $arch_adj);
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

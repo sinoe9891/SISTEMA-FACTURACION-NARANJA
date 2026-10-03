@@ -10,7 +10,8 @@ $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE id = ?");
 $stmt->execute([$usuario_id]);
 $usuario     = $stmt->fetch();
 $rol_usuario = $usuario['rol'];
-$cliente_id  = $usuario['cliente_id'] ?? null;
+// Cliente activo: el del usuario, o el seleccionado si es superadmin (guardar_cai.php usa el mismo)
+$cliente_id  = ($rol_usuario === 'superadmin') ? (int)($_SESSION['cliente_seleccionado'] ?? 0) : ($usuario['cliente_id'] ?? null);
 
 if ($rol_usuario !== 'superadmin' && $cliente_id) {
     $stmt = $pdo->prepare("SELECT nombre, logo_url FROM clientes_saas WHERE id = ?");
@@ -37,12 +38,9 @@ if ($establecimiento_activo) {
 }
 
 // Establecimientos disponibles
-if ($rol_usuario === 'superadmin') {
-    $stmt = $pdo->query("SELECT establecimiento_id AS id, nombre FROM establecimientos ORDER BY nombre ASC");
-} else {
-    $stmt = $pdo->prepare("SELECT establecimiento_id AS id, nombre FROM establecimientos WHERE cliente_id = ? ORDER BY nombre ASC");
-    $stmt->execute([$cliente_id]);
-}
+// (también para superadmin: solo los del cliente seleccionado, que es donde se guardará el CAI)
+$stmt = $pdo->prepare("SELECT establecimiento_id AS id, nombre FROM establecimientos WHERE cliente_id = ? ORDER BY nombre ASC");
+$stmt->execute([$cliente_id]);
 $establecimientos = $stmt->fetchAll();
 
 // Puntos de emisión del establecimiento activo (para pre-carga)
@@ -55,8 +53,6 @@ if ($establecimiento_activo) {
 
 require_once '../../includes/templates/header.php';
 ?>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
 <style>
     :root {
@@ -574,6 +570,22 @@ require_once '../../includes/templates/header.php';
                                     id="prevCount">—</strong></span>
                             <span><i class="bi bi-arrow-left-right"></i> <span id="prevRange">—</span></span>
                         </div>
+                    </div>
+                </div>
+
+                <!-- ── Sección 5: Certificado ── -->
+                <div class="cc-section" style="margin-top:1.25rem;"><i class="bi bi-patch-check me-1"></i>Certificado
+                </div>
+
+                <div class="cc-field-grid" style="margin-top:.9rem;">
+                    <div class="cc-field cc-field-full">
+                        <label class="cc-label" for="numero_certificado">
+                            <i class="bi bi-patch-check"></i> N.° Certificado (RFI)
+                        </label>
+                        <input type="text" id="numero_certificado" name="numero_certificado"
+                            class="cc-input font-mono" placeholder="Ej: RFI 08019022406144-000-2" maxlength="50">
+                        <span class="cc-hint">Se imprime en el PDF de las facturas emitidas con este CAI. Si se deja
+                            vacío, se usa el certificado general del sistema.</span>
                     </div>
                 </div>
 

@@ -47,6 +47,7 @@ CREATE TABLE cai_rangos (
     correlativo_actual INT,
     fecha_recepcion DATE,
     fecha_limite DATE,
+    numero_certificado VARCHAR(50),
     FOREIGN KEY (cliente_id) REFERENCES clientes_saas(id) ON DELETE CASCADE,
     FOREIGN KEY (establecimiento_id) REFERENCES establecimientos(id) ON DELETE CASCADE
 );

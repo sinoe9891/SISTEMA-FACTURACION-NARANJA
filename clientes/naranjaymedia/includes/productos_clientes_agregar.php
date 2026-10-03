@@ -7,8 +7,11 @@ try {
 		throw new Exception("Método no permitido.");
 	}
 
-	$cliente_id     = $_POST['cliente_id']     ?? null;
-	$receptores_id  = $_POST['receptores_id']  ?? null;
+	// El cliente sale de la sesión, nunca del formulario
+	$cliente_id     = (int)(USUARIO_ROL === 'superadmin'
+		? ($_SESSION['cliente_seleccionado'] ?? 0)
+		: CLIENTE_ID);
+	$receptores_id  = (int)($_POST['receptores_id'] ?? 0);
 	$nombre         = trim($_POST['nombre'] ?? '');
 	$descripcion    = trim($_POST['descripcion'] ?? '');
 	$precio         = floatval($_POST['precio'] ?? 0);
@@ -17,6 +20,13 @@ try {
 
 	if (!$cliente_id || !$receptores_id || $nombre === '' || $descripcion === '' || $precio <= 0) {
 		throw new Exception("Faltan campos obligatorios.");
+	}
+
+	// El receptor debe pertenecer al mismo cliente
+	$stmtR = $pdo->prepare("SELECT COUNT(*) FROM clientes_factura WHERE id = ? AND cliente_id = ?");
+	$stmtR->execute([$receptores_id, $cliente_id]);
+	if (!$stmtR->fetchColumn()) {
+		throw new Exception("Receptor no válido.");
 	}
 
 	// Insertar en productos_clientes

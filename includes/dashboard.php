@@ -1,6 +1,6 @@
 <?php
 define('ALERTA_FACTURAS_RESTANTES', 20);
-define('ALERTA_CAI_DIAS', 30); // Alertar CAI por vencer con 30 dÃ­as o menos
+define('ALERTA_CAI_DIAS', 30); // Alertar CAI por vencer con 30 días o menos
 
 $pdo->exec("SET lc_time_names = 'es_ES'");
 
@@ -15,55 +15,19 @@ if (!$establecimiento_activo && !$es_superadmin) {
 	exit;
 }
 
-// Si es superadmin y no ha seleccionado cliente/establecimiento aÃºn
+// Si es superadmin y no ha seleccionado cliente/establecimiento aún
 if ($es_superadmin && (!defined('CLIENTE_ID') || !CLIENTE_ID)) {
 	$titulo = "Dashboard";
 	require_once '../../includes/templates/header.php';
 	echo '<div class="container mt-5">';
-	echo '<div class="alert alert-info">ðŸ§­ Bienvenido Superadmin. Seleccione un cliente para continuar.</div>';
+	echo '<div class="alert alert-info">🧭 Bienvenido Superadmin. Seleccione un cliente para continuar.</div>';
 	echo '</div></body></html>';
 	exit;
 }
 
-// Obtener nombre del establecimiento activo
-$stmtEstab = $pdo->prepare("SELECT nombre FROM establecimientos WHERE establecimiento_id = ?");
-$stmtEstab->execute([$establecimiento_activo]);
-$establecimiento = $stmtEstab->fetch(PDO::FETCH_ASSOC);
-$nombre_establecimiento = $establecimiento && isset($establecimiento['nombre']) ? $establecimiento['nombre'] : 'No asignado';
-
-// Obtener datos del usuario y cliente
-$datos = [];
-
-if (!$es_superadmin) {
-	$stmt = $pdo->prepare("
-        SELECT u.nombre AS usuario_nombre, u.rol, c.nombre AS cliente_nombre, c.logo_url, c.id AS cliente_id
-        FROM usuarios u
-        INNER JOIN clientes_saas c ON u.cliente_id = c.id
-        WHERE u.id = ?
-    ");
-	$stmt->execute([$usuario_id]);
-	$datos = $stmt->fetch(PDO::FETCH_ASSOC);
-
-	if (!$datos) {
-		die("Error: no se encontrÃ³ informaciÃ³n del usuario.");
-	}
-
-	$cliente_id = (int)$datos['cliente_id'];
-} else {
-	$cliente_id = (int)($_SESSION['cliente_seleccionado'] ?? 0);
-
-	// Traer informaciÃ³n del cliente seleccionado
-	$stmt = $pdo->prepare("SELECT nombre AS cliente_nombre, logo_url FROM clientes_saas WHERE id = ?");
-	$stmt->execute([$cliente_id]);
-	$cliente_info = $stmt->fetch(PDO::FETCH_ASSOC);
-
-	$datos['usuario_nombre'] = USUARIO_NOMBRE;
-	$datos['rol'] = USUARIO_ROL;
-	$datos['cliente_nombre'] = $cliente_info['cliente_nombre'] ?? 'Cliente no asignado';
-	$datos['logo_url'] = $cliente_info['logo_url'] ?? '';
-}
-
-$cliente_id = (USUARIO_ROL === 'superadmin') ? (int)$_SESSION['cliente_seleccionado'] : (int)$datos['cliente_id'];
+// El nombre del establecimiento y los datos del usuario/cliente los carga header.php
+// (desde la sesión, sin consultas extra); aquí solo hace falta el cliente activo.
+$cliente_id = (USUARIO_ROL === 'superadmin') ? (int)($_SESSION['cliente_seleccionado'] ?? 0) : (int)CLIENTE_ID;
 
 // ✅ Primero leer $_POST/$_GET
 $fecha_inicio = $_POST['fecha_inicio'] ?? $_GET['fecha_inicio'] ?? date('Y-m-01');
@@ -118,7 +82,7 @@ $fecha_mes_fin = date('Y-m-t');
 $stmtTotalesMes->execute([$cliente_id, $establecimiento_activo, $fecha_mes_inicio, $fecha_mes_fin]);
 $totales_mes = $stmtTotalesMes->fetch(PDO::FETCH_ASSOC);
 
-// Totales del aÃ±o a la fecha
+// Totales del año a la fecha
 $stmtTotalesAnio = $pdo->prepare("
 	SELECT 
 		IFNULL(SUM(subtotal), 0) AS subtotal,
@@ -137,7 +101,7 @@ $totales_anio = $stmtTotalesAnio->fetch(PDO::FETCH_ASSOC);
 
 
 /// ==============================
-/// CAI activos + restantes âœ… (MODELO OFFSET)
+/// CAI activos + restantes ✅ (MODELO OFFSET)
 /// ==============================
 
 // --- CAIs activos (modelo: correlativo_actual = OFFSET emitido) ---
@@ -156,7 +120,7 @@ $cais_activos = $stmtCAIs->fetchAll(PDO::FETCH_ASSOC);
 
 // Variables CAI para mostrar en dashboard
 $facturas_restantes = 0;
-$fecha_limite = null;       // la mÃ¡s prÃ³xima (mÃ­nima)
+$fecha_limite = null;       // la más próxima (mínima)
 $dias_restantes_cai = null;
 $alerta_cai_vencido = false;
 
@@ -168,7 +132,7 @@ if (!empty($cais_activos)) {
 		$rango_fin = (int)$cai['rango_fin'];
 		$offset = (int)$cai['correlativo_actual'];
 
-		// âœ… restantes = rango_fin - (rango_inicio + offset) + 1
+		// ✅ restantes = rango_fin - (rango_inicio + offset) + 1
 		$restantes = $rango_fin - ($rango_inicio + $offset) + 1;
 		$cai['restantes'] = max(0, (int)$restantes);
 		$facturas_restantes += $cai['restantes'];
@@ -182,7 +146,7 @@ if (!empty($cais_activos)) {
 	}
 	unset($cai);
 
-	// como vienen ORDER BY fecha_limite ASC, el primero es el que vence mÃ¡s pronto
+	// como vienen ORDER BY fecha_limite ASC, el primero es el que vence más pronto
 	$fecha_limite = $cais_activos[0]['fecha_limite'];
 	$dias_restantes_cai = $cais_activos[0]['dias_para_vencer'];
 }
@@ -192,8 +156,8 @@ if (!empty($cais_activos)) {
 /// Facturas emitidas (en el rango de fechas seleccionado)
 /// ==============================
 
-// Si tÃº quieres contar TODAS emitidas sin importar CAI, usa solo facturas.
-// AquÃ­ lo dejo como lo tenÃ­as (con join CAI y vigencia), pero corregido a OFFSET:
+// Si tú quieres contar TODAS emitidas sin importar CAI, usa solo facturas.
+// Aquí lo dejo como lo tenías (con join CAI y vigencia), pero corregido a OFFSET:
 $stmtFact = $pdo->prepare("
     SELECT COUNT(*) 
     FROM facturas f
@@ -236,7 +200,7 @@ $usuario = [
 
 
 /// ==============================
-/// Facturas no declaradas (tu lÃ³gica original)
+/// Facturas no declaradas (tu lógica original)
 /// ==============================
 $primer_dia_mes_actual = date('Y-m-01');
 $ultimo_dia_mes_actual = date('Y-m-t');
@@ -274,7 +238,7 @@ $pendientes_pago = $stmtPendientesPago->fetch(PDO::FETCH_ASSOC);
 $cant_pendientes_pago  = (int)($pendientes_pago['cantidad'] ?? 0);
 $monto_pendientes_pago = (float)($pendientes_pago['monto_pendiente'] ?? 0);
 
-// LÃ³gica para color de alerta segÃºn dÃ­a del mes
+// Lógica para color de alerta según día del mes
 $dia_hoy = (int)date('d');
 $color_alerta = 'success';
 
@@ -290,7 +254,7 @@ if ($dia_hoy < 10) {
 	$color_alerta = 'danger';
 }
 
-// Obtener los meses con facturas no declaradas (tu cÃ³digo referenciaba $meses_no_declarados)
+// Obtener los meses con facturas no declaradas (tu código referenciaba $meses_no_declarados)
 $lista_meses = [];
 if (!empty($meses_no_declarados)) {
 	$lista_meses_en = array_column($meses_no_declarados, 'mes_anio');
@@ -320,7 +284,7 @@ $isv_mes_actual = (float)$facturas_mes_actual['isv_mes_actual'];
 
 
 /// ==============================
-/// Top productos / resÃºmenes (tu lÃ³gica original)
+/// Top productos / resúmenes (tu lógica original)
 /// ==============================
 $stmtTopProductos = $pdo->prepare("
     SELECT p.nombre, SUM(fi.cantidad) AS total_vendido
@@ -371,7 +335,7 @@ $stmtIngresosPorAnio = $pdo->prepare("
 $stmtIngresosPorAnio->execute([$cliente_id, $establecimiento_activo, $fecha_inicio, $fecha_fin]);
 $ingresos_anuales = $stmtIngresosPorAnio->fetchAll(PDO::FETCH_ASSOC);
 
-// âœ… Resumen por receptor (trae receptor_id y cantidad_facturas)
+// ✅ Resumen por receptor (trae receptor_id y cantidad_facturas)
 $stmtResumenReceptores = $pdo->prepare("
 	SELECT
 		r.receptor_id,
@@ -422,7 +386,7 @@ $stmtResumenReceptores->execute([
 ]);
 $resumen_receptores = $stmtResumenReceptores->fetchAll(PDO::FETCH_ASSOC);
 
-// âœ… Detalle por receptor: facturas + items (para el botÃ³n +)
+// ✅ Detalle por receptor: facturas + items (para el botón +)
 $detalle_receptores = [];
 
 $receptorIds = array_values(array_filter(array_map(

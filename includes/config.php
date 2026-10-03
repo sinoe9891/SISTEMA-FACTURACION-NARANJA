@@ -1,5 +1,17 @@
 <?php
 // config.php
+
+// Entorno de pruebas: el servidor de desarrollo se arranca con APP_DB=dev y usa la BD
+// local (copia de producción). Apache/XAMPP no define esa variable, así que sigue igual.
+if (getenv('APP_DB') === 'dev') {
+    define('DB_HOST', '127.0.0.1');
+    define('DB_PORT', 3309);
+    define('DB_NAME', 'facturacion_saas_dev');
+    define('DB_USER', 'root');
+    define('DB_PASS', '');
+    define('BASE_URL', 'http://localhost:8383/');
+    return;
+}
 // define('DB_HOST', 'localhost');
 // define('DB_NAME', 'facturacion_saas');
 // define('DB_USER', 'root');

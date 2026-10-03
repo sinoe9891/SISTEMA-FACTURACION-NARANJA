@@ -176,7 +176,16 @@ $productos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 			confirmButtonText: 'Sí, eliminar',
 		}).then((result) => {
 			if (result.isConfirmed) {
-				window.location.href = 'includes/productos_borrar.php?id=' + id;
+				const form = document.createElement('form');
+				form.method = 'POST';
+				form.action = 'includes/productos_borrar.php';
+				const input = document.createElement('input');
+				input.type = 'hidden';
+				input.name = 'id';
+				input.value = id;
+				form.appendChild(input);
+				document.body.appendChild(form);
+				form.submit();
 			}
 		});
 	}

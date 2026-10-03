@@ -7,14 +7,21 @@ try {
 		throw new Exception("Método no permitido.");
 	}
 
-	$id = $_POST['id'] ?? null;
+	$cliente_id = (int)(USUARIO_ROL === 'superadmin'
+		? ($_SESSION['cliente_seleccionado'] ?? 0)
+		: CLIENTE_ID);
+	$id = (int)($_POST['id'] ?? 0);
 
-	if (!$id) {
+	if (!$id || !$cliente_id) {
 		throw new Exception("ID inválido.");
 	}
 
-	$stmt = $pdo->prepare("DELETE FROM productos_clientes WHERE id = ?");
-	$stmt->execute([$id]);
+	$stmt = $pdo->prepare("DELETE FROM productos_clientes WHERE id = ? AND cliente_id = ?");
+	$stmt->execute([$id, $cliente_id]);
+
+	if ($stmt->rowCount() === 0) {
+		throw new Exception("Producto no encontrado.");
+	}
 
 	echo json_encode(["status" => "ok"]);
 } catch (Exception $e) {

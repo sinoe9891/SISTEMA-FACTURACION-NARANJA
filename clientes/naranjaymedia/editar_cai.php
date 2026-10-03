@@ -8,10 +8,11 @@ if (!isset($_GET['id']) || !ctype_digit($_GET['id'])) die("ID de CAI inválido."
 $cai_id     = (int)$_GET['id'];
 $usuario_id = $_SESSION['usuario_id'];
 
+// (LEFT JOIN: el superadmin no tiene cliente propio)
 $stmtUser = $pdo->prepare("
     SELECT u.rol, c.id AS cliente_id, c.nombre AS cliente_nombre, c.logo_url
     FROM usuarios u
-    INNER JOIN clientes_saas c ON u.cliente_id = c.id
+    LEFT JOIN clientes_saas c ON u.cliente_id = c.id
     WHERE u.id = ?
 ");
 $stmtUser->execute([$usuario_id]);
@@ -32,6 +33,9 @@ if ($rol === 'superadmin') {
 }
 $cai = $stmtCAI->fetch();
 if (!$cai) die("CAI no encontrado o no autorizado.");
+
+// Los establecimientos y puntos que se ofrecen son los de la empresa dueña del CAI
+$cliente_id = (int)$cai['cliente_id'];
 
 $stmtEstab = $pdo->prepare("SELECT establecimiento_id AS id, nombre FROM establecimientos WHERE cliente_id = ? ORDER BY nombre ASC");
 $stmtEstab->execute([$cliente_id]);
@@ -63,8 +67,6 @@ if ($establecimiento_activo) {
 
 require_once '../../includes/templates/header.php';
 ?>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
 <style>
     :root {
@@ -482,7 +484,7 @@ require_once '../../includes/templates/header.php';
             </p>
         </div>
         <?php if (!empty($datos['logo_url'])): ?>
-            <img src="https://www.naranjaymediahn.com/wp-content/uploads/2023/06/logo-naranja.svg" alt="Logo" class="ec-header-logo">
+            <img src="<?= htmlspecialchars($navbarLogo ?? "") ?>" alt="Logo" class="ec-header-logo">
         <?php endif; ?>
     </div>
 
@@ -533,8 +535,22 @@ require_once '../../includes/templates/header.php';
         </div>
     </div>
 
+    <?php
+    // CAI con facturas emitidas: no se pueden cambiar los datos que definen sus números
+    $caiUsado = (int)$cai['correlativo_actual'] > 0;
+    $bloqInput  = $caiUsado ? 'readonly style="background:#f1f5f9;cursor:not-allowed"' : '';
+    $bloqSelect = $caiUsado ? 'tabindex="-1" aria-disabled="true" style="pointer-events:none;background:#f1f5f9"' : '';
+    ?>
     <form id="formEditarCAI">
         <input type="hidden" name="id" value="<?= $cai['id'] ?>">
+        <?php if ($caiUsado): ?>
+            <div class="alert alert-warning d-flex gap-2 align-items-start">
+                <i class="bi bi-lock-fill mt-1"></i>
+                <div>Este CAI ya tiene <strong><?= (int)$cai['correlativo_actual'] ?> factura(s) emitida(s)</strong>.
+                    Para no alterar los números ya emitidos, el código CAI, el establecimiento, el punto de emisión y el
+                    inicio del rango quedan bloqueados. Puedes cambiar las fechas, ampliar el rango final y el certificado.</div>
+            </div>
+        <?php endif; ?>
 
         <!-- Datos del CAI -->
         <div class="ec-card">
@@ -549,7 +565,7 @@ require_once '../../includes/templates/header.php';
                             <i class="bi bi-upc-scan"></i> Código CAI <span class="req">*</span>
                             <span class="info-pill ms-2"><i class="bi bi-exclamation-triangle-fill"></i> SAR</span>
                         </label>
-                        <input type="text" name="cai" class="ec-input font-monospace text-uppercase"
+                        <input type="text" name="cai" class="ec-input font-monospace text-uppercase" <?= $bloqInput ?>
                             value="<?= htmlspecialchars($cai['cai']) ?>"
                             placeholder="D0708E-EE616A-A54EE0-63BE03-090930-0B1100" maxlength="40" required>
                         <span class="ec-hint">Formato: 6 grupos de 6 caracteres separados por guiones.</span>
@@ -570,6 +586,14 @@ require_once '../../includes/templates/header.php';
                                     class="bi bi-exclamation-circle-fill me-1"></i>Este CAI está vencido.</span>
                         <?php endif; ?>
                     </div>
+                    <div class="ec-field ec-field-full">
+                        <label class="ec-label"><i class="bi bi-patch-check"></i> N.° Certificado (RFI)</label>
+                        <input type="text" name="numero_certificado" class="ec-input font-monospace"
+                            value="<?= htmlspecialchars($cai['numero_certificado'] ?? '') ?>"
+                            placeholder="RFI 08019022406144-000-2" maxlength="50">
+                        <span class="ec-hint">Se imprime en el PDF de las facturas emitidas con este CAI. Si se deja
+                            vacío, se usa el certificado general del sistema.</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -585,7 +609,7 @@ require_once '../../includes/templates/header.php';
                     <div class="ec-field">
                         <label class="ec-label"><i class="bi bi-building"></i> Establecimiento <span
                                 class="req">*</span></label>
-                        <select name="establecimiento_id" id="establecimiento_id" class="ec-select" required>
+                        <select name="establecimiento_id" id="establecimiento_id" class="ec-select" required <?= $bloqSelect ?>>
                             <?php foreach ($establecimientos as $est): ?>
                                 <option value="<?= $est['id'] ?>"
                                     <?= $est['id'] == $cai['establecimiento_id'] ? 'selected' : '' ?>>
@@ -597,7 +621,7 @@ require_once '../../includes/templates/header.php';
                     <div class="ec-field">
                         <label class="ec-label"><i class="bi bi-printer"></i> Punto de Emisión <span
                                 class="req">*</span></label>
-                        <select name="punto_emision_id" id="punto_emision_id" class="ec-select" required>
+                        <select name="punto_emision_id" id="punto_emision_id" class="ec-select" required <?= $bloqSelect ?>>
                             <?php foreach ($puntos_emision as $pe): ?>
                                 <option value="<?= $pe['id'] ?>" <?= $pe['id'] == $cai['punto_emision_id'] ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($pe['codigo_punto']) ?>
@@ -622,7 +646,7 @@ require_once '../../includes/templates/header.php';
                     <div class="ec-field">
                         <label class="ec-label"><i class="bi bi-1-circle"></i> Rango inicio <span
                                 class="req">*</span></label>
-                        <input type="number" name="rango_inicio" class="ec-input" min="1"
+                        <input type="number" name="rango_inicio" class="ec-input" min="1" <?= $bloqInput ?>
                             value="<?= htmlspecialchars($cai['rango_inicio']) ?>" required>
                     </div>
                     <div class="ec-field">
@@ -633,7 +657,7 @@ require_once '../../includes/templates/header.php';
                     </div>
                     <div class="ec-field">
                         <label class="ec-label">Correlativo CAI inicio (SAR)</label>
-                        <input type="text" name="rango_cai_inicio" class="ec-input font-monospace text-uppercase"
+                        <input type="text" name="rango_cai_inicio" class="ec-input font-monospace text-uppercase" <?= $bloqInput ?>
                             value="<?= htmlspecialchars($cai['rango_cai_inicio']) ?>" placeholder="000-002-01-00000001"
                             maxlength="25">
                     </div>

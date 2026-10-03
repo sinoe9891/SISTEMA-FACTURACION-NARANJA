@@ -1,7 +1,8 @@
 <?php
-ini_set('session.cookie_path', '/');
-session_start();
+require_once '../../includes/sesion_inicio.php';
+iniciarSesionSegura();
 require_once '../../includes/db.php';
+require_once '../../includes/intentos.php';
 
 if (isset($_SESSION['usuario_id'])) {
     header('Location: ./dashboard');
@@ -33,8 +34,6 @@ function detectarCliente()
     return null;
 }
 
-error_log("HOST=" . ($_SERVER['HTTP_HOST'] ?? '') . " URI=" . ($_SERVER['REQUEST_URI'] ?? ''));
-
 $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $fullUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? '') . ($_SERVER['REQUEST_URI'] ?? '');
 
@@ -45,7 +44,6 @@ $defaultApple   = 'https://www.naranjaymediahn.com/wp-content/uploads/2024/07/cr
 $defaultLogoUI  = 'https://www.naranjaymediahn.com/logo.png'; // logo fallback para UI (si no hay logo_url)
 
 $cliente_subcarpeta = strtolower(trim(detectarCliente() ?? ''));
-error_log("cliente_detectado=" . $cliente_subcarpeta);
 
 $logo_url = null;
 $nombre_cliente = null;
@@ -85,49 +83,80 @@ $appleIcon = !empty($apple_touch_icon_url) ? $apple_touch_icon_url : $defaultApp
 // Logo para mostrar en pantalla
 $logoUi = !empty($logo_url) ? $logo_url : $defaultLogoUI;
 
+$error = null;
+$correoPrevio = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $correo = $_POST['correo'] ?? '';
-    $clave  = $_POST['clave'] ?? '';
+    $correo = trim((string)($_POST['correo'] ?? ''));
+    $clave  = (string)($_POST['clave'] ?? '');
+    $correoPrevio = $correo;
 
-    $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE correo = ?");
-    $stmt->execute([$correo]);
-    $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($usuario && password_verify($clave, $usuario['clave'])) {
-        $_SESSION['usuario_id'] = $usuario['id'];
-
-        if (($usuario['rol'] ?? '') === 'superadmin') {
-            header("Location: ./seleccionar_cliente");
-            exit;
-        }
-
-        $stmtEstab = $pdo->prepare("SELECT establecimiento_id FROM usuario_establecimientos WHERE usuario_id = ?");
-        $stmtEstab->execute([$usuario['id']]);
-        $establecimientos = $stmtEstab->fetchAll(PDO::FETCH_COLUMN);
-
-        // ── Fallback: si el usuario no tiene sucursales asignadas, usar las del cliente ──
-        // Esto permite que un usuario único (sin sucursales) pueda iniciar sesión
-        // siempre que el cliente tenga al menos un establecimiento creado.
-        if (empty($establecimientos) && !empty($usuario['cliente_id'])) {
-            $stmtFallback = $pdo->prepare("SELECT establecimiento_id FROM establecimientos WHERE cliente_id = ?");
-            $stmtFallback->execute([$usuario['cliente_id']]);
-            $establecimientos = $stmtFallback->fetchAll(PDO::FETCH_COLUMN);
-        }
-
-        if (count($establecimientos) === 1) {
-            // Único establecimiento → entra directo, sin pasar por selector.
-            $_SESSION['establecimiento_activo'] = (int)$establecimientos[0];
-            header("Location: ./dashboard");
-            exit;
-        } elseif (count($establecimientos) > 1) {
-            $_SESSION['establecimientos'] = $establecimientos;
-            header("Location: ./seleccionar_establecimiento");
-            exit;
-        } else {
-            $error = "No hay establecimientos disponibles para tu cliente. Contacta al administrador para crear al menos uno.";
-        }
+    $minutosBloqueo = intentosBloqueado($pdo, 'login', $correo);
+    if ($minutosBloqueo) {
+        $error = "Demasiados intentos fallidos. Intenta de nuevo en $minutosBloqueo minuto(s).";
     } else {
-        $error = "Credenciales inválidas.";
+        $stmt = $pdo->prepare("
+            SELECT u.*, c.subdominio, c.estado AS cliente_estado
+            FROM usuarios u
+            LEFT JOIN clientes_saas c ON c.id = u.cliente_id
+            WHERE u.correo = ?
+        ");
+        $stmt->execute([$correo]);
+        $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // Válido solo si: la clave es correcta, el usuario está activo y pertenece a la
+        // empresa de esta URL (el superadmin puede entrar por cualquiera).
+        $valido = $usuario
+            && password_verify($clave, $usuario['clave'])
+            && ($usuario['estado'] ?? 'activo') === 'activo'
+            && (($usuario['rol'] ?? '') === 'superadmin' || !$cliente_subcarpeta || $usuario['subdominio'] === $cliente_subcarpeta);
+
+        if (!$valido) {
+            intentosRegistrarFallo($pdo, 'login', $correo);
+            $error = "Credenciales inválidas.";
+        } elseif (($usuario['rol'] ?? '') !== 'superadmin' && ($usuario['cliente_estado'] ?? 'activo') === 'inactivo') {
+            $error = "Esta empresa está desactivada. Contacta al administrador del sistema.";
+        } else {
+            intentosLimpiar($pdo, 'login', $correo);
+
+            // Nueva sesión: evita fijación de sesión; el token CSRF se genera de nuevo
+            session_regenerate_id(true);
+            unset($_SESSION['csrf_token'], $_SESSION['__cache_cliente'], $_SESSION['__cache_establecimiento']);
+            $_SESSION['usuario_id'] = $usuario['id'];
+
+            // Actualizar el hash si PHP recomienda un algoritmo/costo más nuevo
+            if (password_needs_rehash($usuario['clave'], PASSWORD_DEFAULT)) {
+                $pdo->prepare("UPDATE usuarios SET clave = ? WHERE id = ?")->execute([password_hash($clave, PASSWORD_DEFAULT), $usuario['id']]);
+            }
+
+            if (($usuario['rol'] ?? '') === 'superadmin') {
+                header("Location: ./seleccionar_cliente");
+                exit;
+            }
+
+            $stmtEstab = $pdo->prepare("SELECT establecimiento_id FROM usuario_establecimientos WHERE usuario_id = ?");
+            $stmtEstab->execute([$usuario['id']]);
+            $establecimientos = $stmtEstab->fetchAll(PDO::FETCH_COLUMN);
+
+            // ── Fallback: si el usuario no tiene sucursales asignadas, usar las del cliente ──
+            if (empty($establecimientos) && !empty($usuario['cliente_id'])) {
+                $stmtFallback = $pdo->prepare("SELECT establecimiento_id FROM establecimientos WHERE cliente_id = ?");
+                $stmtFallback->execute([$usuario['cliente_id']]);
+                $establecimientos = $stmtFallback->fetchAll(PDO::FETCH_COLUMN);
+            }
+
+            if (count($establecimientos) === 1) {
+                $_SESSION['establecimiento_activo'] = (int)$establecimientos[0];
+                header("Location: ./dashboard");
+                exit;
+            } elseif (count($establecimientos) > 1) {
+                $_SESSION['establecimientos'] = $establecimientos;
+                header("Location: ./seleccionar_establecimiento");
+                exit;
+            } else {
+                $error = "No hay establecimientos disponibles para tu cliente. Contacta al administrador para crear al menos uno.";
+            }
+        }
     }
 }
 ?>
@@ -164,50 +193,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Login | <?= htmlspecialchars($nombre_cliente ?: 'Sistema de Facturación') ?></title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    <link href="../../clientes/css/app.css?v=<?= @filemtime(__DIR__ . '/../css/app.css') ?>" rel="stylesheet" />
 </head>
 
-<body class="bg-light">
-    <div class="container mt-5">
-        <div class="row justify-content-center">
-            <div class="col-md-4">
-
+<body class="app-login">
+    <main class="app-login-wrap">
+        <div class="app-login-card">
+            <div class="text-center mb-4">
                 <?php if (!empty($logoUi)): ?>
-                    <div class="text-center mb-3">
-                        <img src="<?= htmlspecialchars($logoUi) ?>" alt="<?= htmlspecialchars($nombre_cliente ?: 'Sistema') ?>" style="max-height: 80px;">
-                    </div>
+                    <img src="<?= htmlspecialchars($logoUi) ?>" alt="<?= htmlspecialchars($nombre_cliente ?: 'Sistema') ?>" class="app-login-logo">
                 <?php endif; ?>
+                <h1 class="app-login-title"><?= htmlspecialchars($nombre_cliente ?: 'Sistema de Facturación') ?></h1>
+                <p class="app-login-sub">Inicia sesión para continuar</p>
+            </div>
 
-                <h4 class="text-center mb-4"><?= htmlspecialchars($nombre_cliente ?: 'Sistema de Facturación') ?></h4>
+            <?php if (!empty($error)): ?>
+                <div class="alert alert-danger d-flex align-items-start gap-2 py-2" role="alert">
+                    <i class="bi bi-exclamation-circle-fill mt-1"></i><span><?= htmlspecialchars($error) ?></span>
+                </div>
+            <?php endif; ?>
 
-                <div class="card shadow">
-                    <div class="card-body">
-                        <form method="POST">
-                            <div class="mb-3">
-                                <label for="correo" class="form-label">Correo</label>
-                                <input type="email" class="form-control" name="correo" required>
-                            </div>
-                            <div class="mb-3">
-                                <label for="clave" class="form-label">Contraseña</label>
-                                <input type="password" class="form-control" name="clave" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary w-100">Iniciar sesión</button>
-                        </form>
+            <form method="POST" id="formLogin" novalidate>
+                <div class="mb-3">
+                    <label for="correo" class="form-label">Correo</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                        <input type="email" class="form-control" id="correo" name="correo" required autocomplete="username"
+                            autofocus value="<?= htmlspecialchars($correoPrevio) ?>" placeholder="tu@correo.com">
                     </div>
                 </div>
-
-            </div>
+                <div class="mb-4">
+                    <label for="clave" class="form-label">Contraseña</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                        <input type="password" class="form-control" id="clave" name="clave" required autocomplete="current-password" placeholder="••••••••">
+                        <button class="btn btn-outline-secondary" type="button" id="verClave" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </div>
+                    <div class="form-text d-none" id="avisoMayus"><i class="bi bi-capslock"></i> Bloq Mayús está activado</div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100 py-2" id="btnEntrar">
+                    <span class="btn-texto"><i class="bi bi-box-arrow-in-right me-1"></i> Iniciar sesión</span>
+                    <span class="btn-cargando d-none"><span class="spinner-border spinner-border-sm me-1"></span> Entrando…</span>
+                </button>
+            </form>
         </div>
-    </div>
+        <p class="app-login-pie">© <?= date('Y') ?> · Sistema de Facturación · Naranja &amp; Media</p>
+    </main>
 
-    <?php if (!empty($error)): ?>
-        <script>
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: '<?= addslashes($error) ?>'
+    <script>
+        (function () {
+            var clave = document.getElementById('clave');
+            var btnVer = document.getElementById('verClave');
+            btnVer.addEventListener('click', function () {
+                var mostrar = clave.type === 'password';
+                clave.type = mostrar ? 'text' : 'password';
+                btnVer.innerHTML = mostrar ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
+                btnVer.setAttribute('aria-pressed', mostrar ? 'true' : 'false');
+                btnVer.setAttribute('aria-label', mostrar ? 'Ocultar contraseña' : 'Mostrar contraseña');
+                btnVer.title = mostrar ? 'Ocultar contraseña' : 'Mostrar contraseña';
+                clave.focus();
             });
-        </script>
-    <?php endif; ?>
+            // Aviso de Bloq Mayús
+            clave.addEventListener('keyup', function (e) {
+                document.getElementById('avisoMayus').classList.toggle('d-none', !(e.getModifierState && e.getModifierState('CapsLock')));
+            });
+            // Validación simple y botón "Entrando…" (evita doble envío)
+            document.getElementById('formLogin').addEventListener('submit', function (e) {
+                if (!this.checkValidity()) {
+                    e.preventDefault();
+                    this.classList.add('was-validated');
+                    return;
+                }
+                var b = document.getElementById('btnEntrar');
+                b.disabled = true;
+                b.querySelector('.btn-texto').classList.add('d-none');
+                b.querySelector('.btn-cargando').classList.remove('d-none');
+            });
+        })();
+    </script>
 </body>
 </html>

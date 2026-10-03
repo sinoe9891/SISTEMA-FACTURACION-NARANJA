@@ -143,8 +143,6 @@ $estadoCls = ['activo' => 'ep-activo', 'pausado' => 'ep-pausado', 'cancelado' =>
 $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'vencido' => '⌛'];
 ?>
 
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
 
