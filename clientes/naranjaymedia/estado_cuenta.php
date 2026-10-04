@@ -20,6 +20,7 @@ if (!$cliente) {
 // Facturas del cliente con lo abonado (sin abonos, una factura marcada "pagada" no tiene saldo)
 $st = $pdo->prepare("
     SELECT f.id, f.correlativo, f.fecha_emision, f.condicion_pago, f.estado, f.total, f.pagada,
+           COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) AS periodo_mes, COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) AS periodo_anio,
            f.contrato_id, ct.nombre_contrato,
            COALESCE(ab.abonado, 0) AS abonado, ab.ultimo_abono
     FROM facturas f
@@ -68,6 +69,7 @@ $totalAbonos = array_sum(array_map(fn($a) => (int)$a['anulado'] ? 0 : (float)$a[
 
 $L = fn($v) => 'L ' . number_format((float)$v, 2);
 $condicion = ['contado' => 'Contado', 'credito' => 'Crédito', 'credito/contado' => 'Crédito / Contado'];
+$mesCorto = [1 => 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 $metodos = ['transferencia' => 'Transferencia', 'efectivo' => 'Efectivo', 'cheque' => 'Cheque', 'tarjeta' => 'Tarjeta', 'otro' => 'Otro'];
 
 require_once '../../includes/templates/header.php';
@@ -117,7 +119,7 @@ require_once '../../includes/templates/header.php';
         <table class="table app-table mb-0" id="tablaFacturas">
             <thead>
                 <tr>
-                    <th>Factura</th><th>Emisión</th><th>Condición</th><th>Contrato</th>
+                    <th class="app-n">#</th><th>Factura</th><th>Período</th><th>Emisión</th><th>Condición</th><th>Contrato</th>
                     <th class="app-num">Total</th><th class="app-num">Abonado</th><th class="app-num">Saldo</th>
                     <th class="text-center">Estado</th><th class="text-end no-print">Abonos</th>
                 </tr>
@@ -128,7 +130,9 @@ require_once '../../includes/templates/header.php';
                     $conSaldo = $f['saldo'] > 0.004;
                 ?>
                     <tr data-fila data-saldo="<?= $conSaldo ? 1 : 0 ?>" class="<?= $anulada ? 'text-muted' : '' ?>">
+                        <td class="app-n"></td>
                         <td class="font-monospace small text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
+                        <td class="text-nowrap small"><?= $mesCorto[(int)$f['periodo_mes']] . ' ' . (int)$f['periodo_anio'] ?></td>
                         <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
                         <td class="small"><?= $condicion[strtolower((string)$f['condicion_pago'])] ?? htmlspecialchars((string)$f['condicion_pago']) ?></td>
                         <td class="small"><?= $f['contrato_id'] ? '<a href="facturas_contrato?contrato_id=' . (int)$f['contrato_id'] . '">#' . (int)$f['contrato_id'] . '</a> ' . htmlspecialchars(mb_strimwidth((string)$f['nombre_contrato'], 0, 34, '…')) : '<span class="text-muted">—</span>' ?></td>
@@ -149,12 +153,12 @@ require_once '../../includes/templates/header.php';
                         </td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$facturas): ?><tr><td colspan="9" class="text-center text-muted py-4">Este cliente no tiene facturas.</td></tr><?php endif; ?>
+                <?php if (!$facturas): ?><tr><td colspan="11" class="text-center text-muted py-4">Este cliente no tiene facturas.</td></tr><?php endif; ?>
             </tbody>
             <?php if ($facturas): ?>
                 <tfoot>
                     <tr class="fw-semibold">
-                        <td colspan="4" class="text-end">Totales (sin anuladas)</td>
+                        <td colspan="6" class="text-end">Totales (sin anuladas)</td>
                         <td class="app-num"><?= number_format($facturado, 2) ?></td>
                         <td class="app-num text-success"><?= number_format($cobrado, 2) ?></td>
                         <td class="app-num <?= $saldo > 0 ? 'text-danger' : '' ?>"><?= number_format($saldo, 2) ?></td>
@@ -171,10 +175,11 @@ require_once '../../includes/templates/header.php';
     <div class="app-card-header"><span><i class="bi bi-clock-history me-1"></i> Abonos realizados</span><span class="app-badge"><?= count($abonos) ?></span></div>
     <div class="table-responsive">
         <table class="table app-table mb-0">
-            <thead><tr><th>Fecha</th><th>Factura</th><th>Método</th><th>Referencia</th><th>Notas</th><th class="app-num">Monto</th></tr></thead>
+            <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Factura</th><th>Método</th><th>Referencia</th><th>Notas</th><th class="app-num">Monto</th></tr></thead>
             <tbody>
-                <?php foreach ($abonos as $a): ?>
+                <?php $nAb = count($abonos); foreach ($abonos as $a): ?>
                     <tr class="<?= (int)$a['anulado'] ? 'text-muted text-decoration-line-through' : '' ?>">
+                        <td class="app-n"><?= $nAb-- ?></td>
                         <td class="text-nowrap"><?= date('d/m/Y', strtotime($a['fecha'])) ?></td>
                         <td class="font-monospace small text-nowrap"><a href="ver_factura?id=<?= (int)$a['factura_id'] ?>" target="_blank"><?= htmlspecialchars($a['correlativo']) ?></a></td>
                         <td class="small"><?= $metodos[$a['metodo']] ?? htmlspecialchars($a['metodo']) ?><?= $a['banco'] ? '<br><span class="text-muted">' . htmlspecialchars($a['banco'] . ' ' . $a['cuenta_numero']) . '</span>' : '' ?></td>
@@ -183,7 +188,7 @@ require_once '../../includes/templates/header.php';
                         <td class="app-num fw-semibold"><?= $L($a['monto']) ?></td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$abonos): ?><tr><td colspan="6" class="text-center text-muted py-4">Aún no hay abonos registrados para este cliente.</td></tr><?php endif; ?>
+                <?php if (!$abonos): ?><tr><td colspan="7" class="text-center text-muted py-4">Aún no hay abonos registrados para este cliente.</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>

@@ -11,7 +11,8 @@
  *   t.refrescar();                    // vuelve a aplicar (p. ej. al cambiar un filtro propio)
  *
  * Las filas que cuentan son las de <tbody> con atributo data-fila; el texto buscado es
- * data-buscar si existe, o el texto de la fila.
+ * data-buscar si existe, o el texto de la fila. Una celda con class="app-n" se numera 1, 2, 3…
+ * según el orden de las filas visibles (se recalcula al buscar o filtrar).
  */
 function AppTabla(tabla, opciones) {
     const o = Object.assign({ vacio: 'Sin resultados.' }, opciones || {});
@@ -37,6 +38,7 @@ function AppTabla(tabla, opciones) {
         pagina = Math.min(pagina, paginas);
         const ini = (pagina - 1) * n;
         filas.forEach(tr => (tr.style.display = 'none'));
+        visibles.forEach((tr, i) => { const n = tr.querySelector('.app-n'); if (n) n.textContent = i + 1; });
         visibles.slice(ini, ini + n).forEach(tr => (tr.style.display = ''));
         vacia.firstChild.textContent = o.vacio;
         vacia.style.display = visibles.length ? 'none' : '';

@@ -16,7 +16,9 @@ foreach ($facturas as $f) {
     $t = cxcTramo((int)$f['dias']);
     $tramos[$t] += (float)$f['saldo'];
     $k = $f['receptor_id'];
-    $porCliente[$k] ??= ['nombre' => $f['receptor'], 'rtn' => $f['receptor_rtn'], 'facturas' => 0, 'saldo' => 0.0, 'mayor' => 0] + array_fill_keys(array_keys($tramos), 0.0);
+    $porCliente[$k] ??= ['nombre' => $f['receptor'], 'rtn' => $f['receptor_rtn'], 'facturas' => 0, 'saldo' => 0.0, 'mayor' => 0, 'meses' => [], 'desde' => null] + array_fill_keys(array_keys($tramos), 0.0);
+    $porCliente[$k]['meses'][sprintf('%04d-%02d', $f['periodo_anio'], $f['periodo_mes'])] = true;
+    $porCliente[$k]['desde'] = min($porCliente[$k]['desde'] ?? $f['fecha_emision'], $f['fecha_emision']);
     $porCliente[$k]['facturas']++;
     $porCliente[$k]['saldo'] += (float)$f['saldo'];
     $porCliente[$k][$t] += (float)$f['saldo'];
@@ -26,6 +28,8 @@ uasort($porCliente, fn($a, $b) => $b['saldo'] <=> $a['saldo']);
 $total = array_sum($tramos);
 $L = fn($v) => 'L ' . number_format((float)$v, 2);
 $colorTramo = ['0-30' => 'success', '31-60' => 'warning', '61-90' => 'warning', '90+' => 'danger'];
+$mesCorto = [1 => 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+$periodo = fn($m, $a) => $mesCorto[(int)$m] . ' ' . $a;
 
 require_once '../../includes/templates/header.php';
 ?>
@@ -54,12 +58,14 @@ require_once '../../includes/templates/header.php';
         <div class="app-card-header"><span><i class="bi bi-people me-1"></i> Por cliente</span><small class="text-muted fw-normal">Clic en el nombre para ver su estado de cuenta</small></div>
         <div class="table-responsive">
             <table class="table app-table">
-                <thead><tr><th>Cliente</th><th class="app-num">Facturas</th><?php foreach ($tramos as $t => $v): ?><th class="app-num"><?= $t ?></th><?php endforeach; ?><th class="app-num">Saldo</th></tr></thead>
+                <thead><tr><th class="app-n">#</th><th>Cliente</th><th>Meses adeudados</th><th class="app-num">Facturas</th><?php foreach ($tramos as $t => $v): ?><th class="app-num"><?= $t ?></th><?php endforeach; ?><th class="app-num">Saldo</th></tr></thead>
                 <tbody>
-                    <?php if (!$porCliente): ?><tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-check-circle text-success"></i> No hay saldos pendientes.</td></tr><?php endif; ?>
-                    <?php foreach ($porCliente as $rid => $p): ?>
+                    <?php if (!$porCliente): ?><tr><td colspan="9" class="text-center text-muted py-4"><i class="bi bi-check-circle text-success"></i> No hay saldos pendientes.</td></tr><?php endif; ?>
+                    <?php $nCli = 0; foreach ($porCliente as $rid => $p): ksort($p['meses']); $mesesTxt = array_map(fn($k) => $periodo((int)substr($k, 5), substr($k, 0, 4)), array_keys($p['meses'])); ?>
                         <tr>
+                            <td class="app-n"><?= ++$nCli ?></td>
                             <td><a href="estado_cuenta?receptor_id=<?= (int)$rid ?>" title="Ver estado de cuenta"><?= htmlspecialchars($p['nombre']) ?></a><?= $p['mayor'] > 90 ? ' <span class="app-badge app-badge-danger">+90 días</span>' : '' ?><div class="small text-muted"><?= htmlspecialchars($p['rtn'] ?? '') ?></div></td>
+                            <td class="small"><?= htmlspecialchars(implode(', ', $mesesTxt)) ?><div class="text-muted">Debe desde el <?= date('d/m/Y', strtotime($p['desde'])) ?></div></td>
                             <td class="app-num"><?= $p['facturas'] ?></td>
                             <?php foreach (array_keys($tramos) as $t): ?><td class="app-num <?= $p[$t] > 0 ? 'text-' . $colorTramo[$t] : 'text-muted' ?>"><?= $p[$t] > 0 ? number_format($p[$t], 2) : '—' ?></td><?php endforeach; ?>
                             <td class="app-num fw-semibold"><?= $L($p['saldo']) ?></td>
@@ -80,12 +86,14 @@ require_once '../../includes/templates/header.php';
         </div>
         <div class="table-responsive">
             <table class="table app-table" id="tablaPendientes">
-                <thead><tr><th>Factura</th><th>Cliente</th><th>Emisión</th><th class="app-num">Días</th><th class="app-num">Total</th><th class="app-num">Abonado</th><th class="app-num">Saldo</th><th class="text-end">Acciones</th></tr></thead>
+                <thead><tr><th class="app-n">#</th><th>Factura</th><th>Cliente</th><th>Período</th><th>Emisión</th><th class="app-num">Días</th><th class="app-num">Total</th><th class="app-num">Abonado</th><th class="app-num">Saldo</th><th class="text-end">Acciones</th></tr></thead>
                 <tbody>
                     <?php foreach ($facturas as $f): $t = cxcTramo((int)$f['dias']); ?>
-                        <tr data-fila data-cliente="<?= (int)$f['receptor_id'] ?>" data-buscar="<?= htmlspecialchars(mb_strtolower($f['correlativo'] . ' ' . $f['receptor'])) ?>">
+                        <tr data-fila data-cliente="<?= (int)$f['receptor_id'] ?>" data-buscar="<?= htmlspecialchars(mb_strtolower($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $periodo($f['periodo_mes'], $f['periodo_anio']))) ?>">
+                            <td class="app-n"></td>
                             <td class="font-monospace small text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
                             <td><a href="estado_cuenta?receptor_id=<?= (int)$f['receptor_id'] ?>"><?= htmlspecialchars($f['receptor']) ?></a></td>
+                            <td class="text-nowrap small"><?= $periodo($f['periodo_mes'], $f['periodo_anio']) ?></td>
                             <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
                             <td class="app-num"><span class="app-badge app-badge-<?= $colorTramo[$t] ?>"><?= (int)$f['dias'] ?></span></td>
                             <td class="app-num"><?= number_format((float)$f['total'], 2) ?></td>

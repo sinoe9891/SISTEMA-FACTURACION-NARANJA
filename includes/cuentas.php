@@ -39,6 +39,8 @@ function cxcFacturasPendientes(PDO $pdo, int $cid, ?int $receptor = null): array
     $sql = "
         SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.pagada, f.receptor_id, f.condicion_pago,
                cf.nombre AS receptor, cf.rtn AS receptor_rtn,
+               COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) AS periodo_mes,
+               COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) AS periodo_anio,
                COALESCE(ab.abonado, 0) AS abonado,
                " . cxcSqlSaldo() . " AS saldo,
                DATEDIFF(CURDATE(), DATE(f.fecha_emision)) AS dias

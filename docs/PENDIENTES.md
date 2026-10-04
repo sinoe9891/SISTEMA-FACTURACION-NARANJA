@@ -35,7 +35,7 @@ Unificación hecha con una «capa» en `clientes/css/app.css` (sin reescribir ca
 - [x] **Estado de resultados:** los meses futuros ya no se grafican como cero y el mes actual se marca «(en curso)».
 - [ ] **Estado de resultados:** la nómina solo está registrada como gasto de enero a marzo 2026; de abril en adelante los egresos no incluyen sueldos (margen irreal de ~98 %). Registrar la nómina mensual o calcularla desde colaboradores.
 - [ ] **Proyección de flujo de caja:** revisar al final (pedido del usuario).
-- [ ] **Cuentas por cobrar y Cuentas por pagar:** igualar paginación, tipografía, colores de texto, espacios y enlaces al resto de páginas.
+- [x] **Cuentas por cobrar y Cuentas por pagar:** igualar paginación, tipografía, colores de texto, espacios y enlaces al resto de páginas.
 - [ ] **Fechas:** formatos mezclados (2026-10-10 · 15/09/2026) → dd/mm/aaaa en tablas (CAI, contratos).
 - [ ] **Tablas anchas:** clientes/usuarios/CAI tienen muchas columnas; en pantallas medianas hay que desplazar a la derecha. Evaluar ocultar columnas secundarias.
 - [ ] **Paginación:** cada página vieja tiene su propia paginación «10/pág» → un solo componente.

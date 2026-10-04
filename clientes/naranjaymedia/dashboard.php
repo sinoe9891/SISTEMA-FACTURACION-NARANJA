@@ -259,6 +259,20 @@ require_once '../../includes/templates/header.php';
         <?php endif; ?>
     </div>
 
+    <!-- Alertas: todas juntas, debajo del saludo -->
+    <?php if (!empty($alerta_cai_vencido)): ?>
+        <div class="alert alert-danger d-flex align-items-center gap-3 mb-3 rounded-3">
+            <i class="bi bi-calendar-x-fill fs-5"></i>
+            <div><strong>Tu CAI está por vencer.</strong> Fecha límite: <strong><?= formatFechaLimite($fecha_limite) ?></strong>. Solicita uno nuevo al SAR antes de esa fecha.</div>
+        </div>
+    <?php endif; ?>
+    <?php if (($facturas_restantes ?? 999999) <= (defined('ALERTA_FACTURAS_RESTANTES') ? ALERTA_FACTURAS_RESTANTES : 0) && ($total_facturas ?? 0) > 0): ?>
+        <div class="alert alert-warning d-flex align-items-center gap-3 mb-3 rounded-3">
+            <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+            <div><strong>¡Atención! Estás por agotar tu rango de facturación:</strong> quedan <strong><?= (int)$facturas_restantes ?></strong> correlativo(s) disponibles.<?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?> <a href="configuracion_cai" class="alert-link">Ver rangos CAI</a><?php else: ?> Avisa al administrador.<?php endif; ?></div>
+        </div>
+    <?php endif; ?>
+
     <!-- Filtro -->
     <div class="db-card mb-4">
         <div class="card-body py-3 px-4">
@@ -280,14 +294,6 @@ require_once '../../includes/templates/header.php';
             </form>
         </div>
     </div>
-
-    <!-- Alerta CAI -->
-    <?php if (!empty($alerta_cai_vencido)): ?>
-        <div class="alert alert-danger d-flex align-items-center gap-3 mb-4 rounded-3 shadow-sm">
-            <i class="bi bi-exclamation-triangle-fill fs-4"></i>
-            <div>⏰ Tu CAI está por vencer. Fecha límite: <strong><?= formatFechaLimite($fecha_limite) ?></strong></div>
-        </div>
-    <?php endif; ?>
 
     <!-- ══ Stats strip — TODOS LOS MONTOS CON 2 DECIMALES ══════════════════ -->
     <div class="db-stats">
@@ -1545,10 +1551,6 @@ require_once '../../includes/templates/header.php';
         </div>
         <!-- ── fin reportes periódicos ── -->
 
-        <?php if (($facturas_restantes ?? 999999) <= (defined('ALERTA_FACTURAS_RESTANTES') ? ALERTA_FACTURAS_RESTANTES : 0) && ($total_facturas ?? 0) > 0): ?>
-            <div class="alert alert-warning mt-4 rounded-3"><i class="bi bi-exclamation-triangle-fill me-2"></i>⚠️ ¡Atención!
-                Estás por agotar tu rango de facturación.</div>
-        <?php endif; ?>
 
     <?php else: ?>
         <div class="alert alert-info rounded-3"><i class="bi bi-info-circle-fill me-2"></i>No hay datos de ingresos en el

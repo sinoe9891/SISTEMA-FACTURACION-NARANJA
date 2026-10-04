@@ -48,16 +48,16 @@ require_once '../../includes/templates/header.php';
 </div>
 
 <div class="row g-3">
-    <div class="col-lg-4">
+    <div class="col-12">
         <div class="app-card h-100">
             <div class="app-card-header"><span><i class="bi bi-truck me-1"></i> Por proveedor</span></div>
             <div class="table-responsive">
                 <table class="table app-table">
-                    <thead><tr><th>Proveedor</th><th class="app-num">Vencido</th><th class="app-num">Total</th></tr></thead>
+                    <thead><tr><th class="app-n">#</th><th>Proveedor</th><th class="app-num">Vencido</th><th class="app-num">Total</th></tr></thead>
                     <tbody>
-                        <?php if (!$porProveedor): ?><tr><td colspan="3" class="text-center text-muted py-4">Sin pendientes.</td></tr><?php endif; ?>
-                        <?php foreach ($porProveedor as $p => $v): ?>
-                            <tr><td><?= htmlspecialchars($p) ?><div class="small text-muted"><?= $v['n'] ?> pago(s)</div></td>
+                        <?php if (!$porProveedor): ?><tr><td colspan="4" class="text-center text-muted py-4">Sin pendientes.</td></tr><?php endif; ?>
+                        <?php $nProv = 0; foreach ($porProveedor as $p => $v): ?>
+                            <tr><td class="app-n"><?= ++$nProv ?></td><td><?= htmlspecialchars($p) ?><div class="small text-muted"><?= $v['n'] ?> pago(s)</div></td>
                                 <td class="app-num <?= $v['vencido'] > 0 ? 'text-danger' : 'text-muted' ?>"><?= $v['vencido'] > 0 ? number_format($v['vencido'], 2) : '—' ?></td>
                                 <td class="app-num fw-semibold"><?= number_format($v['total'], 2) ?></td></tr>
                         <?php endforeach; ?>
@@ -66,7 +66,7 @@ require_once '../../includes/templates/header.php';
             </div>
         </div>
     </div>
-    <div class="col-lg-8">
+    <div class="col-12">
         <div class="app-card">
             <div class="app-card-header flex-wrap">
                 <span><i class="bi bi-calendar-event me-1"></i> Calendario de pagos</span>
@@ -77,10 +77,11 @@ require_once '../../includes/templates/header.php';
             </div>
             <div class="table-responsive">
                 <table class="table app-table" id="tablaPagos">
-                    <thead><tr><th>Fecha</th><th>Descripción</th><th>Proveedor</th><th class="app-num">Monto</th><th>Estado</th><th class="text-end"></th></tr></thead>
+                    <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Descripción</th><th>Proveedor</th><th class="app-num">Monto</th><th>Estado</th><th class="text-end"></th></tr></thead>
                     <tbody>
                         <?php foreach ($gastos as $g): $d = (int)$g['dias']; ?>
                             <tr data-fila>
+                                <td class="app-n"></td>
                                 <td class="text-nowrap"><?= date('d/m/Y', strtotime($g['fecha'])) ?></td>
                                 <td><a href="gasto_ver?id=<?= (int)$g['id'] ?>"><?= htmlspecialchars($g['descripcion']) ?></a><?= $g['frecuencia'] !== 'unico' ? ' <span class="app-badge app-badge-muted">' . htmlspecialchars(ucfirst($g['frecuencia'])) . '</span>' : '' ?><div class="small text-muted"><?= htmlspecialchars($g['categoria'] ?? '') ?></div></td>
                                 <td class="small"><?= htmlspecialchars($g['proveedor'] ?? '') ?></td>

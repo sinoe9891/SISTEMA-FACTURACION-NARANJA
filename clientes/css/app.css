@@ -436,6 +436,14 @@ body.app-body {
 	vertical-align: middle;
 }
 
+.app-n {
+	width: 1%;
+	white-space: nowrap;
+	color: var(--app-muted);
+	font-size: 12px !important;
+	font-variant-numeric: tabular-nums;
+}
+
 .app-num {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
