@@ -55,7 +55,8 @@ Unificación hecha con una «capa» en `clientes/css/app.css` (sin reescribir ca
 - [x] Abonos desde «Facturas del contrato» (registrar, ver y anular), con cobrado y saldo por cobrar.
 - [ ] Campo «Se factura con atraso de N meses» (Texaco Valeriano factura con 2 meses de atraso) para no marcar alertas falsas.
 - [ ] Amarrar cada línea de una factura a su propio contrato (facturas que cobran dos contratos a la vez).
-- [ ] Anticipos sin factura (p. ej. Etapa 1 de Aldea Global): registrarlos y aplicarlos a la factura cuando se emita.
+- [x] Contratos tipo **Proyecto** (por etapas, valor total) y **pagos anticipados** sin factura que se aplican como abonos al emitir la factura (Aldea Global).
+- [x] Estado de cuenta por cliente (`estado_cuenta`) y cuenta bancaria predeterminada.
 
 ## 🧩 Plataforma
 

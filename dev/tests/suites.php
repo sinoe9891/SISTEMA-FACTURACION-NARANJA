@@ -1080,3 +1080,47 @@ suite('Cuenta bancaria predeterminada', function () {
     db()->exec("DELETE FROM cuentas_bancarias WHERE id IN (" . implode(',', $ids) . ") AND NOT EXISTS (SELECT 1 FROM movimientos_bancarios m WHERE m.cuenta_id = cuentas_bancarias.id)");
     check('limpieza: cuentas de prueba borradas', !db()->query("SELECT COUNT(*) FROM cuentas_bancarias WHERE id IN (" . implode(',', $ids) . ")")->fetchColumn());
 });
+
+suite('Contrato tipo proyecto con pagos anticipados', function () {
+    $c = login('qa.admin@local.test');
+    $pdo = db();
+    // Factura emitida, sin pagar y sin abonos, para hacer de "factura final" del proyecto
+    $f = $pdo->query("SELECT f.id, f.receptor_id, f.total, f.contrato_id, f.periodo_mes, f.periodo_anio FROM facturas f WHERE f.cliente_id=2 AND f.estado='emitida' AND f.pagada=0
+                      AND NOT EXISTS (SELECT 1 FROM cobros_factura c WHERE c.factura_id=f.id) ORDER BY f.total DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    check('hay una factura de prueba disponible', (bool)$f);
+    if (!$f) return;
+    $prod = $pdo->query("SELECT id FROM productos_clientes WHERE cliente_id=2 LIMIT 1")->fetchColumn();
+    $sinIsv = round($f['total'] / 1.15, 2);
+    $pdo->prepare("INSERT INTO contratos (cliente_id, receptor_id, nombre_contrato, producto_id, monto, fecha_inicio, fecha_fin, dia_pago, estado, tipo_contrato, notas)
+                   VALUES (2, ?, 'QA proyecto', ?, ?, '2026-05-13', '2026-11-30', 30, 'activo', 'proyecto', 'Proyecto de prueba')")->execute([$f['receptor_id'], $prod, $sinIsv]);
+    $ct = (int)$pdo->lastInsertId();
+    $mitad = round($f['total'] * 0.4, 2);
+    $r1 = $c->post('includes/anticipo_accion.php', ['accion' => 'registrar', 'contrato_id' => $ct, 'fecha' => '2026-05-13', 'monto' => $mitad, 'metodo' => 'transferencia', 'concepto' => 'Etapa 1']);
+    $r2 = $c->post('includes/anticipo_accion.php', ['accion' => 'registrar', 'contrato_id' => $ct, 'fecha' => '2026-09-25', 'monto' => '100.00', 'metodo' => 'transferencia', 'concepto' => 'Etapa 2']);
+    check('se registran dos pagos anticipados', ($r1['json']['success'] ?? false) && ($r2['json']['success'] ?? false), $r1['body'] . $r2['body']);
+    $r = $c->get('facturas_contrato', ['contrato_id' => $ct]);
+    check('la página del proyecto carga sin avisos de PHP', $r['code'] === 200 && sinErroresPhp($r['body']), errorPhp($r['body']));
+    check('muestra valor del proyecto, recibido y la sección de anticipos', str_contains($r['body'], 'Valor del proyecto') && str_contains($r['body'], 'Falta por recibir') && str_contains($r['body'], 'Pagos anticipados'));
+    check('no muestra «Monto mensual» ni el calendario mensual', !str_contains($r['body'], 'Monto mensual') && !str_contains($r['body'], 'Calendario de Cobros'));
+    $r = $c->get('contratos');
+    check('la lista de contratos marca el proyecto sin cobro mensual', str_contains($r['body'], 'Proyecto · valor total') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    // Al emitir la factura (aquí: se liga la existente) se aplican los anticipos
+    $pdo->prepare("UPDATE facturas SET contrato_id=? WHERE id=?")->execute([$ct, $f['id']]);
+    $r = $c->post('includes/anticipo_accion.php', ['accion' => 'aplicar', 'contrato_id' => $ct, 'factura_id' => $f['id']]);
+    check('los anticipos se aplican como abonos de la factura', ($r['json']['success'] ?? false) === true, $r['body']);
+    $ab = $pdo->query("SELECT COUNT(*), SUM(monto), MIN(fecha) FROM cobros_factura WHERE factura_id=" . (int)$f['id'] . " AND anulado=0")->fetch(PDO::FETCH_NUM);
+    check('quedan 2 abonos con la fecha original del primer pago', (int)$ab[0] === 2 && $ab[2] === '2026-05-13' && abs($ab[1] - ($mitad + 100)) < 0.01, json_encode($ab));
+    check('los anticipos quedan ligados a la factura', (int)$pdo->query("SELECT COUNT(*) FROM contratos_anticipos WHERE contrato_id=$ct AND factura_id=" . (int)$f['id'])->fetchColumn() === 2);
+    // Anular un abono que vino de un anticipo: el anticipo vuelve a quedar sin aplicar
+    $cobro = $pdo->query("SELECT id FROM cobros_factura WHERE factura_id=" . (int)$f['id'] . " AND anulado=0 ORDER BY id LIMIT 1")->fetchColumn();
+    $r = $c->post('includes/cxc_accion.php', ['accion' => 'anular_cobro', 'id' => $cobro, 'motivo' => 'QA']);
+    check('al anular ese abono, el anticipo vuelve a quedar sin factura', ($r['json']['success'] ?? false) && (int)$pdo->query("SELECT COUNT(*) FROM contratos_anticipos WHERE contrato_id=$ct AND factura_id IS NULL")->fetchColumn() === 1, $r['body']);
+    $r = $c->post('includes/anticipo_accion.php', ['accion' => 'anular', 'id' => $pdo->query("SELECT id FROM contratos_anticipos WHERE contrato_id=$ct AND factura_id IS NULL")->fetchColumn(), 'motivo' => 'QA']);
+    check('un anticipo sin aplicar se puede anular', ($r['json']['success'] ?? false) === true, $r['body']);
+    // Limpieza
+    $pdo->exec("UPDATE cobros_factura SET anulado=1, motivo_anulacion='QA' WHERE factura_id=" . (int)$f['id']);
+    $pdo->exec("DELETE FROM contratos_anticipos WHERE contrato_id=$ct");
+    $pdo->prepare("UPDATE facturas SET contrato_id=?, periodo_mes=?, periodo_anio=?, pagada=0 WHERE id=?")->execute([$f['contrato_id'], $f['periodo_mes'], $f['periodo_anio'], $f['id']]);
+    $pdo->exec("DELETE FROM contratos WHERE id=$ct");
+    check('limpieza: contrato de prueba eliminado y factura restaurada', !(int)$pdo->query("SELECT COUNT(*) FROM contratos WHERE id=$ct")->fetchColumn());
+});

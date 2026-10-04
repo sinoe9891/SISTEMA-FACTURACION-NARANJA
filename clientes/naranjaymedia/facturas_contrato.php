@@ -4,6 +4,7 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/cuentas.php';
+require_once '../../includes/anticipos.php';
 require_once '../../includes/templates/header.php';
 
 $cliente_id  = (int)(USUARIO_ROL === 'superadmin'
@@ -121,6 +122,19 @@ $mesesPend         = count($mesesSinFactura);
 $pctCumplimiento   = $totalMeses > 0 ? round(($mesesOk / $totalMeses) * 100) : 0;
 $noIniciado        = (new DateTime($contrato['fecha_inicio'])) > new DateTime();
 
+// ── Proyecto por etapas: valor total, pagos anticipados (sin factura) y lo que falta ──
+$esProyecto = $tipo_ct === 'proyecto';
+$valorConIsv = round((float)$contrato['monto'] * 1.15, 2);   // los contratos guardan el monto sin ISV
+$hayAnticipos = anticiposDisponible($pdo);
+$anticipos = $hayAnticipos ? anticiposContrato($pdo, $cliente_id, $contrato_id) : [];
+$antVigentes = array_filter($anticipos, fn($a) => !(int)$a['anulado']);
+$antRecibido = round(array_sum(array_column($antVigentes, 'monto')), 2);
+$antSinAplicar = round(array_sum(array_map(fn($a) => $a['factura_id'] ? 0 : (float)$a['monto'], $antVigentes)), 2);
+// Recibido del cliente = anticipos aún sin factura + lo cobrado de las facturas del contrato
+$recibidoTotal = round($antSinAplicar + $totalCobrado, 2);
+$pctRecibido = $valorConIsv > 0 ? min(100, round($recibidoTotal / $valorConIsv * 100)) : 0;
+$facturasConSaldo = array_values(array_filter($facturas, fn($f) => $f['saldo'] > 0.004));
+
 $meses_es = [
     '',
     'Enero',
@@ -158,8 +172,8 @@ if ($tipo_ct === 'rotativo') {
     $turnosRotativos = $stmtRot->fetchAll(PDO::FETCH_ASSOC);
 }
 
-$tipoCls  = ['estandar' => 'tp-estandar', 'periodico' => 'tp-periodico', 'rotativo' => 'tp-rotativo', 'sin_factura' => 'tp-sin_factura'];
-$tipoLbl  = ['estandar' => 'Estándar', 'periodico' => 'Periódico', 'rotativo' => 'Rotativo', 'sin_factura' => 'Sin factura'];
+$tipoCls  = ['estandar' => 'tp-estandar', 'periodico' => 'tp-periodico', 'rotativo' => 'tp-rotativo', 'sin_factura' => 'tp-sin_factura', 'proyecto' => 'tp-periodico'];
+$tipoLbl  = ['estandar' => 'Estándar', 'periodico' => 'Periódico', 'rotativo' => 'Rotativo', 'sin_factura' => 'Sin factura', 'proyecto' => 'Proyecto'];
 $estadoCls = ['activo' => 'ep-activo', 'pausado' => 'ep-pausado', 'cancelado' => 'ep-cancelado', 'vencido' => 'ep-vencido'];
 $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'vencido' => '⌛'];
 ?>
@@ -663,6 +677,22 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                 <div class="fc-kpi-lbl">Saldo por cobrar</div>
             </div>
         </div>
+        <?php if ($esProyecto): ?>
+        <div class="fc-kpi" style="border-color:#a7f3d0">
+            <div class="fc-kpi-icon ki-green"><i class="bi bi-piggy-bank"></i></div>
+            <div>
+                <div class="fc-kpi-val" style="font-size:.88rem;color:#059669">L <?= number_format($recibidoTotal, 2) ?></div>
+                <div class="fc-kpi-lbl">Recibido (<?= $pctRecibido ?>%)</div>
+            </div>
+        </div>
+        <div class="fc-kpi" style="border-color:<?= $valorConIsv - $recibidoTotal > 0.004 ? '#fecaca' : '#a7f3d0' ?>">
+            <div class="fc-kpi-icon <?= $valorConIsv - $recibidoTotal > 0.004 ? 'ki-red' : 'ki-green' ?>"><i class="bi bi-flag"></i></div>
+            <div>
+                <div class="fc-kpi-val" style="font-size:.88rem;color:<?= $valorConIsv - $recibidoTotal > 0.004 ? '#dc2626' : '#059669' ?>">L <?= number_format(max(0, $valorConIsv - $recibidoTotal), 2) ?></div>
+                <div class="fc-kpi-lbl">Falta por recibir</div>
+            </div>
+        </div>
+        <?php else: ?>
         <div class="fc-kpi" style="border-color:<?= $mesesPend > 0 ? '#fecaca' : '#a7f3d0' ?>">
             <div class="fc-kpi-icon <?= $mesesPend > 0 ? 'ki-red' : 'ki-green' ?>"><i class="bi bi-calendar-check"></i>
             </div>
@@ -681,6 +711,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                     <div class="fc-kpi-lbl">Meses sin cobrar</div>
                 </div>
             </div>
+        <?php endif; ?>
         <?php endif; ?>
     </div>
 
@@ -732,14 +763,17 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 <?= htmlspecialchars($contrato['producto_nombre']) ?></div>
                         </div>
                         <div class="cinfo-item">
-                            <div class="cinfo-lbl">Monto mensual</div>
+                            <div class="cinfo-lbl"><?= $esProyecto ? 'Valor del proyecto' : 'Monto mensual' ?></div>
                             <div class="cinfo-val text-primary">L <?= number_format((float)$contrato['monto'], 2) ?>
+                                <?php if ($esProyecto): ?><div class="small text-muted fw-normal">+ ISV = L <?= number_format($valorConIsv, 2) ?></div><?php endif; ?>
                             </div>
                         </div>
+                        <?php if (!$esProyecto): ?>
                         <div class="cinfo-item">
                             <div class="cinfo-lbl">Día de cobro</div>
                             <div class="cinfo-val">Día <?= (int)$contrato['dia_pago'] ?></div>
                         </div>
+                        <?php endif; ?>
                         <div class="cinfo-item">
                             <div class="cinfo-lbl">Inicio</div>
                             <div class="cinfo-val"><?= date('d/m/Y', strtotime($contrato['fecha_inicio'])) ?></div>
@@ -761,7 +795,19 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                             </div>
                         <?php endif; ?>
                     </div>
+                    <?php if (!empty($contrato['notas'])): ?>
+                        <div class="mt-3 small" style="white-space:pre-line;background:var(--surface-2);border-radius:8px;padding:.6rem .8rem"><strong>Notas:</strong> <?= htmlspecialchars($contrato['notas']) ?></div>
+                    <?php endif; ?>
                     <!-- Barra progreso -->
+                    <?php if ($esProyecto): ?>
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small class="text-muted fw-semibold">Pagos recibidos</small>
+                            <small class="fw-bold text-success">L <?= number_format($recibidoTotal, 2) ?> de L <?= number_format($valorConIsv, 2) ?> (<?= $pctRecibido ?>%)</small>
+                        </div>
+                        <div class="prog-wrap"><div class="prog-fill prog-green" style="width:<?= $pctRecibido ?>%"></div></div>
+                    </div>
+                    <?php else: ?>
                     <div class="mt-3">
                         <div class="d-flex justify-content-between mb-1">
                             <small class="text-muted fw-semibold">Cumplimiento de cobro</small>
@@ -775,6 +821,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 style="width:<?= $pctCumplimiento ?>%"></div>
                         </div>
                     </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -814,6 +861,54 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
             <i class="bi bi-clock me-2"></i>
             Este contrato aún no ha iniciado. Comienza el
             <strong><?= date('d/m/Y', strtotime($contrato['fecha_inicio'])) ?></strong>.
+        </div>
+    <?php endif; ?>
+
+    <!-- Pagos anticipados (recibidos antes de emitir la factura) -->
+    <?php if ($hayAnticipos && ($esProyecto || $anticipos)): ?>
+        <div class="fc-card">
+            <div class="fc-card-hdr">
+                <span class="fc-card-title"><i class="bi bi-piggy-bank text-success"></i> Pagos anticipados <small class="text-muted fw-normal">(recibidos sin factura)</small></span>
+                <div class="d-flex gap-2 align-items-center">
+                    <span class="badge" style="background:#d1fae5;color:#065f46">L <?= number_format($antRecibido, 2) ?></span>
+                    <?php if ($puedeCobrar): ?>
+                        <button class="btn btn-sm btn-primary" id="btnNuevoAnticipo"><i class="bi bi-plus-lg me-1"></i>Registrar pago</button>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="fc-table">
+                    <thead><tr><th>Fecha</th><th>Concepto</th><th>Método</th><th>Referencia</th><th class="text-end">Monto</th><th class="text-center">Factura</th><th></th></tr></thead>
+                    <tbody>
+                        <?php if (!$anticipos): ?><tr><td colspan="7" class="text-center text-muted py-3">Aún no hay pagos anticipados.</td></tr><?php endif; ?>
+                        <?php foreach ($anticipos as $a): ?>
+                            <tr class="<?= (int)$a['anulado'] ? 'text-muted text-decoration-line-through' : '' ?>">
+                                <td class="text-nowrap"><?= date('d/m/Y', strtotime($a['fecha'])) ?></td>
+                                <td><?= htmlspecialchars($a['concepto'] ?? '') ?: '—' ?><?= (int)$a['anulado'] ? '<div class="small">Anulado: ' . htmlspecialchars($a['motivo_anulacion'] ?? '') . '</div>' : '' ?></td>
+                                <td class="small"><?= htmlspecialchars(ucfirst($a['metodo'])) ?><?= $a['banco'] ? '<br><span class="text-muted">' . htmlspecialchars($a['banco'] . ' ' . $a['cuenta_numero']) . '</span>' : '' ?></td>
+                                <td class="small"><?= htmlspecialchars($a['referencia'] ?? '') ?: '—' ?></td>
+                                <td class="text-end fw-semibold text-nowrap">L <?= number_format((float)$a['monto'], 2) ?></td>
+                                <td class="text-center small"><?= $a['factura_id'] ? '<a href="ver_factura?id=' . (int)$a['factura_id'] . '" target="_blank" class="font-monospace">' . htmlspecialchars($a['correlativo']) . '</a>' : ((int)$a['anulado'] ? '' : '<span class="badge" style="background:#fef3c7;color:#92400e">Sin factura</span>') ?></td>
+                                <td class="text-end"><?php if (!(int)$a['anulado'] && !$a['factura_id'] && in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?><button class="btn btn-link btn-sm p-0 text-danger btn-anular-anticipo" data-id="<?= (int)$a['id'] ?>" title="Anular"><i class="bi bi-x-circle"></i></button><?php endif; ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php if ($antSinAplicar > 0): ?>
+                <div class="px-3 py-2 small d-flex flex-wrap align-items-center gap-2" style="background:#fffbeb;border-top:1px solid #fde68a">
+                    <i class="bi bi-info-circle text-warning"></i>
+                    <span>L <?= number_format($antSinAplicar, 2) ?> recibidos aún sin factura. Cuando emitas la factura de este contrato, aplícalos como abonos:</span>
+                    <?php if ($facturasConSaldo && $puedeCobrar): ?>
+                        <select id="antFactura" class="form-select form-select-sm" style="width:auto">
+                            <?php foreach ($facturasConSaldo as $fs): ?><option value="<?= (int)$fs['id'] ?>"><?= htmlspecialchars($fs['correlativo']) ?> · saldo L <?= number_format($fs['saldo'], 2) ?></option><?php endforeach; ?>
+                        </select>
+                        <button class="btn btn-sm btn-success" id="btnAplicarAnticipos"><i class="bi bi-check2-all me-1"></i>Aplicar a la factura</button>
+                    <?php else: ?>
+                        <em class="text-muted">(todavía no hay factura emitida en este contrato)</em>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
         </div>
     <?php endif; ?>
 
@@ -1461,4 +1556,55 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
 </script>
 
 <?php if ($hayAbonos) require __DIR__ . '/includes/_modal_abonos.php'; ?>
+<?php if ($hayAnticipos && $puedeCobrar):
+    $cuentasAnt = bancosDisponible($pdo) ? array_values(array_filter(bancoCuentas($pdo, $cliente_id, true), fn($c) => $c['moneda'] === 'HNL')) : []; ?>
+<div class="modal fade" id="modalAnticipo" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <form class="modal-content" id="formAnticipo" novalidate>
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-piggy-bank me-1"></i> Registrar pago anticipado</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+            <div class="modal-body row g-2">
+                <input type="hidden" name="accion" value="registrar"><input type="hidden" name="contrato_id" value="<?= (int)$contrato_id ?>">
+                <div class="col-12"><div class="alert alert-info small py-2 mb-1">Pago recibido <strong>antes</strong> de emitir la factura. Cuando la emitas, lo aplicas como abono.</div></div>
+                <div class="col-12"><label class="form-label small">Concepto</label><input class="form-control form-control-sm" name="concepto" maxlength="255" placeholder="Ej.: Etapa 2 (30 %)"></div>
+                <div class="col-6"><label class="form-label small">Fecha *</label><input class="form-control form-control-sm" type="date" name="fecha" value="<?= date('Y-m-d') ?>" required></div>
+                <div class="col-6"><label class="form-label small">Monto recibido (L) *</label><input class="form-control form-control-sm" type="number" step="0.01" min="0.01" name="monto" required></div>
+                <div class="col-6"><label class="form-label small">Método</label><select class="form-select form-select-sm" name="metodo"><option value="transferencia">Transferencia</option><option value="efectivo">Efectivo</option><option value="cheque">Cheque</option><option value="tarjeta">Tarjeta</option><option value="otro">Otro</option></select></div>
+                <div class="col-6"><label class="form-label small">Referencia</label><input class="form-control form-control-sm" name="referencia" maxlength="100"></div>
+                <?php if ($cuentasAnt): ?>
+                    <div class="col-12"><label class="form-label small">Depositado en</label><select class="form-select form-select-sm" name="cuenta_id"><option value="">— No registrar en banco —</option>
+                        <?php foreach ($cuentasAnt as $c): ?><option value="<?= (int)$c['id'] ?>"<?= bancoSel($c) ?>><?= htmlspecialchars($c['banco'] . ' ' . $c['numero']) ?></option><?php endforeach; ?></select></div>
+                <?php endif; ?>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary btn-sm" type="submit">Registrar pago</button></div>
+        </form>
+    </div>
+</div>
+<script>
+(function () {
+    const URL_ANT = 'includes/anticipo_accion.php';
+    const enviar = fd => fetch(URL_ANT, { method: 'POST', body: fd }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.error || 'No se pudo guardar.'); return d; });
+    const form = document.getElementById('formAnticipo');
+    const modal = new bootstrap.Modal(document.getElementById('modalAnticipo'));
+    document.getElementById('btnNuevoAnticipo')?.addEventListener('click', () => { form.reset(); modal.show(); });
+    form.addEventListener('submit', e => {
+        e.preventDefault();
+        if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
+        const b = form.querySelector('[type=submit]'); b.disabled = true;
+        enviar(new FormData(form)).then(d => { modal.hide(); Swal.fire({ icon: 'success', title: d.message }).then(() => location.reload()); })
+            .catch(err => Swal.fire('Error', err.message, 'error')).finally(() => b.disabled = false);
+    });
+    document.querySelectorAll('.btn-anular-anticipo').forEach(b => b.addEventListener('click', () => {
+        Swal.fire({ title: 'Anular pago anticipado', input: 'text', inputPlaceholder: 'Motivo (obligatorio)', showCancelButton: true, confirmButtonText: 'Anular', confirmButtonColor: '#dc2626', cancelButtonText: 'Cancelar', inputValidator: v => !v.trim() && 'Indica el motivo' })
+            .then(r => { if (!r.isConfirmed) return; const fd = new FormData(); fd.append('accion', 'anular'); fd.append('id', b.dataset.id); fd.append('motivo', r.value);
+                enviar(fd).then(() => location.reload()).catch(err => Swal.fire('Error', err.message, 'error')); });
+    }));
+    document.getElementById('btnAplicarAnticipos')?.addEventListener('click', () => {
+        const sel = document.getElementById('antFactura');
+        Swal.fire({ title: '¿Aplicar los pagos anticipados?', text: 'Se registrarán como abonos de la factura ' + sel.options[sel.selectedIndex].text.split(' · ')[0] + ', con sus fechas originales.', icon: 'question', showCancelButton: true, confirmButtonText: 'Aplicar', cancelButtonText: 'Cancelar' })
+            .then(r => { if (!r.isConfirmed) return; const fd = new FormData(); fd.append('accion', 'aplicar'); fd.append('contrato_id', '<?= (int)$contrato_id ?>'); fd.append('factura_id', sel.value);
+                enviar(fd).then(d => Swal.fire({ icon: 'success', title: d.message }).then(() => location.reload())).catch(err => Swal.fire('Error', err.message, 'error')); });
+    });
+})();
+</script>
+<?php endif; ?>
 <?php require_once '../../includes/templates/footer.php'; ?>

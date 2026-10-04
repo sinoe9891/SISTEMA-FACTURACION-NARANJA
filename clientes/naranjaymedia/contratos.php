@@ -18,7 +18,7 @@ $stmtKpi = $pdo->prepare("
         SUM(estado='activo')  AS activos,
         SUM(estado='activo' AND fecha_fin BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 30 DAY)) AS proximos_vencer,
         SUM(estado='vencido') AS vencidos,
-        SUM(CASE WHEN estado='activo' THEN monto ELSE 0 END) AS monto_activo
+        SUM(CASE WHEN estado='activo' AND tipo_contrato<>'proyecto' THEN monto ELSE 0 END) AS monto_activo
     FROM contratos WHERE cliente_id=?
 ");
 $stmtKpi->execute([$cliente_id]);
@@ -73,7 +73,7 @@ $contratos = $stmtLista->fetchAll(PDO::FETCH_ASSOC);
 $pendientes_mes = 0;
 $monto_pendiente = 0;
 foreach ($contratos as $c) {
-    if ($c['estado'] === 'activo' && !(int)$c['no_iniciado'] && !(int)$c['facturado_este_mes']) {
+    if ($c['estado'] === 'activo' && $c['tipo_contrato'] !== 'proyecto' && !(int)$c['no_iniciado'] && !(int)$c['facturado_este_mes']) {
         $pendientes_mes++;
         $monto_pendiente += (float)$c['monto'];
     }
@@ -125,7 +125,9 @@ $mesesCorto = [1 => 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep
 $celdaCobertura = function (array $c) use ($mesesCorto): string {
     if ($c['estado'] !== 'activo' && !(int)$c['impagas_n']) return '';
     $h = '';
-    if ($c['ultimo_mes_cubierto'] !== null && $c['estado'] === 'activo') {
+    if ($c['tipo_contrato'] === 'proyecto') {
+        $h .= '<div class="ct-cob">Proyecto · valor total</div>';
+    } elseif ($c['ultimo_mes_cubierto'] !== null && $c['estado'] === 'activo') {
         $u = (int)$c['ultimo_mes_cubierto'];
         $hoy = (int)date('Y') * 12 + (int)date('n') - 1;
         $fin = $c['fecha_fin'] ? (int)substr($c['fecha_fin'], 0, 4) * 12 + (int)substr($c['fecha_fin'], 5, 2) - 1 : $hoy;
@@ -890,7 +892,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 
     <!-- Próximos cobros (top 10 activos) -->
     <?php
-    $proximos = array_filter($contratos, fn($c) => $c['estado'] === 'activo');
+    $proximos = array_filter($contratos, fn($c) => $c['estado'] === 'activo' && $c['tipo_contrato'] !== 'proyecto');
     usort($proximos, fn($a, $b) => (int)$a['dias_para_pago'] - (int)$b['dias_para_pago']);
     $proximos = array_slice($proximos, 0, 10);
     ?>
@@ -1049,7 +1051,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                             <td data-sort-val="<?= $c['monto'] ?>"><strong>L
                                     <?= number_format((float)$c['monto'], 2) ?></strong></td>
                             <td class="text-center">
-                                <?php if ($c['estado'] !== 'activo'): ?>
+                                <?php if ($c['estado'] !== 'activo' || $c['tipo_contrato'] === 'proyecto'): ?>
                                     <span class="text-muted">—</span>
                                 <?php elseif ($noIniciado): ?>
                                     <span class="badge bg-secondary small">No iniciado</span>
@@ -1061,7 +1063,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                 <?= $celdaCobertura($c) ?>
                             </td>
                             <td>
-                                <?php if ($c['estado'] === 'activo' && $diasPago !== null): ?>
+                                <?php if ($c['estado'] === 'activo' && $diasPago !== null && $c['tipo_contrato'] !== 'proyecto'): ?>
                                     <div class="fw-semibold small"><?= htmlspecialchars($c['proxima_fecha_pago']) ?></div>
                                     <?php if ($noIniciado): ?>
                                         <small class="text-muted">Primer cobro</small>

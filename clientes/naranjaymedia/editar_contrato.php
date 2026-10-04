@@ -225,7 +225,7 @@ require_once '../../includes/templates/header.php';
     /* Tipo selector */
     .tipo-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         gap: .7rem;
     }
 
@@ -345,6 +345,13 @@ require_once '../../includes/templates/header.php';
         --c-bd: #fde68a;
         --c-col: #d97706;
         --c-ib: #fef3c7;
+    }
+
+    .tc-proyecto {
+        --c-bg: #eff6ff;
+        --c-bd: #bfdbfe;
+        --c-col: #2563eb;
+        --c-ib: #dbeafe;
     }
 
     .tc-sinfact {
@@ -604,6 +611,15 @@ require_once '../../includes/templates/header.php';
                         <div class="tc-icon"><i class="bi bi-receipt"></i></div>
                         <div class="tc-label">Sin Factura</div>
                         <div class="tc-desc">Solo recibo</div>
+                        <div class="tc-check"><i class="bi bi-check-circle-fill"></i></div>
+                    </div>
+                    <div class="tipo-card tc-proyecto <?= $tipo_actual === 'proyecto' ? 'tc-sel' : '' ?>"
+                        data-tipo="proyecto">
+                        <input type="radio" class="tc-radio" name="tipo_contrato" value="proyecto"
+                            <?= $tipo_actual === 'proyecto' ? 'checked' : '' ?>>
+                        <div class="tc-icon"><i class="bi bi-kanban"></i></div>
+                        <div class="tc-label">Proyecto</div>
+                        <div class="tc-desc">Por etapas, valor total</div>
                         <div class="tc-check"><i class="bi bi-check-circle-fill"></i></div>
                     </div>
                 </div>

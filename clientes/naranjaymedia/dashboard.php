@@ -517,8 +517,8 @@ require_once '../../includes/templates/header.php';
                                             <?php if ($p['receptor_tel']): ?><small
                                                     class="text-muted"><?= htmlspecialchars($p['receptor_tel']) ?></small><?php endif; ?>
                                             <?php
-                                            $tipoCls = ['estandar' => '#d1fae5;color:#065f46', 'periodico' => '#dbeafe;color:#1e40af', 'rotativo' => '#fef3c7;color:#92400e', 'sin_factura' => '#ede9fe;color:#5b21b6'];
-                                            $tipoLbl = ['estandar' => 'Estándar', 'periodico' => 'Periódico', 'rotativo' => 'Rotativo', 'sin_factura' => 'Sin factura'];
+                                            $tipoCls = ['estandar' => '#d1fae5;color:#065f46', 'periodico' => '#dbeafe;color:#1e40af', 'rotativo' => '#fef3c7;color:#92400e', 'sin_factura' => '#ede9fe;color:#5b21b6', 'proyecto' => '#dbeafe;color:#1e40af'];
+                                            $tipoLbl = ['estandar' => 'Estándar', 'periodico' => 'Periódico', 'rotativo' => 'Rotativo', 'sin_factura' => 'Sin factura', 'proyecto' => 'Proyecto'];
                                             $tc = $p['tipo_contrato'] ?? 'estandar';
                                             if ($tc !== 'estandar'):
                                             ?>

@@ -221,7 +221,7 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
     /* Tipo selector */
     .tipo-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         gap: .7rem;
     }
 
@@ -342,6 +342,13 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
         --c-bd: #fde68a;
         --c-col: #d97706;
         --c-ib: #fef3c7;
+    }
+
+    .tc-proyecto {
+        --c-bg: #eff6ff;
+        --c-bd: #bfdbfe;
+        --c-col: #2563eb;
+        --c-ib: #dbeafe;
     }
 
     .tc-sinfact {
@@ -589,6 +596,15 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                             <div class="tc-check"><i class="bi bi-check-circle-fill"></i></div>
                         </div>
 
+                        <!-- Proyecto por etapas -->
+                        <div class="tipo-card tc-proyecto" data-tipo="proyecto">
+                            <input type="radio" class="tc-radio" name="tipo_contrato" id="tc_proyecto" value="proyecto">
+                            <div class="tc-icon"><i class="bi bi-kanban"></i></div>
+                            <div class="tc-label">Proyecto</div>
+                            <div class="tc-desc">Por etapas, valor total</div>
+                            <div class="tc-check"><i class="bi bi-check-circle-fill"></i></div>
+                        </div>
+
                     </div>
 
                     <!-- Info contextual por tipo -->
@@ -606,6 +622,12 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                         <i class="bi bi-info-circle-fill" style="margin-top:1px;flex-shrink:0"></i>
                         <div><strong>Cobro rotativo:</strong> El cobro alterna entre varios clientes. Ej: Mes 1 → Cliente A,
                             Mes 2 → Cliente B, Mes 3 → Cliente A… Cada cliente puede tener un monto diferente.</div>
+                    </div>
+                    <div id="info-proyecto" class="info-box ib-blue mt-3 d-none">
+                        <i class="bi bi-info-circle-fill" style="margin-top:1px;flex-shrink:0"></i>
+                        <div><strong>Proyecto por etapas:</strong> el monto es el <strong>valor total</strong> del proyecto (sin ISV).
+                            No hay cobro mensual: los pagos de cada etapa se registran como pagos anticipados y se aplican a la
+                            factura cuando se emite.</div>
                     </div>
                     <div id="info-sinfact" class="info-box ib-purple mt-3 d-none">
                         <i class="bi bi-info-circle-fill" style="margin-top:1px;flex-shrink:0"></i>
@@ -928,13 +950,13 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
 
     function actualizarUI(tipo) {
         // Info boxes
-        ['estandar', 'periodico', 'rotativo', 'sinfact'].forEach(t => {
+        ['estandar', 'periodico', 'rotativo', 'sinfact', 'proyecto'].forEach(t => {
             const el = document.getElementById('info-' + t);
             if (el) el.classList.toggle('d-none', t !== (tipo === 'sin_factura' ? 'sinfact' : tipo));
         });
         // Al cambiar de tipo: limpiar servicios para evitar estado inconsistente
         const esTipoConTodos = (tipo === 'rotativo' || tipo === 'sin_factura');
-        const esTipoConReceptor = (tipo === 'estandar' || tipo === 'periodico');
+        const esTipoConReceptor = (tipo === 'estandar' || tipo === 'periodico' || tipo === 'proyecto');
         if (esTipoConReceptor) {
             // Volvemos a modo receptor: limpiar productos cargados globalmente
             productos = [];

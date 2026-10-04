@@ -658,6 +658,7 @@ $stmtContratosAlerta = $pdo->prepare("
         INNER JOIN productos_clientes p  ON p.id  = c.producto_id  AND p.cliente_id  = c.cliente_id
         WHERE c.cliente_id = ?
           AND c.estado     = 'activo'
+          AND c.tipo_contrato <> 'proyecto'
           AND c.fecha_inicio <= CURDATE()
     ) x
     -- Factura pagada este mes → excluir contrato

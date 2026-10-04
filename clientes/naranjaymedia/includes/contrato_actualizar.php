@@ -44,7 +44,7 @@ try {
 
     // ── Validaciones comunes ──────────────────────────────────────────────────
     if (!$contrato_id)     throw new Exception("Contrato no identificado.");
-    if (!in_array($tipo_contrato, ['estandar', 'periodico', 'rotativo', 'sin_factura']))
+    if (!in_array($tipo_contrato, ['estandar', 'periodico', 'rotativo', 'sin_factura', 'proyecto']))
         throw new Exception("Tipo de contrato inválido.");
     if (!$nombre_contrato) throw new Exception("El nombre del contrato es obligatorio.");
     if (!$fecha_inicio)    throw new Exception("La fecha de inicio es obligatoria.");

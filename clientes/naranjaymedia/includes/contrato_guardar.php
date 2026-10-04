@@ -45,7 +45,7 @@ try {
     $rotativos         = $_POST['rotativos'] ?? [];
 
     // ── Validaciones comunes ─────────────────────────────────────────────────
-    $tipos_validos = ['estandar', 'periodico', 'rotativo', 'sin_factura'];
+    $tipos_validos = ['estandar', 'periodico', 'rotativo', 'sin_factura', 'proyecto'];
     if (!in_array($tipo_contrato, $tipos_validos))
         throw new Exception("Tipo de contrato inválido.");
 
