@@ -40,15 +40,18 @@ require_once '../../includes/templates/header.php';
 <?php if (!$instalado): ?>
     <div class="alert alert-warning">Falta instalar el módulo: ejecuta <code>sql/migraciones/2026-10-03_cuentas_cobrar.sql</code>.</div>
 <?php else: ?>
-    <div class="row g-3 mb-3">
-        <div class="col-12 col-xl-4"><div class="app-card app-kpi"><div class="app-kpi-label">Total por cobrar</div><div class="app-kpi-value"><?= $L($total) ?></div><small class="text-muted"><?= count($facturas) ?> factura(s) · <?= count($porCliente) ?> cliente(s)</small></div></div>
+    <?php $iconoTramo = ['0-30' => ['bi-hourglass-top', 'green'], '31-60' => ['bi-hourglass-split', 'amber'], '61-90' => ['bi-hourglass-bottom', 'amber'], '90+' => ['bi-exclamation-octagon', 'red']]; ?>
+    <div class="app-stats">
+        <div class="app-stat"><div class="app-stat-icon"><i class="bi bi-cash-stack"></i></div>
+            <div><div class="app-stat-val"><?= $L($total) ?></div><div class="app-stat-lbl" title="<?= count($facturas) ?> factura(s) de <?= count($porCliente) ?> cliente(s)">Por cobrar · <?= count($facturas) ?> facturas</div></div></div>
         <?php foreach ($tramos as $t => $v): ?>
-            <div class="col-6 col-md-3 col-xl-2"><div class="app-card app-kpi"><div class="app-kpi-label"><?= $t ?> días</div><div class="app-kpi-value fs-5 text-<?= $v > 0 ? $colorTramo[$t] : 'muted' ?>"><?= $L($v) ?></div></div></div>
+            <div class="app-stat"><div class="app-stat-icon <?= $v > 0 ? $iconoTramo[$t][1] : 'gray' ?>"><i class="bi <?= $iconoTramo[$t][0] ?>"></i></div>
+                <div><div class="app-stat-val <?= $v > 0 ? 'text-' . $colorTramo[$t] : 'text-muted' ?>"><?= $L($v) ?></div><div class="app-stat-lbl"><?= $t ?> días</div></div></div>
         <?php endforeach; ?>
     </div>
 
     <div class="app-card mb-3">
-        <div class="app-card-header"><span><i class="bi bi-people me-1"></i> Por cliente</span></div>
+        <div class="app-card-header"><span><i class="bi bi-people me-1"></i> Por cliente</span><small class="text-muted fw-normal">Clic en el nombre para ver su estado de cuenta</small></div>
         <div class="table-responsive">
             <table class="table app-table">
                 <thead><tr><th>Cliente</th><th class="app-num">Facturas</th><?php foreach ($tramos as $t => $v): ?><th class="app-num"><?= $t ?></th><?php endforeach; ?><th class="app-num">Saldo</th></tr></thead>
@@ -56,7 +59,7 @@ require_once '../../includes/templates/header.php';
                     <?php if (!$porCliente): ?><tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-check-circle text-success"></i> No hay saldos pendientes.</td></tr><?php endif; ?>
                     <?php foreach ($porCliente as $rid => $p): ?>
                         <tr>
-                            <td><a href="#" class="link-cliente" data-id="<?= (int)$rid ?>"><?= htmlspecialchars($p['nombre']) ?></a><?= $p['mayor'] > 90 ? ' <span class="app-badge app-badge-danger">+90 días</span>' : '' ?><div class="small text-muted"><?= htmlspecialchars($p['rtn'] ?? '') ?></div></td>
+                            <td><a href="estado_cuenta?receptor_id=<?= (int)$rid ?>" title="Ver estado de cuenta"><?= htmlspecialchars($p['nombre']) ?></a><?= $p['mayor'] > 90 ? ' <span class="app-badge app-badge-danger">+90 días</span>' : '' ?><div class="small text-muted"><?= htmlspecialchars($p['rtn'] ?? '') ?></div></td>
                             <td class="app-num"><?= $p['facturas'] ?></td>
                             <?php foreach (array_keys($tramos) as $t): ?><td class="app-num <?= $p[$t] > 0 ? 'text-' . $colorTramo[$t] : 'text-muted' ?>"><?= $p[$t] > 0 ? number_format($p[$t], 2) : '—' ?></td><?php endforeach; ?>
                             <td class="app-num fw-semibold"><?= $L($p['saldo']) ?></td>
@@ -68,25 +71,28 @@ require_once '../../includes/templates/header.php';
     </div>
 
     <div class="app-card">
-        <div class="app-card-header">
-            <span><i class="bi bi-receipt me-1"></i> Facturas pendientes <span id="filtroCliente" class="app-badge app-badge-info d-none"></span></span>
-            <input type="search" class="form-control form-control-sm" id="buscarFactura" placeholder="Buscar…" style="max-width:220px">
+        <div class="app-card-header flex-wrap">
+            <span><i class="bi bi-receipt me-1"></i> Facturas pendientes</span>
+            <div class="app-toolbar flex-grow-1 justify-content-end">
+                <div class="app-search" style="max-width:320px"><i class="bi bi-search"></i><input type="search" class="form-control form-control-sm" id="buscarFactura" placeholder="Buscar factura o cliente…"></div>
+                <select class="form-select form-select-sm" id="porPagina" style="width:auto"><option value="10">10/pág</option><option value="25">25/pág</option><option value="50">50/pág</option></select>
+            </div>
         </div>
         <div class="table-responsive">
             <table class="table app-table" id="tablaPendientes">
                 <thead><tr><th>Factura</th><th>Cliente</th><th>Emisión</th><th class="app-num">Días</th><th class="app-num">Total</th><th class="app-num">Abonado</th><th class="app-num">Saldo</th><th class="text-end">Acciones</th></tr></thead>
                 <tbody>
                     <?php foreach ($facturas as $f): $t = cxcTramo((int)$f['dias']); ?>
-                        <tr data-cliente="<?= (int)$f['receptor_id'] ?>" data-buscar="<?= htmlspecialchars(mb_strtolower($f['correlativo'] . ' ' . $f['receptor'])) ?>">
-                            <td class="font-monospace small"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
-                            <td><?= htmlspecialchars($f['receptor']) ?></td>
+                        <tr data-fila data-cliente="<?= (int)$f['receptor_id'] ?>" data-buscar="<?= htmlspecialchars(mb_strtolower($f['correlativo'] . ' ' . $f['receptor'])) ?>">
+                            <td class="font-monospace small text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
+                            <td><a href="estado_cuenta?receptor_id=<?= (int)$f['receptor_id'] ?>"><?= htmlspecialchars($f['receptor']) ?></a></td>
                             <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
                             <td class="app-num"><span class="app-badge app-badge-<?= $colorTramo[$t] ?>"><?= (int)$f['dias'] ?></span></td>
                             <td class="app-num"><?= number_format((float)$f['total'], 2) ?></td>
                             <td class="app-num text-success"><?= (float)$f['abonado'] > 0 ? number_format((float)$f['abonado'], 2) : '—' ?></td>
                             <td class="app-num fw-semibold"><?= number_format((float)$f['saldo'], 2) ?></td>
                             <td class="text-end text-nowrap">
-                                <button class="btn btn-sm btn-outline-secondary btn-historial" data-id="<?= (int)$f['id'] ?>" title="Abonos"><i class="bi bi-clock-history"></i></button>
+                                <button class="btn btn-sm btn-outline-secondary btn-abonos" data-id="<?= (int)$f['id'] ?>" title="Ver abonos"><i class="bi bi-clock-history"></i></button>
                                 <?php if ($puedeCobrar): ?>
                                     <button class="btn btn-sm btn-success btn-cobrar" data-id="<?= (int)$f['id'] ?>" data-saldo="<?= number_format((float)$f['saldo'], 2, '.', '') ?>"
                                         data-corr="<?= htmlspecialchars($f['correlativo']) ?>" data-fecha="<?= substr($f['fecha_emision'], 0, 10) ?>"><i class="bi bi-cash-coin"></i> Cobrar</button>
@@ -94,10 +100,10 @@ require_once '../../includes/templates/header.php';
                             </td>
                         </tr>
                     <?php endforeach; ?>
-                    <?php if (!$facturas): ?><tr><td colspan="8" class="text-center text-muted py-4">Sin facturas pendientes.</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
+        <div class="app-pager" id="pendientesPie"></div>
     </div>
 
     <?php if ($puedeCobrar): ?>
@@ -115,7 +121,7 @@ require_once '../../includes/templates/header.php';
                         <div class="col-6"><label class="form-label">Referencia</label><input class="form-control" name="referencia" maxlength="100"></div>
                         <div class="col-12"><label class="form-label">Depositado en</label>
                             <select class="form-select" name="cuenta_id"><option value="">— No registrar en banco —</option>
-                                <?php foreach ($cuentasHnl as $c): ?><option value="<?= (int)$c['id'] ?>"><?= htmlspecialchars($c['banco'] . ' ' . $c['numero']) ?></option><?php endforeach; ?></select>
+                                <?php foreach ($cuentasHnl as $c): ?><option value="<?= (int)$c['id'] ?>"<?= bancoSel($c) ?>><?= htmlspecialchars($c['banco'] . ' ' . $c['numero']) ?></option><?php endforeach; ?></select>
                             <div class="form-text">Si eliges una cuenta, el cobro aparece como entrada en Bancos.</div></div>
                         <div class="col-12"><label class="form-label">Notas</label><input class="form-control" name="notas" maxlength="255"></div>
                     </div>
@@ -126,27 +132,12 @@ require_once '../../includes/templates/header.php';
     <?php endif; ?>
 <?php endif; ?>
 
+<script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
 <script>
 (function () {
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const L = v => 'L ' + Number(v).toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const filas = () => document.querySelectorAll('#tablaPendientes tbody tr[data-cliente]');
-    let cliente = null;
-    function filtrar() {
-        const q = (document.getElementById('buscarFactura')?.value || '').trim().toLowerCase();
-        filas().forEach(tr => tr.classList.toggle('d-none', (cliente && tr.dataset.cliente !== cliente) || (q && !tr.dataset.buscar.includes(q))));
-    }
-    document.getElementById('buscarFactura')?.addEventListener('input', filtrar);
-    document.querySelectorAll('.link-cliente').forEach(a => a.addEventListener('click', ev => {
-        ev.preventDefault();
-        cliente = cliente === a.dataset.id ? null : a.dataset.id;
-        const b = document.getElementById('filtroCliente');
-        b.textContent = cliente ? a.textContent + ' ✕' : '';
-        b.classList.toggle('d-none', !cliente);
-        filtrar();
-        document.getElementById('tablaPendientes').scrollIntoView({ behavior: 'smooth' });
-    }));
-    document.getElementById('filtroCliente')?.addEventListener('click', () => { cliente = null; document.getElementById('filtroCliente').classList.add('d-none'); filtrar(); });
+    AppTabla('#tablaPendientes', { buscar: '#buscarFactura', porPagina: '#porPagina', pie: '#pendientesPie', vacio: 'Sin facturas pendientes.' });
 
     const form = document.getElementById('formCobro');
     if (form) {
@@ -173,31 +164,8 @@ require_once '../../includes/templates/header.php';
         });
     }
 
-    document.querySelectorAll('.btn-historial').forEach(b => b.addEventListener('click', () => {
-        fetch('includes/cxc_accion.php?factura_id=' + b.dataset.id).then(r => r.json()).then(d => {
-            if (!d.success) throw new Error(d.error);
-            const filasH = d.cobros.length ? d.cobros.map(c => `<tr class="${+c.anulado ? 'text-muted text-decoration-line-through' : ''}">
-                <td>${esc(c.fecha.split('-').reverse().join('/'))}</td><td>${esc(c.metodo)}${c.banco ? '<br><small>' + esc(c.banco + ' ' + c.cuenta_numero) + '</small>' : ''}</td>
-                <td>${esc(c.referencia || '')}</td><td class="text-end">${L(c.monto)}</td>
-                <td>${+c.anulado ? '<small>' + esc(c.motivo_anulacion || 'Anulado') + '</small>' : (<?= in_array(USUARIO_ROL, ['admin', 'superadmin'], true) ? 'true' : 'false' ?> ? `<button class="btn btn-sm btn-link text-danger p-0 anular-cobro" data-id="${c.id}">Anular</button>` : '')}</td></tr>`).join('')
-                : '<tr><td colspan="5" class="text-center text-muted">Sin abonos registrados.</td></tr>';
-            Swal.fire({
-                title: 'Factura ' + esc(d.factura.correlativo), width: 640,
-                html: `<div class="text-start small mb-2">Total ${L(d.factura.total)} · Abonado ${L(d.factura.abonado)} · <strong>Saldo ${L(d.factura.saldo)}</strong></div>
-                       <div class="table-responsive"><table class="table table-sm text-start"><thead><tr><th>Fecha</th><th>Método</th><th>Ref.</th><th class="text-end">Monto</th><th></th></tr></thead><tbody>${filasH}</tbody></table></div>`,
-                showConfirmButton: false, showCloseButton: true,
-                didOpen: () => document.querySelectorAll('.anular-cobro').forEach(x => x.addEventListener('click', () => {
-                    Swal.fire({ title: 'Anular abono', input: 'text', inputPlaceholder: 'Motivo (obligatorio)', showCancelButton: true, confirmButtonText: 'Anular', confirmButtonColor: '#dc2626', cancelButtonText: 'Cancelar', inputValidator: v => !v.trim() && 'Indica el motivo' })
-                        .then(r => {
-                            if (!r.isConfirmed) return;
-                            const fd = new FormData(); fd.append('accion', 'anular_cobro'); fd.append('id', x.dataset.id); fd.append('motivo', r.value);
-                            fetch('includes/cxc_accion.php', { method: 'POST', body: fd }).then(r => r.json()).then(d => d.success ? location.reload() : Swal.fire('Error', d.error, 'error'));
-                        });
-                }))
-            });
-        }).catch(e => Swal.fire('Error', e.message, 'error'));
-    }));
 })();
 </script>
 
+<?php if ($instalado) require __DIR__ . '/includes/_modal_abonos.php'; ?>
 <?php require_once '../../includes/templates/footer.php'; ?>

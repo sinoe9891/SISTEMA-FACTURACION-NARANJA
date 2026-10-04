@@ -128,7 +128,14 @@ function cxcAnularCobro(PDO $pdo, int $cid, int $cobroId, string $motivo): void
     $c = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$c) throw new Exception("Cobro no encontrado.");
     if ((int)$c['anulado']) throw new Exception("El cobro ya está anulado.");
-    if ($c['movimiento_id']) {
+    // Abono que vino de un anticipo del contrato: el dinero sigue recibido, el anticipo vuelve a quedar sin aplicar
+    $deAnticipo = false;
+    if ($pdo->query("SHOW TABLES LIKE 'contratos_anticipos'")->fetchColumn()) {
+        $u = $pdo->prepare("UPDATE contratos_anticipos SET factura_id = NULL, cobro_id = NULL WHERE cobro_id = ? AND cliente_id = ?");
+        $u->execute([$cobroId, $cid]);
+        $deAnticipo = $u->rowCount() > 0;
+    }
+    if ($c['movimiento_id'] && !$deAnticipo) {
         $m = $pdo->prepare("SELECT conciliado FROM movimientos_bancarios WHERE id = ?");
         $m->execute([$c['movimiento_id']]);
         if ((int)$m->fetchColumn()) throw new Exception("El depósito de este cobro ya está conciliado en el banco: quita la conciliación primero.");

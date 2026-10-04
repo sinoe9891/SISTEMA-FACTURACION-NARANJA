@@ -37,6 +37,10 @@ $stmtLista = $pdo->prepare("
            END) AS facturado_este_mes,
            (SELECT DATE(f2.fecha_emision) FROM facturas f2 WHERE f2.contrato_id=c.id AND f2.cliente_id=c.cliente_id AND f2.estado='emitida' ORDER BY f2.fecha_emision DESC LIMIT 1) AS ultima_factura_fecha,
            (SELECT COUNT(*) FROM facturas f3 WHERE f3.contrato_id=c.id AND f3.cliente_id=c.cliente_id AND f3.estado='emitida') AS total_facturas_contrato,
+           (SELECT MAX(COALESCE(f5.periodo_anio, YEAR(f5.fecha_emision)) * 12 + COALESCE(f5.periodo_mes, MONTH(f5.fecha_emision)) - 1)
+              FROM facturas f5 WHERE f5.contrato_id=c.id AND f5.cliente_id=c.cliente_id AND f5.estado='emitida') AS ultimo_mes_cubierto,
+           (SELECT COUNT(*) FROM facturas f6 WHERE f6.contrato_id=c.id AND f6.cliente_id=c.cliente_id AND f6.estado='emitida' AND f6.pagada=0) AS impagas_n,
+           (SELECT COALESCE(SUM(f7.total),0) FROM facturas f7 WHERE f7.contrato_id=c.id AND f7.cliente_id=c.cliente_id AND f7.estado='emitida' AND f7.pagada=0) AS impagas_total,
            (SELECT COALESCE(SUM(f4.total),0) FROM facturas f4 WHERE f4.contrato_id=c.id AND f4.cliente_id=c.cliente_id AND f4.estado='emitida') AS total_monto_contrato,
            CASE
                WHEN c.fecha_inicio > CURDATE() THEN DATE(CONCAT(YEAR(c.fecha_inicio),'-',LPAD(MONTH(c.fecha_inicio),2,'0'),'-',LPAD(LEAST(c.dia_pago,DAY(LAST_DAY(c.fecha_inicio))),2,'0')))
@@ -75,6 +79,73 @@ foreach ($contratos as $c) {
     }
 }
 $total_contratos = count($contratos);
+
+// Contratos rotativos: un mismo cliente que factura a nombre de varias empresas
+$rotEmpresas = [];
+$stRot = $pdo->prepare("
+    SELECT r.contrato_id, cf.nombre
+    FROM contratos_clientes_rotativos r
+    JOIN contratos c ON c.id = r.contrato_id AND c.cliente_id = ?
+    JOIN clientes_factura cf ON cf.id = r.receptor_id
+    WHERE r.activo = 1
+    ORDER BY r.contrato_id, r.orden
+");
+$stRot->execute([$cliente_id]);
+foreach ($stRot->fetchAll(PDO::FETCH_ASSOC) as $r) $rotEmpresas[(int)$r['contrato_id']][] = $r['nombre'];
+$stUlt = $pdo->prepare("
+    SELECT f.contrato_id, cf.nombre
+    FROM facturas f JOIN clientes_factura cf ON cf.id = f.receptor_id
+    WHERE f.cliente_id = ? AND f.estado = 'emitida' AND f.contrato_id IS NOT NULL
+      AND f.id = (SELECT f2.id FROM facturas f2 WHERE f2.contrato_id = f.contrato_id AND f2.estado = 'emitida'
+                  ORDER BY COALESCE(f2.periodo_anio, YEAR(f2.fecha_emision)) DESC, COALESCE(f2.periodo_mes, MONTH(f2.fecha_emision)) DESC, f2.id DESC LIMIT 1)
+");
+$stUlt->execute([$cliente_id]);
+$rotUltima = array_column($stUlt->fetchAll(PDO::FETCH_ASSOC), 'nombre', 'contrato_id');
+
+// Celda "Cliente": número de contrato, cliente y, si es rotativo, las empresas a las que se factura
+$celdaCliente = function (array $c, bool $conDetalle) use ($rotEmpresas, $rotUltima): string {
+    $h = '<span class="ct-num">#' . (int)$c['id'] . '</span>';
+    $empresas = $rotEmpresas[(int)$c['id']] ?? [];
+    if (($c['tipo_contrato'] ?? '') === 'rotativo' && $empresas) {
+        $h .= '<div class="fw-semibold"><span data-col="cliente">' . htmlspecialchars($c['nombre_contrato'] ?: $c['receptor_nombre']) . '</span> <span class="ct-rot-pill" title="Se factura a nombre de varias empresas del mismo cliente"><i class="bi bi-arrow-repeat"></i> ' . count($empresas) . ' empresas</span></div>';
+        $h .= '<ul class="ct-rot-list">';
+        foreach ($empresas as $e) $h .= '<li>' . htmlspecialchars($e) . '</li>';
+        $h .= '</ul>';
+        if (!empty($rotUltima[(int)$c['id']])) $h .= '<small class="text-muted">Última factura: ' . htmlspecialchars($rotUltima[(int)$c['id']]) . '</small>';
+        return $h;
+    }
+    $h .= '<div class="fw-semibold" data-col="cliente">' . htmlspecialchars($c['receptor_nombre']) . '</div>';
+    if ($conDetalle && $c['receptor_rtn']) $h .= '<small class="text-muted">RTN: ' . htmlspecialchars($c['receptor_rtn']) . '</small>';
+    elseif (!$conDetalle && $c['receptor_tel']) $h .= '<small class="text-muted">' . htmlspecialchars($c['receptor_tel']) . '</small>';
+    return $h;
+};
+// Cobertura: hasta qué mes está facturado (según el mes que cubre cada factura, no su fecha de emisión)
+// y cuánto debe. Sirve para clientes que facturan con meses de atraso.
+$mesesCorto = [1 => 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+$celdaCobertura = function (array $c) use ($mesesCorto): string {
+    if ($c['estado'] !== 'activo' && !(int)$c['impagas_n']) return '';
+    $h = '';
+    if ($c['ultimo_mes_cubierto'] !== null && $c['estado'] === 'activo') {
+        $u = (int)$c['ultimo_mes_cubierto'];
+        $hoy = (int)date('Y') * 12 + (int)date('n') - 1;
+        $fin = $c['fecha_fin'] ? (int)substr($c['fecha_fin'], 0, 4) * 12 + (int)substr($c['fecha_fin'], 5, 2) - 1 : $hoy;
+        // Meses ya vencidos (sin contar el actual) que aún no tienen factura
+        $faltan = [];
+        for ($m = $u + 1; $m < min($hoy, $fin + 1); $m++) $faltan[] = $mesesCorto[$m % 12 + 1];
+        $txt = 'Facturado hasta ' . $mesesCorto[$u % 12 + 1] . ' ' . intdiv($u, 12);
+        if ($faltan) {
+            $h .= '<div class="ct-cob ct-cob-mal" title="Meses ya pasados sin factura">' . $txt . '<br>Atraso: ' . count($faltan) . ' mes' . (count($faltan) > 1 ? 'es' : '') . ' (' . implode(', ', $faltan) . ')</div>';
+        } else {
+            $h .= '<div class="ct-cob">' . $txt . '</div>';
+        }
+    }
+    if ((int)$c['impagas_n']) {
+        $h .= '<a class="ct-cob ct-cob-mal d-block" href="facturas_contrato?contrato_id=' . (int)$c['id'] . '" title="Facturas emitidas que aún no se han pagado">'
+            . (int)$c['impagas_n'] . ' sin pagar · L ' . number_format((float)$c['impagas_total'], 2) . '</a>';
+    }
+    return $h;
+};
+$mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 ?>
 
 <style>
@@ -518,6 +589,79 @@ $total_contratos = count($contratos);
     }
 
     /* Actions */
+    .ct-num {
+        display: inline-block;
+        font-size: .7rem;
+        font-weight: 700;
+        color: var(--app-accent, #2563eb);
+        background: var(--app-accent-lt, #eff6ff);
+        border-radius: 6px;
+        padding: 1px 6px;
+        margin-bottom: 3px;
+    }
+
+    .ct-cob {
+        font-size: .7rem;
+        color: var(--app-muted, #64748b);
+        margin-top: 4px;
+        line-height: 1.3;
+        white-space: nowrap;
+        text-decoration: none;
+    }
+
+    .ct-cob-mal {
+        color: #dc2626;
+        font-weight: 600;
+    }
+
+    .ct-rot-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        font-size: .68rem;
+        font-weight: 600;
+        color: #7c3aed;
+        background: #f5f3ff;
+        border-radius: 999px;
+        padding: 1px 7px;
+        white-space: nowrap;
+    }
+
+    .ct-rot-list {
+        margin: 3px 0 2px;
+        padding-left: 1rem;
+        font-size: .74rem;
+        color: var(--app-muted, #64748b);
+    }
+
+    .ct-clamp {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        min-width: 180px;
+    }
+
+    /* Acciones de "Todos los contratos": 2 por fila para que no se salgan de la tabla */
+    #ctTable .ct-actions {
+        flex-wrap: wrap !important;
+        width: 86px;
+    }
+
+    .ct-table td:first-child {
+        min-width: 190px;
+    }
+
+    #ctTable th,
+    #ctTable td {
+        padding-left: .55rem !important;
+        padding-right: .55rem !important;
+    }
+
+    #ctTable .ct-clamp {
+        min-width: 150px;
+    }
+
     .ct-actions {
         display: flex;
         gap: .35rem;
@@ -754,7 +898,7 @@ $total_contratos = count($contratos);
         <div class="ct-card">
             <div class="ct-card-header">
                 <span class="ct-card-title"><i class="bi bi-calendar-check-fill"></i> Próximas Fechas de Cobro —
-                    <?= date('F Y') ?></span>
+                    <?= $mesesTitulo[(int)date('n')] . ' ' . date('Y') ?></span>
                 <span class="ct-result-badge"><?= count($proximos) ?> activos</span>
             </div>
             <div class="ct-table-wrap">
@@ -796,12 +940,8 @@ $total_contratos = count($contratos);
                             }
                         ?>
                             <tr <?= $facturado ? 'class="table-success"' : '' ?>>
-                                <td>
-                                    <div class="fw-semibold"><?= htmlspecialchars($p['receptor_nombre']) ?></div>
-                                    <?php if ($p['receptor_tel']): ?><small
-                                            class="text-muted"><?= htmlspecialchars($p['receptor_tel']) ?></small><?php endif; ?>
-                                </td>
-                                <td class="small text-muted"><?= htmlspecialchars($p['producto_nombre']) ?></td>
+                                <td><?= $celdaCliente($p, false) ?></td>
+                                <td class="small text-muted"><div class="ct-clamp" title="<?= htmlspecialchars($p['producto_nombre']) ?>"><?= htmlspecialchars($p['producto_nombre']) ?></div></td>
                                 <td class="text-end fw-bold">L <?= number_format((float)$p['monto'], 2) ?></td>
                                 <td class="text-center">
                                     <div class="fw-semibold small"><?= htmlspecialchars($p['proxima_fecha_pago']) ?></div>
@@ -818,13 +958,13 @@ $total_contratos = count($contratos);
                                     <?php else: ?>
                                         <span class="fact-pill fact-no"><i class="bi bi-clock-fill"></i> Pendiente</span>
                                     <?php endif; ?>
+                                    <?= $celdaCobertura($p) ?>
                                 </td>
-                                <td class="text-center">
-                                    <?php if ($facturado): ?>
-                                        <a href="facturas_contrato?contrato_id=<?= $p['id'] ?>" class="btn-fa btn-fa-receipt"><i
-                                                class="bi bi-receipt"></i> Ver</a>
-                                    <?php elseif ($noIniciado): ?>
-                                        <span class="btn-fa btn-fa-dis"><i class="bi bi-lock-fill"></i></span>
+                                <td class="text-center"><div class="ct-actions justify-content-center">
+                                    <a href="facturas_contrato?contrato_id=<?= $p['id'] ?>" class="btn-fa btn-fa-receipt" title="Ver contrato y sus facturas"><i class="bi bi-eye"></i></a>
+                                    <a href="editar_contrato?id=<?= $p['id'] ?>" class="btn-fa btn-fa-edit" title="Editar contrato"><i class="bi bi-pencil-fill"></i></a>
+                                    <?php if ($facturado || $noIniciado): ?>
+                                        <span class="btn-fa btn-fa-dis" title="<?= $noIniciado ? 'No iniciado' : 'Ya facturado este mes' ?>"><i class="bi bi-file-earmark-plus"></i></span>
                                     <?php else: ?>
                                         <?php if (($p['tipo_contrato'] ?? '') === 'sin_factura'): ?>
                                             <a href="generar_recibo?contrato_id=<?= $p['id'] ?>" class="btn-fa btn-fa-receipt">
@@ -837,7 +977,7 @@ $total_contratos = count($contratos);
                                             </a>
                                         <?php endif; ?>
                                     <?php endif; ?>
-                                </td>
+                                </div></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -897,17 +1037,12 @@ $total_contratos = count($contratos);
                         $nFact      = (int)($c['total_facturas_contrato'] ?? 0);
                         $stateCls   = ['activo' => 'st-activo', 'vencido' => 'st-vencido', 'cancelado' => 'st-cancelado', 'pausado' => 'st-pausado'];
                         $diasPago   = isset($c['dias_para_pago']) ? (int)$c['dias_para_pago'] : null;
-                        $searchStr  = strtolower($c['receptor_nombre'] . ' ' . $c['producto_nombre'] . ' ' . $c['estado']);
+                        $searchStr  = mb_strtolower('#' . $c['id'] . ' ' . $c['receptor_nombre'] . ' ' . implode(' ', $rotEmpresas[(int)$c['id']] ?? []) . ' ' . $c['nombre_contrato'] . ' ' . $c['producto_nombre'] . ' ' . $c['estado']);
                     ?>
                         <tr class="<?= $rowCls ?>" data-search="<?= htmlspecialchars($searchStr) ?>">
+                            <td><?= $celdaCliente($c, true) ?></td>
                             <td>
-                                <div class="fw-semibold" data-col="cliente"><?= htmlspecialchars($c['receptor_nombre']) ?>
-                                </div>
-                                <?php if ($c['receptor_rtn']): ?><small class="text-muted">RTN:
-                                        <?= htmlspecialchars($c['receptor_rtn']) ?></small><?php endif; ?>
-                            </td>
-                            <td data-col="servicio">
-                                <div><?= htmlspecialchars($c['producto_nombre']) ?></div>
+                                <div class="ct-clamp" data-col="servicio" title="<?= htmlspecialchars($c['producto_nombre']) ?>"><?= htmlspecialchars($c['producto_nombre']) ?></div>
                                 <?php if ($nFact > 0): ?><small class="text-muted"><?= $nFact ?> factura(s) · L
                                         <?= number_format((float)$c['total_monto_contrato'], 2) ?></small><?php endif; ?>
                             </td>
@@ -923,6 +1058,7 @@ $total_contratos = count($contratos);
                                 <?php else: ?>
                                     <span class="fact-pill fact-no"><i class="bi bi-clock-fill"></i> Pendiente</span>
                                 <?php endif; ?>
+                                <?= $celdaCobertura($c) ?>
                             </td>
                             <td>
                                 <?php if ($c['estado'] === 'activo' && $diasPago !== null): ?>
@@ -961,13 +1097,11 @@ $total_contratos = count($contratos);
                             </td>
                             <td>
                                 <div class="ct-actions">
-                                    <?php if ($nFact > 0): ?>
-                                        <a href="facturas_contrato?contrato_id=<?= $c['id'] ?>" class="btn-fa btn-fa-receipt"
-                                            title="<?= $nFact ?> factura(s)">
-                                            <i class="bi bi-receipt"></i>
-                                            <span class="badge bg-info ms-1" style="font-size:.68rem;"><?= $nFact ?></span>
-                                        </a>
-                                    <?php endif; ?>
+                                    <a href="facturas_contrato?contrato_id=<?= $c['id'] ?>" class="btn-fa btn-fa-receipt"
+                                        title="Ver contrato y sus facturas (<?= $nFact ?>)">
+                                        <i class="bi bi-eye"></i>
+                                        <?php if ($nFact > 0): ?><span class="badge bg-info ms-1" style="font-size:.68rem;"><?= $nFact ?></span><?php endif; ?>
+                                    </a>
                                     <a href="editar_contrato?id=<?= $c['id'] ?>" class="btn-fa btn-fa-edit" title="Editar">
                                         <i class="bi bi-pencil-fill"></i>
                                     </a>
@@ -977,7 +1111,7 @@ $total_contratos = count($contratos);
                                                 title="<?= $noIniciado ? 'No iniciado' : 'Ya facturado este mes' ?>"><i
                                                     class="bi bi-file-earmark-plus"></i></span>
                                         <?php else: ?>
-                                            <?php if ($tipo_ct === 'sin_factura'): ?>
+                                            <?php if (($c['tipo_contrato'] ?? '') === 'sin_factura'): ?>
                                                 <a href="generar_recibo?contrato_id=<?= $c['id'] ?>" class="btn-fa btn-fa-receipt"
                                                     title="Crear Recibo">
                                                     <i class="bi bi-receipt"></i>

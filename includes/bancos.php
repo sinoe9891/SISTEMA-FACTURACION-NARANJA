@@ -55,6 +55,12 @@ function bancoCuenta(PDO $pdo, int $cid, int $cuentaId, bool $soloActiva = false
 }
 
 /** Cuentas de la empresa con saldo contable y cheques comprometidos. */
+/** ' selected' si la cuenta es la predeterminada (para los <select> de cobros y pagos). */
+function bancoSel(array $c): string
+{
+    return !empty($c['predeterminada']) ? ' selected' : '';
+}
+
 function bancoCuentas(PDO $pdo, int $cid, bool $soloActivas = false): array
 {
     $stmt = $pdo->prepare("

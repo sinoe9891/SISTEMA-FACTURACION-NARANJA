@@ -80,6 +80,7 @@ require_once '../../includes/templates/header.php';
                                     <span class="app-badge app-badge-info"><?= $c['tipo'] === 'cheques' ? 'Cheques' : 'Ahorro' ?></span>
                                     <span class="app-badge app-badge-muted"><?= htmlspecialchars($c['moneda']) ?></span>
                                     <?php if (!(int)$c['activa']): ?><span class="app-badge app-badge-danger">Inactiva</span><?php endif; ?>
+                                    <?php if (!empty($c['predeterminada'])): ?><span class="app-badge app-badge-warning" title="Se elige por defecto al registrar cobros y pagos"><i class="bi bi-star-fill"></i> Predeterminada</span><?php endif; ?>
                                 </div>
                             </div>
                             <div class="mt-3">
@@ -97,6 +98,10 @@ require_once '../../includes/templates/header.php';
                                     <button class="btn btn-sm btn-link p-0 btn-editar-cuenta" data-cuenta='<?= json_encode($c, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>'>Editar</button>
                                     <span class="text-muted">·</span>
                                     <button class="btn btn-sm btn-link p-0 btn-estado-cuenta" data-id="<?= (int)$c['id'] ?>"><?= (int)$c['activa'] ? 'Desactivar' : 'Activar' ?></button>
+                                    <?php if ((int)$c['activa'] && empty($c['predeterminada'])): ?>
+                                        <span class="text-muted">·</span>
+                                        <button class="btn btn-sm btn-link p-0 btn-predeterminar" data-id="<?= (int)$c['id'] ?>" title="Elegirla por defecto en cobros y pagos"><i class="bi bi-star"></i> Predeterminar</button>
+                                    <?php endif; ?>
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -159,7 +164,7 @@ require_once '../../includes/templates/header.php';
                     <div class="modal-body row g-3">
                         <input type="hidden" name="accion" value="movimiento">
                         <div class="col-12"><label class="form-label">Cuenta *</label>
-                            <select class="form-select" name="cuenta_id" required><?php foreach ($activas as $c): ?><option value="<?= (int)$c['id'] ?>"><?= htmlspecialchars($c['banco'] . ' ' . $c['numero'] . ' (' . $c['moneda'] . ')') ?></option><?php endforeach; ?></select></div>
+                            <select class="form-select" name="cuenta_id" required><?php foreach ($activas as $c): ?><option value="<?= (int)$c['id'] ?>"<?= bancoSel($c) ?>><?= htmlspecialchars($c['banco'] . ' ' . $c['numero'] . ' (' . $c['moneda'] . ')') ?></option><?php endforeach; ?></select></div>
                         <div class="col-6"><label class="form-label">Tipo *</label>
                             <select class="form-select" name="tipo" id="movTipo"><option value="deposito">Depósito (+)</option><option value="retiro">Retiro (−)</option><option value="comision">Comisión bancaria (−)</option><option value="interes">Interés ganado (+)</option><option value="ajuste">Ajuste (±)</option></select></div>
                         <div class="col-6 d-none" id="movSentidoWrap"><label class="form-label">El ajuste…</label>
@@ -218,6 +223,7 @@ require_once '../../includes/templates/header.php';
         B.modal('modalCuenta').show();
     }));
     document.querySelectorAll('.btn-estado-cuenta').forEach(b => b.addEventListener('click', () => B.accion({ accion: 'cuenta_estado', id: b.dataset.id })));
+    document.querySelectorAll('.btn-predeterminar').forEach(b => b.addEventListener('click', () => B.accion({ accion: 'predeterminar', id: b.dataset.id })));
     document.querySelectorAll('[data-abrir]').forEach(b => b.addEventListener('click', () => B.modal(b.dataset.abrir).show()));
     B.formulario(fCuenta);
     B.formulario(document.getElementById('formMovimiento'));

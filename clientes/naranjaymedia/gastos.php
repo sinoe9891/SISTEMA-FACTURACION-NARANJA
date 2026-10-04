@@ -1596,7 +1596,7 @@ $total  = count($gastos);
             // Registrar el pago: fecha, método (tarjeta opcional) y comprobante opcional
             const hoy = new Date().toLocaleDateString('sv-SE'); // AAAA-MM-DD en hora local
             const tarjetas = <?= json_encode(array_map(fn($t) => ['id' => (int)$t['id'], 'txt' => trim(($t['banco'] ?? '') . ' ' . ($t['tipo'] ?? '') . ' ••' . ($t['ultimos_digitos'] ?? ''))], $tarjetas_gasto), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-            const cuentasPago = <?= json_encode(array_map(fn($c) => ['id' => (int)$c['id'], 'txt' => $c['banco'] . ' ' . $c['numero']], $cuentas_pago), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+            const cuentasPago = <?= json_encode(array_map(fn($c) => ['id' => (int)$c['id'], 'txt' => $c['banco'] . ' ' . $c['numero'], 'pred' => !empty($c['predeterminada'])], $cuentas_pago), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
             const optsTarjeta = tarjetas.map(t => `<option value="${t.id}">${t.txt.replace(/[<>&"]/g, '')}</option>`).join('');
             Swal.fire({
                 title: 'Registrar pago',
@@ -1613,7 +1613,7 @@ $total  = count($gastos);
                             <option value="otro">Otro</option>
                         </select>
                         ${cuentasPago.length ? `<label class="form-label mt-3" for="qp_cuenta">Sale de la cuenta</label>
-                        <select id="qp_cuenta" class="form-select"><option value="">— No registrar en banco —</option>${cuentasPago.map(c => `<option value="${c.id}">${c.txt.replace(/[<>&"]/g, '')}</option>`).join('')}</select>` : ''}
+                        <select id="qp_cuenta" class="form-select"><option value="">— No registrar en banco —</option>${cuentasPago.map(c => `<option value="${c.id}"${c.pred ? ' selected' : ''}>${c.txt.replace(/[<>&"]/g, '')}</option>`).join('')}</select>` : ''}
                         <div id="qp_tarjeta_wrap" class="d-none">
                             <label class="form-label mt-3" for="qp_tarjeta">Tarjeta</label>
                             <select id="qp_tarjeta" class="form-select">

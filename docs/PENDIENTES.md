@@ -35,6 +35,7 @@ Unificación hecha con una «capa» en `clientes/css/app.css` (sin reescribir ca
 - [x] **Estado de resultados:** los meses futuros ya no se grafican como cero y el mes actual se marca «(en curso)».
 - [ ] **Estado de resultados:** la nómina solo está registrada como gasto de enero a marzo 2026; de abril en adelante los egresos no incluyen sueldos (margen irreal de ~98 %). Registrar la nómina mensual o calcularla desde colaboradores.
 - [ ] **Proyección de flujo de caja:** revisar al final (pedido del usuario).
+- [ ] **Cuentas por cobrar y Cuentas por pagar:** igualar paginación, tipografía, colores de texto, espacios y enlaces al resto de páginas.
 - [ ] **Fechas:** formatos mezclados (2026-10-10 · 15/09/2026) → dd/mm/aaaa en tablas (CAI, contratos).
 - [ ] **Tablas anchas:** clientes/usuarios/CAI tienen muchas columnas; en pantallas medianas hay que desplazar a la derecha. Evaluar ocultar columnas secundarias.
 - [ ] **Paginación:** cada página vieja tiene su propia paginación «10/pág» → un solo componente.
@@ -46,6 +47,15 @@ Unificación hecha con una «capa» en `clientes/css/app.css` (sin reescribir ca
 ## 📤 Exportaciones
 
 - [x] **Historial → Descargar XLSX** (facturas seleccionadas): una fila por factura con cliente, RTN, sucursal, contrato, detalle enumerado en una celda, importes exento/exonerado/gravados, subtotal, ISV 15/18, total, total en letras, CAI y rango; fila final de totales (sin anuladas). Generador propio `includes/xlsx.php` (no requiere librerías en el servidor).
+
+## 📄 Contratos
+
+- [x] Número de contrato visible, botones Ver / Editar siempre, contratos rotativos con sus empresas y última factura.
+- [x] Cobertura por contrato: «Facturado hasta …», meses de atraso y facturas sin pagar (con monto).
+- [x] Abonos desde «Facturas del contrato» (registrar, ver y anular), con cobrado y saldo por cobrar.
+- [ ] Campo «Se factura con atraso de N meses» (Texaco Valeriano factura con 2 meses de atraso) para no marcar alertas falsas.
+- [ ] Amarrar cada línea de una factura a su propio contrato (facturas que cobran dos contratos a la vez).
+- [ ] Anticipos sin factura (p. ej. Etapa 1 de Aldea Global): registrarlos y aplicarlos a la factura cuando se emita.
 
 ## 🧩 Plataforma
 

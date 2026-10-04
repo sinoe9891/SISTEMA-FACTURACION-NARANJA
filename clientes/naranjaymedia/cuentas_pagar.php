@@ -37,10 +37,13 @@ require_once '../../includes/templates/header.php';
     <a href="gastos" class="btn btn-outline-primary"><i class="bi bi-wallet2 me-1"></i> Ir a Gastos</a>
 </div>
 
-<div class="row g-3 mb-3">
-    <div class="col-12 col-xl-4"><div class="app-card app-kpi"><div class="app-kpi-label">Total por pagar</div><div class="app-kpi-value"><?= $L($total) ?></div><small class="text-muted"><?= count($gastos) ?> pago(s) pendiente(s)</small></div></div>
+<?php $iconoGrupo = ['vencido' => ['bi-exclamation-octagon', 'red'], 'hoy_7' => ['bi-alarm', 'amber'], '8_30' => ['bi-calendar-week', 'teal'], 'mas_30' => ['bi-calendar3', 'gray']]; ?>
+<div class="app-stats">
+    <div class="app-stat"><div class="app-stat-icon"><i class="bi bi-wallet2"></i></div>
+        <div><div class="app-stat-val"><?= $L($total) ?></div><div class="app-stat-lbl">Total por pagar · <?= count($gastos) ?> pago(s)</div></div></div>
     <?php foreach ($grupos as $k => $v): ?>
-        <div class="col-6 col-md-3 col-xl-2"><div class="app-card app-kpi"><div class="app-kpi-label"><?= $etq[$k][0] ?></div><div class="app-kpi-value fs-5 text-<?= $v > 0 ? $etq[$k][1] : 'muted' ?>"><?= $L($v) ?></div></div></div>
+        <div class="app-stat"><div class="app-stat-icon <?= $v > 0 ? $iconoGrupo[$k][1] : 'gray' ?>"><i class="bi <?= $iconoGrupo[$k][0] ?>"></i></div>
+            <div><div class="app-stat-val <?= $v > 0 ? 'text-' . $etq[$k][1] : 'text-muted' ?>"><?= $L($v) ?></div><div class="app-stat-lbl"><?= $etq[$k][0] ?></div></div></div>
     <?php endforeach; ?>
 </div>
 
@@ -65,14 +68,19 @@ require_once '../../includes/templates/header.php';
     </div>
     <div class="col-lg-8">
         <div class="app-card">
-            <div class="app-card-header"><span><i class="bi bi-calendar-event me-1"></i> Calendario de pagos</span></div>
+            <div class="app-card-header flex-wrap">
+                <span><i class="bi bi-calendar-event me-1"></i> Calendario de pagos</span>
+                <div class="app-toolbar flex-grow-1 justify-content-end">
+                    <div class="app-search" style="max-width:280px"><i class="bi bi-search"></i><input type="search" class="form-control form-control-sm" id="buscarPago" placeholder="Buscar gasto o proveedor…"></div>
+                    <select class="form-select form-select-sm" id="porPagina" style="width:auto"><option value="10">10/pág</option><option value="25">25/pág</option><option value="50">50/pág</option></select>
+                </div>
+            </div>
             <div class="table-responsive">
-                <table class="table app-table">
+                <table class="table app-table" id="tablaPagos">
                     <thead><tr><th>Fecha</th><th>Descripción</th><th>Proveedor</th><th class="app-num">Monto</th><th>Estado</th><th class="text-end"></th></tr></thead>
                     <tbody>
-                        <?php if (!$gastos): ?><tr><td colspan="6" class="text-center text-muted py-4"><i class="bi bi-check-circle text-success"></i> Todo al día.</td></tr><?php endif; ?>
                         <?php foreach ($gastos as $g): $d = (int)$g['dias']; ?>
-                            <tr>
+                            <tr data-fila>
                                 <td class="text-nowrap"><?= date('d/m/Y', strtotime($g['fecha'])) ?></td>
                                 <td><a href="gasto_ver?id=<?= (int)$g['id'] ?>"><?= htmlspecialchars($g['descripcion']) ?></a><?= $g['frecuencia'] !== 'unico' ? ' <span class="app-badge app-badge-muted">' . htmlspecialchars(ucfirst($g['frecuencia'])) . '</span>' : '' ?><div class="small text-muted"><?= htmlspecialchars($g['categoria'] ?? '') ?></div></td>
                                 <td class="small"><?= htmlspecialchars($g['proveedor'] ?? '') ?></td>
@@ -84,14 +92,17 @@ require_once '../../includes/templates/header.php';
                     </tbody>
                 </table>
             </div>
+            <div class="app-pager" id="pagosPie"></div>
         </div>
     </div>
 </div>
 
+<script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
 <script>
 (function () {
+    AppTabla('#tablaPagos', { buscar: '#buscarPago', porPagina: '#porPagina', pie: '#pagosPie', vacio: 'Todo al día: no hay pagos pendientes.' });
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    const cuentas = <?= json_encode(array_map(fn($c) => ['id' => (int)$c['id'], 'txt' => $c['banco'] . ' ' . $c['numero']], $cuentasHnl), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+    const cuentas = <?= json_encode(array_map(fn($c) => ['id' => (int)$c['id'], 'txt' => $c['banco'] . ' ' . $c['numero'], 'pred' => !empty($c['predeterminada'])], $cuentasHnl), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
     document.querySelectorAll('.btn-pagar').forEach(b => b.addEventListener('click', () => {
         Swal.fire({
             title: 'Pagar gasto',
@@ -99,7 +110,7 @@ require_once '../../includes/templates/header.php';
                 <div class="mb-2"><strong>${esc(b.dataset.desc)}</strong> · L ${Number(b.dataset.monto).toLocaleString('es-HN', { minimumFractionDigits: 2 })}</div>
                 <label class="form-label">Fecha de pago</label><input type="date" id="pFecha" class="form-control" value="${new Date().toLocaleDateString('sv-SE')}">
                 <label class="form-label mt-2">Método</label><select id="pMetodo" class="form-select"><option value="transferencia">Transferencia</option><option value="efectivo">Efectivo</option><option value="cheque">Cheque</option><option value="tarjeta">Tarjeta</option><option value="otro">Otro</option></select>
-                <label class="form-label mt-2">Sale de la cuenta</label><select id="pCuenta" class="form-select"><option value="">— No registrar en banco —</option>${cuentas.map(c => `<option value="${c.id}">${esc(c.txt)}</option>`).join('')}</select>
+                <label class="form-label mt-2">Sale de la cuenta</label><select id="pCuenta" class="form-select"><option value="">— No registrar en banco —</option>${cuentas.map(c => `<option value="${c.id}"${c.pred ? ' selected' : ''}>${esc(c.txt)}</option>`).join('')}</select>
                 <label class="form-label mt-2">Comprobante (opcional)</label><input type="file" id="pArchivo" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>`,
             showCancelButton: true, confirmButtonText: 'Registrar pago', cancelButtonText: 'Cancelar', confirmButtonColor: '#16a34a', focusConfirm: false,
             preConfirm: () => {

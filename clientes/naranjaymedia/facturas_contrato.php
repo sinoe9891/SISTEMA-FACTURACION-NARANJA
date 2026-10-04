@@ -3,6 +3,7 @@ $titulo = 'Facturas del Contrato';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/cuentas.php';
 require_once '../../includes/templates/header.php';
 
 $cliente_id  = (int)(USUARIO_ROL === 'superadmin'
@@ -44,6 +45,26 @@ $stmtF = $pdo->prepare("
 ");
 $stmtF->execute([$contrato_id, $cliente_id]);
 $facturas = $stmtF->fetchAll(PDO::FETCH_ASSOC);
+
+// ── Abonos (cuentas por cobrar): cuánto se ha pagado de cada factura ─────────
+$hayAbonos = cxcDisponible($pdo);
+$puedeCobrar = in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true);
+$abonadoPor = [];
+if ($hayAbonos && $facturas) {
+    $ids = array_map('intval', array_column($facturas, 'id'));
+    $stA = $pdo->query("SELECT factura_id, SUM(monto) FROM cobros_factura WHERE anulado = 0 AND factura_id IN (" . implode(',', $ids) . ") GROUP BY factura_id");
+    $abonadoPor = $stA->fetchAll(PDO::FETCH_KEY_PAIR);
+}
+$totalCobrado = 0;
+$totalSaldo = 0;
+foreach ($facturas as &$f) {
+    // Misma regla que cuentas por cobrar: con abonos manda la suma; sin abonos, la marca "pagada"
+    $f['abonado'] = round((float)($abonadoPor[$f['id']] ?? 0), 2);
+    $f['saldo'] = $f['abonado'] > 0 ? max(0, round((float)$f['total'] - $f['abonado'], 2)) : ((int)$f['pagada'] ? 0.0 : round((float)$f['total'], 2));
+    $totalSaldo += $f['saldo'];
+    $totalCobrado += (float)$f['total'] - $f['saldo'];
+}
+unset($f);
 
 // ── Totales ───────────────────────────────────────────────────────────────────
 $totalFacturado = 0;
@@ -628,6 +649,20 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                 <div class="fc-kpi-lbl">Total facturado</div>
             </div>
         </div>
+        <div class="fc-kpi">
+            <div class="fc-kpi-icon ki-green"><i class="bi bi-wallet2"></i></div>
+            <div>
+                <div class="fc-kpi-val" style="font-size:.88rem;color:#059669">L <?= number_format($totalCobrado, 2) ?></div>
+                <div class="fc-kpi-lbl">Cobrado</div>
+            </div>
+        </div>
+        <div class="fc-kpi" style="border-color:<?= $totalSaldo > 0 ? '#fecaca' : '#a7f3d0' ?>">
+            <div class="fc-kpi-icon <?= $totalSaldo > 0 ? 'ki-red' : 'ki-green' ?>"><i class="bi bi-hourglass-split"></i></div>
+            <div>
+                <div class="fc-kpi-val" style="font-size:.88rem;color:<?= $totalSaldo > 0 ? '#dc2626' : '#059669' ?>">L <?= number_format($totalSaldo, 2) ?></div>
+                <div class="fc-kpi-lbl">Saldo por cobrar</div>
+            </div>
+        </div>
         <div class="fc-kpi" style="border-color:<?= $mesesPend > 0 ? '#fecaca' : '#a7f3d0' ?>">
             <div class="fc-kpi-icon <?= $mesesPend > 0 ? 'ki-red' : 'ki-green' ?>"><i class="bi bi-calendar-check"></i>
             </div>
@@ -814,7 +849,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                             <th class="text-end">ISV</th>
                             <th class="text-end">Total</th>
                             <th class="text-center">Declarada</th>
-                            <th class="text-center">Pagada</th>
+                            <th class="text-center">Cobro</th>
                             <th class="text-center">Acciones</th>
                         </tr>
                     </thead>
@@ -827,7 +862,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                             <tr class="<?= $esMes ? 'tr-actual' : ($esAnulada ? 'tr-anulada' : '') ?>">
                                 <td>
                                     <span class="fw-bold"
-                                        style="font-family:monospace;font-size:.83rem"><?= htmlspecialchars($f['correlativo']) ?></span>
+                                        style="font-family:monospace;font-size:.83rem;white-space:nowrap"><?= htmlspecialchars($f['correlativo']) ?></span>
                                     <?php if ($esMes): ?><br><span class="badge"
                                             style="background:#d1fae5;color:#065f46;font-size:.65rem">Este mes</span><?php endif; ?>
                                 </td>
@@ -862,9 +897,12 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center">
-                                    <?php if ((int)($f['pagada'] ?? 0)): ?>
+                                    <?php if ($f['saldo'] <= 0.004): ?>
                                         <span class="badge" style="background:#d1fae5;color:#065f46"><i
                                                 class="bi bi-check-lg me-1"></i>Pagada</span>
+                                    <?php elseif ($f['abonado'] > 0): ?>
+                                        <span class="badge" style="background:#dbeafe;color:#1e40af">Abonada</span>
+                                        <div class="small text-nowrap mt-1" style="font-size:.7rem">Abonado L <?= number_format($f['abonado'], 2) ?><br><strong class="text-danger">Saldo L <?= number_format($f['saldo'], 2) ?></strong></div>
                                     <?php else: ?>
                                         <span class="badge"
                                             style="background:#fef3c7;color:#92400e;border:1px solid #fde68a">Pendiente</span>
@@ -872,11 +910,17 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 </td>
                                 <td class="text-center">
                                     <div
-                                        style="display:flex;align-items:center;justify-content:center;gap:.35rem;flex-wrap:wrap">
+                                        style="display:flex;align-items:center;justify-content:center;gap:.35rem;flex-wrap:nowrap">
                                         <a href="ver_factura?id=<?= $f['id'] ?>" class="btn btn-sm btn-outline-success"
                                             target="_blank" title="Ver factura">
                                             <i class="bi bi-eye"></i>
                                         </a>
+                                        <?php if ($hayAbonos): ?>
+                                            <button class="btn btn-sm btn-outline-primary btn-abonos" data-id="<?= (int)$f['id'] ?>"
+                                                title="<?= $f['saldo'] > 0 ? 'Registrar abono / ver abonos' : 'Ver abonos' ?>">
+                                                <i class="bi bi-cash-coin"></i>
+                                            </button>
+                                        <?php endif; ?>
                                         <button class="btn btn-sm btn-outline-danger btn-desvincular"
                                             data-factura-id="<?= $f['id'] ?>"
                                             data-correlativo="<?= htmlspecialchars($f['correlativo']) ?>"
@@ -894,7 +938,9 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                             <td class="text-end">L <?= number_format($totalSubtotal, 2) ?></td>
                             <td class="text-end">L <?= number_format($totalIsv, 2) ?></td>
                             <td class="text-end" style="color:var(--brand)">L <?= number_format($totalFacturado, 2) ?></td>
-                            <td colspan="3"></td>
+                            <td></td>
+                            <td class="text-center small text-nowrap">Saldo<br><strong class="<?= $totalSaldo > 0 ? 'text-danger' : 'text-success' ?>">L <?= number_format($totalSaldo, 2) ?></strong></td>
+                            <td></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -1414,4 +1460,5 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
     });
 </script>
 
+<?php if ($hayAbonos) require __DIR__ . '/includes/_modal_abonos.php'; ?>
 <?php require_once '../../includes/templates/footer.php'; ?>

@@ -56,7 +56,19 @@ try {
             $c = bancoCuenta($pdo, $cid, (int)($_POST['id'] ?? 0));
             $activa = (int)!((int)$c['activa']);
             $pdo->prepare("UPDATE cuentas_bancarias SET activa = ? WHERE id = ?")->execute([$activa, $c['id']]);
+            // Una cuenta inactiva no puede seguir siendo la predeterminada
+            if (!$activa && $pdo->query("SHOW COLUMNS FROM cuentas_bancarias LIKE 'predeterminada'")->fetchColumn())
+                $pdo->prepare("UPDATE cuentas_bancarias SET predeterminada = 0 WHERE id = ?")->execute([$c['id']]);
             $mensaje = $activa ? 'Cuenta activada.' : 'Cuenta desactivada.';
+            break;
+
+        case 'predeterminar':
+            $cuenta = bancoCuenta($pdo, $cid, (int)($_POST['id'] ?? 0), true);
+            if (!(int)$cuenta['activa']) throw new Exception("Activa la cuenta antes de hacerla predeterminada.");
+            $col = $pdo->query("SHOW COLUMNS FROM cuentas_bancarias LIKE 'predeterminada'")->fetchColumn();
+            if (!$col) throw new Exception("Falta la migración sql/migraciones/2026-10-03_cuenta_predeterminada.sql.");
+            $pdo->prepare("UPDATE cuentas_bancarias SET predeterminada = (id = ?) WHERE cliente_id = ?")->execute([$cuenta['id'], $cid]);
+            $mensaje = "Cuenta {$cuenta['banco']} {$cuenta['numero']} predeterminada.";
             break;
 
         case 'movimiento':

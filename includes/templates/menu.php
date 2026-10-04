@@ -44,7 +44,7 @@ $menuLateral = [
 		['crear_contrato', 'bi-file-earmark-plus', 'Nuevo contrato', []],
 	],
 	'Finanzas' => [
-		['cuentas_cobrar', 'bi-cash-coin', 'Cuentas por cobrar', []],
+		['cuentas_cobrar', 'bi-cash-coin', 'Cuentas por cobrar', ['estado_cuenta']],
 		['cuentas_pagar', 'bi-calendar-check', 'Cuentas por pagar', []],
 		['bancos', 'bi-bank', 'Bancos', ['banco_cuenta']],
 		['cheques', 'bi-journal-check', 'Cheques', []],

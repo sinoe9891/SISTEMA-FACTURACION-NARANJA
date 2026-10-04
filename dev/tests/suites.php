@@ -1016,3 +1016,67 @@ suite('Exportar facturas a XLSX', function () {
     $r = $c->get('includes/facturas_xlsx.php', ['ids' => 'abc']);
     check('ids inválidos → 400', $r['code'] === 400);
 });
+
+suite('Abonos desde Facturas del contrato', function () {
+    $c = login('qa.admin@local.test');
+    $ct = db()->query("SELECT contrato_id FROM facturas WHERE cliente_id=2 AND contrato_id IS NOT NULL AND estado='emitida' GROUP BY contrato_id ORDER BY COUNT(*) DESC LIMIT 1")->fetchColumn();
+    $r = $c->get('facturas_contrato', ['contrato_id' => $ct]);
+    check('la página del contrato carga sin avisos de PHP', $r['code'] === 200 && sinErroresPhp($r['body']), errorPhp($r['body']));
+    check('muestra el botón de abonos y el saldo por cobrar', str_contains($r['body'], 'btn-abonos') && str_contains($r['body'], 'Saldo por cobrar'));
+    // Factura del contrato sin pagar ni abonos → abono parcial y luego anulación
+    $f = db()->query("SELECT id, total FROM facturas f WHERE contrato_id=" . (int)$ct . " AND estado='emitida' AND pagada=0 AND NOT EXISTS (SELECT 1 FROM cobros_factura c WHERE c.factura_id=f.id) LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if (!$f) { db()->exec("UPDATE facturas SET pagada=0 WHERE id=(SELECT id FROM (SELECT id FROM facturas WHERE contrato_id=" . (int)$ct . " AND estado='emitida' ORDER BY id DESC LIMIT 1) t)"); $f = db()->query("SELECT id, total FROM facturas WHERE contrato_id=" . (int)$ct . " AND estado='emitida' ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC); }
+    $mitad = round($f['total'] / 2, 2);
+    $r = $c->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => $f['id'], 'fecha' => date('Y-m-d'), 'monto' => $mitad, 'metodo' => 'transferencia', 'referencia' => 'QA-ABONO']);
+    check('registra un abono parcial', ($r['json']['success'] ?? false) === true, $r['body']);
+    $r = $c->get('facturas_contrato', ['contrato_id' => $ct]);
+    check('la factura aparece como «Abonada» con su saldo', str_contains($r['body'], 'Abonada') && str_contains($r['body'], number_format($f['total'] - $mitad, 2)));
+    $id = db()->query("SELECT id FROM cobros_factura WHERE referencia='QA-ABONO' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $r = $c->post('includes/cxc_accion.php', ['accion' => 'anular_cobro', 'id' => $id, 'motivo' => 'prueba QA']);
+    check('limpieza: el abono de prueba se anula', ($r['json']['success'] ?? false) === true, $r['body']);
+    check('la factura vuelve a quedar sin pagar', (int)db()->query("SELECT pagada FROM facturas WHERE id=" . (int)$f['id'])->fetchColumn() === 0);
+});
+
+suite('Estado de cuenta y cuentas por cobrar/pagar', function () {
+    $c = login('qa.admin@local.test');
+    foreach (['cuentas_cobrar', 'cuentas_pagar'] as $p) {
+        $r = $c->get($p);
+        check("$p carga sin avisos de PHP", $r['code'] === 200 && sinErroresPhp($r['body']), errorPhp($r['body']));
+        check("$p usa los componentes comunes (indicadores y paginación)", str_contains($r['body'], 'app-stat') && str_contains($r['body'], 'app-pager'));
+    }
+    $rid = db()->query("SELECT receptor_id FROM facturas WHERE cliente_id=2 AND estado='emitida' GROUP BY receptor_id ORDER BY COUNT(*) DESC LIMIT 1")->fetchColumn();
+    $r = $c->get('estado_cuenta', ['receptor_id' => $rid]);
+    check('estado de cuenta carga sin avisos de PHP', $r['code'] === 200 && sinErroresPhp($r['body']), errorPhp($r['body']));
+    check('estado de cuenta muestra facturas, abonos y botón de abonar', str_contains($r['body'], 'Abonos realizados') && str_contains($r['body'], 'btn-abonos'));
+    $r = $c->get('cuentas_cobrar');
+    check('el nombre del cliente enlaza a su estado de cuenta', str_contains($r['body'], 'estado_cuenta?receptor_id='));
+    $otro = db()->query("SELECT id FROM clientes_factura WHERE cliente_id<>2 LIMIT 1")->fetchColumn();
+    if ($otro) {
+        $r = $c->get('estado_cuenta', ['receptor_id' => $otro]);
+        check('no se puede ver el estado de cuenta de un cliente de otra empresa', $r['code'] === 302 || str_contains($r['loc'], 'cuentas_cobrar'));
+    }
+});
+
+suite('Cuenta bancaria predeterminada', function () {
+    $c = login('qa.admin@local.test');
+    // Dos cuentas en lempiras de prueba
+    $ids = [];
+    foreach (['QA-PRED-1', 'QA-PRED-2'] as $n) {
+        $r = $c->post('includes/banco_accion.php', ['accion' => 'cuenta_guardar', 'banco' => 'Banco QA', 'numero' => $n . '-' . time(), 'tipo' => 'ahorro', 'moneda' => 'HNL', 'saldo_inicial' => 0, 'fecha_saldo_inicial' => date('Y-m-d')]);
+        $ids[] = (int)($r['json']['id'] ?? 0);
+    }
+    check('se crean dos cuentas de prueba', $ids[0] > 0 && $ids[1] > 0);
+    $r = $c->post('includes/banco_accion.php', ['accion' => 'predeterminar', 'id' => $ids[1]]);
+    check('se marca una cuenta como predeterminada', ($r['json']['success'] ?? false) === true, $r['body']);
+    $pred = db()->query("SELECT id FROM cuentas_bancarias WHERE cliente_id = 2 AND predeterminada = 1")->fetchAll(PDO::FETCH_COLUMN);
+    check('solo hay una predeterminada por empresa', $pred === [(string)$ids[1]] || $pred === [$ids[1]], json_encode($pred));
+    $r = $c->get('cuentas_cobrar');
+    check('en cuentas por cobrar viene preseleccionada', (bool)preg_match('/<option value="' . $ids[1] . '" selected>/', $r['body']));
+    $r = $c->get('bancos');
+    check('bancos muestra la estrella de predeterminada', str_contains($r['body'], 'bi-star-fill') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $c->post('includes/banco_accion.php', ['accion' => 'cuenta_estado', 'id' => $ids[1]]);
+    check('al desactivarla deja de ser predeterminada', (int)db()->query("SELECT predeterminada FROM cuentas_bancarias WHERE id = " . $ids[1])->fetchColumn() === 0);
+    // limpieza (cuentas sin movimientos)
+    db()->exec("DELETE FROM cuentas_bancarias WHERE id IN (" . implode(',', $ids) . ") AND NOT EXISTS (SELECT 1 FROM movimientos_bancarios m WHERE m.cuenta_id = cuentas_bancarias.id)");
+    check('limpieza: cuentas de prueba borradas', !db()->query("SELECT COUNT(*) FROM cuentas_bancarias WHERE id IN (" . implode(',', $ids) . ")")->fetchColumn());
+});
