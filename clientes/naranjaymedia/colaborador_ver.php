@@ -274,13 +274,52 @@ $tipos_btn_p = [
     /* ── Toolbar ───────────────────────────────────────────────────────────── */
     .cv-toolbar {
         position: sticky;
-        top: var(--app-topbar-h, 0);
+        top: calc(var(--app-topbar-h, 58px) + 6px);
         z-index: 80;
-        background: rgba(255, 255, 255, .92);
-        backdrop-filter: blur(12px);
-        border-bottom: 1px solid var(--border);
-        padding: .65rem 0;
-        box-shadow: var(--shadow-sm);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        background: var(--app-surface, #fff);
+        border: 1px solid var(--app-border, #e2e8f0);
+        border-radius: var(--app-radius, 12px);
+        box-shadow: var(--app-shadow);
+        padding: 10px 14px;
+        margin-bottom: 16px;
+    }
+
+    .cv-crumb {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        font-size: 13.5px;
+    }
+
+    .cv-crumb-back {
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        border: 1px solid var(--app-border, #e2e8f0);
+        color: var(--app-text, #1e293b);
+        text-decoration: none;
+    }
+
+    .cv-crumb-back:hover { background: var(--app-hover, #f1f5f9); }
+    .cv-crumb-link { color: var(--app-muted, #64748b); text-decoration: none; white-space: nowrap; }
+    .cv-crumb-link:hover { color: var(--app-accent, #2563eb); }
+    .cv-crumb-sep { color: var(--app-border, #cbd5e1); }
+
+    .cv-crumb-actual {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     /* ── Hero header ───────────────────────────────────────────────────────── */
@@ -332,8 +371,9 @@ $tipos_btn_p = [
         width: 80px;
         height: 80px;
         border-radius: 50%;
-        background: rgba(255, 255, 255, .2);
-        border: 3px solid rgba(255, 255, 255, .5);
+        background: linear-gradient(135deg, var(--app-accent, #2563eb), var(--app-accent-h, #1d4ed8));
+        border: 3px solid var(--app-accent-lt, #eff6ff);
+        box-shadow: 0 4px 12px rgba(37, 99, 235, .25);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -387,8 +427,9 @@ $tipos_btn_p = [
     }
 
     .cv-hero-pill {
-        background: rgba(255, 255, 255, .18);
-        border: 1px solid rgba(255, 255, 255, .25);
+        background: var(--app-accent-lt, #eff6ff);
+        border: 1px solid #bfdbfe;
+        color: var(--app-accent, #2563eb);
         border-radius: 20px;
         padding: .18rem .75rem;
         font-size: .78rem;
@@ -1449,44 +1490,29 @@ $tipos_btn_p = [
 
 <!-- Toolbar -->
 <div class="cv-toolbar no-print">
-    <div class="container-xxl d-flex justify-content-between align-items-center gap-2 flex-wrap">
-        <div class="d-flex align-items-center gap-2">
-            <a href="colaboradores" class="btn btn-sm btn-outline-secondary">
-                <i class="bi bi-arrow-left me-1"></i>Volver
-            </a>
-            <nav aria-label="breadcrumb" class="d-none d-md-block">
-                <ol class="breadcrumb mb-0" style="font-size:.82rem">
-                    <li class="breadcrumb-item">
-                        <a href="colaboradores" class="text-muted text-decoration-none">
-                            <i class="bi bi-people me-1"></i>Colaboradores
-                        </a>
-                    </li>
-                    <li class="breadcrumb-item active fw-semibold"><?= htmlspecialchars($nombreCompleto) ?></li>
-                </ol>
-            </nav>
-        </div>
-        <div class="d-flex gap-2 align-items-center">
-            <?php if ($total_bonos_pend > 0 || $total_viaticos_pend > 0): ?>
-                <span class="badge"
-                    style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.75rem;padding:.35rem .7rem;">
-                    <i class="bi bi-exclamation-circle me-1"></i>
-                    Pendientes por liquidar
-                </span>
-            <?php endif; ?>
-            <a href="colaborador_reporte.php?id=<?= $id ?>&mes=<?= $filtro_mes ?>&anio=<?= $filtro_anio ?>"
-                target="_blank" class="btn btn-sm btn-outline-danger no-print">
-                <i class="bi bi-file-pdf me-1"></i>PDF
-            </a>
-            <?php if ($col['activo']): ?>
-                <button class="btn btn-sm btn-success btn-pagar-directo no-print">
-                    <i class="bi bi-cash-coin me-1"></i>Registrar Pago
-                </button>
-            <?php endif; ?>
-        </div>
+    <nav aria-label="breadcrumb" class="cv-crumb">
+        <a href="colaboradores" class="cv-crumb-back" title="Volver a colaboradores"><i class="bi bi-arrow-left"></i></a>
+        <a href="colaboradores" class="cv-crumb-link d-none d-sm-inline"><i class="bi bi-people me-1"></i>Colaboradores</a>
+        <span class="cv-crumb-sep d-none d-sm-inline">/</span>
+        <span class="cv-crumb-actual" title="<?= htmlspecialchars($nombreCompleto) ?>"><?= htmlspecialchars($nombreCompleto) ?></span>
+    </nav>
+    <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
+        <?php if ($total_bonos_pend > 0 || $total_viaticos_pend > 0): ?>
+            <span class="app-badge app-badge-warning"><i class="bi bi-exclamation-circle"></i> Pendientes por liquidar</span>
+        <?php endif; ?>
+        <a href="colaborador_reporte.php?id=<?= $id ?>&mes=<?= $filtro_mes ?>&anio=<?= $filtro_anio ?>"
+            target="_blank" class="btn btn-sm btn-outline-secondary" title="Reporte del mes en PDF">
+            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+        </a>
+        <?php if ($col['activo']): ?>
+            <button class="btn btn-sm btn-primary btn-pagar-directo">
+                <i class="bi bi-cash-coin me-1"></i>Registrar pago
+            </button>
+        <?php endif; ?>
     </div>
 </div>
 
-<div class="container-xxl py-4">
+<div class="container-xxl pb-4">
 
     <!-- ── Hero ─────────────────────────────────────────────────────────── -->
     <div class="cv-hero">
@@ -1509,10 +1535,10 @@ $tipos_btn_p = [
             </div>
             <div class="d-flex flex-wrap gap-2 mt-2">
                 <span class="cv-hero-pill">
-                    <?= $tipo_pago === 'quincenal' ? '🔄 Quincenal' : '📅 Mensual' ?>
+                    <?= $tipo_pago === 'quincenal' ? '<i class="bi bi-arrow-repeat me-1"></i>Quincenal' : '<i class="bi bi-calendar3 me-1"></i>Mensual' ?>
                 </span>
                 <span class="cv-hero-pill">
-                    📅 Ingreso: <?= date('d/m/Y', strtotime($col['fecha_ingreso'])) ?>
+                    <i class="bi bi-calendar-check me-1"></i>Ingreso: <?= date('d/m/Y', strtotime($col['fecha_ingreso'])) ?>
                 </span>
                 <?php if ($total_deuda_activa > 0): ?>
                     <span class="cv-hero-pill" style="background:rgba(239,68,68,.2);border-color:rgba(239,68,68,.3)">

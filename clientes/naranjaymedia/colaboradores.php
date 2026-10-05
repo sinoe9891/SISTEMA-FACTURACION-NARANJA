@@ -57,7 +57,7 @@ foreach ($stmtPat->fetchAll(PDO::FETCH_ASSOC) as $r) {
 }
 
 /* ── Lista filtrada ──────────────────────────────────────────────────────── */
-$where = ($filtro_estado === 'inactivo') ? 'c.activo=0' : 'c.activo=1';
+$where = '1=1';   // activos e inactivos; las pestañas filtran en el navegador sin recargar
 $stmtC = $pdo->prepare("SELECT c.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono
     FROM colaboradores c LEFT JOIN categorias_gastos cg ON cg.id=c.categoria_gasto_id
     WHERE c.cliente_id=? AND $where ORDER BY c.nombre ASC, c.apellido ASC");
@@ -65,7 +65,7 @@ $stmtC->execute([$cliente_id]);
 $colaboradores = $stmtC->fetchAll(PDO::FETCH_ASSOC);
 
 /* ── Activos para vencidos/próximos ──────────────────────────────────────── */
-$stmtAct = $pdo->prepare("SELECT * FROM colaboradores WHERE cliente_id=? AND activo=1 ORDER BY nombre ASC");
+$stmtAct = $pdo->prepare("SELECT * FROM colaboradores WHERE cliente_id=? AND (activo=1 OR fecha_baja IS NOT NULL) ORDER BY nombre ASC");
 $stmtAct->execute([$cliente_id]);
 $colabs_activos = $stmtAct->fetchAll(PDO::FETCH_ASSOC);
 
@@ -104,6 +104,9 @@ $proximos  = [];
 foreach ($colabs_activos as $col) {
     $nc      = $col['nombre'] . ' ' . $col['apellido'];
     $ingreso = new DateTime($col['fecha_ingreso']);
+    // Fecha de baja: no se le debe nada después de esa fecha
+    $baja    = !empty($col['fecha_baja']) ? new DateTime($col['fecha_baja']) : null;
+    if (!(int)$col['activo'] && !$baja) continue;
     $n_calc  = calcNeto((float)$col['salario_base'], (int)$col['aplica_ihss'], (int)$col['aplica_rap'], $col['tipo_pago']);
 
     $checks = $col['tipo_pago'] === 'quincenal'
@@ -113,8 +116,10 @@ foreach ($colabs_activos as $col) {
         ]
         : [0 => ['dia' => (int)$col['dia_pago'],  'suffix' => '',              'label' => 'Mensual']];
 
-    for ($offset = -1; $offset <= 0; $offset++) {
-        $ref    = clone $hoy_dt;
+    $mesesAtras = ((int)$hoy_dt->format('Y') - (int)$ingreso->format('Y')) * 12 + ((int)$hoy_dt->format('n') - (int)$ingreso->format('n'));
+    for ($offset = -max(0, $mesesAtras); $offset <= 0; $offset++) {
+        // Primer día del mes para evitar el desborde de modify("-N month") en días 29–31
+        $ref    = (clone $hoy_dt)->modify('first day of this month');
         if ($offset < 0) $ref->modify("$offset month");
         $anio   = (int)$ref->format('Y');
         $mes    = (int)$ref->format('n');
@@ -123,7 +128,12 @@ foreach ($colabs_activos as $col) {
         foreach ($checks as $q => $info) {
             $dia_real = min($info['dia'], $dias_m);
             $fp       = new DateTime(sprintf('%04d-%02d-%02d', $anio, $mes, $dia_real));
-            if ($fp < $ingreso) continue;
+            // Período que cubre el pago: 1ª quincena = días 1–15, 2ª = 16–fin de mes, mensual = todo el mes
+            $iniPer = new DateTime(sprintf('%04d-%02d-%02d', $anio, $mes, $q === 2 ? 16 : 1));
+            $finPer = new DateTime(sprintf('%04d-%02d-%02d', $anio, $mes, $q === 1 ? 15 : $dias_m));
+            $mitad  = (clone $iniPer)->modify('+' . intdiv((int)$iniPer->diff($finPer)->days, 2) . ' days');
+            if ($ingreso > $mitad) continue;          // entró después de la mitad del período: empieza en el siguiente
+            if ($baja && $baja < $iniPer) continue;   // ya se había dado de baja cuando empezó el período
 
             $desc = 'Sueldo ' . $nc . $info['suffix'];
             $key  = $desc . '|' . $anio . '|' . $mes . '|' . $q;
@@ -153,8 +163,37 @@ foreach ($colabs_activos as $col) {
         }
     }
 }
-usort($vencidos, fn($a, $b) => $b['dias_atraso'] - $a['dias_atraso']);
+// Más antiguas primero, agrupadas por mes en la tabla
+usort($vencidos, fn($a, $b) => strcmp($a['fecha_esperada'], $b['fecha_esperada']) ?: strcmp($a['nombre_completo'], $b['nombre_completo']));
+$vencidosPorMes = [];
+foreach ($vencidos as $vn) {
+    $k = substr($vn['fecha_esperada'], 0, 7);
+    $vencidosPorMes[$k] ??= ['label' => $vn['periodo_label'], 'n' => 0, 'total' => 0.0];
+    $vencidosPorMes[$k]['n']++;
+    $vencidosPorMes[$k]['total'] += (float)$vn['monto_neto'];
+}
+$totalVencido = array_sum(array_column($vencidosPorMes, 'total'));
 usort($proximos, fn($a, $b) => $a['dias_restantes'] - $b['dias_restantes']);
+
+/* ── Pagos de nómina realizados en el año (para el resumen) ─────────────────── */
+$anioPagos = (int)($_GET['anio_pagos'] ?? date('Y'));
+$stPag = $pdo->prepare("SELECT descripcion, monto, fecha, archivo_adjunto FROM gastos
+    WHERE cliente_id=? AND descripcion LIKE 'Sueldo %' AND estado!='anulado' AND YEAR(fecha)=? ORDER BY fecha");
+$stPag->execute([$cliente_id, $anioPagos]);
+$pagosAnio = [];
+foreach ($stPag->fetchAll(PDO::FETCH_ASSOC) as $p) {
+    $quien = preg_replace('/^Sueldo (.*?)( — .*)?$/u', '$1', $p['descripcion']);
+    $pagosAnio[$quien] ??= ['n' => 0, 'total' => 0.0, 'ultimo' => null, 'con_comprobante' => 0, 'meses' => []];
+    $pagosAnio[$quien]['n']++;
+    $pagosAnio[$quien]['total'] += (float)$p['monto'];
+    $pagosAnio[$quien]['ultimo'] = $p['fecha'];
+    $pagosAnio[$quien]['con_comprobante'] += !empty($p['archivo_adjunto']) ? 1 : 0;
+    $pagosAnio[$quien]['meses'][(int)substr($p['fecha'], 5, 2)] = true;
+}
+ksort($pagosAnio);
+$colabIdPorNombre = [];
+foreach ($colabs_activos as $ca) $colabIdPorNombre[$ca['nombre'] . ' ' . $ca['apellido']] = (int)$ca['id'];
+foreach ($colaboradores as $ca) $colabIdPorNombre[$ca['nombre'] . ' ' . $ca['apellido']] = (int)$ca['id'];
 
 /* ── Categorías ──────────────────────────────────────────────────────────── */
 $stmtCats = $pdo->prepare("SELECT id,nombre,color,icono FROM categorias_gastos WHERE cliente_id=? AND activa=1 ORDER BY nombre");
@@ -918,9 +957,12 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
             <div class="nomina-alert-header">
                 <span style="font-weight:700;color:#dc2626;font-size:.95rem;display:flex;align-items:center;gap:.5rem;"><i
                         class="bi bi-exclamation-triangle-fill"></i>Nóminas vencidas sin registrar</span>
-                <span class="badge bg-danger"><?= count($vencidos) ?></span>
+                <span class="d-flex gap-2 align-items-center">
+                    <span class="small text-danger fw-semibold"><?= count($vencidosPorMes) ?> mes(es) · L <?= number_format($totalVencido, 2) ?></span>
+                    <span class="badge bg-danger"><?= count($vencidos) ?></span>
+                </span>
             </div>
-            <div style="overflow-x:auto;">
+            <div style="overflow-x:auto;max-height:460px;overflow-y:auto;">
                 <table>
                     <thead>
                         <tr>
@@ -934,9 +976,17 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($vencidos as $vn): ?>
+                        <?php $mesGrupo = null; foreach ($vencidos as $vn):
+                            $kMes = substr($vn['fecha_esperada'], 0, 7);
+                            if ($kMes !== $mesGrupo): $mesGrupo = $kMes; $gm = $vencidosPorMes[$kMes]; ?>
+                            <tr style="background:#fef2f2">
+                                <td colspan="5" class="fw-bold text-danger"><i class="bi bi-calendar-x me-1"></i><?= htmlspecialchars($gm['label']) ?> · <?= $gm['n'] ?> pago(s) sin registrar</td>
+                                <td class="text-end fw-bold text-danger">L <?= number_format($gm['total'], 2) ?></td>
+                                <td></td>
+                            </tr>
+                        <?php endif; ?>
                             <tr>
-                                <td class="fw-semibold"><?= htmlspecialchars($vn['nombre_completo']) ?></td>
+                                <td class="fw-semibold"><?= htmlspecialchars($vn['nombre_completo']) ?><?= !(int)$vn['activo'] ? ' <span class="badge bg-secondary" style="font-size:9px">Baja ' . date('d/m/Y', strtotime($vn['fecha_baja'])) . '</span>' : '' ?></td>
                                 <td class="text-center"><span class="badge bg-danger bg-opacity-75"
                                         style="font-size:10px"><?= $vn['periodo_label'] ?></span></td>
                                 <td class="text-center"><span class="badge bg-danger"><?= $vn['quincena_label'] ?></span></td>
@@ -1031,14 +1081,58 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
         </div>
     <?php endif; ?>
 
+    <!-- ══ PAGOS DE NÓMINA REALIZADOS EN EL AÑO ═══════════════════════════ -->
+    <?php if ($pagosAnio): ?>
+        <div class="nomina-alert" style="border:1px solid var(--border,#e2e8f0);">
+            <div class="nomina-alert-header" style="background:#f0fdf4">
+                <span style="font-weight:700;color:#15803d;font-size:.95rem;display:flex;align-items:center;gap:.5rem;"><i class="bi bi-cash-stack"></i>Pagos de nómina realizados en <?= $anioPagos ?></span>
+                <span class="d-flex gap-2 align-items-center">
+                    <span class="small fw-semibold text-success"><?= array_sum(array_column($pagosAnio, 'n')) ?> pagos · L <?= number_format(array_sum(array_column($pagosAnio, 'total')), 2) ?></span>
+                    <a href="?anio_pagos=<?= $anioPagos - 1 ?>" class="btn btn-sm btn-outline-secondary py-0" title="Año anterior"><i class="bi bi-chevron-left"></i></a>
+                    <?php if ($anioPagos < (int)date('Y')): ?><a href="?anio_pagos=<?= $anioPagos + 1 ?>" class="btn btn-sm btn-outline-secondary py-0" title="Año siguiente"><i class="bi bi-chevron-right"></i></a><?php endif; ?>
+                </span>
+            </div>
+            <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Colaborador</th>
+                            <th class="text-center">Pagos</th>
+                            <th class="text-center">Meses pagados</th>
+                            <th class="text-center">Último pago</th>
+                            <th class="text-center">Con comprobante</th>
+                            <th class="text-end">Total pagado</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php $nPg = 0; foreach ($pagosAnio as $quien => $pa): $mesesTxt = array_map(fn($mm) => $meses_abr[$mm], array_keys($pa['meses'])); ?>
+                            <tr>
+                                <td class="text-muted small"><?= ++$nPg ?></td>
+                                <td class="fw-semibold"><?= htmlspecialchars($quien) ?></td>
+                                <td class="text-center"><?= $pa['n'] ?></td>
+                                <td class="text-center small"><?= htmlspecialchars(implode(', ', $mesesTxt)) ?></td>
+                                <td class="text-center text-nowrap"><?= date('d/m/Y', strtotime($pa['ultimo'])) ?></td>
+                                <td class="text-center"><span class="badge <?= $pa['con_comprobante'] === $pa['n'] ? 'bg-success' : 'bg-secondary' ?>"><?= $pa['con_comprobante'] ?>/<?= $pa['n'] ?></span></td>
+                                <td class="text-end fw-bold text-nowrap">L <?= number_format($pa['total'], 2) ?></td>
+                                <td class="text-end"><?php if (!empty($colabIdPorNombre[$quien])): ?><a href="colaborador_ver?id=<?= $colabIdPorNombre[$quien] ?>" class="btn btn-sm btn-outline-secondary py-0" title="Ver historial de pagos"><i class="bi bi-eye"></i></a><?php endif; ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <!-- Tabs + toolbar -->
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
         <div class="d-flex gap-2">
-            <a href="?estado=activo"
+            <a href="?estado=activo" data-estado-tab="activo"
                 class="btn btn-sm <?= $filtro_estado !== 'inactivo' ? 'btn-success' : 'btn-outline-success' ?>"><i
                     class="bi bi-person-check me-1"></i>Activos <span
                     class="badge bg-white text-success ms-1"><?= (int)$kpi['activos'] ?></span></a>
-            <a href="?estado=inactivo"
+            <a href="?estado=inactivo" data-estado-tab="inactivo"
                 class="btn btn-sm <?= $filtro_estado === 'inactivo' ? 'btn-secondary' : 'btn-outline-secondary' ?>"><i
                     class="bi bi-person-slash me-1"></i>Inactivos <span
                     class="badge bg-white text-secondary ms-1"><?= (int)$kpi['inactivos'] ?></span></a>
@@ -1062,7 +1156,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
     <div class="cl-card">
         <div class="cl-card-header">
             <span style="font-weight:700;font-size:.95rem;display:flex;align-items:center;gap:.5rem;"><i
-                    class="bi bi-table"></i><?= $filtro_estado === 'inactivo' ? 'Colaboradores Inactivos' : 'Colaboradores Activos' ?></span>
+                    class="bi bi-table"></i><span id="clTitulo"><?= $filtro_estado === 'inactivo' ? 'Colaboradores Inactivos' : 'Colaboradores Activos' ?></span></span>
             <span class="cl-badge-teal" id="clBadge"><?= count($colaboradores) ?> colaboradores</span>
         </div>
         <div class="cl-table-wrap">
@@ -1094,7 +1188,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                         $ac  = $colors[$ci % count($colors)];
                         $ci++;
                     ?>
-                        <tr data-search="<?= htmlspecialchars($src) ?>">
+                        <tr data-search="<?= htmlspecialchars($src) ?>" data-estado="<?= (int)$c['activo'] ? 'activo' : 'inactivo' ?>">
                             <td>
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="cl-avatar" style="background:<?= $ac ?>">
@@ -1443,6 +1537,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
 <script>
     /* ══ TABLE ENGINE ══════════════════════════════════════════════════════════ */
     (() => {
+        let estado = <?= json_encode($filtro_estado === 'inactivo' ? 'inactivo' : 'activo') ?>;
         let query = '',
             page = 1,
             perPage = 10,
@@ -1466,7 +1561,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
             return td ? (td.dataset.original || td.textContent).trim().toLowerCase() : '';
         };
         const filtered = () => {
-            const base = !query ? allRows : allRows.filter(r => r.dataset.search.includes(query.toLowerCase()));
+            const base = allRows.filter(r => r.dataset.estado === estado && (!query || r.dataset.search.includes(query.toLowerCase())));
             if (sortCol < 0) return base;
             return [...base].sort((a, b) => {
                 const va = colTxt(a, sortCol),
@@ -1569,6 +1664,20 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
             page = 1;
             render();
         });
+        // Pestañas Activos / Inactivos sin recargar la página (la URL se actualiza para poder compartirla)
+        document.querySelectorAll('[data-estado-tab]').forEach(tab => tab.addEventListener('click', ev => {
+            ev.preventDefault();
+            estado = tab.dataset.estadoTab;
+            page = 1;
+            document.querySelectorAll('[data-estado-tab]').forEach(t => {
+                const act = t.dataset.estadoTab === estado, tipo = t.dataset.estadoTab === 'activo' ? 'success' : 'secondary';
+                t.classList.toggle('btn-' + tipo, act);
+                t.classList.toggle('btn-outline-' + tipo, !act);
+            });
+            document.getElementById('clTitulo').textContent = estado === 'inactivo' ? 'Colaboradores Inactivos' : 'Colaboradores Activos';
+            render();
+            try { history.replaceState(null, '', '?estado=' + estado); } catch (e) {}
+        }));
         updIcons();
         render();
     })();

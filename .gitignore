@@ -1,2 +1,7 @@
 # Entorno de pruebas
 dev/.qa_password
+
+# Comprobantes y archivos subidos (datos personales y bancarios): no van a git
+/pagos/
+clientes/naranjaymedia/includes/uploads/*
+!clientes/naranjaymedia/includes/uploads/.htaccess
