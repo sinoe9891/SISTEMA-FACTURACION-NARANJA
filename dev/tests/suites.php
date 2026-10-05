@@ -1570,3 +1570,103 @@ suite('Respaldos de la base de datos', function () {
     check('el admin de otra empresa no tiene acceso', ($o->post('includes/respaldo_accion.php', ['accion' => 'crear'])['json']['success'] ?? true) === false);
     array_map('unlink', glob($dir . 'respaldo_*') ?: []);
 });
+
+suite('Rol Nómina', function () {
+    $pdo = db();
+    // Usuario de prueba con el rol nuevo (solo en la BD de pruebas)
+    $pdo->exec("DELETE ue FROM usuario_establecimientos ue JOIN usuarios u ON u.id = ue.usuario_id WHERE u.correo = 'qa.nomina@local.test'");
+    $pdo->exec("DELETE FROM usuarios WHERE correo = 'qa.nomina@local.test'");
+    $pdo->prepare("INSERT INTO usuarios (cliente_id, nombre, correo, clave, rol, estado, creado_en) VALUES (2, 'QA Nómina', 'qa.nomina@local.test', ?, 'nomina', 'activo', NOW())")
+        ->execute([password_hash(QA_PASS, PASSWORD_DEFAULT)]);
+    $uid = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO usuario_establecimientos (usuario_id, establecimiento_id) SELECT ?, establecimiento_id FROM usuario_establecimientos ue JOIN usuarios u ON u.id = ue.usuario_id WHERE u.correo = 'qa.admin@local.test'")->execute([$uid]);
+    $n = login('qa.nomina@local.test');
+
+    $r = $n->get('colaboradores');
+    check('entra a Colaboradores', $r['code'] === 200 && str_contains($r['body'], 'id="btnRegistrarMov"') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    check('el menú solo muestra Personal', str_contains($r['body'], 'href="pagos_nomina"') && !str_contains($r['body'], 'href="lista_facturas"') && !str_contains($r['body'], 'href="gastos"') && !str_contains($r['body'], 'href="usuarios"'));
+    $r = $n->get('pagos_nomina');
+    check('entra a Pagos de nómina', $r['code'] === 200 && str_contains($r['body'], 'data-nomina-accion="anular"') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $col = (int)$pdo->query("SELECT id FROM colaboradores WHERE cliente_id = 2 AND activo = 1 LIMIT 1")->fetchColumn();
+    $r = $n->get('colaborador_ver', ['id' => $col, 'todo' => 1]);
+    check('ve la ficha con los botones de editar/anular pagos', $r['code'] === 200 && str_contains($r['body'], 'data-nomina-accion=') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    foreach (['dashboard', 'lista_facturas', 'gastos', 'financiero', 'balance_general', 'usuarios', 'configuracion_correo', 'respaldos', 'clientes'] as $p) {
+        $r = $n->get($p);
+        check("no entra a $p", in_array($r['code'], [301, 302], true) && !str_contains($r['body'], 'id="appSidebar"'), "código {$r['code']}");
+    }
+    $r = $n->post('includes/gasto_eliminar.php', ['id' => 1, 'accion' => 'anular']);
+    check('no puede usar acciones de otras secciones', $r['code'] === 403 && ($r['json']['success'] ?? true) === false);
+    $gNoNomina = (int)$pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND archivo_adjunto IS NOT NULL AND descripcion NOT LIKE 'Sueldo %' AND descripcion NOT LIKE 'Bono:%' LIMIT 1")->fetchColumn();
+    if ($gNoNomina) check('no ve comprobantes de otros gastos', $n->get('gasto_archivo', ['id' => $gNoNomina])['code'] === 404);
+    $r = $n->get('includes/nomina_pago_accion.php', ['vinculos' => (int)$pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND descripcion LIKE 'Sueldo %' AND estado <> 'anulado' LIMIT 1")->fetchColumn()]);
+    check('puede consultar/anular pagos de nómina', ($r['json']['success'] ?? false) === true, $r['body']);
+    $f = login('qa.facturador@local.test');
+    check('el facturador sigue sin acceso a Pagos de nómina', $f->get('pagos_nomina')['code'] === 302);
+    $a = login('qa.admin@local.test');
+    $r = $a->get('usuarios');
+    check('el rol Nómina se puede asignar en Usuarios', str_contains($r['body'], 'value="nomina"'));
+    $pdo->exec("DELETE FROM usuario_establecimientos WHERE usuario_id = $uid");
+    $pdo->exec("DELETE FROM usuarios WHERE id = $uid");
+});
+
+suite('Recuperar contraseña por correo', function () {
+    $pdo = db();
+    if (!$pdo->query("SHOW TABLES LIKE 'clave_resets'")->fetchColumn()) { check('migración clave_resets instalada', false); return; }
+    $dir = '/private/tmp/claude-501/-Applications-XAMPP-xamppfiles-htdocs-proyectos-NARANJA-sistemafacturacion/ee82cda1-ff6c-4bf7-8e00-1c9a72466389/scratchpad/correos';
+    $pdo->exec("DELETE FROM login_intentos WHERE clave LIKE 'reset:%' OR clave LIKE 'login:%'");
+    $a = login('qa.admin@local.test');
+    $a->post('includes/correo_accion.php', ['accion' => 'guardar', 'perfil' => 'facturacion', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna',
+        'usuario' => 'qa', 'clave' => 'clave-de-prueba', 'remitente_email' => 'facturacion@ejemplo.test', 'responder_a' => 'gerencia@ejemplo.test', 'activo' => 1]);
+    $ultimo = function () use ($dir) { $f = glob("$dir/*.eml") ?: []; sort($f); return $f ? file_get_contents(end($f)) : ''; };
+    $html = function (string $eml) { return preg_match('/Content-Type: text\/html; charset=UTF-8\r?\nContent-Transfer-Encoding: base64\r?\n\r?\n(.*?)\r?\n--/s', $eml, $m) ? base64_decode(preg_replace('/\s+/', '', $m[1])) : ''; };
+
+    $v = new Cliente('visitante');
+    $r = $v->get('index.php');
+    check('el login tiene «¿Olvidaste tu contraseña?»', str_contains($r['body'], 'href="recuperar_clave"'));
+    $form = $v->get('recuperar_clave');
+    preg_match('/name="_csrf" value="([a-f0-9]+)"/', $form['body'], $m);
+    $csrf = $m[1] ?? '';
+    $antes = count(glob("$dir/*.eml") ?: []);
+    $r = $v->post('recuperar_clave', ['correo' => 'no.existe@local.test', '_csrf' => $csrf]);
+    check('un correo que no existe recibe la misma respuesta y no envía nada', str_contains($r['body'], 'recibirá un correo') && count(glob("$dir/*.eml") ?: []) === $antes);
+    $r = $v->post('recuperar_clave', ['correo' => 'qa.ccic@local.test', '_csrf' => $csrf]);
+    check('no envía a usuarios de otra empresa por esta URL', count(glob("$dir/*.eml") ?: []) === $antes);
+    $r = $v->post('recuperar_clave', ['correo' => 'qa.admin@local.test', '_csrf' => $csrf]);
+    $eml = $ultimo();
+    preg_match('/restablecer_clave\?token=([a-f0-9]{64})/', $html($eml), $t);
+    $token = $t[1] ?? '';
+    check('envía el enlace al usuario, desde la cuenta Facturación', count(glob("$dir/*.eml") ?: []) === $antes + 1 && str_contains($eml, 'To: <qa.admin@local.test>') && $token !== '', substr($eml, 0, 300));
+    check('en la BD solo se guarda el hash del token', !(int)$pdo->query("SELECT COUNT(*) FROM clave_resets WHERE token_hash = " . $pdo->quote($token))->fetchColumn()
+        && (int)$pdo->query("SELECT COUNT(*) FROM clave_resets WHERE token_hash = '" . hash('sha256', $token) . "'")->fetchColumn() === 1);
+    $r = $v->get('restablecer_clave', ['token' => $token]);
+    check('el enlace abre el formulario', str_contains($r['body'], 'name="clave2"') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    preg_match('/name="_csrf" value="([a-f0-9]+)"/', $r['body'], $m);
+    $r = $v->post('restablecer_clave', ['token' => $token, '_csrf' => $m[1] ?? '', 'clave' => 'corta1A', 'clave2' => 'corta1A']);
+    check('rechaza una contraseña débil', str_contains($r['body'], 'al menos 10'));
+    $r = $v->post('restablecer_clave', ['token' => $token, '_csrf' => $m[1] ?? '', 'clave' => 'NuevaClave2026', 'clave2' => 'OtraClave2026']);
+    check('rechaza si no coinciden', str_contains($r['body'], 'no coinciden'));
+    $r = $v->post('restablecer_clave', ['token' => $token, '_csrf' => 'malo', 'clave' => 'NuevaClave2026', 'clave2' => 'NuevaClave2026']);
+    check('pide el token CSRF', str_contains($r['body'], 'venció'));
+    $r = $v->post('restablecer_clave', ['token' => $token, '_csrf' => $m[1] ?? '', 'clave' => 'NuevaClave2026', 'clave2' => 'NuevaClave2026']);
+    $hash = $pdo->query("SELECT clave FROM usuarios WHERE correo = 'qa.admin@local.test'")->fetchColumn();
+    check('cambia la contraseña', str_contains($r['body'], 'tu contraseña cambió') && password_verify('NuevaClave2026', $hash));
+    $r = $v->get('restablecer_clave', ['token' => $token]);
+    check('el enlace no sirve dos veces', str_contains($r['body'], 'no es válido, ya se usó o venció'));
+    $n = new Cliente('nueva');
+    $r = $n->post('index.php', ['correo' => 'qa.admin@local.test', 'clave' => 'NuevaClave2026']);
+    check('se puede entrar con la contraseña nueva', in_array($r['code'], [301, 302], true) && !str_contains($r['body'], 'Credenciales inválidas'));
+    // Vencido
+    $v->post('recuperar_clave', ['correo' => 'qa.admin@local.test', '_csrf' => $csrf]);
+    preg_match('/restablecer_clave\?token=([a-f0-9]{64})/', $html($ultimo()), $t2);
+    $pdo->exec("UPDATE clave_resets SET expira = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE usado_en IS NULL");
+    check('un enlace vencido no sirve', str_contains($v->get('restablecer_clave', ['token' => $t2[1] ?? ''])['body'], 'venció'));
+    // Límite de solicitudes
+    for ($i = 0; $i < 5; $i++) $r = $v->post('recuperar_clave', ['correo' => 'qa.admin@local.test', '_csrf' => $csrf]);
+    check('limita las solicitudes repetidas', str_contains($r['body'], 'Demasiadas solicitudes'));
+    // Restaurar el estado de pruebas
+    $pdo->prepare("UPDATE usuarios SET clave = ? WHERE correo = 'qa.admin@local.test'")->execute([password_hash(QA_PASS, PASSWORD_DEFAULT)]);
+    $pdo->exec("DELETE FROM login_intentos WHERE clave LIKE 'reset:%'");
+    $pdo->exec("DELETE FROM clave_resets");
+    $pdo->exec("DELETE FROM configuracion_correo WHERE cliente_id = 2");
+    $pdo->exec("DELETE FROM correos_enviados WHERE cliente_id = 2");
+});

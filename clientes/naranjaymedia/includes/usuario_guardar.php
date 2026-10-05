@@ -26,6 +26,10 @@ if (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
     echo json_encode(['success' => false, 'error' => 'Correo no válido.']);
     exit;
 }
+if (!in_array($rol, ['superadmin', 'admin', 'facturador', 'lector', 'nomina'], true)) {
+    echo json_encode(['success' => false, 'error' => 'Rol no válido.']);
+    exit;
+}
 if ($rol === 'superadmin') {
     echo json_encode(['success' => false, 'error' => 'No se puede crear un superadmin desde este formulario.']);
     exit;

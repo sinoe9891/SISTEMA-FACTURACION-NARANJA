@@ -11,7 +11,7 @@ require_once __DIR__ . '/_gasto_adjuntos.php';
 header('Content-Type: application/json; charset=utf-8');
 
 try {
-    if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) throw new Exception("Solo un administrador puede modificar pagos de nómina.");
+    if (!puedeNomina()) throw new Exception("No tienes permiso para modificar pagos de nómina.");
     $cid = (int)cliente_actual();
     if (!$cid) throw new Exception("Empresa no identificada.");
 

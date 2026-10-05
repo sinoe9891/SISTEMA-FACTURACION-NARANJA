@@ -36,7 +36,7 @@ try {
             break;
 
         case 'enviar_pago':
-            if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true)) throw new Exception("No tienes permiso para enviar avisos.");
+            if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador', 'nomina'], true)) throw new Exception("No tienes permiso para enviar avisos.");
             $para = correoNotificarPago($pdo, $cid, (int)($_POST['gasto_id'] ?? 0), $uid);
             echo json_encode(['success' => true, 'message' => "Aviso de pago enviado a $para."], JSON_UNESCAPED_UNICODE);
             break;

@@ -2105,7 +2105,7 @@ $tipos_btn_p = [
                                                         <i class="bi bi-envelope<?= $__env ? '-check' : '' ?>"></i>
                                                     </button>
                                                 <?php endif; ?>
-                                                <?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'], true) && strpos((string)$p['descripcion'], 'Sueldo ') === 0): ?>
+                                                <?php if (puedeNomina() && strpos((string)$p['descripcion'], 'Sueldo ') === 0): ?>
                                                     <?php if ($p['estado'] !== 'anulado'): ?>
                                                         <button type="button" class="btn btn-xs btn-outline-secondary" data-nomina-accion="editar" data-id="<?= (int)$p['id'] ?>" style="font-size:10px;padding:2px 7px" title="Editar fecha, método, notas o comprobante"><i class="bi bi-pencil"></i></button>
                                                         <button type="button" class="btn btn-xs btn-outline-danger" data-nomina-accion="anular" data-id="<?= (int)$p['id'] ?>" style="font-size:10px;padding:2px 7px" title="Anular (deshace descuentos y libera la quincena)"><i class="bi bi-slash-circle"></i></button>

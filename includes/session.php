@@ -113,6 +113,42 @@ define('USUARIO_ID', $usuario['id']);
 define('USUARIO_NOMBRE', $usuario['nombre']);
 define('USUARIO_ROL', $usuario['rol']);
 
+/*
+ * Rol «nomina»: solo la sección Personal. Lista blanca de archivos (páginas y acciones); cualquier otro
+ * se rechaza aquí, para no depender de que cada página revise el rol.
+ */
+const ROL_NOMINA_ARCHIVOS = [
+    // Páginas
+    'colaboradores', 'colaborador_ver', 'colaborador_reporte', 'colaborador_recibo_pdf', 'pagos_nomina', 'pagos_nomina_exportar',
+    'gasto_archivo', 'gasto_ver', 'logout', 'seleccionar_establecimiento',
+    // Acciones (clientes/<empresa>/includes/)
+    'colaborador_guardar', 'colaborador_actualizar', 'colaborador_cuotas_info', 'colaborador_pago_guardar',
+    'prestamo_guardar', 'prestamo_editar', 'prestamo_cancelar', 'prestamo_eliminar', 'prestamo_cuota_pagar', 'prestamo_cuota_editar',
+    'nomina_pago_accion', 'correo_accion',
+];
+if (USUARIO_ROL === 'nomina' && !in_array(basename($_SERVER['SCRIPT_NAME'] ?? '', '.php'), ROL_NOMINA_ARCHIVOS, true)) {
+    $__esAccion = str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/includes/') || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET';
+    if ($__esAccion) {
+        http_response_code(403);
+        header('Content-Type: application/json; charset=utf-8');
+        exit(json_encode(['success' => false, 'error' => 'Tu rol (Nómina) no tiene acceso a esta acción.'], JSON_UNESCAPED_UNICODE));
+    }
+    header('Location: colaboradores');
+    exit;
+}
+
+/** ¿El gasto es un pago a colaborador (sueldo, bono, viático o pago adicional)? El rol Nómina solo ve estos. */
+function esGastoNomina(string $descripcion): bool
+{
+    return (bool)preg_match('/^(Sueldo |Bono: |Vi[aá]tico: |Pago adicional - )/u', $descripcion);
+}
+
+/** ¿Puede administrar la nómina (registrar, editar, anular)? admin, superadmin y el rol Nómina. */
+function puedeNomina(): bool
+{
+    return in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true);
+}
+
 // (El resto de tu session.php sigue igual)
 // ✅ Mantener compatibilidad con el resto del sistema
 define('SUBDOMINIO_ACTUAL', $_SESSION['subdominio_actual'] ?? null);

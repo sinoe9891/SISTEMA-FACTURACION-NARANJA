@@ -233,6 +233,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </button>
                     </div>
                     <div class="form-text d-none" id="avisoMayus"><i class="bi bi-capslock"></i> Bloq Mayús está activado</div>
+                    <div class="text-end mt-2"><a href="recuperar_clave" class="small">¿Olvidaste tu contraseña?</a></div>
                 </div>
                 <button type="submit" class="btn btn-primary w-100 py-2" id="btnEntrar">
                     <span class="btn-texto"><i class="bi bi-box-arrow-in-right me-1"></i> Iniciar sesión</span>

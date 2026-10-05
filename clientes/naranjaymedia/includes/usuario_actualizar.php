@@ -27,6 +27,10 @@ if (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
     echo json_encode(['success' => false, 'error' => 'Correo no válido.']);
     exit;
 }
+if (!in_array($rol, ['superadmin', 'admin', 'facturador', 'lector', 'nomina'], true)) {
+    echo json_encode(['success' => false, 'error' => 'Rol no válido.']);
+    exit;
+}
 
 // Obtener rol actual del usuario a editar
 $stmtOld = $pdo->prepare("SELECT rol, cliente_id FROM usuarios WHERE id = ?");

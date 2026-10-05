@@ -6,7 +6,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/nomina_pagos.php';
 require_once '../../includes/xlsx.php';
 
-if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) {
+if (!puedeNomina()) {
     http_response_code(403);
     exit('No autorizado.');
 }

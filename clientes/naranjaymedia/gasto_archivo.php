@@ -12,11 +12,11 @@ require_once '../../includes/session.php';
 $cid = (int)(USUARIO_ROL === 'superadmin' ? ($_SESSION['cliente_seleccionado'] ?? 0) : CLIENTE_ID);
 $id  = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
 
-$stmt = $pdo->prepare("SELECT archivo_adjunto, archivo_nombre FROM gastos WHERE id = ? AND cliente_id = ?");
+$stmt = $pdo->prepare("SELECT archivo_adjunto, archivo_nombre, descripcion FROM gastos WHERE id = ? AND cliente_id = ?");
 $stmt->execute([$id ?: 0, $cid]);
 $g = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$g || empty($g['archivo_adjunto'])) {
+if (!$g || empty($g['archivo_adjunto']) || (USUARIO_ROL === 'nomina' && !esGastoNomina((string)$g['descripcion']))) {
     http_response_code(404);
     exit('Comprobante no encontrado.');
 }

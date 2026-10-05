@@ -86,6 +86,9 @@ $menuLateral = [
 	] : [],
 ];
 
+// Rol Nómina: solo la sección Personal (session.php bloquea el resto)
+if (USUARIO_ROL === 'nomina') $menuLateral = ['Personal' => $menuLateral['Personal']];
+
 // Título de la página actual para la barra superior
 $tituloActual = $titulo ?? null;
 if (!$tituloActual) {

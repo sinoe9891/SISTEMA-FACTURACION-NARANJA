@@ -926,6 +926,7 @@ require_once '../../includes/templates/header.php';
                                     'facturador' => ['label' => 'Facturador', 'class' => 'role-facturador', 'icon' => 'bi-file-earmark-text-fill'],
                                     'lector'     => ['label' => 'Lector',    'class' => 'role-lector',     'icon' => 'bi-eye-fill'],
                                     'asesor'     => ['label' => 'Asesor',    'class' => 'role-asesor',     'icon' => 'bi-person-badge-fill'],
+                                    'nomina'     => ['label' => 'Nómina',    'class' => 'role-asesor',     'icon' => 'bi-people-fill'],
                                 ];
                                 $rm = $roleMap[$u['rol']] ?? ['label' => ucfirst($u['rol']), 'class' => 'role-lector', 'icon' => 'bi-person']; ?>
                                 <span class="role-badge <?= $rm['class'] ?>"><i class="bi <?= $rm['icon'] ?>"></i>
@@ -1016,7 +1017,7 @@ require_once '../../includes/templates/header.php';
                                 <option value="admin">Admin</option>
                                 <option value="facturador">Facturador</option>
                                 <option value="lector">Lector</option>
-                                <option value="asesor">Asesor</option>
+                                <option value="nomina">Nómina (solo Personal: colaboradores y pagos)</option>
                                 <!-- superadmin solo lo puede crear el superadmin -->
                             </select>
                         </div>
