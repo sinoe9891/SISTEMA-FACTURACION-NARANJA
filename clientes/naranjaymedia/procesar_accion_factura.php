@@ -201,7 +201,23 @@ try {
 			? 'Buen día, ' . $contacto_nombre . ':'
 			: 'Estimado equipo de ' . $receptor_nombre . ':';
 
-		$total = array_sum(array_map(fn($f) => (float)$f['total'], $facturasSel));
+		// Saldo real de cada factura (descuenta abonos registrados en cuentas por cobrar)
+		$abonos = [];
+		try {
+			$stA = $pdo->prepare("SELECT factura_id, SUM(monto) FROM cobros_factura WHERE anulado = 0 AND factura_id IN ($placeholders) GROUP BY factura_id");
+			$stA->execute($factura_ids);
+			$abonos = $stA->fetchAll(PDO::FETCH_KEY_PAIR);
+		} catch (Throwable $e) {
+			$abonos = [];   // módulo de cuentas por cobrar no instalado
+		}
+		foreach ($facturasSel as &$fs) {
+			$fs['abonado'] = round((float)($abonos[$fs['id']] ?? 0), 2);
+			$fs['saldo'] = max(0, round((float)$fs['total'] - $fs['abonado'], 2));
+		}
+		unset($fs);
+		$total = $tipo === 'saldo_pendiente'
+			? array_sum(array_column($facturasSel, 'saldo'))
+			: array_sum(array_map(fn($f) => (float)$f['total'], $facturasSel));
 
 		$mesesEs = [
 			1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio',
@@ -249,11 +265,13 @@ try {
 			$detalle_facturas_html = $introHtml . "\n\n" . $listaConceptosHtml;
 		} else {
 			$lineas = array_map(
-				fn($f) => 'Factura N.° ' . $f['correlativo'] . ': L ' . number_format((float)$f['total'], 2),
+				fn($f) => 'Factura N.° ' . $f['correlativo'] . ': L ' . number_format($f['saldo'], 2)
+					. ($f['abonado'] > 0 ? ' (saldo; total L ' . number_format((float)$f['total'], 2) . ', abonado L ' . number_format($f['abonado'], 2) . ')' : ''),
 				$facturasSel
 			);
 			$lineasHtml = array_map(
-				fn($f) => 'Factura N.° ' . $b($f['correlativo']) . ': ' . $b('L ' . number_format((float)$f['total'], 2)),
+				fn($f) => 'Factura N.° ' . $b($f['correlativo']) . ': ' . $b('L ' . number_format($f['saldo'], 2))
+					. ($f['abonado'] > 0 ? ' (saldo; total L ' . number_format((float)$f['total'], 2) . ', abonado L ' . number_format($f['abonado'], 2) . ')' : ''),
 				$facturasSel
 			);
 			$detalle_facturas = implode("\n", $lineas);

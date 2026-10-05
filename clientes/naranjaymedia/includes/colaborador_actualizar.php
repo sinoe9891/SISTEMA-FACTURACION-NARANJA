@@ -82,6 +82,11 @@ try {
         $id, $cid
     ]);
 
+
+    // Género (opcional; solo si la columna existe — migración 2026-10-04_colaborador_genero.sql)
+    $genero = in_array($_POST['genero'] ?? '', ['masculino', 'femenino'], true) ? $_POST['genero'] : null;
+    $hayGenero = (bool)$pdo->query("SHOW COLUMNS FROM colaboradores LIKE 'genero'")->fetchColumn();
+    if ($hayGenero) $pdo->prepare("UPDATE colaboradores SET genero = ? WHERE id = ? AND cliente_id = ?")->execute([$genero, $id, $cid]);
     echo json_encode(['success' => true, 'message' => "Colaborador $nombre $apellido actualizado correctamente."]);
 
 } catch (Exception $e) {

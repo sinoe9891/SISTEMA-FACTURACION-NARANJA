@@ -267,9 +267,22 @@ try {
     if ($total_bonos > 0)     $msg .= " (bono +L " . number_format($total_bonos, 2) . ")";
     if ($total_viaticos > 0)  $msg .= " (viáticos +L " . number_format($total_viaticos, 2) . ")";
 
+    // Aviso por correo al colaborador (opcional). Si falla, el pago queda registrado igual.
+    $correo = null;
+    if (!empty($_POST['enviar_correo'])) {
+        require_once __DIR__ . '/../../../includes/correo_pagos.php';
+        try {
+            $para = correoNotificarPago($pdo, $cid, (int)$gasto_id, (int)USUARIO_ID);
+            $correo = ['enviado' => true, 'mensaje' => "Aviso enviado a $para"];
+        } catch (Throwable $e) {
+            $correo = ['enviado' => false, 'mensaje' => 'No se envió el aviso por correo: ' . $e->getMessage()];
+        }
+    }
+
     echo json_encode([
         'success'            => true,
         'gasto_id'           => $gasto_id,
+        'correo'             => $correo,
         'message'            => $msg,
         'cuotas_pagadas'     => count($cuotas_auto),
         'bonos_aplicados'    => count($bonos_aplicar),

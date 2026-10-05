@@ -3,6 +3,9 @@
 $titulo = 'Ver Colaborador';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
+require_once '../../includes/correo.php';
+$__cfgCorreo = correoDisponible($pdo) ? correoConfig($pdo, cliente_actual()) : null;
+$correoActivo = $__cfgCorreo && (int)$__cfgCorreo['activo'];
 require_once '../../includes/functions.php';
 require_once '../../includes/templates/header.php';
 
@@ -1517,8 +1520,8 @@ $tipos_btn_p = [
     <!-- ── Hero ─────────────────────────────────────────────────────────── -->
     <div class="cv-hero">
         <div class="cv-avatar-wrap">
-            <div class="cv-avatar">
-                <?= strtoupper(mb_substr($col['nombre'], 0, 1) . mb_substr($col['apellido'], 0, 1)) ?>
+            <div class="cv-avatar" title="<?= htmlspecialchars(ucfirst($col['genero'] ?? '')) ?>">
+                <?= ($col['genero'] ?? '') === 'femenino' ? '<i class="bi bi-person-standing-dress"></i>' : (($col['genero'] ?? '') === 'masculino' ? '<i class="bi bi-person-standing"></i>' : strtoupper(mb_substr($col['nombre'], 0, 1) . mb_substr($col['apellido'], 0, 1))) ?>
             </div>
             <span class="cv-status-dot <?= $col['activo'] ? 'on' : 'off' ?>"></span>
         </div>
@@ -2074,6 +2077,21 @@ $tipos_btn_p = [
                                                     style="font-size:10px;padding:2px 7px">
                                                     <i class="bi bi-file-pdf"></i>
                                                 </a>
+                                                <?php if (!empty($correoActivo) && strpos((string)($p['descripcion'] ?? ''), 'Sueldo ') === 0):
+                                                    // Avisos ya enviados (una sola consulta por página)
+                                                    if (!isset($__avisos)) {
+                                                        $__avisos = [];
+                                                        $__st = $pdo->prepare("SELECT referencia_id, MAX(creado_en) FROM correos_enviados WHERE cliente_id = ? AND tipo = 'pago_colaborador' AND estado = 'enviado' GROUP BY referencia_id");
+                                                        $__st->execute([cliente_actual()]);
+                                                        $__avisos = $__st->fetchAll(PDO::FETCH_KEY_PAIR);
+                                                    }
+                                                    $__env = $__avisos[$p['id']] ?? null; ?>
+                                                    <button type="button" class="btn btn-xs <?= $__env ? 'btn-outline-success' : 'btn-outline-primary' ?> btn-enviar-aviso"
+                                                        data-gasto="<?= (int)$p['id'] ?>" style="font-size:10px;padding:2px 7px"
+                                                        title="<?= $__env ? 'Aviso enviado el ' . date('d/m/Y H:i', strtotime($__env)) . ' · clic para reenviar' : 'Enviar aviso de pago por correo' ?>">
+                                                        <i class="bi bi-envelope<?= $__env ? '-check' : '' ?>"></i>
+                                                    </button>
+                                                <?php endif; ?>
                                             </div>
                                         </td>
                                     </tr>
@@ -2715,6 +2733,14 @@ $tipos_btn_p = [
                                 style="height:auto;resize:vertical"
                                 placeholder="N° transferencia, banco, referencia…"></textarea>
                         </div>
+                        <?php if (!empty($correoActivo)): ?>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="enviar_correo" value="1" id="pagoEnviarCorreo" checked>
+                                <label class="form-check-label small" for="pagoEnviarCorreo"><i class="bi bi-envelope-check me-1 text-primary"></i>Enviar aviso de pago por correo al colaborador (con el comprobante adjunto)</label>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                         <div class="col-12">
                             <label class="mf-label"><i class="bi bi-paperclip me-1 text-secondary"></i>Comprobante <span
                                     class="text-muted fw-normal" style="text-transform:none;letter-spacing:0">(opcional
@@ -2780,6 +2806,10 @@ $tipos_btn_p = [
                                 required></div>
                         <div class="col-md-2"><label class="mf-label">DPI</label><input type="text" name="dpi"
                                 class="mf-input" value="<?= htmlspecialchars($col['dpi'] ?? '') ?>"></div>
+                        <div class="col-md-4"><label class="mf-label">Género</label><select name="genero" class="mf-input">
+                                <option value="">Sin indicar</option>
+                                <option value="femenino" <?= ($col['genero'] ?? '') === 'femenino' ? 'selected' : '' ?>>Femenino</option>
+                                <option value="masculino" <?= ($col['genero'] ?? '') === 'masculino' ? 'selected' : '' ?>>Masculino</option></select></div>
                         <div class="col-md-4"><label class="mf-label">Teléfono</label><input type="text" name="telefono"
                                 class="mf-input" value="<?= htmlspecialchars($col['telefono'] ?? '') ?>"></div>
                         <div class="col-md-5"><label class="mf-label">Email</label><input type="email" name="email"
@@ -3310,6 +3340,8 @@ $tipos_btn_p = [
                         `<br><small class="text-success"><i class="bi bi-gift me-1"></i>${d.bonos_aplicados} bono(s) aplicado(s)</small>`;
                     if (d.viaticos_aplicados > 0) extras +=
                         `<br><small style="color:#0369a1"><i class="bi bi-airplane me-1"></i>${d.viaticos_aplicados} viático(s) liquidado(s)</small>`;
+                    if (d.correo) extras +=
+                        `<br><small class="${d.correo.enviado ? 'text-primary' : 'text-danger'}"><i class="bi bi-envelope${d.correo.enviado ? '-check' : '-x'} me-1"></i>${d.correo.mensaje}</small>`;
                     Swal.fire({
                         icon: 'success',
                         title: '¡Pago registrado!',
@@ -3849,4 +3881,22 @@ $tipos_btn_p = [
     recalcular();
 </script>
 
+<script>
+document.addEventListener('click', e => {
+    const b = e.target.closest('.btn-enviar-aviso');
+    if (!b) return;
+    const email = <?= json_encode((string)($col['email'] ?? '')) ?>;
+    if (!email) return Swal.fire('Sin correo', 'Agrega el correo del colaborador en «Editar» para poder enviarle avisos.', 'info');
+    Swal.fire({ title: 'Enviar aviso de pago', html: 'Se enviará la notificación con el comprobante adjunto a <strong>' + email.replace(/[<>&]/g, '') + '</strong>.',
+        icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' })
+        .then(r => {
+            if (!r.isConfirmed) return;
+            const fd = new FormData(); fd.append('accion', 'enviar_pago'); fd.append('gasto_id', b.dataset.gasto);
+            Swal.fire({ title: 'Enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            fetch('includes/correo_accion.php', { method: 'POST', body: fd }).then(r => r.json())
+                .then(d => { if (!d.success) throw new Error(d.error); Swal.fire({ icon: 'success', title: d.message }).then(() => location.reload()); })
+                .catch(err => Swal.fire('No se pudo enviar', err.message, 'error'));
+        });
+});
+</script>
 <?php require_once '../../includes/templates/footer.php'; ?>

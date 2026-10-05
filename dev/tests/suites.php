@@ -1124,3 +1124,114 @@ suite('Contrato tipo proyecto con pagos anticipados', function () {
     $pdo->exec("DELETE FROM contratos WHERE id=$ct");
     check('limpieza: contrato de prueba eliminado y factura restaurada', !(int)$pdo->query("SELECT COUNT(*) FROM contratos WHERE id=$ct")->fetchColumn());
 });
+
+suite('Correo SMTP y aviso de pago a colaboradores', function () {
+    $pdo = db();
+    if (!$pdo->query("SHOW TABLES LIKE 'configuracion_correo'")->fetchColumn()) { check('migración de correo instalada', false); return; }
+    $dir = '/private/tmp/claude-501/-Applications-XAMPP-xamppfiles-htdocs-proyectos-NARANJA-sistemafacturacion/ee82cda1-ff6c-4bf7-8e00-1c9a72466389/scratchpad/correos';
+    $c = login('qa.admin@local.test');
+    $base = ['accion' => 'guardar', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna', 'usuario' => 'qa',
+             'remitente_email' => 'facturacion@ejemplo.test', 'remitente_nombre' => 'Naranja & Media', 'responder_a' => 'admin@ejemplo.test', 'activo' => 1];
+    $r = $c->post('includes/correo_accion.php', $base + ['clave' => 'clave-de-prueba']);
+    check('se guarda la configuración SMTP', ($r['json']['success'] ?? false) === true, $r['body']);
+    $cif = $pdo->query("SELECT clave_cifrada FROM configuracion_correo WHERE cliente_id = 2")->fetchColumn();
+    check('la contraseña queda cifrada en la BD', $cif && !str_contains($cif, 'clave-de-prueba'));
+    $r = $c->get('configuracion_correo');
+    check('la página de correo carga y no muestra la contraseña', $r['code'] === 200 && sinErroresPhp($r['body']) && !str_contains($r['body'], 'clave-de-prueba'), errorPhp($r['body']));
+    $r = $c->post('includes/correo_accion.php', $base);   // sin clave: conserva la anterior
+    check('guardar sin contraseña conserva la anterior', ($r['json']['success'] ?? false) && $pdo->query("SELECT clave_cifrada FROM configuracion_correo WHERE cliente_id = 2")->fetchColumn() === $cif);
+
+    $antes = count(glob("$dir/*.eml") ?: []);
+    $r = $c->post('includes/correo_accion.php', ['accion' => 'probar', 'para' => 'qa@ejemplo.test']);
+    check('se envía el correo de prueba', ($r['json']['success'] ?? false) === true, $r['body']);
+    check('el servidor SMTP recibió el mensaje', count(glob("$dir/*.eml") ?: []) === $antes + 1);
+
+    // Aviso de pago: colaborador con correo y un sueldo con comprobante
+    $g = $pdo->query("SELECT id, descripcion FROM gastos WHERE cliente_id = 2 AND descripcion LIKE 'Sueldo %' AND estado <> 'anulado' AND archivo_adjunto IS NOT NULL ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC)
+        ?: $pdo->query("SELECT id, descripcion FROM gastos WHERE cliente_id = 2 AND descripcion LIKE 'Sueldo %' AND estado <> 'anulado' ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $nombre = preg_replace('/^Sueldo (.*?)( — .*)?$/u', '$1', $g['descripcion']);
+    $col = $pdo->prepare("SELECT id, email FROM colaboradores WHERE cliente_id = 2 AND CONCAT(nombre, ' ', apellido) = ?");
+    $col->execute([$nombre]);
+    $col = $col->fetch(PDO::FETCH_ASSOC);
+    $pdo->prepare("UPDATE colaboradores SET email = 'colaborador@ejemplo.test' WHERE id = ?")->execute([$col['id']]);
+    // Si el comprobante solo existe en el servidor, se crea uno temporal para la prueba
+    $adjRel = $pdo->query("SELECT archivo_adjunto FROM gastos WHERE id = " . (int)$g['id'])->fetchColumn();
+    $adjTmp = null;
+    if ($adjRel) {
+        $ruta = __DIR__ . '/../../clientes/naranjaymedia/includes/uploads/comprobantes_nomina/' . $adjRel;
+        if (!is_file($ruta)) { @mkdir(dirname($ruta), 0775, true); file_put_contents($ruta, base64_decode('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==')); $adjTmp = $ruta; }
+    }
+    $r = $c->post('includes/correo_accion.php', ['accion' => 'enviar_pago', 'gasto_id' => $g['id']]);
+    check('se envía el aviso de pago al colaborador', ($r['json']['success'] ?? false) === true, $r['body']);
+    $ult = glob("$dir/*.eml"); sort($ult); $eml = file_get_contents(end($ult));
+    check('el aviso va al correo del colaborador con asunto y Reply-To', str_contains($eml, 'To: <colaborador@ejemplo.test>') && str_contains($eml, 'Reply-To: <admin@ejemplo.test>') && str_contains($eml, 'Subject: =?UTF-8?B?'));
+    $html = '';
+    if (preg_match('/Content-Type: text\/html; charset=UTF-8\r?\nContent-Transfer-Encoding: base64\r?\n\r?\n(.*?)\r?\n--/s', $eml, $m)) $html = base64_decode(preg_replace('/\s+/', '', $m[1]));
+    check('la plantilla dice "pago" y trae la nota legal, sin la palabra "sueldo"', str_contains($html, 'Pago acreditado') && str_contains($html, 'No constituye contrato') && stripos($html, 'sueldo') === false);
+    $conAdj = (bool)$pdo->query("SELECT archivo_adjunto FROM gastos WHERE id = " . (int)$g['id'])->fetchColumn();
+    if ($conAdj) check('el comprobante va adjunto', str_contains($eml, 'Content-Disposition: attachment'));
+    if ($adjTmp) @unlink($adjTmp);
+    $f = $pdo->query("SELECT YEAR(fecha) a, MONTH(fecha) m FROM gastos WHERE id = " . (int)$g['id'])->fetch(PDO::FETCH_ASSOC);
+    $r = $c->get('colaborador_ver', ['id' => $col['id'], 'anio' => $f['a'], 'mes' => $f['m']]);
+    check('la ficha del colaborador muestra el aviso enviado', str_contains($r['body'], 'btn-enviar-aviso') && str_contains($r['body'], 'Aviso enviado el') && sinErroresPhp($r['body']), errorPhp($r['body']));
+
+    // Contraseña incorrecta: error claro y queda en la bitácora
+    $c->post('includes/correo_accion.php', $base + ['clave' => 'otra-clave']);
+    $r = $c->post('includes/correo_accion.php', ['accion' => 'probar', 'para' => 'qa@ejemplo.test']);
+    check('con contraseña incorrecta avisa el error', ($r['json']['success'] ?? true) === false && str_contains($r['json']['error'] ?? '', 'contraseña'), $r['body']);
+    check('la bitácora registra envíos y errores', (int)$pdo->query("SELECT COUNT(*) FROM correos_enviados WHERE cliente_id = 2 AND estado = 'error'")->fetchColumn() >= 1);
+    // Limpieza
+    $pdo->prepare("UPDATE colaboradores SET email = ? WHERE id = ?")->execute([$col['email'], $col['id']]);
+    $pdo->exec("DELETE FROM configuracion_correo WHERE cliente_id = 2");
+    $pdo->exec("DELETE FROM correos_enviados WHERE cliente_id = 2");
+    check('limpieza: configuración de prueba eliminada', !$pdo->query("SELECT COUNT(*) FROM configuracion_correo WHERE cliente_id = 2")->fetchColumn());
+});
+
+suite('Cron de avisos de pago automáticos', function () {
+    $pdo = db();
+    if (!$pdo->query("SHOW COLUMNS FROM configuracion_correo LIKE 'aviso_pago_auto'")->fetchColumn()) { check('migración de aviso automático instalada', false); return; }
+    $c = login('qa.admin@local.test');
+    $base = ['accion' => 'guardar', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna', 'usuario' => 'qa', 'clave' => 'clave-de-prueba',
+             'remitente_email' => 'nomina@ejemplo.test', 'responder_a' => 'gerencia@ejemplo.test; administracion@ejemplo.test', 'activo' => 1, 'aviso_pago_auto' => 1];
+    $r = $c->post('includes/correo_accion.php', $base + ['aviso_pago_hora' => 23]);
+    check('se guarda el aviso automático con su hora', ($r['json']['success'] ?? false) && (int)$pdo->query("SELECT aviso_pago_hora FROM configuracion_correo WHERE cliente_id = 2")->fetchColumn() === 23, $r['body']);
+    check('«Responder a» guarda varios correos', $pdo->query("SELECT responder_a FROM configuracion_correo WHERE cliente_id = 2")->fetchColumn() === 'gerencia@ejemplo.test, administracion@ejemplo.test');
+
+    // Colaborador con correo y tres pagos: hoy (sin aviso), hoy (ya avisado a mano) y ayer
+    $col = $pdo->query("SELECT * FROM colaboradores WHERE cliente_id = 2 AND activo = 1 LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $emailAntes = $col['email'];
+    $pdo->prepare("UPDATE colaboradores SET email = 'colab@ejemplo.test' WHERE id = ?")->execute([$col['id']]);
+    $desc = 'Sueldo ' . $col['nombre'] . ' ' . $col['apellido'];
+    $ins = $pdo->prepare("INSERT INTO gastos (cliente_id, descripcion, monto, fecha, frecuencia, quincena_num, tipo, metodo_pago, estado, notas) VALUES (2, ?, 100, ?, 'quincenal', ?, 'fijo', 'transferencia', 'pagado', 'QA-CRON')");
+    $ins->execute([$desc . ' — 1ª Quincena', date('Y-m-d'), 1]); $hoy = (int)$pdo->lastInsertId();
+    $ins->execute([$desc . ' — 2ª Quincena', date('Y-m-d'), 2]); $hoyManual = (int)$pdo->lastInsertId();
+    $ins->execute([$desc . ' — 2ª Quincena', date('Y-m-d', strtotime('-1 day')), 2]); $ayer = (int)$pdo->lastInsertId();
+    $r = $c->post('includes/correo_accion.php', ['accion' => 'enviar_pago', 'gasto_id' => $hoyManual]);
+    check('aviso manual enviado', ($r['json']['success'] ?? false) === true, $r['body']);
+
+    $cron = __DIR__ . '/../../cron/avisos_pago.php';
+    $correr = fn() => shell_exec('APP_DB=dev ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($cron) . ' 2>&1');
+    $cuenta = fn($id) => (int)$pdo->query("SELECT COUNT(*) FROM correos_enviados WHERE tipo = 'pago_colaborador' AND estado = 'enviado' AND referencia_id = $id")->fetchColumn();
+    if ((int)date('G') < 23) {
+        $correr();
+        check('antes de la hora configurada no envía nada', $cuenta($hoy) === 0);
+    }
+    $pdo->exec("UPDATE configuracion_correo SET aviso_pago_hora = 0 WHERE cliente_id = 2");
+    $salida = $correr();
+    check('a la hora configurada envía el pago de hoy', $cuenta($hoy) === 1, (string)$salida);
+    check('no repite el que ya se envió a mano', $cuenta($hoyManual) === 1);
+    check('no envía pagos de fechas pasadas', $cuenta($ayer) === 0);
+    $correr();
+    check('al volver a correr no duplica', $cuenta($hoy) === 1 && $cuenta($hoyManual) === 1);
+    $pdo->exec("UPDATE configuracion_correo SET aviso_pago_auto = 0 WHERE cliente_id = 2");
+    $ins->execute([$desc . ' — 1ª Quincena', date('Y-m-d'), 1]); $otro = (int)$pdo->lastInsertId();
+    $correr();
+    check('con el aviso automático apagado no envía', $cuenta($otro) === 0);
+    check('el cron no se puede abrir desde la web', $c->get('http://localhost:8383/proyectos/NARANJA/sistemafacturacion/cron/avisos_pago.php')['code'] !== 200);
+    // Limpieza
+    $pdo->exec("DELETE FROM gastos WHERE notas = 'QA-CRON'");
+    $pdo->prepare("UPDATE colaboradores SET email = ? WHERE id = ?")->execute([$emailAntes, $col['id']]);
+    $pdo->exec("DELETE FROM configuracion_correo WHERE cliente_id = 2");
+    $pdo->exec("DELETE FROM correos_enviados WHERE cliente_id = 2");
+    check('limpieza hecha', !(int)$pdo->query("SELECT COUNT(*) FROM gastos WHERE notas = 'QA-CRON'")->fetchColumn());
+});

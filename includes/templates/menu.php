@@ -70,6 +70,7 @@ $menuLateral = [
 	'Configuración' => array_values(array_filter([
 		$__menuEsAdmin ? ['configuracion_cai', 'bi-key', 'Configuración CAI', ['crear_cai', 'editar_cai']] : null,
 		$__menuEsAdmin ? ['configuracion_mensajes', 'bi-envelope', 'Mensajes y cuentas de pago', []] : null,
+		$__menuEsAdmin ? ['configuracion_correo', 'bi-envelope-at', 'Correo (SMTP)', []] : null,
 		$__menuEsAdmin ? ['usuarios', 'bi-person-gear', 'Usuarios', []] : null,
 	])),
 	// Solo superadmin: administración de la plataforma multiempresa

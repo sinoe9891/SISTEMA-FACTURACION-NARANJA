@@ -1,0 +1,5 @@
+# Los scripts de cron solo se ejecutan desde la línea de comandos, nunca por web
+Require all denied
+<IfModule !mod_authz_core.c>
+    Deny from all
+</IfModule>

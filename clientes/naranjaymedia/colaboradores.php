@@ -2,6 +2,9 @@
 $titulo = 'Colaboradores';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
+require_once '../../includes/correo.php';
+$__cfgCorreo = correoDisponible($pdo) ? correoConfig($pdo, cliente_actual()) : null;
+$correoActivo = $__cfgCorreo && (int)$__cfgCorreo['activo'];
 require_once '../../includes/functions.php';
 require_once '../../includes/templates/header.php';
 
@@ -1191,8 +1194,8 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                         <tr data-search="<?= htmlspecialchars($src) ?>" data-estado="<?= (int)$c['activo'] ? 'activo' : 'inactivo' ?>">
                             <td>
                                 <div class="d-flex align-items-center gap-2">
-                                    <div class="cl-avatar" style="background:<?= $ac ?>">
-                                        <?= mb_strtoupper(mb_substr($c['nombre'], 0, 1) . mb_substr($c['apellido'], 0, 1)) ?>
+                                    <div class="cl-avatar" style="background:<?= $ac ?>" title="<?= htmlspecialchars(ucfirst($c['genero'] ?? '')) ?>">
+                                        <?= ($c['genero'] ?? '') === 'femenino' ? '<i class="bi bi-person-standing-dress"></i>' : (($c['genero'] ?? '') === 'masculino' ? '<i class="bi bi-person-standing"></i>' : mb_strtoupper(mb_substr($c['nombre'], 0, 1) . mb_substr($c['apellido'], 0, 1))) ?>
                                     </div>
                                     <div>
                                         <div class="fw-semibold" data-col="nombre"><?= htmlspecialchars($nc) ?></div>
@@ -1306,6 +1309,8 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                                 name="apellido" id="c_apellido" class="mf-input" maxlength="100" required></div>
                         <div class="col-md-2"><label class="mf-label">DPI</label><input type="text" name="dpi"
                                 id="c_dpi" class="mf-input" maxlength="20"></div>
+                        <div class="col-md-4"><label class="mf-label">Género</label><select name="genero" id="c_genero" class="mf-input">
+                                <option value="">Sin indicar</option><option value="femenino">Femenino</option><option value="masculino">Masculino</option></select></div>
                         <div class="col-md-4"><label class="mf-label">Teléfono</label><input type="text" name="telefono"
                                 id="c_tel" class="mf-input" maxlength="20"></div>
                         <div class="col-md-5"><label class="mf-label">Email</label><input type="email" name="email"
@@ -1488,6 +1493,14 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                                 style="height:auto;resize:vertical;"
                                 placeholder="N° transferencia, banco, referencia..."></textarea>
                         </div>
+                        <?php if (!empty($correoActivo)): ?>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="enviar_correo" value="1" id="pagoEnviarCorreo" checked>
+                                <label class="form-check-label small" for="pagoEnviarCorreo"><i class="bi bi-envelope-check me-1 text-primary"></i>Enviar aviso de pago por correo al colaborador (con el comprobante adjunto)</label>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                         <div class="col-12">
                             <label class="mf-label"><i class="bi bi-paperclip me-1 text-secondary"></i>Comprobante <span
                                     class="text-muted fw-normal" style="text-transform:none;letter-spacing:0">(opcional
@@ -1705,6 +1718,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
             document.getElementById('colab_id').value = c.id;
             document.getElementById('c_nombre').value = c.nombre || '';
             document.getElementById('c_apellido').value = c.apellido || '';
+            document.getElementById('c_genero').value = c.genero || '';
             document.getElementById('c_dpi').value = c.dpi || '';
             document.getElementById('c_tel').value = c.telefono || '';
             document.getElementById('c_email').value = c.email || '';
@@ -1980,6 +1994,8 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                         `<br><small class="text-success"><i class="bi bi-gift me-1"></i>${d.bonos_aplicados} bono(s) aplicado(s)</small>`;
                     if (d.viaticos_aplicados > 0) extras +=
                         `<br><small style="color:#0369a1"><i class="bi bi-airplane me-1"></i>${d.viaticos_aplicados} viático(s) liquidado(s)</small>`;
+                    if (d.correo) extras +=
+                        `<br><small class="${d.correo.enviado ? 'text-primary' : 'text-danger'}"><i class="bi bi-envelope${d.correo.enviado ? '-check' : '-x'} me-1"></i>${d.correo.mensaje}</small>`;
                     Swal.fire({
                         icon: 'success',
                         title: '¡Pago registrado!',

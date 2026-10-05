@@ -50,6 +50,10 @@ try {
         if ($svDpi->fetchColumn() > 0) throw new Exception("Ya existe un colaborador activo con ese DPI.");
     }
 
+
+    // Género (opcional; solo si la columna existe — migración 2026-10-04_colaborador_genero.sql)
+    $genero = in_array($_POST['genero'] ?? '', ['masculino', 'femenino'], true) ? $_POST['genero'] : null;
+    $hayGenero = (bool)$pdo->query("SHOW COLUMNS FROM colaboradores LIKE 'genero'")->fetchColumn();
     $stmt = $pdo->prepare("
         INSERT INTO colaboradores
             (cliente_id, nombre, apellido, puesto, departamento, dpi, telefono, email,
@@ -65,9 +69,12 @@ try {
         $fecha_ingreso, $notas, USUARIO_ID
     ]);
 
+    $nuevoId = (int)$pdo->lastInsertId();
+    if ($hayGenero) $pdo->prepare("UPDATE colaboradores SET genero = ? WHERE id = ? AND cliente_id = ?")->execute([$genero, $nuevoId, $cid]);
+
     echo json_encode([
         'success' => true,
-        'id'      => $pdo->lastInsertId(),
+        'id'      => $nuevoId,
         'message' => "Colaborador $nombre $apellido registrado correctamente."
     ]);
 
