@@ -7,6 +7,7 @@ require_once '../../includes/cuentas.php';
 $cid = cliente_actual();
 $instalado = cxcDisponible($pdo);
 $puedeCobrar = in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true);
+$puedeCorreo = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);   // «Cobros por correo» es solo de administradores
 $facturas = $instalado && $cid ? cxcFacturasPendientes($pdo, $cid) : [];
 $cuentasHnl = ($instalado && bancosDisponible($pdo)) ? array_values(array_filter(bancoCuentas($pdo, $cid, true), fn($c) => $c['moneda'] === 'HNL')) : [];
 
@@ -58,9 +59,9 @@ require_once '../../includes/templates/header.php';
         <div class="app-card-header"><span><i class="bi bi-people me-1"></i> Por cliente</span><small class="text-muted fw-normal">Clic en el nombre para ver su estado de cuenta</small></div>
         <div class="table-responsive">
             <table class="table app-table">
-                <thead><tr><th class="app-n">#</th><th>Cliente</th><th>Meses adeudados</th><th class="app-num">Facturas</th><?php foreach ($tramos as $t => $v): ?><th class="app-num"><?= $t ?></th><?php endforeach; ?><th class="app-num">Saldo</th></tr></thead>
+                <thead><tr><th class="app-n">#</th><th>Cliente</th><th>Meses adeudados</th><th class="app-num">Facturas</th><?php foreach ($tramos as $t => $v): ?><th class="app-num"><?= $t ?></th><?php endforeach; ?><th class="app-num">Saldo</th><?php if ($puedeCorreo): ?><th></th><?php endif; ?></tr></thead>
                 <tbody>
-                    <?php if (!$porCliente): ?><tr><td colspan="9" class="text-center text-muted py-4"><i class="bi bi-check-circle text-success"></i> No hay saldos pendientes.</td></tr><?php endif; ?>
+                    <?php if (!$porCliente): ?><tr><td colspan="10" class="text-center text-muted py-4"><i class="bi bi-check-circle text-success"></i> No hay saldos pendientes.</td></tr><?php endif; ?>
                     <?php $nCli = 0; foreach ($porCliente as $rid => $p): ksort($p['meses']); $mesesTxt = array_map(fn($k) => $periodo((int)substr($k, 5), substr($k, 0, 4)), array_keys($p['meses'])); ?>
                         <tr>
                             <td class="app-n"><?= ++$nCli ?></td>
@@ -69,6 +70,7 @@ require_once '../../includes/templates/header.php';
                             <td class="app-num"><?= $p['facturas'] ?></td>
                             <?php foreach (array_keys($tramos) as $t): ?><td class="app-num <?= $p[$t] > 0 ? 'text-' . $colorTramo[$t] : 'text-muted' ?>"><?= $p[$t] > 0 ? number_format($p[$t], 2) : '—' ?></td><?php endforeach; ?>
                             <td class="app-num fw-semibold"><?= $L($p['saldo']) ?></td>
+                            <?php if ($puedeCorreo): ?><td class="text-end"><a class="btn btn-sm btn-outline-primary text-nowrap" href="cobros_programados?receptor_id=<?= (int)$rid ?>" title="Enviar o programar el cobro de su saldo por correo"><i class="bi bi-send"></i> Cobrar por correo</a></td><?php endif; ?>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -101,6 +103,7 @@ require_once '../../includes/templates/header.php';
                             <td class="app-num fw-semibold"><?= number_format((float)$f['saldo'], 2) ?></td>
                             <td class="text-end text-nowrap">
                                 <button class="btn btn-sm btn-outline-secondary btn-abonos" data-id="<?= (int)$f['id'] ?>" title="Ver abonos"><i class="bi bi-clock-history"></i></button>
+                                <?php if ($puedeCorreo): ?><a class="btn btn-sm btn-outline-primary" href="cobros_programados?receptor_id=<?= (int)$f['receptor_id'] ?>&facturas=<?= (int)$f['id'] ?>" title="Cobrar esta factura por correo"><i class="bi bi-send"></i></a><?php endif; ?>
                                 <?php if ($puedeCobrar): ?>
                                     <button class="btn btn-sm btn-success btn-cobrar" data-id="<?= (int)$f['id'] ?>" data-saldo="<?= number_format((float)$f['saldo'], 2, '.', '') ?>"
                                         data-corr="<?= htmlspecialchars($f['correlativo']) ?>" data-fecha="<?= substr($f['fecha_emision'], 0, 10) ?>"><i class="bi bi-cash-coin"></i> Cobrar</button>

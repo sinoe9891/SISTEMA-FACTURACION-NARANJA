@@ -38,7 +38,8 @@ if (!$col) {
 $filtro_tipo = trim($_GET['tipo']  ?? '');
 $filtro_mes  = (int)($_GET['mes']  ?? date('n'));
 $filtro_anio = (int)($_GET['anio'] ?? date('Y'));
-$filtro_todo = isset($_GET['todo']);
+// Sin mes elegido se muestra todo el historial (antes mostraba solo el mes actual y parecía vacío)
+$filtro_todo = isset($_GET['todo']) || (!isset($_GET['mes']) && !isset($_GET['anio']));
 
 $meses_nombres = [
     'Enero',

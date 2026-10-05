@@ -68,7 +68,7 @@ $stmtFacturas = $pdo->prepare("
     SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.subtotal,
            f.estado, f.pagada, f.enviada_receptor, f.estado_declarada,
            (f.isv_15 + f.isv_18) AS isv_total,
-           cf.nombre AS receptor
+           f.receptor_id, cf.nombre AS receptor
     FROM facturas f
     INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
     WHERE f.cliente_id = ? AND f.establecimiento_id = ?
@@ -1340,6 +1340,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 							class="bi bi-file-earmark-pdf"></i> Descargar PDFs</button>
 					<button type="button" id="fhBulkXlsxBtn" class="btn-fa btn-fa-view"><i
 							class="bi bi-file-earmark-excel"></i> Descargar XLSX</button>
+					<?php if ($esAdmin): ?><button type="button" id="fhBulkCorreoBtn" class="btn-fa btn-fa-view" title="Abre «Cobros por correo» con estas facturas como PDF adjunto"><i
+							class="bi bi-send"></i> Enviar por correo</button><?php endif; ?>
 					<button type="button" id="fhBulkMensajeBtn" class="btn-fa btn-fa-edit"><i
 							class="bi bi-envelope-fill"></i> Redactar correo</button>
 					<button type="button" id="fhBulkAnularBtn" class="btn-fa btn-fa-warn"><i
@@ -1386,7 +1388,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 						<tr
 							data-search="<?= strtolower(htmlspecialchars($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision'])))) ?>">
 							<td class="fh-select-col"><input type="checkbox" class="fh-row-check fh-row-select"
-									data-factura-id="<?= $f['id'] ?>"></td>
+									data-factura-id="<?= $f['id'] ?>" data-receptor-id="<?= (int)$f['receptor_id'] ?>" data-estado="<?= htmlspecialchars($f['estado']) ?>"></td>
 							<td><span class="corr-mono" data-col="corr"><?= htmlspecialchars($f['correlativo']) ?></span>
 							</td>
 							<td data-col="fecha"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
@@ -1644,6 +1646,15 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			if (!ids.length) return;
 			// Descarga directa: el servidor arma el .xlsx con las facturas de esta empresa
 			window.location.href = 'includes/facturas_xlsx.php?ids=' + encodeURIComponent(ids.join(','));
+		});
+		// Enviar por correo: un correo por cliente, en «Cobros por correo» (adjunta los PDF, CC de contactos, programar)
+		document.getElementById('fhBulkCorreoBtn')?.addEventListener('click', () => {
+			const cbs = rowCheckboxes.filter(cb => selectedIds.has(cb.dataset.facturaId));
+			if (!cbs.length) return;
+			if (cbs.some(cb => cb.dataset.estado !== 'emitida')) return Swal.fire('Facturas no válidas', 'Solo se pueden enviar facturas emitidas (no anuladas).', 'info');
+			const clientes = new Set(cbs.map(cb => cb.dataset.receptorId));
+			if (clientes.size > 1) return Swal.fire('Varios clientes', 'Cada correo va a un solo cliente. Selecciona facturas de un mismo cliente.', 'info');
+			window.location.href = 'cobros_programados?receptor_id=' + [...clientes][0] + '&tipo=envio_factura&facturas=' + cbs.map(cb => cb.dataset.facturaId).join(',');
 		});
 		$bulkMensajeBtn?.addEventListener('click', () => {
 			const ids = Array.from(selectedIds);

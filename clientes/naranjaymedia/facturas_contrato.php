@@ -50,6 +50,7 @@ $facturas = $stmtF->fetchAll(PDO::FETCH_ASSOC);
 // ── Abonos (cuentas por cobrar): cuánto se ha pagado de cada factura ─────────
 $hayAbonos = cxcDisponible($pdo);
 $puedeCobrar = in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true);
+$puedeCorreo = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);   // «Cobros por correo» es solo de administradores
 $abonadoPor = [];
 if ($hayAbonos && $facturas) {
     $ids = array_map('intval', array_column($facturas, 'id'));
@@ -626,6 +627,13 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                     <i class="bi bi-file-earmark-plus"></i> Nueva Factura
                 </a>
             <?php endif; ?>
+            <?php if ($puedeCorreo): ?>
+                <a href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&contrato_id=<?= (int)$contrato['id'] ?>" class="btn btn-sm"
+                    style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.3);font-weight:600"
+                    title="Enviar o programar por correo el cobro de las facturas con saldo de este contrato">
+                    <i class="bi bi-send me-1"></i>Cobrar por correo
+                </a>
+            <?php endif; ?>
             <a href="contratos" class="btn btn-sm"
                 style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.3);font-weight:600">
                 <i class="bi bi-arrow-left me-1"></i>Volver
@@ -1015,6 +1023,10 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                                 title="<?= $f['saldo'] > 0 ? 'Registrar abono / ver abonos' : 'Ver abonos' ?>">
                                                 <i class="bi bi-cash-coin"></i>
                                             </button>
+                                        <?php endif; ?>
+                                        <?php if ($puedeCorreo): ?>
+                                            <a href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&facturas=<?= (int)$f['id'] ?>&tipo=<?= $f['saldo'] > 0 ? 'saldo_pendiente' : 'envio_factura' ?>"
+                                                class="btn btn-sm btn-outline-secondary" title="Enviar esta factura por correo"><i class="bi bi-send"></i></a>
                                         <?php endif; ?>
                                         <button class="btn btn-sm btn-outline-danger btn-desvincular"
                                             data-factura-id="<?= $f['id'] ?>"

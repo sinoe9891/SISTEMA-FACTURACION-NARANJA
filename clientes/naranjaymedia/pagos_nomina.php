@@ -49,7 +49,7 @@ require_once '../../includes/templates/header.php';
     <div class="row g-2 align-items-end">
         <div class="col-6 col-md-2"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" value="<?= $f['desde'] ?>"></div>
         <div class="col-6 col-md-2"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" value="<?= $f['hasta'] ?>"></div>
-        <div class="col-md-3"><label class="form-label small">Colaborador</label>
+        <div class="col-md-2"><label class="form-label small">Colaborador</label>
             <select class="form-select form-select-sm" name="colaborador"><option value="">Todos</option>
                 <?php foreach ($colabs as $c): ?><option value="<?= (int)$c['id'] ?>" <?= $f['colaborador'] === (int)$c['id'] ? 'selected' : '' ?>><?= htmlspecialchars($c['nombre']) ?><?= (int)$c['activo'] ? '' : ' (inactivo)' ?></option><?php endforeach; ?>
             </select></div>
@@ -59,7 +59,7 @@ require_once '../../includes/templates/header.php';
             </select></div>
         <div class="col-6 col-md-1"><label class="form-label small">Quincena</label>
             <select class="form-select form-select-sm" name="quincena"><option value="">Todas</option><option value="1" <?= $f['quincena'] === '1' ? 'selected' : '' ?>>1ª</option><option value="2" <?= $f['quincena'] === '2' ? 'selected' : '' ?>>2ª</option><option value="mensual" <?= $f['quincena'] === 'mensual' ? 'selected' : '' ?>>Mensual</option></select></div>
-        <div class="col-6 col-md-1"><label class="form-label small">Comprobante</label>
+        <div class="col-6 col-md-2"><label class="form-label small">Comprobante</label>
             <select class="form-select form-select-sm" name="comprobante"><option value="">Todos</option><option value="con" <?= $f['comprobante'] === 'con' ? 'selected' : '' ?>>Con</option><option value="sin" <?= $f['comprobante'] === 'sin' ? 'selected' : '' ?>>Sin</option></select></div>
         <div class="col-6 col-md-1"><label class="form-label small">Aviso</label>
             <select class="form-select form-select-sm" name="aviso"><option value="">Todos</option><option value="si" <?= $f['aviso'] === 'si' ? 'selected' : '' ?>>Enviado</option><option value="no" <?= $f['aviso'] === 'no' ? 'selected' : '' ?>>Sin enviar</option></select></div>

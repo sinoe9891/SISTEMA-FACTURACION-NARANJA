@@ -43,7 +43,9 @@ function cobroLimpiarHtml(string $html): string
 
 function cobroTextoPlano(string $html): string
 {
-    $t = preg_replace('#<\s*(br|/p|/div|/li)\b[^>]*>#i', "\n", $html);
+    // En HTML los saltos de línea son solo espacio: los saltos reales salen de <br>, </p>, </div>, </li>
+    $t = preg_replace('/\s*\R\s*/', ' ', $html);
+    $t = preg_replace('#\s*<\s*(br|/p|/div|/li)\b[^>]*>\s*#i', "\n", $t);
     $t = html_entity_decode(strip_tags($t), ENT_QUOTES | ENT_HTML5, 'UTF-8');
     return trim(preg_replace("/\n{3,}/", "\n\n", $t));
 }

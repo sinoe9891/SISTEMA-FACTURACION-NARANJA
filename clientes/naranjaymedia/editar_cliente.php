@@ -669,6 +669,24 @@ if ($establecimiento_activo) {
 		</form>
 	</div>
 
+	<!-- Contactos adicionales: los marcados «Copiar en cobros» van en copia (CC) de los cobros por correo -->
+	<div class="cf-form-card mt-3" id="ccCard">
+		<div class="cf-form-card-header">
+			<div class="cf-form-card-header-icon"><i class="bi bi-people"></i></div>
+			<h5 class="cf-form-card-title">Contactos</h5>
+			<button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="ccNuevo"><i class="bi bi-plus-lg"></i> Agregar contacto</button>
+		</div>
+		<div class="cf-form-body">
+			<p class="text-muted small mb-3">Personas del cliente que reciben los cobros. Las marcadas con <i class="bi bi-envelope-check text-success"></i> se agregan automáticamente en copia (CC) al enviar un cobro por correo; el destinatario principal sigue siendo el correo del cliente. Si el cliente factura varios proyectos con el mismo nombre (p. ej. Aldea Global), asigna cada contacto a su proyecto: solo irá en copia de las facturas de ese contrato. Sin proyecto = va en copia de todos los cobros.</p>
+			<div class="table-responsive">
+				<table class="table table-sm align-middle mb-0">
+					<thead><tr><th>Nombre</th><th>Proyecto / contrato</th><th>Cargo</th><th>Correo</th><th>Teléfono</th><th class="text-center">Copiar en cobros</th><th></th></tr></thead>
+					<tbody id="ccFilas"><tr><td colspan="7" class="text-muted text-center py-3">Cargando…</td></tr></tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+
 </div>
 
 <script>
@@ -757,6 +775,83 @@ if ($establecimiento_activo) {
 
 	/* ── Init ────────────────────────────────────────────────────────────────── */
 	countChanges();
+</script>
+
+<script>
+	/* ── Contactos del cliente (se guardan al instante, aparte del formulario) ── */
+	(() => {
+		const URL_CC = 'includes/cliente_contactos.php', RID = <?= (int)$cliente['id'] ?>;
+		const $filas = document.getElementById('ccFilas');
+		const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+		let lista = [], contratos = [];
+
+		async function pedir(datos) {
+			const r = await fetch(datos ? URL_CC : `${URL_CC}?receptor_id=${RID}`, datos ? {method: 'POST', body: datos} : {});
+			let j;
+			try { j = await r.json(); } catch (e) { throw new Error('Respuesta inválida del servidor (' + r.status + ').'); }
+			if (!j.success) throw new Error(j.error || 'No se pudo completar.');
+			lista = j.contactos;
+			contratos = j.contratos || [];
+			pintar();
+		}
+
+		function pintar() {
+			$filas.innerHTML = lista.length ? lista.map(c => `<tr>
+				<td class="fw-semibold">${esc(c.nombre)}</td>
+				<td>${c.proyecto ? `<span class="badge text-bg-light border"><i class="bi bi-folder2 me-1"></i>${esc(c.proyecto)}</span>` : '<span class="text-muted small">Todos los cobros</span>'}</td><td>${esc(c.cargo) || '<span class="text-muted">—</span>'}</td>
+				<td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '<span class="text-muted">—</span>'}</td>
+				<td>${esc(c.telefono) || '<span class="text-muted">—</span>'}</td>
+				<td class="text-center">${+c.copiar_cobros && c.email ? '<i class="bi bi-envelope-check text-success" title="Va en copia de los cobros"></i>' : '<span class="text-muted">—</span>'}</td>
+				<td class="text-end text-nowrap">
+					<button type="button" class="btn btn-sm btn-outline-secondary" data-editar="${c.id}" title="Editar"><i class="bi bi-pencil"></i></button>
+					<button type="button" class="btn btn-sm btn-outline-danger" data-eliminar="${c.id}" title="Eliminar"><i class="bi bi-trash"></i></button>
+				</td></tr>`).join('')
+				: '<tr><td colspan="7" class="text-muted text-center py-3">Sin contactos adicionales.</td></tr>';
+		}
+
+		async function editar(c = {}) {
+			const {value: v} = await Swal.fire({
+				title: c.id ? 'Editar contacto' : 'Nuevo contacto',
+				html: `<div class="text-start">
+					<label class="form-label small mb-1">Nombre *</label><input id="ccN" class="form-control mb-2" maxlength="120" value="${esc(c.nombre)}">
+					<label class="form-label small mb-1">Proyecto / contrato</label>
+					<select id="ccP" class="form-select mb-2"><option value="">— Todos los cobros del cliente —</option>${contratos.map(k => `<option value="${k.id}" ${k.id == c.contrato_id ? 'selected' : ''}>${esc(k.nombre_contrato)}${k.estado !== 'activo' ? ' (' + esc(k.estado) + ')' : ''}</option>`).join('')}</select>
+					<label class="form-label small mb-1">Cargo</label><input id="ccC" class="form-control mb-2" maxlength="100" placeholder="Ej: Contabilidad" value="${esc(c.cargo)}">
+					<label class="form-label small mb-1">Correo</label><input id="ccE" type="email" class="form-control mb-2" maxlength="150" value="${esc(c.email)}">
+					<label class="form-label small mb-1">Teléfono</label><input id="ccT" class="form-control mb-2" maxlength="40" value="${esc(c.telefono)}">
+					<div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="ccK" ${c.id && !+c.copiar_cobros ? '' : 'checked'}>
+					<label class="form-check-label" for="ccK">Copiar en los cobros por correo</label></div></div>`,
+				showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', focusConfirm: false,
+				preConfirm: () => {
+					const n = document.getElementById('ccN').value.trim(), e = document.getElementById('ccE').value.trim();
+					if (!n) return Swal.showValidationMessage('Escribe el nombre.');
+					if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return Swal.showValidationMessage('Correo inválido.');
+					return {nombre: n, contrato_id: document.getElementById('ccP').value, cargo: document.getElementById('ccC').value.trim(), email: e,
+						telefono: document.getElementById('ccT').value.trim(), copiar_cobros: document.getElementById('ccK').checked ? '1' : ''};
+				}
+			});
+			if (!v) return;
+			const fd = new FormData();
+			fd.append('receptor_id', RID); fd.append('accion', 'guardar'); if (c.id) fd.append('id', c.id);
+			Object.entries(v).forEach(([k, x]) => fd.append(k, x));
+			try { await pedir(fd); Swal.fire({icon: 'success', title: 'Contacto guardado', timer: 1200, showConfirmButton: false}); }
+			catch (e) { Swal.fire('Error', e.message, 'error'); }
+		}
+
+		document.getElementById('ccNuevo').addEventListener('click', () => editar());
+		$filas.addEventListener('click', async ev => {
+			const ed = ev.target.closest('[data-editar]'), el = ev.target.closest('[data-eliminar]');
+			if (ed) editar(lista.find(c => c.id == ed.dataset.editar));
+			if (el) {
+				const c = lista.find(x => x.id == el.dataset.eliminar);
+				if (!(await Swal.fire({icon: 'warning', title: '¿Eliminar contacto?', text: c.nombre, showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc3545'})).isConfirmed) return;
+				const fd = new FormData();
+				fd.append('receptor_id', RID); fd.append('accion', 'eliminar'); fd.append('id', c.id);
+				try { await pedir(fd); } catch (e) { Swal.fire('Error', e.message, 'error'); }
+			}
+		});
+		pedir().catch(e => $filas.innerHTML = `<tr><td colspan="7" class="text-danger text-center py-3">${esc(e.message)}</td></tr>`);
+	})();
 </script>
 
 <?php require_once '../../includes/templates/footer.php'; ?>

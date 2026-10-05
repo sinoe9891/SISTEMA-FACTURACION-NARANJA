@@ -673,7 +673,7 @@ suite('Cuentas por cobrar y por pagar', function () {
     $c->post('includes/banco_accion.php', ['accion' => 'cuenta_guardar', 'banco' => 'QA Cobros', 'numero' => '999', 'tipo' => 'ahorro', 'moneda' => 'HNL', 'saldo_inicial' => 0, 'fecha_saldo_inicial' => date('Y-m-01')]);
     $cta = (int)db()->query("SELECT id FROM cuentas_bancarias WHERE banco='QA Cobros'")->fetchColumn();
 
-    $f = db()->query("SELECT f.* FROM facturas f WHERE f.cliente_id=2 AND f.estado='emitida' AND f.pagada=0 AND NOT EXISTS (SELECT 1 FROM cobros_factura c WHERE c.factura_id=f.id) AND f.total > 100 ORDER BY f.id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $f = db()->query("SELECT f.* FROM facturas f WHERE f.cliente_id=2 AND f.estado='emitida' AND f.pagada=0 AND NOT EXISTS (SELECT 1 FROM cobros_factura c WHERE c.factura_id=f.id AND c.anulado=0) AND f.total > 100 ORDER BY f.id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
     check('hay una factura pendiente para probar', (bool)$f);
     if (!$f) return;
     $fid = (int)$f['id'];
@@ -687,7 +687,7 @@ suite('Cuentas por cobrar y por pagar', function () {
     $r = $cobrar($c, ['monto' => 10, 'fecha' => '2000-01-01']);
     check('no permite fecha anterior a la factura', str_contains($r['json']['error'] ?? '', 'anterior'));
     $r = $cobrar($ccic, ['monto' => 10]);
-    check('otra empresa no puede cobrar la factura', !($r['json']['success'] ?? true) && !db()->query("SELECT COUNT(*) FROM cobros_factura WHERE factura_id=$fid")->fetchColumn());
+    check('otra empresa no puede cobrar la factura', !($r['json']['success'] ?? true) && !db()->query("SELECT COUNT(*) FROM cobros_factura WHERE factura_id=$fid AND anulado=0")->fetchColumn());
 
     $parcial = round($total * 0.4, 2);
     $r = $cobrar($fact, ['monto' => $parcial, 'cuenta_id' => $cta, 'referencia' => 'QA-1']);
@@ -699,7 +699,7 @@ suite('Cuentas por cobrar y por pagar', function () {
     $r = $c->get('cuentas_cobrar');
     check('…y sale de cuentas por cobrar', !str_contains($r['body'], htmlspecialchars($f['correlativo'])));
     $r = $c->get('includes/cxc_accion.php', ['factura_id' => $fid]);
-    check('historial: 2 abonos y saldo 0', count($r['json']['cobros'] ?? []) === 2 && (float)($r['json']['factura']['saldo'] ?? 1) == 0);
+    check('historial: 2 abonos y saldo 0', count(array_filter($r['json']['cobros'] ?? [], fn($x) => !(int)($x['anulado'] ?? 0))) === 2 && (float)($r['json']['factura']['saldo'] ?? 1) == 0);
 
     $abono1 = (int)db()->query("SELECT id FROM cobros_factura WHERE factura_id=$fid AND referencia='QA-1'")->fetchColumn();
     $r = $fact->post('includes/cxc_accion.php', ['accion' => 'anular_cobro', 'id' => $abono1, 'motivo' => 'QA']);
@@ -1086,7 +1086,7 @@ suite('Contrato tipo proyecto con pagos anticipados', function () {
     $pdo = db();
     // Factura emitida, sin pagar y sin abonos, para hacer de "factura final" del proyecto
     $f = $pdo->query("SELECT f.id, f.receptor_id, f.total, f.contrato_id, f.periodo_mes, f.periodo_anio FROM facturas f WHERE f.cliente_id=2 AND f.estado='emitida' AND f.pagada=0
-                      AND NOT EXISTS (SELECT 1 FROM cobros_factura c WHERE c.factura_id=f.id) ORDER BY f.total DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+                      AND NOT EXISTS (SELECT 1 FROM cobros_factura c WHERE c.factura_id=f.id AND c.anulado=0) ORDER BY f.total DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
     check('hay una factura de prueba disponible', (bool)$f);
     if (!$f) return;
     $prod = $pdo->query("SELECT id FROM productos_clientes WHERE cliente_id=2 LIMIT 1")->fetchColumn();
@@ -1311,4 +1311,83 @@ suite('Cobros por correo programados', function () {
     $pdo->exec("DELETE FROM configuracion_correo WHERE cliente_id = 2");
     $pdo->exec("DELETE FROM correos_enviados WHERE cliente_id = 2");
     check('limpieza hecha', !(int)$pdo->query("SELECT COUNT(*) FROM cobros_programados WHERE cliente_id = 2")->fetchColumn());
+});
+
+suite('Pagos de nómina', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $desde = '2025-01-01'; $hasta = date('Y-m-d');
+    $r = $c->get('pagos_nomina', ['desde' => $desde, 'hasta' => $hasta]);
+    check('la página carga sin avisos', $r['code'] === 200 && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $esperado = (float)$pdo->query("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id = 2 AND estado <> 'anulado' AND descripcion LIKE 'Sueldo %' AND fecha BETWEEN '$desde' AND '$hasta'")->fetchColumn();
+    $filas = substr_count($r['body'], '<tr data-fila>');
+    check('muestra pagos del periodo', $filas > 0, "filas=$filas");
+    $r2 = $c->get('pagos_nomina', ['desde' => $desde, 'hasta' => $hasta, 'tipo' => 'sueldo']);
+    check('el total de sueldos coincide con la BD', str_contains($r2['body'], number_format($esperado, 2)), number_format($esperado, 2));
+    $col = (int)$pdo->query("SELECT c.id FROM colaboradores c WHERE c.cliente_id = 2 AND EXISTS (SELECT 1 FROM gastos g WHERE g.cliente_id = 2 AND g.descripcion = CONCAT('Sueldo ', c.nombre, ' ', c.apellido, ' — 1ª Quincena') COLLATE utf8mb4_general_ci) LIMIT 1")->fetchColumn();
+    $r3 = $c->get('pagos_nomina', ['desde' => $desde, 'hasta' => $hasta, 'colaborador' => $col]);
+    check('filtra por colaborador', substr_count($r3['body'], '<tr data-fila>') > 0 && substr_count($r3['body'], '<tr data-fila>') < $filas);
+    $x = $c->get('pagos_nomina_exportar.php', ['formato' => 'xlsx', 'desde' => $desde, 'hasta' => $hasta]);
+    check('exporta XLSX válido', str_contains($x['head'], 'spreadsheetml') && str_starts_with($x['body'], "PK\x03\x04"));
+    $p = $c->get('pagos_nomina_exportar.php', ['formato' => 'pdf', 'desde' => $desde, 'hasta' => $hasta]);
+    check('exporta PDF válido', str_starts_with($p['body'], '%PDF'), substr($p['body'], 0, 120));
+    $v = $c->get('colaborador_ver', ['id' => $col]);
+    check('la ficha del colaborador muestra todo el historial por defecto', str_contains($v['body'], 'Todo') && substr_count($v['body'], 'colaborador_recibo_pdf.php?gasto_id=') > 0 && sinErroresPhp($v['body']), errorPhp($v['body']));
+    $f = login('qa.facturador@local.test');
+    check('un facturador no entra a pagos de nómina', $f->get('pagos_nomina')['code'] === 302 && $f->get('pagos_nomina_exportar.php', ['formato' => 'xlsx'])['code'] === 403);
+});
+
+suite('Contactos del cliente', function () {
+    $pdo = db();
+    if (!$pdo->query("SHOW TABLES LIKE 'clientes_factura_contactos'")->fetchColumn()) { check('migración de contactos instalada', false); return; }
+    $c = login('qa.admin@local.test');
+    $rid = (int)$pdo->query("SELECT receptor_id FROM facturas WHERE cliente_id = 2 AND estado = 'emitida' GROUP BY receptor_id ORDER BY COUNT(*) DESC LIMIT 1")->fetchColumn();
+    $pdo->prepare("DELETE FROM clientes_factura_contactos WHERE receptor_id = ? AND email LIKE '%@contacto.test'")->execute([$rid]);
+    $r = $c->get('editar_cliente', ['id' => $rid]);
+    check('la edición del cliente muestra la sección de contactos', str_contains($r['body'], 'id="ccCard"') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'Ana QA', 'cargo' => 'Contabilidad', 'email' => 'ana@contacto.test', 'copiar_cobros' => 1]);
+    check('agrega un contacto', ($r['json']['success'] ?? false) && in_array('ana@contacto.test', array_column($r['json']['contactos'] ?? [], 'email'), true), $r['body']);
+    $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'Luis QA', 'email' => 'luis@contacto.test']);
+    $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'Malo', 'email' => 'no-es-correo']);
+    check('rechaza un correo inválido', ($r['json']['success'] ?? true) === false);
+    $r = $c->get('cobro_accion.php', ['facturas' => $rid]);
+    $cc = array_column($r['json']['contactos'] ?? [], 'email');
+    check('el cobro trae en copia solo los contactos marcados', in_array('ana@contacto.test', $cc, true) && !in_array('luis@contacto.test', $cc, true), json_encode($cc));
+    $k = (int)$pdo->query("SELECT id FROM contratos WHERE cliente_id = 2 AND receptor_id = $rid LIMIT 1")->fetchColumn();
+    if ($k) {
+        $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'Proyecto QA', 'email' => 'proy@contacto.test', 'copiar_cobros' => 1, 'contrato_id' => $k]);
+        $p = array_values(array_filter($r['json']['contactos'] ?? [], fn($x) => $x['email'] === 'proy@contacto.test'));
+        check('asigna un contacto a un proyecto/contrato', ($p[0]['contrato_id'] ?? 0) == $k && ($p[0]['proyecto'] ?? '') !== '' && count($r['json']['contratos'] ?? []) > 0, $r['body']);
+        $r = $c->get('cobro_accion.php', ['facturas' => $rid]);
+        $p = array_values(array_filter($r['json']['contactos'] ?? [], fn($x) => $x['email'] === 'proy@contacto.test'));
+        check('el cobro indica el contrato del contacto y de cada factura', ($p[0]['contrato_id'] ?? 0) == $k && array_key_exists('contrato_id', $r['json']['facturas'][0] ?? []));
+    }
+    $otro = (int)$pdo->query("SELECT id FROM contratos WHERE cliente_id = 2 AND receptor_id <> $rid LIMIT 1")->fetchColumn();
+    $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'X', 'contrato_id' => $otro]);
+    check('rechaza un contrato de otro cliente', ($r['json']['success'] ?? true) === false, $r['body']);
+    $id = (int)$pdo->query("SELECT id FROM clientes_factura_contactos WHERE email = 'ana@contacto.test'")->fetchColumn();
+    $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid + 100000, 'accion' => 'eliminar', 'id' => $id]);
+    check('no permite tocar contactos de otro cliente', ($r['json']['success'] ?? true) === false);
+    $f = login('qa.ccic@local.test');
+    $r = $f->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'eliminar', 'id' => $id]);
+    check('otra empresa no puede tocar estos contactos', ($r['json']['success'] ?? true) === false);
+    $pdo->prepare("DELETE FROM clientes_factura_contactos WHERE receptor_id = ? AND email LIKE '%@contacto.test'")->execute([$rid]);
+});
+
+suite('Accesos directos a Cobros por correo', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $r = $c->get('cuentas_cobrar');
+    check('Cuentas por cobrar enlaza el cobro por correo por cliente', str_contains($r['body'], 'cobros_programados?receptor_id=') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $r = $c->get('lista_facturas');
+    check('el Historial de facturas tiene «Enviar por correo»', str_contains($r['body'], 'id="fhBulkCorreoBtn"') && str_contains($r['body'], 'data-receptor-id=') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $k = $pdo->query("SELECT f.contrato_id, f.receptor_id, f.id FROM facturas f WHERE f.cliente_id = 2 AND f.contrato_id IS NOT NULL AND f.estado = 'emitida' ORDER BY f.id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if ($k) {
+        $r = $c->get('facturas_contrato', ['contrato_id' => $k['contrato_id']]);
+        check('Facturas del contrato enlaza el cobro del contrato y por factura', str_contains($r['body'], 'contrato_id=' . $k['contrato_id'] . '" class="btn btn-sm"') && str_contains($r['body'], '&facturas=' . $k['id']) && sinErroresPhp($r['body']), errorPhp($r['body']));
+    }
+    $r = $c->get('cobros_programados', ['receptor_id' => $k['receptor_id'] ?? 0, 'facturas' => ($k['id'] ?? 0) . ',abc', 'tipo' => 'envio_factura']);
+    check('Cobros por correo recibe la preselección y el tipo', str_contains($r['body'], '"ids":[' . ($k['id'] ?? 0) . ']') && str_contains($r['body'], 'value="envio_factura" selected') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $f = login('qa.facturador@local.test');
+    check('un facturador no ve los accesos de correo', !str_contains($f->get('cuentas_cobrar')['body'], 'Cobrar por correo') && !str_contains($f->get('lista_facturas')['body'], 'id="fhBulkCorreoBtn"'));
 });

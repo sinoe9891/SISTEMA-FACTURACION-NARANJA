@@ -18,6 +18,11 @@ $clientes = $pdo->prepare("SELECT id, nombre, email FROM clientes_factura WHERE 
 $clientes->execute([$cid]);
 $clientes = $clientes->fetchAll(PDO::FETCH_ASSOC);
 $preRid = (int)($_GET['receptor_id'] ?? 0);
+// Accesos directos (Historial de facturas, Facturas del contrato, Cuentas por cobrar):
+//   ?receptor_id=X&facturas=1,2,3  → marca solo esas facturas · &contrato_id=N → las de ese contrato con saldo · &tipo=envio_factura
+$preFacturas = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['facturas'] ?? '')))));
+$preContrato = (int)($_GET['contrato_id'] ?? 0);
+$preTipo = isset(COBRO_TIPOS[$_GET['tipo'] ?? '']) ? $_GET['tipo'] : '';
 
 $cobros = [];
 if ($instalado) {
@@ -71,7 +76,7 @@ require_once '../../includes/templates/header.php';
                     </select></div>
                 <div class="col-md-6"><label class="form-label">Tipo de mensaje</label>
                     <select class="form-select" name="tipo" id="cTipo">
-                        <?php foreach (COBRO_TIPOS as $k => $t): ?><option value="<?= $k ?>"><?= $t ?></option><?php endforeach; ?>
+                        <?php foreach (COBRO_TIPOS as $k => $t): ?><option value="<?= $k ?>" <?= $preTipo === $k ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?>
                     </select></div>
                 <div class="col-12">
                     <label class="form-label d-flex justify-content-between align-items-center">2. Facturas a adjuntar (PDF) *
@@ -85,7 +90,7 @@ require_once '../../includes/templates/header.php';
                     <div class="small mt-1" id="cResumen"></div>
                 </div>
                 <div class="col-md-6"><label class="form-label">3. Para *</label><input class="form-control" name="para" id="cPara" placeholder="correo@cliente.com (varios separados por coma)" required></div>
-                <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" placeholder="opcional"></div>
+                <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="cCc" placeholder="opcional"><div class="form-text" id="cCcInfo">Se llena con los contactos del cliente marcados «Copiar en cobros». Varios correos separados por coma.</div></div>
                 <div class="col-12"><label class="form-label d-flex justify-content-between">4. Asunto y mensaje *
                     <a href="#" id="btnGenerar" class="small fw-normal"><i class="bi bi-magic"></i> Generar con la plantilla</a></label>
                     <input class="form-control mb-2" name="asunto" id="cAsunto" required>
@@ -153,6 +158,8 @@ require_once '../../includes/templates/header.php';
     document.getElementById('btnNuevoCobro')?.addEventListener('click', abrir);
     document.getElementById('btnCerrarNuevo')?.addEventListener('click', () => card.style.display = 'none');
 
+    let pre = <?= json_encode(['ids' => $preFacturas, 'contrato' => $preContrato]) ?>;   // preselección del acceso directo (solo la primera carga)
+    const marcarInicial = f => pre.ids.length ? pre.ids.includes(+f.id) : (pre.contrato ? f.contrato_id == pre.contrato && f.saldo > 0 : f.saldo > 0);
     const seleccionadas = () => [...$tb.querySelectorAll('input[type=checkbox]:checked')].map(i => i.value);
     function resumen() {
         const filas = [...$tb.querySelectorAll('input[type=checkbox]:checked')];
@@ -160,7 +167,19 @@ require_once '../../includes/templates/header.php';
         document.getElementById('cResumen').innerHTML = filas.length ? `<strong>${filas.length}</strong> factura(s) · saldo <strong>${L(saldo)}</strong>` : '<span class="text-muted">Ninguna factura seleccionada.</span>';
     }
     $tb.addEventListener('change', resumen);
-    function marcar(fn) { $tb.querySelectorAll('input[type=checkbox]').forEach(i => i.checked = fn(i)); resumen(); }
+
+    // CC: contactos generales del cliente + los del proyecto/contrato de las facturas marcadas.
+    // Si el usuario escribe en el campo, ya no se reemplaza automáticamente.
+    let contactos = [], ccManual = false;
+    const $cc = document.getElementById('cCc');
+    $cc.addEventListener('input', () => ccManual = true);
+    function llenarCc() {
+        if (ccManual) return;
+        const ks = new Set([...$tb.querySelectorAll('input[type=checkbox]:checked')].map(i => i.dataset.contrato).filter(Boolean));
+        $cc.value = [...new Set(contactos.filter(c => !c.contrato_id || ks.has(String(c.contrato_id))).map(c => c.email))].join(', ');
+    }
+    $tb.addEventListener('change', llenarCc);
+    function marcar(fn) { $tb.querySelectorAll('input[type=checkbox]').forEach(i => i.checked = fn(i)); resumen(); llenarCc(); }
     document.getElementById('selConSaldo')?.addEventListener('click', e => { e.preventDefault(); marcar(i => Number(i.dataset.saldo) > 0); });
     document.getElementById('selNinguna')?.addEventListener('click', e => { e.preventDefault(); marcar(() => false); });
 
@@ -170,13 +189,17 @@ require_once '../../includes/templates/header.php';
         try {
             const d = await fetch('cobro_accion.php?facturas=' + $cli.value).then(leer);
             if (d.cliente.email && !document.getElementById('cPara').value) document.getElementById('cPara').value = d.cliente.email;
+            contactos = d.contactos || [];
+            ccManual = false;
             $tb.innerHTML = d.facturas.length ? d.facturas.map(f => `<tr>
-                <td><input class="form-check-input" type="checkbox" name="factura_ids[]" value="${f.id}" data-saldo="${f.saldo}" ${f.saldo > 0 ? 'checked' : ''}></td>
+                <td><input class="form-check-input" type="checkbox" name="factura_ids[]" value="${f.id}" data-saldo="${f.saldo}" data-contrato="${f.contrato_id || ''}" ${marcarInicial(f) ? 'checked' : ''}></td>
                 <td class="font-monospace small text-nowrap"><a href="ver_factura?id=${f.id}" target="_blank">${esc(f.correlativo)}</a></td>
                 <td class="small">${meses[f.pm]} ${f.pa}</td><td class="small text-nowrap">${f.fecha.split('-').reverse().join('/')}</td>
                 <td class="app-num">${L(f.total)}</td><td class="app-num ${f.saldo > 0 ? 'text-danger fw-semibold' : 'text-success'}">${f.saldo > 0 ? L(f.saldo) : 'Pagada'}</td></tr>`).join('')
                 : '<tr><td colspan="6" class="text-center text-muted py-3">Este cliente no tiene facturas en los últimos 24 meses.</td></tr>';
+            pre = { ids: [], contrato: 0 };
             resumen();
+            llenarCc();
             if (seleccionadas().length) generar();
         } catch (err) { $tb.innerHTML = `<tr><td colspan="6" class="text-danger py-3">${esc(err.message)}</td></tr>`; }
     }
@@ -190,7 +213,8 @@ require_once '../../includes/templates/header.php';
             body: JSON.stringify({ accion: 'generar_mensaje', factura_ids: ids, tipo: document.getElementById('cTipo').value }) }).then(leer).catch(err => (Swal.fire('Error', err.message, 'error'), null));
         if (!r) return;
         document.getElementById('cAsunto').value = r.asunto || '';
-        document.getElementById('cMensaje').innerHTML = (r.mensaje_html || '').replace(/\n/g, '<br>');
+        // mensaje_html ya trae <br> (nl2br): los saltos de línea que quedan son solo espacio en HTML; no se convierten otra vez
+        document.getElementById('cMensaje').innerHTML = (r.mensaje_html || '').replace(/\r?\n/g, '');
     }
     document.getElementById('btnGenerar')?.addEventListener('click', e => { e.preventDefault(); generar(); });
     document.getElementById('cTipo')?.addEventListener('change', () => seleccionadas().length && generar());

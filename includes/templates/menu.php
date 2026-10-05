@@ -57,6 +57,7 @@ $menuLateral = [
 	])),
 	'Personal' => [
 		['colaboradores', 'bi-people', 'Colaboradores', ['colaborador_ver', 'colaborador_reporte']],
+		['pagos_nomina', 'bi-cash-stack', 'Pagos de nómina', []],
 	],
 	'Inventario' => [
 		['inventario', 'bi-boxes', 'Existencias', ['inventario_kardex', 'inventario_reportes'], $__menuPorReponer],

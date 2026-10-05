@@ -43,7 +43,7 @@ try {
         if (!$cli) throw new Exception("Cliente no encontrado.");
         $hayCxc = cxcDisponible($pdo);
         $st = $pdo->prepare("
-            SELECT f.id, f.correlativo, DATE(f.fecha_emision) AS fecha, f.total, f.pagada,
+            SELECT f.id, f.correlativo, f.contrato_id, DATE(f.fecha_emision) AS fecha, f.total, f.pagada,
                    COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) AS pm, COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) AS pa,
                    " . ($hayCxc ? "COALESCE((SELECT SUM(c.monto) FROM cobros_factura c WHERE c.factura_id = f.id AND c.anulado = 0), 0)" : "0") . " AS abonado
             FROM facturas f
@@ -55,7 +55,15 @@ try {
             $f['saldo'] = $f['abonado'] > 0 ? max(0, round((float)$f['total'] - $f['abonado'], 2)) : ((int)$f['pagada'] ? 0.0 : round((float)$f['total'], 2));
             return $f;
         }, $st->fetchAll(PDO::FETCH_ASSOC));
-        echo json_encode(['success' => true, 'cliente' => $cli, 'facturas' => $facturas], JSON_UNESCAPED_UNICODE);
+        // Contactos que van en copia de los cobros (si el módulo de contactos está instalado).
+        // Con contrato_id solo aplican a las facturas de ese contrato (proyectos distintos del mismo cliente).
+        $contactos = [];
+        if ($pdo->query("SHOW TABLES LIKE 'clientes_factura_contactos'")->fetchColumn()) {
+            $st = $pdo->prepare("SELECT nombre, email, contrato_id FROM clientes_factura_contactos WHERE cliente_id = ? AND receptor_id = ? AND copiar_cobros = 1 AND email IS NOT NULL AND email <> '' ORDER BY nombre");
+            $st->execute([$cid, $rid]);
+            $contactos = array_values(array_filter($st->fetchAll(PDO::FETCH_ASSOC), fn($c) => strcasecmp($c['email'], (string)$cli['email']) !== 0));
+        }
+        echo json_encode(['success' => true, 'cliente' => $cli, 'facturas' => $facturas, 'contactos' => $contactos], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
