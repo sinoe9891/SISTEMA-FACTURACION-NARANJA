@@ -86,7 +86,12 @@ require_once '../../includes/templates/header.php';
             <?= $cliente['email'] ? ' · ' . htmlspecialchars($cliente['email']) : '' ?>
         </p>
     </div>
-    <button class="btn btn-outline-secondary no-print" onclick="window.print()"><i class="bi bi-printer me-1"></i> Imprimir</button>
+    <div class="d-flex gap-2 no-print">
+        <?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?>
+            <a href="cobros_programados?receptor_id=<?= (int)$rid ?>" class="btn btn-primary"><i class="bi bi-send-check me-1"></i> Enviar cobro por correo</a>
+        <?php endif; ?>
+        <button class="btn btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i> Imprimir</button>
+    </div>
 </div>
 
 <?php if (!$instalado): ?>

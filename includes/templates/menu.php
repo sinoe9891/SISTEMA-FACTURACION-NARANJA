@@ -43,8 +43,9 @@ $menuLateral = [
 		['contratos', 'bi-file-earmark-text', 'Lista de contratos', ['editar_contrato', 'facturas_contrato', 'generar_recibo']],
 		['crear_contrato', 'bi-file-earmark-plus', 'Nuevo contrato', []],
 	],
-	'Finanzas' => [
+	'Finanzas' => array_values(array_filter([
 		['cuentas_cobrar', 'bi-cash-coin', 'Cuentas por cobrar', ['estado_cuenta']],
+		$__menuEsAdmin ? ['cobros_programados', 'bi-send-check', 'Cobros por correo', []] : null,
 		['cuentas_pagar', 'bi-calendar-check', 'Cuentas por pagar', []],
 		['bancos', 'bi-bank', 'Bancos', ['banco_cuenta']],
 		['cheques', 'bi-journal-check', 'Cheques', []],
@@ -53,7 +54,7 @@ $menuLateral = [
 		['categorias_gastos', 'bi-tags', 'Categorías de gastos', []],
 		['financiero', 'bi-graph-up', 'Estado de resultados', []],
 		['proyeccion', 'bi-graph-up-arrow', 'Proyección de flujo', []],
-	],
+	])),
 	'Personal' => [
 		['colaboradores', 'bi-people', 'Colaboradores', ['colaborador_ver', 'colaborador_reporte']],
 	],

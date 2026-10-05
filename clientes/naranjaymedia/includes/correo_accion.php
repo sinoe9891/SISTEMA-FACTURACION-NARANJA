@@ -29,8 +29,9 @@ try {
             $html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#0f172a"><p><strong>Correo de prueba</strong></p>'
                 . '<p>Si recibes este mensaje, la configuración SMTP del sistema de facturación funciona correctamente.</p>'
                 . '<p style="color:#64748b;font-size:12px">Enviado el ' . date('d/m/Y H:i') . '</p></div>';
-            correoEnviar($pdo, $cid, $para, 'Prueba de correo · Sistema de facturación', $html,
-                "Correo de prueba: la configuración SMTP funciona correctamente.\nEnviado el " . date('d/m/Y H:i'), [], 'prueba', null, $uid);
+            $perfil = correoPerfil($_POST['perfil'] ?? 'nomina');
+            correoEnviar($pdo, $cid, $para, 'Prueba de correo (' . CORREO_PERFILES[$perfil] . ') · Sistema de facturación', $html,
+                "Correo de prueba: la configuración SMTP funciona correctamente.\nEnviado el " . date('d/m/Y H:i'), [], 'prueba', null, $uid, $perfil);
             echo json_encode(['success' => true, 'message' => "Correo de prueba enviado a $para."], JSON_UNESCAPED_UNICODE);
             break;
 

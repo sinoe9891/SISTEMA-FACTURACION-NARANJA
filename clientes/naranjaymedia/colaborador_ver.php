@@ -2814,6 +2814,11 @@ $tipos_btn_p = [
                                 class="mf-input" value="<?= htmlspecialchars($col['telefono'] ?? '') ?>"></div>
                         <div class="col-md-5"><label class="mf-label">Email</label><input type="email" name="email"
                                 class="mf-input" value="<?= htmlspecialchars($col['email'] ?? '') ?>"></div>
+                        <div class="col-12"><div class="mf-label" style="margin-top:.25rem"><i class="bi bi-bank me-1"></i>Cuenta bancaria para pagos</div></div>
+                        <div class="col-md-4"><label class="mf-label">Banco</label><input type="text" name="banco" value="<?= htmlspecialchars($col['banco'] ?? '') ?>" class="mf-input" maxlength="100" placeholder="BAC, Banpaís, Ficohsa…"></div>
+                        <div class="col-md-3"><label class="mf-label">Tipo de cuenta</label><select name="tipo_cuenta"  class="mf-input">
+                                <option value="">—</option><option value="ahorro"<?= ($col['tipo_cuenta'] ?? '') === 'ahorro' ? ' selected' : '' ?>>Ahorro</option><option value="cheques"<?= ($col['tipo_cuenta'] ?? '') === 'cheques' ? ' selected' : '' ?>>Cheques</option></select></div>
+                        <div class="col-md-5"><label class="mf-label">Número de cuenta</label><input type="text" name="numero_cuenta" value="<?= htmlspecialchars($col['numero_cuenta'] ?? '') ?>" class="mf-input" maxlength="40" inputmode="numeric"></div>
                         <div class="col-md-3"><label class="mf-label">Fecha Ingreso *</label><input type="date"
                                 name="fecha_ingreso" class="mf-input" value="<?= $col['fecha_ingreso'] ?>" required>
                         </div>

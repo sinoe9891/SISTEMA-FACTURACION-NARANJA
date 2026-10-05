@@ -1235,3 +1235,80 @@ suite('Cron de avisos de pago automáticos', function () {
     $pdo->exec("DELETE FROM correos_enviados WHERE cliente_id = 2");
     check('limpieza hecha', !(int)$pdo->query("SELECT COUNT(*) FROM gastos WHERE notas = 'QA-CRON'")->fetchColumn());
 });
+
+suite('Cobros por correo programados', function () {
+    $pdo = db();
+    if (!$pdo->query("SHOW TABLES LIKE 'cobros_programados'")->fetchColumn()) { check('migración de cobros instalada', false); return; }
+    $dir = '/private/tmp/claude-501/-Applications-XAMPP-xamppfiles-htdocs-proyectos-NARANJA-sistemafacturacion/ee82cda1-ff6c-4bf7-8e00-1c9a72466389/scratchpad/correos';
+    $c = login('qa.admin@local.test');
+    $r = $c->post('includes/correo_accion.php', ['accion' => 'guardar', 'perfil' => 'facturacion', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna',
+        'usuario' => 'qa', 'clave' => 'clave-de-prueba', 'remitente_email' => 'facturacion@ejemplo.test', 'responder_a' => 'gerencia@ejemplo.test, administracion@ejemplo.test', 'activo' => 1]);
+    check('se guarda la cuenta de Facturación', ($r['json']['success'] ?? false) === true, $r['body']);
+    check('Nómina y Facturación son cuentas separadas', (int)$pdo->query("SELECT COUNT(*) FROM configuracion_correo WHERE cliente_id = 2 AND perfil = 'facturacion'")->fetchColumn() === 1);
+    $r = $c->get('configuracion_correo', ['tab' => 'facturacion']);
+    check('la configuración muestra las pestañas', str_contains($r['body'], 'tab-facturacion') && str_contains($r['body'], 'tab-bitacora') && sinErroresPhp($r['body']), errorPhp($r['body']));
+
+    $rid = (int)$pdo->query("SELECT receptor_id FROM facturas WHERE cliente_id = 2 AND estado = 'emitida' AND fecha_emision >= DATE_SUB(CURDATE(), INTERVAL 24 MONTH) GROUP BY receptor_id ORDER BY COUNT(*) DESC LIMIT 1")->fetchColumn();
+    $r = $c->get('cobro_accion.php', ['facturas' => $rid]);
+    check('lista las facturas del cliente con su saldo', ($r['json']['success'] ?? false) && count($r['json']['facturas'] ?? []) > 0 && isset($r['json']['facturas'][0]['saldo']), substr($r['body'], 0, 200));
+    $ids = array_slice(array_column($r['json']['facturas'] ?? [], 'id'), 0, 2);
+    $r = $c->get('cobros_programados', ['receptor_id' => $rid]);
+    check('la página de cobros carga', $r['code'] === 200 && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $msg = $c->postJson('procesar_accion_factura.php', ['accion' => 'generar_mensaje', 'factura_ids' => $ids, 'tipo' => 'saldo_pendiente']);
+    check('genera asunto y mensaje con la plantilla', ($msg['json']['success'] ?? false) && ($msg['json']['asunto'] ?? '') !== '', substr($msg['body'], 0, 200));
+
+    $base = ['accion' => 'crear', 'receptor_id' => $rid, 'tipo' => 'saldo_pendiente', 'para' => 'cliente@ejemplo.test', 'cc' => 'copia@ejemplo.test',
+             'asunto' => 'Saldo pendiente QA ✅', 'mensaje_html' => ($msg['json']['mensaje_html'] ?? 'Hola') . '<script>alert(1)</script>'];
+    foreach ($ids as $i => $fid) $base["factura_ids[$i]"] = $fid;
+    $antes = count(glob("$dir/*.eml") ?: []);
+    $r = $c->post('cobro_accion.php', $base + ['modo' => 'prueba', 'para_prueba' => 'yo@ejemplo.test']);
+    check('envía una prueba a mi correo', ($r['json']['success'] ?? false) === true, $r['body']);
+    $ult = glob("$dir/*.eml"); sort($ult); $eml = file_get_contents(end($ult));
+    check('la prueba llega solo a mi correo, con [PRUEBA] y los PDF adjuntos', count($ult) === $antes + 1 && str_contains($eml, 'To: <yo@ejemplo.test>') && !str_contains($eml, 'cliente@ejemplo.test')
+        && substr_count($eml, 'Content-Type: application/pdf') === count($ids));
+    $html = preg_match('/Content-Type: text\/html; charset=UTF-8\r?\nContent-Transfer-Encoding: base64\r?\n\r?\n(.*?)\r?\n--/s', $eml, $m) ? base64_decode(preg_replace('/\s+/', '', $m[1])) : '';
+    check('el correo dice que es automático, muestra los correos de respuesta y no trae scripts', str_contains($html, 'mensaje automático') && str_contains($html, 'gerencia@ejemplo.test') && !str_contains($html, '<script'));
+
+    $r = $c->post('cobro_accion.php', $base + ['modo' => 'programar', 'programado_para' => date('Y-m-d\TH:i', strtotime('+1 day'))]);
+    $idProg = (int)($r['json']['id'] ?? 0);
+    check('programa un cobro', $idProg > 0 && $pdo->query("SELECT estado FROM cobros_programados WHERE id = $idProg")->fetchColumn() === 'programado', $r['body']);
+    check('guarda los PDF al programar', (int)$pdo->query("SELECT COUNT(*) FROM cobros_programados_facturas WHERE cobro_id = $idProg")->fetchColumn() === count($ids));
+    $r = $c->post('cobro_accion.php', $base + ['modo' => 'programar', 'programado_para' => date('Y-m-d\TH:i', strtotime('-1 day'))]);
+    check('no deja programar en el pasado', ($r['json']['success'] ?? true) === false);
+
+    $cron = __DIR__ . '/../../cron/tareas.php';
+    $correr = fn() => shell_exec('APP_DB=dev ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($cron) . ' 2>&1');
+    $correr();
+    check('el cron no envía antes de la hora', $pdo->query("SELECT estado FROM cobros_programados WHERE id = $idProg")->fetchColumn() === 'programado');
+    $pdo->exec("UPDATE cobros_programados SET programado_para = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE id = $idProg");
+    $antes = count(glob("$dir/*.eml") ?: []);
+    $salida = $correr();
+    check('a la hora el cron lo envía al cliente con copia', $pdo->query("SELECT estado FROM cobros_programados WHERE id = $idProg")->fetchColumn() === 'enviado', (string)$salida);
+    $ult = glob("$dir/*.eml"); sort($ult); $eml = file_get_contents(end($ult));
+    check('va al cliente, con CC y desde Facturación', count($ult) === $antes + 1 && str_contains($eml, 'To: <cliente@ejemplo.test>') && str_contains($eml, 'Cc: <copia@ejemplo.test>') && str_contains($eml, 'facturacion@ejemplo.test'));
+    $correr();
+    check('no lo vuelve a enviar', count(glob("$dir/*.eml") ?: []) === $antes + 1);
+
+    $r = $c->post('cobro_accion.php', $base + ['modo' => 'programar', 'programado_para' => date('Y-m-d\TH:i', strtotime('+2 days'))]);
+    $idOtro = (int)($r['json']['id'] ?? 0);
+    $r = $c->post('cobro_accion.php', ['accion' => 'reprogramar', 'id' => $idOtro, 'programado_para' => date('Y-m-d\TH:i', strtotime('+3 days'))]);
+    check('se puede reprogramar', ($r['json']['success'] ?? false) === true, $r['body']);
+    $r = $c->post('cobro_accion.php', ['accion' => 'cancelar', 'id' => $idOtro]);
+    check('se puede cancelar', ($r['json']['success'] ?? false) && $pdo->query("SELECT estado FROM cobros_programados WHERE id = $idOtro")->fetchColumn() === 'cancelado');
+    $r = $c->post('cobro_accion.php', ['accion' => 'cancelar', 'id' => $idProg]);
+    check('no se cancela uno ya enviado', ($r['json']['success'] ?? true) === false);
+    $f = login('qa.facturador@local.test');
+    check('un facturador no puede programar cobros', ($f->get('cobro_accion.php', ['facturas' => $rid])['json']['success'] ?? true) === false);
+    check('los PDF no se pueden abrir desde la web', $c->get('includes/uploads/cobros/2/' . $idProg . '/x.pdf')['code'] === 403);
+
+    // Limpieza
+    foreach ($pdo->query("SELECT id FROM cobros_programados WHERE cliente_id = 2")->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        array_map('unlink', glob(__DIR__ . "/../../clientes/naranjaymedia/includes/uploads/cobros/2/$id/*") ?: []);
+        @rmdir(__DIR__ . "/../../clientes/naranjaymedia/includes/uploads/cobros/2/$id");
+    }
+    $pdo->exec("DELETE x FROM cobros_programados_facturas x JOIN cobros_programados c ON c.id = x.cobro_id WHERE c.cliente_id = 2");
+    $pdo->exec("DELETE FROM cobros_programados WHERE cliente_id = 2");
+    $pdo->exec("DELETE FROM configuracion_correo WHERE cliente_id = 2");
+    $pdo->exec("DELETE FROM correos_enviados WHERE cliente_id = 2");
+    check('limpieza hecha', !(int)$pdo->query("SELECT COUNT(*) FROM cobros_programados WHERE cliente_id = 2")->fetchColumn());
+});

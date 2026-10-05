@@ -57,6 +57,12 @@ function correoPagoPlantilla(array $g, array $c, array $empresa, bool $conAdjunt
 
     $filas = [['Concepto', 'Pago correspondiente a la ' . $periodo], ['Fecha de la transferencia', $fecha], ['Monto acreditado', $monto]];
     if ($ref) $filas[] = ['Referencia bancaria', $ref];
+    // Cuenta de destino del colaborador (solo los últimos 4 dígitos)
+    if (!empty($c['numero_cuenta'])) {
+        $dig = preg_replace('/\D/', '', (string)$c['numero_cuenta']);
+        $tipoCta = ['ahorro' => 'Ahorro', 'cheques' => 'Cheques'][$c['tipo_cuenta'] ?? ''] ?? '';
+        $filas[] = ['Cuenta de destino', implode(' · ', array_filter([trim((string)($c['banco'] ?? '')), trim($tipoCta . ' ••••' . substr($dig, -4))]))];
+    }
     if ($conAdjunto) $filas[] = ['Comprobante', 'Adjunto a este correo'];
     $tabla = '';
     foreach ($filas as [$k, $v]) {
@@ -83,7 +89,8 @@ function correoPagoPlantilla(array $g, array $c, array $empresa, bool $conAdjunt
         . '<h1 style="margin:0 0 18px;font-size:21px;color:#0f172a">Hola, ' . $e($nombre) . '</h1>'
         . '<p style="margin:0 0 18px;font-size:14.5px;line-height:1.6;color:#334155">Te informamos que <strong>' . $e($empresaNombre) . '</strong> realizó una transferencia a tu favor con el siguiente detalle:</p>'
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden">' . $tabla . '</table>'
-        . '<p style="margin:20px 0 0;font-size:14px;line-height:1.6;color:#334155">El acreditamiento en tu cuenta depende de los tiempos de tu banco. Si tienes alguna consulta sobre este pago, responde a este correo o comunícate con administración.</p>'
+        . '<p style="margin:20px 0 0;font-size:14px;line-height:1.6;color:#334155">El acreditamiento en tu cuenta depende de los tiempos de tu banco.</p>'
+        . '<p style="margin:12px 0 0;font-size:13px;line-height:1.6;color:#475569;background:#f8fafc;border-radius:8px;padding:10px 12px">' . correoPieAutomatico($cfg, $e) . '</p>'
         . '<p style="margin:22px 0 0;font-size:14px;color:#334155">Saludos cordiales,<br><strong>Administración · ' . $e($empresaNombre) . '</strong></p>'
         . '</td></tr>'
         . '<tr><td style="padding:16px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11px;line-height:1.55;color:#94a3b8">'
@@ -94,7 +101,7 @@ function correoPagoPlantilla(array $g, array $c, array $empresa, bool $conAdjunt
 
     $texto = "Hola, $nombre\n\n$empresaNombre realizó una transferencia a tu favor:\n\n";
     foreach ($filas as [$k, $v]) $texto .= "- $k: $v\n";
-    $texto .= "\nSi tienes alguna consulta sobre este pago, responde a este correo o comunícate con administración.\n\nSaludos cordiales,\nAdministración · $empresaNombre\n\n"
+    $texto .= "\n" . strip_tags(correoPieAutomatico($cfg, fn($t) => $t)) . "\n\nSaludos cordiales,\nAdministración · $empresaNombre\n\n"
         . "Notificación informativa. No constituye contrato, constancia laboral, recibo ni documento fiscal. Ante cualquier diferencia prevalecen los registros bancarios.";
     return [$asunto, $html, $texto];
 }

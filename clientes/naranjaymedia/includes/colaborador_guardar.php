@@ -71,6 +71,14 @@ try {
 
     $nuevoId = (int)$pdo->lastInsertId();
     if ($hayGenero) $pdo->prepare("UPDATE colaboradores SET genero = ? WHERE id = ? AND cliente_id = ?")->execute([$genero, $nuevoId, $cid]);
+    // Cuenta bancaria del colaborador (migración 2026-10-04_colaborador_cuenta.sql)
+    if ($pdo->query("SHOW COLUMNS FROM colaboradores LIKE 'numero_cuenta'")->fetchColumn()) {
+        $tipoCta = in_array($_POST['tipo_cuenta'] ?? '', ['ahorro', 'cheques'], true) ? $_POST['tipo_cuenta'] : null;
+        $pdo->prepare("UPDATE colaboradores SET banco = ?, tipo_cuenta = ?, numero_cuenta = ? WHERE id = ? AND cliente_id = ?")
+            ->execute([mb_substr(trim((string)($_POST['banco'] ?? '')), 0, 100) ?: null, $tipoCta,
+                mb_substr(preg_replace('/[^0-9A-Za-z-]/', '', (string)($_POST['numero_cuenta'] ?? '')), 0, 40) ?: null, $nuevoId, $cid]);
+    }
+
 
     echo json_encode([
         'success' => true,

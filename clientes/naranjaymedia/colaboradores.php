@@ -1315,6 +1315,11 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                                 id="c_tel" class="mf-input" maxlength="20"></div>
                         <div class="col-md-5"><label class="mf-label">Email</label><input type="email" name="email"
                                 id="c_email" class="mf-input" maxlength="150"></div>
+                        <div class="col-12"><div class="mf-label" style="margin-top:.25rem"><i class="bi bi-bank me-1"></i>Cuenta bancaria para pagos</div></div>
+                        <div class="col-md-4"><label class="mf-label">Banco</label><input type="text" name="banco" id="c_banco" class="mf-input" maxlength="100" placeholder="BAC, Banpaís, Ficohsa…"></div>
+                        <div class="col-md-3"><label class="mf-label">Tipo de cuenta</label><select name="tipo_cuenta" id="c_tipo_cuenta" class="mf-input">
+                                <option value="">—</option><option value="ahorro">Ahorro</option><option value="cheques">Cheques</option></select></div>
+                        <div class="col-md-5"><label class="mf-label">Número de cuenta</label><input type="text" name="numero_cuenta" id="c_numero_cuenta" class="mf-input" maxlength="40" inputmode="numeric"></div>
                         <div class="col-md-3"><label class="mf-label">Fecha Ingreso *</label><input type="date"
                                 name="fecha_ingreso" id="c_ingreso" class="mf-input" required></div>
                         <div class="col-md-5"><label class="mf-label">Puesto *</label><input type="text" name="puesto"
@@ -1722,6 +1727,9 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
             document.getElementById('c_dpi').value = c.dpi || '';
             document.getElementById('c_tel').value = c.telefono || '';
             document.getElementById('c_email').value = c.email || '';
+            document.getElementById('c_banco').value = c.banco || '';
+            document.getElementById('c_tipo_cuenta').value = c.tipo_cuenta || '';
+            document.getElementById('c_numero_cuenta').value = c.numero_cuenta || '';
             document.getElementById('c_ingreso').value = c.fecha_ingreso || '';
             document.getElementById('c_puesto').value = c.puesto || '';
             document.getElementById('c_depto').value = c.departamento || '';

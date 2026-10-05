@@ -124,6 +124,15 @@ function correoGuardarConfig(PDO $pdo, int $cid, array $d): void
     }
 }
 
+/** Texto del pie: mensaje automático y a quién escribir (los correos de «Responder a»). $e escapa HTML. */
+function correoPieAutomatico(array $cfg, callable $e): string
+{
+    $resp = correoLista((string)($cfg['responder_a'] ?? ''));
+    $links = implode(', ', array_map(fn($m) => '<a href="mailto:' . $e($m) . '" style="color:#64748b">' . $e($m) . '</a>', $resp));
+    return 'Este es un mensaje automático. Si tiene alguna consulta puede responder a este correo'
+        . ($links ? ' o escribir a ' . $links : '') . '.';
+}
+
 /** "a@x.com; b@y.com" → ['a@x.com', 'b@y.com'] */
 function correoLista(string $t): array
 {
