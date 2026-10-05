@@ -40,6 +40,7 @@ require_once '../../includes/templates/header.php';
     <div class="d-flex gap-2 flex-wrap">
         <a href="pagos_nomina_exportar.php?formato=xlsx&<?= htmlspecialchars($qs) ?>" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel me-1"></i> XLSX</a>
         <a href="pagos_nomina_exportar.php?formato=pdf&<?= htmlspecialchars($qs) ?>" target="_blank" class="btn btn-outline-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF</a>
+        <a href="colaboradores?registrar=1" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i> Registrar pago o movimiento</a>
         <a href="colaboradores" class="btn btn-primary"><i class="bi bi-people me-1"></i> Colaboradores</a>
     </div>
 </div>
@@ -92,12 +93,12 @@ require_once '../../includes/templates/header.php';
                 <span><i class="bi bi-list-ul me-1"></i> Pagos</span>
                 <div class="app-toolbar flex-grow-1 justify-content-end">
                     <div class="app-search" style="max-width:280px"><i class="bi bi-search"></i><input type="search" class="form-control form-control-sm" id="buscarPago" placeholder="Buscar colaborador, período, referencia…"></div>
-                    <select class="form-select form-select-sm" id="porPagina" style="width:auto"><option value="25">25/pág</option><option value="50">50/pág</option><option value="100">100/pág</option></select>
+                    <select class="form-select form-select-sm" id="porPagina" style="width:auto"><option value="10">10/pág</option><option value="25">25/pág</option><option value="50">50/pág</option><option value="100">100/pág</option></select>
                 </div>
             </div>
             <div class="table-responsive">
                 <table class="table app-table mb-0" id="tablaPagos">
-                    <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Colaborador</th><th>Concepto</th><th>Período</th><th>Método / ref.</th><th class="app-num">Monto</th><th class="text-center">Comprobante</th><th class="text-center">Aviso</th></tr></thead>
+                    <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Colaborador</th><th>Concepto</th><th>Período</th><th>Método / ref.</th><th class="app-num">Monto</th><th class="text-center">Comprobante</th><th class="text-center">Aviso</th><th class="text-end">Acciones</th></tr></thead>
                     <tbody>
                         <?php foreach ($pagos as $p): ?>
                             <tr data-fila>
@@ -115,10 +116,14 @@ require_once '../../includes/templates/header.php';
                                     <?php elseif ($correoActivo && $p['tiene_email']): ?><button class="btn btn-sm btn-outline-primary py-0 btn-aviso" data-gasto="<?= (int)$p['id'] ?>" title="Enviar aviso de pago"><i class="bi bi-envelope"></i> Enviar</button>
                                     <?php else: ?><span class="text-muted small" title="<?= $p['tiene_email'] ? 'La cuenta de correo Nómina no está activa' : 'El colaborador no tiene correo' ?>"><?= $p['tiene_email'] ? '—' : 'Sin correo' ?></span><?php endif; ?>
                                 </td>
+                                <td class="text-end text-nowrap"><?php if ($p['tipo'] === 'sueldo'): ?>
+                                    <button class="btn btn-sm btn-outline-secondary py-0" data-nomina-accion="editar" data-id="<?= (int)$p['id'] ?>" title="Editar fecha, método, notas o comprobante"><i class="bi bi-pencil"></i></button>
+                                    <button class="btn btn-sm btn-outline-danger py-0" data-nomina-accion="anular" data-id="<?= (int)$p['id'] ?>" title="Anular (deshace descuentos y libera la quincena)"><i class="bi bi-slash-circle"></i></button>
+                                <?php else: ?><a class="btn btn-sm btn-outline-secondary py-0" href="gasto_ver?id=<?= (int)$p['id'] ?>" title="Ver en Gastos"><i class="bi bi-eye"></i></a><?php endif; ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
-                    <?php if ($pagos): ?><tfoot><tr class="fw-semibold"><td colspan="6" class="text-end">Total (filtros aplicados)</td><td class="app-num"><?= number_format($res['total'], 2) ?></td><td colspan="2"></td></tr></tfoot><?php endif; ?>
+                    <?php if ($pagos): ?><tfoot><tr class="fw-semibold"><td colspan="6" class="text-end">Total (filtros aplicados)</td><td class="app-num"><?= number_format($res['total'], 2) ?></td><td colspan="3"></td></tr></tfoot><?php endif; ?>
                 </table>
             </div>
             <div class="app-pager" id="pagosPie"></div>
@@ -176,9 +181,10 @@ require_once '../../includes/templates/header.php';
 </div>
 
 <script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
+<script src="../../clientes/js/nomina-pago.js?v=<?= @filemtime(__DIR__ . '/../js/nomina-pago.js') ?>"></script>
 <script>
 (function () {
-    AppTabla('#tablaPagos', { buscar: '#buscarPago', porPagina: '#porPagina', pie: '#pagosPie', porPaginaInicial: 25, vacio: 'Sin pagos con estos filtros.' });
+    AppTabla('#tablaPagos', { buscar: '#buscarPago', porPagina: '#porPagina', pie: '#pagosPie', porPaginaInicial: 10, vacio: 'Sin pagos con estos filtros.' });
     // Los filtros se aplican al cambiar (las pestañas de abajo no recargan)
     document.querySelectorAll('#formFiltros select, #formFiltros input[type=date]').forEach(el => el.addEventListener('change', () => document.getElementById('formFiltros').submit()));
     document.querySelectorAll('.btn-aviso').forEach(b => b.addEventListener('click', async () => {

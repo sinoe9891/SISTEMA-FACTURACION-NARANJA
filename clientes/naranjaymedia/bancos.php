@@ -113,7 +113,7 @@ require_once '../../includes/templates/header.php';
         <div class="app-card">
             <div class="app-card-header"><span><i class="bi bi-clock-history me-1"></i> Últimos movimientos</span><a href="cheques" class="small">Chequera →</a></div>
             <div class="table-responsive">
-                <table class="table app-table">
+                <table data-paginar class="table app-table">
                     <thead><tr><th>Fecha</th><th>Cuenta</th><th>Tipo</th><th>Descripción</th><th class="app-num">Entrada</th><th class="app-num">Salida</th></tr></thead>
                     <tbody>
                         <?php if (!$recientes): ?><tr><td colspan="6" class="text-center text-muted py-4">Sin movimientos.</td></tr><?php endif; ?>

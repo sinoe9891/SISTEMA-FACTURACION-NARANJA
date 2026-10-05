@@ -81,7 +81,7 @@ require_once '../../includes/templates/header.php';
 
 <div class="app-card">
     <div class="table-responsive">
-        <table class="table app-table">
+        <table data-paginar class="table app-table">
             <thead><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Ref.</th><th class="app-num">Entrada</th><th class="app-num">Salida</th><th class="app-num">Saldo</th><th class="text-center" title="Conciliado con el estado de cuenta">Concil.</th><?php if ($puedeEditar): ?><th></th><?php endif; ?></tr></thead>
             <tbody>
                 <tr class="table-light"><td colspan="6" class="small text-muted">Saldo anterior</td><td class="app-num fw-semibold"><?= bancoMoneda($saldoAnterior, $mon) ?></td><td colspan="<?= $puedeEditar ? 2 : 1 ?>"></td></tr>

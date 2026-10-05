@@ -94,7 +94,7 @@ require_once '../../includes/templates/header.php';
         <a href="pos" class="btn btn-primary"><i class="bi bi-cart3 me-1"></i> Ir al punto de venta</a>
     </div>
     <?php if (!$instalado): ?><div class="alert alert-warning">El punto de venta no está instalado.</div><?php endif; ?>
-    <div class="app-card"><div class="table-responsive"><table class="table app-table">
+    <div class="app-card"><div class="table-responsive"><table data-paginar class="table app-table">
         <thead><tr><th>#</th><th>Tienda / caja</th><th>Cajero</th><th>Apertura</th><th>Cierre</th><th class="app-num">Ventas</th><th class="app-num">Total</th><th class="app-num">Diferencia</th><th></th></tr></thead>
         <tbody>
             <?php if (!$turnos): ?><tr><td colspan="9" class="text-center text-muted py-4">Sin turnos.</td></tr><?php endif; ?>

@@ -115,7 +115,7 @@ require_once '../../includes/templates/header.php';
     <div class="app-card">
         <div class="app-card-header"><span><i class="bi bi-list-check me-1"></i> Cobros</span><span class="app-badge"><?= count($cobros) ?></span></div>
         <div class="table-responsive">
-            <table class="table app-table mb-0">
+            <table data-paginar class="table app-table mb-0">
                 <thead><tr><th class="app-n">#</th><th>Cliente</th><th>Facturas</th><th>Para</th><th>Envío</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
                 <tbody>
                     <?php if (!$cobros): ?><tr><td colspan="7" class="text-center text-muted py-4">Aún no hay cobros. Usa «Nuevo cobro».</td></tr><?php endif; ?>

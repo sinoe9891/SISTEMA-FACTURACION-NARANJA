@@ -94,7 +94,7 @@ $tipoLabel = ['visa'=>'Visa','mastercard'=>'Mastercard','amex'=>'Amex','debito'=
             <span style="background:#dbeafe;color:#1d4ed8;border-radius:20px;padding:.15rem .65rem;font-size:.78rem;font-weight:600"><?= count($tarjetas) ?> registradas</span>
         </div>
         <div style="overflow-x:auto">
-            <table class="tj-table">
+            <table data-paginar class="tj-table">
                 <thead>
                     <tr>
                         <th>Tarjeta</th>

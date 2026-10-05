@@ -54,6 +54,8 @@ $menuLateral = [
 		['categorias_gastos', 'bi-tags', 'Categorías de gastos', []],
 		['financiero', 'bi-graph-up', 'Estado de resultados', []],
 		['proyeccion', 'bi-graph-up-arrow', 'Proyección de flujo', []],
+		['estados_financieros', 'bi-journal-text', 'Estado de resultados clásico', []],
+		['balance_general', 'bi-bank2', 'Balance general', []],
 	])),
 	'Personal' => [
 		['colaboradores', 'bi-people', 'Colaboradores', ['colaborador_ver', 'colaborador_reporte']],

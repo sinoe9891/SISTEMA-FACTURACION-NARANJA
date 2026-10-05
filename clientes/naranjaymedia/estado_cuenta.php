@@ -179,7 +179,7 @@ require_once '../../includes/templates/header.php';
 <div class="app-card">
     <div class="app-card-header"><span><i class="bi bi-clock-history me-1"></i> Abonos realizados</span><span class="app-badge"><?= count($abonos) ?></span></div>
     <div class="table-responsive">
-        <table class="table app-table mb-0">
+        <table data-paginar class="table app-table mb-0">
             <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Factura</th><th>Método</th><th>Referencia</th><th>Notas</th><th class="app-num">Monto</th></tr></thead>
             <tbody>
                 <?php $nAb = count($abonos); foreach ($abonos as $a): ?>
@@ -206,7 +206,7 @@ require_once '../../includes/templates/header.php';
 (function () {
     // Filtro: solo facturas con saldo / todas, con búsqueda y paginación
     let filtro = document.querySelector('[data-filtro].active')?.dataset.filtro || 'todas';
-    const tabla = AppTabla('#tablaFacturas', { buscar: '#buscarFactura', pie: '#facturasPie', porPaginaInicial: 15,
+    const tabla = AppTabla('#tablaFacturas', { buscar: '#buscarFactura', pie: '#facturasPie', porPaginaInicial: 10,
         filtro: tr => filtro === 'todas' || tr.dataset.saldo === '1', vacio: 'Sin facturas pendientes.' });
     document.querySelectorAll('[data-filtro]').forEach(b => b.addEventListener('click', () => {
         filtro = b.dataset.filtro;

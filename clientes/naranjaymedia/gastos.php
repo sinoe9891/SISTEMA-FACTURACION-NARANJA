@@ -959,6 +959,15 @@ $total  = count($gastos);
                                     <a href="gasto_ver?id=<?= $g['id'] ?>" class="btn-a btn-ver" title="Ver detalle">
                                         <i class="bi bi-eye-fill"></i>
                                     </a>
+                                    <?php if (stripos((string)$g['descripcion'], 'Sueldo ') === 0 && in_array(USUARIO_ROL, ['admin', 'superadmin'])): ?>
+                                        <!-- Pago de nómina: se edita/anula con su propio flujo para no dejar préstamos y bonos desfasados -->
+                                        <?php if ($est !== 'anulado'): ?>
+                                            <button class="btn-a btn-edit" data-nomina-accion="editar" data-id="<?= $g['id'] ?>" title="Editar pago de nómina"><i class="bi bi-pencil-fill"></i></button>
+                                            <button class="btn-a btn-anu" data-nomina-accion="anular" data-id="<?= $g['id'] ?>" title="Anular pago de nómina (deshace descuentos)"><i class="bi bi-slash-circle"></i></button>
+                                        <?php else: ?>
+                                            <button class="btn-a btn-del" data-nomina-accion="eliminar" data-id="<?= $g['id'] ?>" title="Eliminar"><i class="bi bi-trash3-fill"></i></button>
+                                        <?php endif; ?>
+                                    <?php else: ?>
                                     <button class="btn-a btn-edit btn-editar-gasto"
                                         data-gasto='<?= json_encode($g, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>'
                                         title="Editar"><i class="bi bi-pencil-fill"></i></button>
@@ -973,6 +982,7 @@ $total  = count($gastos);
                                             class="btn-a btn-del btn-eliminar-gasto" data-id="<?= $g['id'] ?>"
                                             data-desc="<?= htmlspecialchars(mb_substr($g['descripcion'] ?? '', 0, 40)) ?>"
                                             title="Eliminar"><i class="bi bi-trash3-fill"></i></button><?php endif; ?>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                         </tr>
@@ -1718,4 +1728,5 @@ $total  = count($gastos);
     });
 </script>
 
+<script src="../../clientes/js/nomina-pago.js?v=<?= @filemtime(__DIR__ . '/../js/nomina-pago.js') ?>"></script>
 <?php require_once '../../includes/templates/footer.php'; ?>

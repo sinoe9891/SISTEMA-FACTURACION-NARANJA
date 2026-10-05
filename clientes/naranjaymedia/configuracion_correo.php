@@ -178,7 +178,7 @@ require_once '../../includes/templates/header.php';
         <div class="app-card">
             <div class="app-card-header"><span><i class="bi bi-clock-history me-1"></i> Últimos envíos</span><span class="app-badge"><?= count($log) ?></span></div>
             <div class="table-responsive">
-                <table class="table app-table mb-0">
+                <table data-paginar class="table app-table mb-0">
                     <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Tipo</th><th>Destinatario</th><th>Asunto</th><th>Estado</th><th>Usuario</th></tr></thead>
                     <tbody>
                         <?php if (!$log): ?><tr><td colspan="7" class="text-center text-muted py-4">Aún no se han enviado correos.</td></tr><?php endif; ?>

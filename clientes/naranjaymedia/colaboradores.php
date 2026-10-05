@@ -903,7 +903,9 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
             <h4 style="font-size:1.35rem;font-weight:700;margin:0"><i class="bi bi-people me-2"></i>Gestión de Colaboradores</h4>
             <p style="font-size:.82rem;opacity:.8;margin:.25rem 0 0">Nómina, pagos, préstamos y viáticos del equipo</p>
         </div>
-        <div style="font-size:3rem;opacity:.2;font-weight:900;line-height:1">👥</div>
+        <button type="button" class="btn btn-light fw-semibold text-nowrap" id="btnRegistrarMov" style="color:#0f766e">
+            <i class="bi bi-plus-circle me-1"></i>Registrar pago o movimiento
+        </button>
     </div>
 
     <!-- Stats -->
@@ -2120,6 +2122,96 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
         document.getElementById('pago_comprobante').files = dt.files;
         mostrarPreviewPago(file);
     }
+</script>
+
+<?php $__regColabs = array_values(array_map(fn($c) => ['id' => (int)$c['id'], 'nombre' => trim($c['nombre'] . ' ' . $c['apellido']), 'cargo' => (string)($c['cargo'] ?? '')],
+    array_filter($colaboradores, fn($c) => (int)$c['activo'] === 1))); ?>
+<!-- MODAL: Registrar pago o movimiento → lleva a la ficha del colaborador, en su pestaña y con el formulario abierto -->
+<div class="modal fade" id="modalRegistrarMov" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-circle me-1"></i> Registrar pago o movimiento</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <label class="form-label fw-semibold" for="regBuscar">1. Colaborador</label>
+                <div class="position-relative mb-3">
+                    <input type="text" class="form-control" id="regBuscar" placeholder="Escribe un nombre…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="regLista">
+                    <div class="list-group position-absolute w-100 shadow-sm d-none" id="regLista" role="listbox" style="z-index:10;max-height:240px;overflow:auto"></div>
+                    <div class="form-text" id="regElegido">Solo colaboradores activos.</div>
+                </div>
+                <label class="form-label fw-semibold">2. ¿Qué vas a registrar?</label>
+                <div class="row g-2" id="regTipos">
+                    <?php foreach ([
+                        ['pago', 'bi-cash-coin', 'success', 'Pago de nómina', 'Quincena o mes; descuenta cuotas y suma bonos'],
+                        ['prestamo', 'bi-cash-stack', 'danger', 'Préstamo', 'Se descuenta en cuotas'],
+                        ['adelanto', 'bi-lightning-charge', 'warning', 'Adelanto', 'Descuento único en el próximo pago'],
+                        ['bono', 'bi-gift', 'success', 'Bono', 'Se suma al próximo pago'],
+                        ['viatico', 'bi-airplane', 'info', 'Viático', 'Gasto de viaje; se suma al próximo pago'],
+                        ['multa', 'bi-slash-circle', 'secondary', 'Multa / descuento', 'Descuento único'],
+                    ] as $i => [$v, $ic, $co, $lb, $de]): ?>
+                        <div class="col-6">
+                            <input type="radio" class="btn-check" name="regTipo" id="regTipo-<?= $v ?>" value="<?= $v ?>" <?= $i === 0 ? 'checked' : '' ?>>
+                            <label class="btn btn-outline-<?= $co ?> w-100 text-start h-100 py-2" for="regTipo-<?= $v ?>">
+                                <i class="bi <?= $ic ?> me-1"></i><strong><?= $lb ?></strong><div class="small opacity-75 fw-normal"><?= $de ?></div>
+                            </label>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="regIr" disabled>Continuar <i class="bi bi-arrow-right ms-1"></i></button></div>
+        </div>
+    </div>
+</div>
+<script>
+(() => {
+    const colabs = <?= json_encode($__regColabs, JSON_UNESCAPED_UNICODE) ?>;
+    const $in = document.getElementById('regBuscar'), $ls = document.getElementById('regLista'), $ir = document.getElementById('regIr'), $el = document.getElementById('regElegido');
+    const norm = t => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let elegido = null, vis = [], act = -1;
+    const modal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('modalRegistrarMov'));
+    function pintar() {
+        const q = norm($in.value.trim());
+        vis = colabs.filter(c => !q || q.split(/\s+/).every(w => norm(c.nombre + ' ' + c.cargo).includes(w)));
+        act = vis.length ? 0 : -1;
+        $ls.innerHTML = vis.length ? vis.map((c, i) => `<button type="button" role="option" class="list-group-item list-group-item-action py-2 ${i === act ? 'active' : ''}" data-i="${i}">${esc(c.nombre)}${c.cargo ? `<div class="small opacity-75">${esc(c.cargo)}</div>` : ''}</button>`).join('')
+            : '<div class="list-group-item text-muted small">Sin resultados.</div>';
+        $ls.classList.remove('d-none'); $in.setAttribute('aria-expanded', 'true');
+    }
+    function elegir(c) {
+        elegido = c; $in.value = c.nombre; $ls.classList.add('d-none'); $in.setAttribute('aria-expanded', 'false');
+        $el.innerHTML = `<i class="bi bi-check-circle text-success"></i> ${esc(c.nombre)}`; $ir.disabled = false;
+    }
+    $in.addEventListener('input', () => { elegido = null; $ir.disabled = true; $el.textContent = 'Solo colaboradores activos.'; pintar(); });
+    $in.addEventListener('focus', pintar);
+    $in.addEventListener('keydown', e => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault(); if (!vis.length) return;
+            act = (act + (e.key === 'ArrowDown' ? 1 : -1) + vis.length) % vis.length;
+            $ls.querySelectorAll('[data-i]').forEach(b => b.classList.toggle('active', +b.dataset.i === act));
+            $ls.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (elegido) $ir.click(); else if (act >= 0) elegir(vis[act]);
+        } else if (e.key === 'Escape' && !$ls.classList.contains('d-none')) { e.stopPropagation(); $ls.classList.add('d-none'); }
+    });
+    $ls.addEventListener('mousedown', e => { const b = e.target.closest('[data-i]'); if (b) { e.preventDefault(); elegir(vis[+b.dataset.i]); } });
+    $in.addEventListener('blur', () => setTimeout(() => $ls.classList.add('d-none'), 150));
+    document.getElementById('btnRegistrarMov').addEventListener('click', () => {
+        elegido = null; $in.value = ''; $ir.disabled = true; $el.textContent = 'Solo colaboradores activos.'; $ls.classList.add('d-none');
+        modal().show();
+    });
+    document.getElementById('modalRegistrarMov').addEventListener('shown.bs.modal', () => $in.focus());
+    if (new URLSearchParams(location.search).has('registrar')) {   // viene de «Pagos de nómina»
+        history.replaceState(null, '', location.pathname);
+        document.getElementById('btnRegistrarMov').click();
+    }
+    $ir.addEventListener('click', () => {
+        if (!elegido) return;
+        const tipo = document.querySelector('input[name=regTipo]:checked').value;
+        location.href = 'colaborador_ver?id=' + elegido.id + '&registrar=' + tipo;
+    });
+})();
 </script>
 
 <?php require_once '../../includes/templates/footer.php'; ?>

@@ -3,3 +3,5 @@
   · Sistema de Facturación · Desarrollado por
   <a href="https://naranjaymediahn.com" target="_blank" rel="noopener">Naranja &amp; Media</a>
 </footer>
+<!-- Tablas con data-paginar: 10 por página (ver clientes/js/app-tabla.js) -->
+<script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../../clientes/js/app-tabla.js') ?>"></script>

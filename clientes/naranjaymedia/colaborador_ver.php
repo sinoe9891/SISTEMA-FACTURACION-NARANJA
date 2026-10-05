@@ -1509,9 +1509,21 @@ $tipos_btn_p = [
             <i class="bi bi-file-earmark-pdf me-1"></i>PDF
         </a>
         <?php if ($col['activo']): ?>
-            <button class="btn btn-sm btn-primary btn-pagar-directo">
-                <i class="bi bi-cash-coin me-1"></i>Registrar pago
-            </button>
+            <!-- Registrar: cambia a la pestaña, baja hasta ella y abre el formulario -->
+            <div class="dropdown">
+                <button class="btn btn-sm btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-plus-circle me-1"></i>Registrar
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li><button class="dropdown-item" data-registrar="pago"><i class="bi bi-cash-coin text-success me-2"></i>Pago de nómina</button></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><button class="dropdown-item" data-registrar="prestamo"><i class="bi bi-cash-stack text-danger me-2"></i>Préstamo <small class="text-muted">· en cuotas</small></button></li>
+                    <li><button class="dropdown-item" data-registrar="adelanto"><i class="bi bi-lightning-charge text-warning me-2"></i>Adelanto <small class="text-muted">· descuento único</small></button></li>
+                    <li><button class="dropdown-item" data-registrar="bono"><i class="bi bi-gift text-success me-2"></i>Bono</button></li>
+                    <li><button class="dropdown-item" data-registrar="viatico"><i class="bi bi-airplane text-info me-2"></i>Viático</button></li>
+                    <li><button class="dropdown-item" data-registrar="multa"><i class="bi bi-slash-circle text-secondary me-2"></i>Multa / descuento</button></li>
+                </ul>
+            </div>
         <?php endif; ?>
     </div>
 </div>
@@ -1997,7 +2009,7 @@ $tipos_btn_p = [
                     </div>
                 <?php else: ?>
                     <div style="overflow-x:auto">
-                        <table class="pay-table">
+                        <table data-paginar class="pay-table">
                             <thead>
                                 <tr>
                                     <th>Fecha</th>
@@ -2092,6 +2104,14 @@ $tipos_btn_p = [
                                                         title="<?= $__env ? 'Aviso enviado el ' . date('d/m/Y H:i', strtotime($__env)) . ' · clic para reenviar' : 'Enviar aviso de pago por correo' ?>">
                                                         <i class="bi bi-envelope<?= $__env ? '-check' : '' ?>"></i>
                                                     </button>
+                                                <?php endif; ?>
+                                                <?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'], true) && strpos((string)$p['descripcion'], 'Sueldo ') === 0): ?>
+                                                    <?php if ($p['estado'] !== 'anulado'): ?>
+                                                        <button type="button" class="btn btn-xs btn-outline-secondary" data-nomina-accion="editar" data-id="<?= (int)$p['id'] ?>" style="font-size:10px;padding:2px 7px" title="Editar fecha, método, notas o comprobante"><i class="bi bi-pencil"></i></button>
+                                                        <button type="button" class="btn btn-xs btn-outline-danger" data-nomina-accion="anular" data-id="<?= (int)$p['id'] ?>" style="font-size:10px;padding:2px 7px" title="Anular (deshace descuentos y libera la quincena)"><i class="bi bi-slash-circle"></i></button>
+                                                    <?php else: ?>
+                                                        <button type="button" class="btn btn-xs btn-outline-danger" data-nomina-accion="eliminar" data-id="<?= (int)$p['id'] ?>" style="font-size:10px;padding:2px 7px" title="Eliminar definitivamente"><i class="bi bi-trash"></i></button>
+                                                    <?php endif; ?>
                                                 <?php endif; ?>
                                             </div>
                                         </td>
@@ -3439,6 +3459,26 @@ $tipos_btn_p = [
     }
 
     document.getElementById('btnNuevoPrestamo')?.addEventListener('click', () => abrirModalRegistrar('prestamo'));
+
+    /* ══ REGISTRAR desde la barra superior o un enlace (?registrar=…) ══════════
+       Cambia a la pestaña correcta, baja hasta ella para que se vea y abre el formulario. */
+    const REG_TAB = { pago: 'pagos', prestamo: 'prestamos', adelanto: 'prestamos', multa: 'prestamos', bono: 'bonos', viatico: 'viaticos' };
+    function irYRegistrar(tipo) {
+        const tab = REG_TAB[tipo];
+        if (!tab) return;
+        setTab(tab);
+        history.replaceState(null, '', location.pathname + location.search.replace(/([?&])registrar=[^&]*&?/, '$1').replace(/[?&]$/, '') + '#tab-' + tab);
+        document.getElementById('mainTabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        <?php if ($col['activo']): ?>
+        setTimeout(() => tipo === 'pago' ? abrirModalPago(0) : abrirModalRegistrar(tipo), 350);
+        <?php endif; ?>
+    }
+    document.querySelectorAll('[data-registrar]').forEach(b => b.addEventListener('click', () => irYRegistrar(b.dataset.registrar)));
+    {
+        const q = new URLSearchParams(location.search), h = location.hash.replace('#tab-', '');
+        if (q.get('registrar')) irYRegistrar(q.get('registrar'));
+        else if (['pagos', 'prestamos', 'bonos', 'viaticos'].includes(h)) { setTab(h); document.getElementById('mainTabs')?.scrollIntoView({ block: 'start' }); }
+    }
     document.getElementById('btnNuevoPrestamo2')?.addEventListener('click', () => abrirModalRegistrar('prestamo'));
     document.querySelectorAll('.btn-nuevo-bono').forEach(b => b.addEventListener('click', () => {
         setTab('bonos');
@@ -3905,4 +3945,5 @@ document.addEventListener('click', e => {
         });
 });
 </script>
+<script src="../../clientes/js/nomina-pago.js?v=<?= @filemtime(__DIR__ . '/../js/nomina-pago.js') ?>"></script>
 <?php require_once '../../includes/templates/footer.php'; ?>

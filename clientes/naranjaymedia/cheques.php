@@ -60,7 +60,7 @@ require_once '../../includes/templates/header.php';
             <?php if ($estado): ?><a href="cheques" class="small">Ver todos</a><?php endif; ?>
         </div>
         <div class="table-responsive">
-            <table class="table app-table">
+            <table data-paginar class="table app-table">
                 <thead><tr><th>N.°</th><th>Fecha</th><th>Cuenta</th><th>Beneficiario</th><th>Concepto</th><th class="app-num">Monto</th><th>Estado</th><?php if ($puedeEditar): ?><th class="text-end">Acciones</th><?php endif; ?></tr></thead>
                 <tbody>
                     <?php if (!$cheques): ?><tr><td colspan="8" class="text-center text-muted py-4">No hay cheques.</td></tr><?php endif; ?>

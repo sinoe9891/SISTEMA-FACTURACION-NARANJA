@@ -58,7 +58,7 @@ require_once '../../includes/templates/header.php';
     <div class="app-card mb-3">
         <div class="app-card-header"><span><i class="bi bi-people me-1"></i> Por cliente</span><small class="text-muted fw-normal">Clic en el nombre para ver su estado de cuenta</small></div>
         <div class="table-responsive">
-            <table class="table app-table">
+            <table data-paginar class="table app-table">
                 <thead><tr><th class="app-n">#</th><th>Cliente</th><th>Meses adeudados</th><th class="app-num">Facturas</th><?php foreach ($tramos as $t => $v): ?><th class="app-num"><?= $t ?></th><?php endforeach; ?><th class="app-num">Saldo</th><?php if ($puedeCorreo): ?><th></th><?php endif; ?></tr></thead>
                 <tbody>
                     <?php if (!$porCliente): ?><tr><td colspan="10" class="text-center text-muted py-4"><i class="bi bi-check-circle text-success"></i> No hay saldos pendientes.</td></tr><?php endif; ?>

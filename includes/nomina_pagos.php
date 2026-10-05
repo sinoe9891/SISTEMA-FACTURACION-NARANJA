@@ -121,3 +121,89 @@ function nominaMesTxt(string $ym): string
 {
     return ucfirst(NOMINA_MESES[(int)substr($ym, 5, 2)]) . ' ' . substr($ym, 0, 4);
 }
+
+/* ══ Editar / anular / eliminar un pago de nómina ══════════════════════════════════════════════
+ * El pago de nómina es un gasto «Sueldo …». Al guardarlo (colaborador_pago_guardar.php) se marcaron
+ * cuotas de préstamos («Descontado en nómina gasto #ID»), se liquidaron bonos/viáticos («Aplicado en
+ * nómina gasto #ID el …») y se crearon gastos extra por esos bonos/viáticos («Aplicado junto con
+ * nómina gasto #ID»). Anular deshace todo eso para que la quincena quede libre y se registre de nuevo.
+ */
+
+/** Pago de nómina de la empresa (o excepción). */
+function nominaPagoObtener(PDO $pdo, int $cid, int $gid): array
+{
+    $st = $pdo->prepare("SELECT * FROM gastos WHERE id = ? AND cliente_id = ?");
+    $st->execute([$gid, $cid]);
+    $g = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$g || stripos((string)$g['descripcion'], 'Sueldo ') !== 0) throw new Exception("Pago de nómina no encontrado.");
+    return $g;
+}
+
+/** Lo que se revertiría al anular (para mostrarlo antes de confirmar). */
+function nominaPagoVinculos(PDO $pdo, int $cid, int $gid): array
+{
+    $re = 'gasto #' . $gid . '([^0-9]|$)';
+    $st = $pdo->prepare("SELECT q.id, q.prestamo_id, q.numero_cuota, q.monto, p.tipo, p.descripcion FROM colaborador_prestamo_cuotas q JOIN colaborador_prestamos p ON p.id = q.prestamo_id
+                         WHERE q.cliente_id = ? AND q.estado = 'pagado' AND q.metodo_pago = 'descuento_nomina' AND q.notas REGEXP ?");
+    $st->execute([$cid, $re]);
+    $cuotas = $st->fetchAll(PDO::FETCH_ASSOC);
+    $st = $pdo->prepare("SELECT id, tipo, descripcion, monto_total FROM colaborador_prestamos WHERE cliente_id = ? AND tipo IN ('bono','viatico') AND estado = 'pagado' AND notas REGEXP ?");
+    $st->execute([$cid, 'gasto #' . $gid . ' el ']);
+    $extras = $st->fetchAll(PDO::FETCH_ASSOC);
+    $st = $pdo->prepare("SELECT id, descripcion, monto FROM gastos WHERE cliente_id = ? AND estado <> 'anulado' AND notas = ?");
+    $st->execute([$cid, 'Aplicado junto con nómina gasto #' . $gid]);
+    return ['cuotas' => $cuotas, 'bonos_viaticos' => $extras, 'gastos_extra' => $st->fetchAll(PDO::FETCH_ASSOC)];
+}
+
+/** Anula el pago y deshace sus descuentos y liquidaciones. Devuelve lo revertido. */
+function nominaPagoAnular(PDO $pdo, int $cid, int $gid, string $motivo): array
+{
+    $g = nominaPagoObtener($pdo, $cid, $gid);
+    if ($g['estado'] === 'anulado') throw new Exception("Este pago ya está anulado.");
+    $motivo = trim($motivo);
+    if ($motivo === '') throw new Exception("Escribe el motivo de la anulación.");
+    $v = nominaPagoVinculos($pdo, $cid, $gid);
+    $gastos = array_merge([$gid], array_map('intval', array_column($v['gastos_extra'], 'id')));
+    $in = implode(',', $gastos);
+
+    $hayBancos = (bool)$pdo->query("SHOW TABLES LIKE 'movimientos_bancarios'")->fetchColumn();
+    if ($hayBancos && $pdo->query("SELECT COUNT(*) FROM movimientos_bancarios WHERE cliente_id = $cid AND gasto_id IN ($in) AND anulado = 0 AND conciliado = 1")->fetchColumn())
+        throw new Exception("El pago ya está conciliado en el banco: quita la conciliación antes de anularlo.");
+
+    $propia = !$pdo->inTransaction();
+    if ($propia) $pdo->beginTransaction();
+    try {
+        $nota = ' | Revertido: nómina gasto #' . $gid . ' anulada el ' . date('d/m/Y');
+        foreach ($v['cuotas'] as $q) {
+            $pdo->prepare("UPDATE colaborador_prestamo_cuotas SET estado = 'pendiente', fecha_pago = NULL, metodo_pago = NULL, notas = LEFT(CONCAT(IFNULL(notas,''), ?), 300) WHERE id = ?")
+                ->execute([$nota, $q['id']]);
+            $pdo->prepare("UPDATE colaborador_prestamos SET saldo_pendiente = LEAST(monto_total, saldo_pendiente + ?), estado = IF(estado = 'pagado', 'activo', estado) WHERE id = ? AND cliente_id = ?")
+                ->execute([$q['monto'], $q['prestamo_id'], $cid]);
+        }
+        foreach ($v['bonos_viaticos'] as $b)
+            $pdo->prepare("UPDATE colaborador_prestamos SET estado = 'activo', notas = CONCAT(IFNULL(notas,''), ?) WHERE id = ? AND cliente_id = ?")->execute([$nota, $b['id'], $cid]);
+        $pdo->prepare("UPDATE gastos SET estado = 'anulado', notas = CONCAT(IFNULL(notas,''), ?) WHERE cliente_id = ? AND id IN ($in)")
+            ->execute([' | ANULADO el ' . date('d/m/Y') . ': ' . mb_substr($motivo, 0, 200), $cid]);
+        if ($hayBancos) $pdo->exec("UPDATE movimientos_bancarios SET anulado = 1 WHERE cliente_id = $cid AND gasto_id IN ($in) AND tipo = 'pago_gasto'");
+        if ($propia) $pdo->commit();
+    } catch (Throwable $e) {
+        if ($propia && $pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+    return $v;
+}
+
+/** Edita los datos del pago que no cambian descuentos: fecha, método, notas y comprobante. */
+function nominaPagoEditar(PDO $pdo, int $cid, int $gid, array $d, ?array $adjunto = null): void
+{
+    $g = nominaPagoObtener($pdo, $cid, $gid);
+    if ($g['estado'] === 'anulado') throw new Exception("No se edita un pago anulado.");
+    $fecha = (string)($d['fecha'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha) || !strtotime($fecha)) throw new Exception("Fecha inválida.");
+    $metodo = in_array($d['metodo_pago'] ?? '', ['efectivo', 'transferencia', 'cheque', 'tarjeta', 'otro'], true) ? $d['metodo_pago'] : $g['metodo_pago'];
+    $notas = mb_substr(trim((string)($d['notas'] ?? '')), 0, 1000);
+    $sql = "UPDATE gastos SET fecha = ?, metodo_pago = ?, notas = ?" . ($adjunto ? ", archivo_adjunto = ?, archivo_nombre = ?" : "") . " WHERE id = ? AND cliente_id = ?";
+    $pdo->prepare($sql)->execute([$fecha, $metodo, $notas ?: null, ...($adjunto ?: []), $gid, $cid]);
+    if ($pdo->query("SHOW TABLES LIKE 'movimientos_bancarios'")->fetchColumn())
+        $pdo->prepare("UPDATE movimientos_bancarios SET fecha = ? WHERE cliente_id = ? AND gasto_id = ? AND anulado = 0 AND conciliado = 0")->execute([$fecha, $cid, $gid]);
+}

@@ -1434,3 +1434,89 @@ suite('Accesos directos a Cobros por correo', function () {
     $f = login('qa.facturador@local.test');
     check('un facturador no ve los accesos de correo', !str_contains($f->get('cuentas_cobrar')['body'], 'Cobrar por correo') && !str_contains($f->get('lista_facturas')['body'], 'id="fhBulkCorreoBtn"'));
 });
+
+suite('Registrar pago o movimiento', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $r = $c->get('colaboradores');
+    check('Colaboradores tiene el botón y el buscador de colaboradores', str_contains($r['body'], 'id="btnRegistrarMov"') && str_contains($r['body'], 'id="regBuscar"') && str_contains($r['body'], 'regTipo-viatico') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $inactivo = $pdo->query("SELECT CONCAT(nombre, ' ', apellido) FROM colaboradores WHERE cliente_id = 2 AND activo = 0 LIMIT 1")->fetchColumn();
+    preg_match('/const colabs = (\[.*?\]);/s', $r['body'], $m);
+    $lista = json_decode($m[1] ?? '[]', true);
+    check('el buscador solo ofrece colaboradores activos', count($lista) > 0 && (!$inactivo || !in_array($inactivo, array_column($lista, 'nombre'), true)));
+    $id = (int)$pdo->query("SELECT id FROM colaboradores WHERE cliente_id = 2 AND activo = 1 LIMIT 1")->fetchColumn();
+    $r = $c->get('colaborador_ver', ['id' => $id, 'registrar' => 'viatico']);
+    check('la ficha tiene el menú Registrar y abre el formulario desde el enlace', str_contains($r['body'], 'data-registrar="adelanto"') && str_contains($r['body'], 'function irYRegistrar') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $r = $c->get('pagos_nomina');
+    check('Pagos de nómina enlaza el registro', str_contains($r['body'], 'colaboradores?registrar=1'));
+});
+
+suite('Editar y anular pagos de nómina', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $col = $pdo->query("SELECT * FROM colaboradores WHERE cliente_id = 2 AND activo = 1 LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $nom = $col['nombre'] . ' ' . $col['apellido'];
+    $ins = $pdo->prepare("INSERT INTO gastos (cliente_id, descripcion, monto, fecha, frecuencia, quincena_num, tipo, metodo_pago, estado, notas) VALUES (2, ?, ?, ?, 'quincenal', 1, 'fijo', 'transferencia', 'pagado', ?)");
+    $ins->execute(['Sueldo ' . $nom . ' — 1ª Quincena', 5000, '2026-01-15', 'QA-NOMINA']); $gid = (int)$pdo->lastInsertId();
+    $ins->execute(['Bono: QA — ' . $nom, 300, '2026-01-15', 'Aplicado junto con nómina gasto #' . $gid]); $gExtra = (int)$pdo->lastInsertId();
+    // Préstamo de 1000 en 2 cuotas, la 1ª descontada en este pago; y un decoy con un id que empieza igual
+    $pdo->prepare("INSERT INTO colaborador_prestamos (cliente_id, colaborador_id, tipo, monto_total, saldo_pendiente, descripcion, fecha, num_cuotas, monto_cuota, estado, notas) VALUES (2, ?, 'prestamo', 1000, 500, 'QA préstamo', '2026-01-01', 2, 500, 'activo', 'QA-NOMINA')")->execute([$col['id']]);
+    $pid = (int)$pdo->lastInsertId();
+    $qi = $pdo->prepare("INSERT INTO colaborador_prestamo_cuotas (prestamo_id, cliente_id, colaborador_id, numero_cuota, monto, fecha_esperada, estado, fecha_pago, metodo_pago, notas) VALUES (?, 2, ?, ?, 500, '2026-01-15', ?, ?, ?, ?)");
+    $qi->execute([$pid, $col['id'], 1, 'pagado', '2026-01-15', 'descuento_nomina', ' | Descontado en nómina gasto #' . $gid]); $q1 = (int)$pdo->lastInsertId();
+    $qi->execute([$pid, $col['id'], 2, 'pagado', '2026-01-30', 'descuento_nomina', ' | Descontado en nómina gasto #' . $gid . '9']); $qDecoy = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO colaborador_prestamos (cliente_id, colaborador_id, tipo, monto_total, saldo_pendiente, descripcion, fecha, num_cuotas, monto_cuota, estado, notas) VALUES (2, ?, 'bono', 300, 300, 'QA bono', '2026-01-10', 1, 300, 'pagado', ?)")
+        ->execute([$col['id'], 'QA-NOMINA | Aplicado en nómina gasto #' . $gid . ' el 2026-01-15']);
+    $bid = (int)$pdo->lastInsertId();
+
+    $r = $c->get('includes/nomina_pago_accion.php', ['vinculos' => $gid]);
+    check('muestra lo que se revertiría', count($r['json']['cuotas'] ?? []) === 1 && count($r['json']['bonos_viaticos'] ?? []) === 1 && count($r['json']['gastos_extra'] ?? []) === 1, $r['body']);
+    $r = $c->post('includes/nomina_pago_accion.php', ['accion' => 'editar', 'id' => $gid, 'fecha' => '2026-01-14', 'metodo_pago' => 'efectivo', 'notas' => 'ref. 123']);
+    $g = $pdo->query("SELECT fecha, metodo_pago, notas FROM gastos WHERE id = $gid")->fetch(PDO::FETCH_ASSOC);
+    check('edita fecha, método y notas', ($r['json']['success'] ?? false) && $g['fecha'] === '2026-01-14' && $g['metodo_pago'] === 'efectivo' && $g['notas'] === 'ref. 123', $r['body']);
+    $r = $c->post('includes/nomina_pago_accion.php', ['accion' => 'anular', 'id' => $gid, 'motivo' => '']);
+    check('pide el motivo para anular', ($r['json']['success'] ?? true) === false);
+    $r = $c->post('includes/nomina_pago_accion.php', ['accion' => 'eliminar', 'id' => $gid]);
+    check('no elimina un pago sin anular', ($r['json']['success'] ?? true) === false);
+    $r = $c->post('includes/nomina_pago_accion.php', ['accion' => 'anular', 'id' => $gid, 'motivo' => 'fecha equivocada']);
+    check('anula el pago', ($r['json']['success'] ?? false) && $pdo->query("SELECT estado FROM gastos WHERE id = $gid")->fetchColumn() === 'anulado', $r['body']);
+    check('la cuota vuelve a pendiente y el préstamo recupera saldo', $pdo->query("SELECT estado FROM colaborador_prestamo_cuotas WHERE id = $q1")->fetchColumn() === 'pendiente'
+        && (float)$pdo->query("SELECT saldo_pendiente FROM colaborador_prestamos WHERE id = $pid")->fetchColumn() === 1000.0);
+    check('no toca cuotas de otro pago con un número parecido', $pdo->query("SELECT estado FROM colaborador_prestamo_cuotas WHERE id = $qDecoy")->fetchColumn() === 'pagado');
+    check('el bono vuelve a pendiente y su gasto extra se anula', $pdo->query("SELECT estado FROM colaborador_prestamos WHERE id = $bid")->fetchColumn() === 'activo'
+        && $pdo->query("SELECT estado FROM gastos WHERE id = $gExtra")->fetchColumn() === 'anulado');
+    $r = $c->post('includes/nomina_pago_accion.php', ['accion' => 'anular', 'id' => $gid, 'motivo' => 'otra vez']);
+    check('no anula dos veces', ($r['json']['success'] ?? true) === false);
+    $r = $c->get('pagos_nomina', ['desde' => '2026-01-01', 'hasta' => '2026-01-31']);
+    check('el pago anulado ya no cuenta en Pagos de nómina', !str_contains($r['body'], 'data-id="' . $gid . '"') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $r = $c->get('colaborador_ver', ['id' => $col['id'], 'todo' => 1]);
+    check('la ficha muestra los botones de nómina', str_contains($r['body'], 'data-nomina-accion="eliminar" data-id="' . $gid . '"') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $r = $c->get('gastos', ['mes' => 1, 'anio' => 2026]);
+    check('Gastos usa el flujo de nómina para los sueldos', str_contains($r['body'], 'data-nomina-accion=') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $f = login('qa.facturador@local.test');
+    check('un facturador no puede anular pagos de nómina', ($f->post('includes/nomina_pago_accion.php', ['accion' => 'eliminar', 'id' => $gid])['json']['success'] ?? true) === false);
+    $r = $c->post('includes/nomina_pago_accion.php', ['accion' => 'eliminar', 'id' => $gid]);
+    check('elimina el pago anulado', ($r['json']['success'] ?? false) && !(int)$pdo->query("SELECT COUNT(*) FROM gastos WHERE id = $gid")->fetchColumn());
+    // Limpieza
+    $pdo->exec("DELETE FROM gastos WHERE id = $gExtra");
+    $pdo->exec("DELETE FROM colaborador_prestamo_cuotas WHERE prestamo_id = $pid");
+    $pdo->exec("DELETE FROM colaborador_prestamos WHERE notas LIKE 'QA-NOMINA%'");
+});
+
+suite('Estados financieros clásicos', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $r = $c->get('estados_financieros', ['desde' => '2026-01-01', 'hasta' => '2026-06-30']);
+    check('el estado de resultados carga', $r['code'] === 200 && str_contains($r['body'], 'Utilidad del período') || str_contains($r['body'], 'Pérdida del período'), errorPhp($r['body']));
+    check('sin avisos de PHP', sinErroresPhp($r['body']), errorPhp($r['body']));
+    $ventas = (float)$pdo->query("SELECT COALESCE(SUM(subtotal),0) FROM facturas WHERE cliente_id = 2 AND estado = 'emitida' AND DATE(fecha_emision) BETWEEN '2026-01-01' AND '2026-06-30'")->fetchColumn();
+    $gastos = (float)$pdo->query("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id = 2 AND estado <> 'anulado' AND fecha BETWEEN '2026-01-01' AND '2026-06-30'")->fetchColumn();
+    check('ingresos, gastos y utilidad coinciden con la BD', str_contains($r['body'], number_format($ventas, 2)) && str_contains($r['body'], number_format($gastos, 2))
+        && str_contains($r['body'], number_format(abs($ventas - $gastos), 2)));
+    $r = $c->get('balance_general', ['corte' => '2026-06-30']);
+    check('el balance general carga', $r['code'] === 200 && str_contains($r['body'], 'Total pasivo más patrimonio') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    require_once __DIR__ . '/../../includes/estados_financieros.php';
+    $b = efBalance($pdo, 2, '2026-06-30', 24.7);
+    check('el balance cuadra: activo = pasivo + patrimonio', abs($b['total_activo'] - ($b['total_pasivo'] + $b['total_patrimonio'])) < 0.01);
+    check('el menú tiene Balance general y Estado de resultados clásico', str_contains($r['body'], 'href="balance_general"') && str_contains($r['body'], 'href="estados_financieros"'));
+});

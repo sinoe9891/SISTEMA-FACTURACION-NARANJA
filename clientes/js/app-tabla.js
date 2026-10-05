@@ -67,3 +67,26 @@ function AppTabla(tabla, opciones) {
     refrescar();
     return { refrescar: () => { pagina = 1; refrescar(); } };
 }
+
+/*
+ * Paginación automática: cualquier <table data-paginar> muestra 10 filas por página (o data-paginar="N")
+ * con el pie «Mostrando…» debajo. Las filas son las tr[data-fila]; si no tiene, todas las del <tbody>
+ * con más de una celda (las de «sin datos» con colspan no cuentan). Si caben en una página, no hace nada.
+ */
+(function () {
+    if (window.__appTablaAuto) return;   // el archivo puede cargarse dos veces (página + footer)
+    window.__appTablaAuto = true;
+    const iniciar = () => document.querySelectorAll('table[data-paginar]').forEach(t => {
+        if (t.__paginada || !t.tBodies[0]) return;
+        t.__paginada = true;
+        const n = parseInt(t.dataset.paginar, 10) || 10;
+        const rows = Array.from(t.tBodies[0].rows);
+        if (!rows.some(r => r.hasAttribute('data-fila'))) rows.forEach(r => { if (r.cells.length > 1) r.setAttribute('data-fila', ''); });
+        if (rows.filter(r => r.hasAttribute('data-fila')).length <= n) return;
+        const pie = document.createElement('div');
+        pie.className = 'app-pager';
+        (t.closest('.table-responsive') || t).after(pie);
+        AppTabla(t, { pie, porPaginaInicial: n, vacio: t.dataset.vacio || 'Sin resultados.' });
+    });
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
+})();
