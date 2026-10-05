@@ -123,7 +123,11 @@ require_once '../../includes/templates/header.php';
                                     </select>
                                     <span class="small text-muted">(hora de Honduras)</span>
                                 </div>
-                                <div class="form-text">Solo pagos con fecha de ese día que aún no tengan aviso; si ya lo enviaste manualmente, no se repite.</div>
+                                <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                                    <label class="small" for="desde-<?= $p ?>">Enviar avisos pendientes de pagos desde el</label>
+                                    <input type="date" class="form-control form-control-sm" style="width:auto" name="aviso_pago_desde" id="desde-<?= $p ?>" value="<?= $v('aviso_pago_desde') ?>">
+                                </div>
+                                <div class="form-text">El sistema revisa cada 5 minutos y envía los avisos que falten de los pagos con fecha desde ese día hasta hoy (máximo 45 días atrás). Si registras un pago por adelantado, el aviso sale el día de la fecha del pago. Los pagos anteriores a esa fecha no se avisan solos (puedes enviarlos a mano). Si ya enviaste un aviso manualmente, no se repite. Vacío = solo los pagos con fecha del mismo día.</div>
                             </div>
                         <?php endif; ?>
                         <div class="col-md-6"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" name="verificar_ssl" id="ssl-<?= $p ?>" value="1" <?= !empty($c['v']['verificar_ssl']) ? 'checked' : '' ?>>

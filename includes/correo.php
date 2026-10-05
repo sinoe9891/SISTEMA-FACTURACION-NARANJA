@@ -115,6 +115,12 @@ function correoGuardarConfig(PDO $pdo, int $cid, array $d): void
         $pdo->prepare("UPDATE configuracion_correo SET aviso_pago_auto = ?, aviso_pago_hora = ? WHERE cliente_id = ?" . ($conPerfil ? " AND perfil = ?" : ""))
             ->execute([empty($d['aviso_pago_auto']) ? 0 : 1, $hora, $cid, ...($conPerfil ? [$perfil] : [])]);
     }
+    if ($pdo->query("SHOW COLUMNS FROM configuracion_correo LIKE 'aviso_pago_desde'")->fetchColumn() && array_key_exists('aviso_pago_desde', $d)) {
+        $desde = trim((string)$d['aviso_pago_desde']);
+        if ($desde !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $desde)) throw new Exception("Fecha de corte de avisos inválida.");
+        $pdo->prepare("UPDATE configuracion_correo SET aviso_pago_desde = ? WHERE cliente_id = ?" . ($conPerfil ? " AND perfil = ?" : ""))
+            ->execute([$desde ?: null, $cid, ...($conPerfil ? [$perfil] : [])]);
+    }
     if ($pdo->query("SHOW COLUMNS FROM configuracion_correo LIKE 'verificar_ssl'")->fetchColumn()) {
         $pdo->prepare("UPDATE configuracion_correo SET verificar_ssl = ? WHERE cliente_id = ?" . ($conPerfil ? " AND perfil = ?" : ""))->execute([empty($d['verificar_ssl']) ? 0 : 1, $cid, ...($conPerfil ? [$perfil] : [])]);
     }

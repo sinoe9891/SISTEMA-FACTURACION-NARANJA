@@ -1223,6 +1223,15 @@ suite('Cron de avisos de pago automáticos', function () {
     check('no envía pagos de fechas pasadas', $cuenta($ayer) === 0);
     $correr();
     check('al volver a correr no duplica', $cuenta($hoy) === 1 && $cuenta($hoyManual) === 1);
+    // Fecha de corte: se pone al día con los pendientes desde esa fecha; no toca los anteriores ni los de fecha futura
+    $r = $c->post('includes/correo_accion.php', $base + ['aviso_pago_hora' => 0, 'aviso_pago_desde' => date('Y-m-d', strtotime('-3 days'))]);
+    check('se guarda la fecha de corte', ($r['json']['success'] ?? false) && $pdo->query("SELECT aviso_pago_desde FROM configuracion_correo WHERE cliente_id = 2 AND perfil = 'nomina'")->fetchColumn() === date('Y-m-d', strtotime('-3 days')), $r['body']);
+    $ins->execute([$desc . ' — 1ª Quincena', date('Y-m-d', strtotime('-5 days')), 1]); $viejo = (int)$pdo->lastInsertId();
+    $ins->execute([$desc . ' — 1ª Quincena', date('Y-m-d', strtotime('+1 day')), 1]); $futuro = (int)$pdo->lastInsertId();
+    $correr();
+    check('con fecha de corte envía el pendiente de ayer', $cuenta($ayer) === 1);
+    check('no envía pagos anteriores a la fecha de corte', $cuenta($viejo) === 0);
+    check('un pago registrado por adelantado espera a su fecha', $cuenta($futuro) === 0);
     $pdo->exec("UPDATE configuracion_correo SET aviso_pago_auto = 0 WHERE cliente_id = 2");
     $ins->execute([$desc . ' — 1ª Quincena', date('Y-m-d'), 1]); $otro = (int)$pdo->lastInsertId();
     $correr();
