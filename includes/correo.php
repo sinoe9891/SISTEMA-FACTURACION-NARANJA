@@ -45,12 +45,32 @@ function correoDescifrar(?string $guardado): string
     return $t === false ? '' : $t;
 }
 
-function correoConfig(PDO $pdo, int $cid): ?array
+function correoConfig(PDO $pdo, int $cid, string $perfil = 'nomina'): ?array
 {
     if (!correoDisponible($pdo)) return null;
-    $st = $pdo->prepare("SELECT * FROM configuracion_correo WHERE cliente_id = ?");
-    $st->execute([$cid]);
+    if (correoTienePerfiles($pdo)) {
+        $st = $pdo->prepare("SELECT * FROM configuracion_correo WHERE cliente_id = ? AND perfil = ?");
+        $st->execute([$cid, correoPerfil($perfil)]);
+    } else {
+        $st = $pdo->prepare("SELECT * FROM configuracion_correo WHERE cliente_id = ?");
+        $st->execute([$cid]);
+    }
     return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+/** Cuentas de envío por empresa: cada una con su remitente (p. ej. nomina@… y facturacion@…). */
+const CORREO_PERFILES = ['nomina' => 'Nómina', 'facturacion' => 'Facturación'];
+
+function correoPerfil(?string $p): string
+{
+    return isset(CORREO_PERFILES[$p ?? '']) ? $p : 'nomina';
+}
+
+function correoTienePerfiles(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) $ok = (bool)$pdo->query("SHOW COLUMNS FROM configuracion_correo LIKE 'perfil'")->fetchColumn();
+    return $ok;
 }
 
 /** Guarda la configuración. Si $d['clave'] viene vacía se conserva la anterior. */
@@ -76,29 +96,31 @@ function correoGuardarConfig(PDO $pdo, int $cid, array $d): void
         foreach ($lista as $m) if (!filter_var($m, FILTER_VALIDATE_EMAIL)) throw new Exception("Correo inválido en «" . str_replace('_', ' ', $k) . "»: $m");
         $d[$k] = implode(', ', $lista);
     }
-    $actual = correoConfig($pdo, $cid);
+    $perfil = correoPerfil($d['perfil'] ?? 'nomina');
+    $actual = correoConfig($pdo, $cid, $perfil);
     $clave = (string)($d['clave'] ?? '');
     $cifrada = $clave !== '' ? correoCifrar($clave) : ($actual['clave_cifrada'] ?? null);
     if (!$cifrada) throw new Exception("Indica la contraseña SMTP.");
     $marca = (bool)$pdo->query("SHOW COLUMNS FROM configuracion_correo LIKE 'logo_url'")->fetchColumn();
-    $pdo->prepare("INSERT INTO configuracion_correo (cliente_id, host, puerto, seguridad, usuario, clave_cifrada, remitente_email, remitente_nombre, responder_a, copia_oculta, activo)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    $conPerfil = correoTienePerfiles($pdo);
+    $pdo->prepare("INSERT INTO configuracion_correo (cliente_id, " . ($conPerfil ? "perfil, " : "") . "host, puerto, seguridad, usuario, clave_cifrada, remitente_email, remitente_nombre, responder_a, copia_oculta, activo)
+                   VALUES (?, " . ($conPerfil ? "?, " : "") . "?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON DUPLICATE KEY UPDATE host = VALUES(host), puerto = VALUES(puerto), seguridad = VALUES(seguridad), usuario = VALUES(usuario),
                        clave_cifrada = VALUES(clave_cifrada), remitente_email = VALUES(remitente_email), remitente_nombre = VALUES(remitente_nombre),
                        responder_a = VALUES(responder_a), copia_oculta = VALUES(copia_oculta), activo = VALUES(activo)")
-        ->execute([$cid, $host, $puerto, $seg, $usuario, $cifrada, $remitente, trim((string)($d['remitente_nombre'] ?? '')) ?: null,
+        ->execute([...($conPerfil ? [$cid, $perfil] : [$cid]), $host, $puerto, $seg, $usuario, $cifrada, $remitente, trim((string)($d['remitente_nombre'] ?? '')) ?: null,
             trim((string)($d['responder_a'] ?? '')) ?: null, trim((string)($d['copia_oculta'] ?? '')) ?: null, empty($d['activo']) ? 0 : 1]);
     if ($pdo->query("SHOW COLUMNS FROM configuracion_correo LIKE 'aviso_pago_auto'")->fetchColumn()) {
         $hora = max(0, min(23, (int)($d['aviso_pago_hora'] ?? 7)));
-        $pdo->prepare("UPDATE configuracion_correo SET aviso_pago_auto = ?, aviso_pago_hora = ? WHERE cliente_id = ?")
-            ->execute([empty($d['aviso_pago_auto']) ? 0 : 1, $hora, $cid]);
+        $pdo->prepare("UPDATE configuracion_correo SET aviso_pago_auto = ?, aviso_pago_hora = ? WHERE cliente_id = ?" . ($conPerfil ? " AND perfil = ?" : ""))
+            ->execute([empty($d['aviso_pago_auto']) ? 0 : 1, $hora, $cid, ...($conPerfil ? [$perfil] : [])]);
     }
     if ($pdo->query("SHOW COLUMNS FROM configuracion_correo LIKE 'verificar_ssl'")->fetchColumn()) {
-        $pdo->prepare("UPDATE configuracion_correo SET verificar_ssl = ? WHERE cliente_id = ?")->execute([empty($d['verificar_ssl']) ? 0 : 1, $cid]);
+        $pdo->prepare("UPDATE configuracion_correo SET verificar_ssl = ? WHERE cliente_id = ?" . ($conPerfil ? " AND perfil = ?" : ""))->execute([empty($d['verificar_ssl']) ? 0 : 1, $cid, ...($conPerfil ? [$perfil] : [])]);
     }
     if ($marca) {
-        $pdo->prepare("UPDATE configuracion_correo SET logo_url = ?, enlace_url = ? WHERE cliente_id = ?")
-            ->execute([trim((string)($d['logo_url'] ?? '')) ?: null, trim((string)($d['enlace_url'] ?? '')) ?: null, $cid]);
+        $pdo->prepare("UPDATE configuracion_correo SET logo_url = ?, enlace_url = ? WHERE cliente_id = ?" . ($conPerfil ? " AND perfil = ?" : ""))
+            ->execute([trim((string)($d['logo_url'] ?? '')) ?: null, trim((string)($d['enlace_url'] ?? '')) ?: null, $cid, ...($conPerfil ? [$perfil] : [])]);
     }
 }
 
@@ -119,17 +141,20 @@ function correoRegistrar(PDO $pdo, int $cid, string $tipo, ?int $ref, string $pa
 }
 
 /** Envía un correo con la configuración de la empresa. Lanza Exception si falla (y lo registra). */
-function correoEnviar(PDO $pdo, int $cid, string $para, string $asunto, string $html, string $texto, array $adjuntos = [], string $tipo = 'general', ?int $refId = null, ?int $usuario = null): bool
+function correoEnviar(PDO $pdo, int $cid, string $para, string $asunto, string $html, string $texto, array $adjuntos = [], string $tipo = 'general', ?int $refId = null, ?int $usuario = null, string $perfil = 'nomina', string $cc = ''): bool
 {
-    $cfg = correoConfig($pdo, $cid);
+    $cfg = correoConfig($pdo, $cid, $perfil);
     try {
-        if (!$cfg) throw new Exception("El correo no está configurado (Configuración → Correo SMTP).");
+        if (!$cfg) throw new Exception("La cuenta de correo «" . CORREO_PERFILES[correoPerfil($perfil)] . "» no está configurada (Configuración → Correo SMTP).");
         if (!(int)$cfg['activo']) throw new Exception("El envío de correos está desactivado.");
-        if (!filter_var($para, FILTER_VALIDATE_EMAIL)) throw new Exception("El destinatario no tiene un correo válido.");
+        $paraLista = correoLista($para);
+        $ccLista = correoLista($cc);
+        if (!$paraLista) throw new Exception("El destinatario no tiene un correo válido.");
+        foreach (array_merge($paraLista, $ccLista) as $m) if (!filter_var($m, FILTER_VALIDATE_EMAIL)) throw new Exception("Correo inválido: $m");
         $smtp = new SmtpCliente($cfg['host'], (int)$cfg['puerto'], $cfg['seguridad'], $cfg['usuario'],
             preg_replace('/\s+/', '', correoDescifrar($cfg['clave_cifrada'])), !empty($cfg['verificar_ssl']));
         $smtp->enviar($cfg['remitente_email'], (string)($cfg['remitente_nombre'] ?? ''), $para, $asunto, $html, $texto, $adjuntos,
-            $cfg['responder_a'] ?: null, $cfg['copia_oculta'] ?: null);
+            $cfg['responder_a'] ?: null, $cfg['copia_oculta'] ?: null, implode(', ', $ccLista));
         correoRegistrar($pdo, $cid, $tipo, $refId, $para, $asunto, true, null, $usuario);
         return true;
     } catch (Throwable $e) {
@@ -173,7 +198,7 @@ class SmtpCliente
         return preg_match('/[^\x20-\x7e]/', $t) ? '=?UTF-8?B?' . base64_encode($t) . '?=' : $t;
     }
 
-    public function enviar(string $de, string $deNombre, string $para, string $asunto, string $html, string $texto, array $adjuntos = [], ?string $responderA = null, ?string $cco = null): void
+    public function enviar(string $de, string $deNombre, string $para, string $asunto, string $html, string $texto, array $adjuntos = [], ?string $responderA = null, ?string $cco = null, string $cc = ''): void
     {
         // Igual que el sistema que ya funciona en este hosting: sin verificar el certificado salvo que se active
         $ctx = stream_context_create(['ssl' => ['verify_peer' => $this->verificarSsl, 'verify_peer_name' => $this->verificarSsl,
@@ -204,10 +229,10 @@ class SmtpCliente
                 }
             }
             $this->cmd("MAIL FROM:<$de>", [250]);
-            $this->cmd("RCPT TO:<$para>", [250, 251]);
+            foreach (array_merge(correoLista($para), correoLista($cc)) as $p) $this->cmd("RCPT TO:<$p>", [250, 251]);
             foreach (correoLista((string)$cco) as $c) $this->cmd("RCPT TO:<$c>", [250, 251]);
             $this->cmd('DATA', [354]);
-            $msg = $this->armar($de, $deNombre, $para, $asunto, $html, $texto, $adjuntos, $responderA);
+            $msg = $this->armar($de, $deNombre, $para, $asunto, $html, $texto, $adjuntos, $responderA, $cc);
             // Transparencia SMTP: líneas que empiezan con punto se duplican
             $msg = preg_replace('/^\./m', '..', $msg);
             fwrite($this->s, $msg . "\r\n.\r\n");
@@ -219,7 +244,7 @@ class SmtpCliente
         }
     }
 
-    private function armar(string $de, string $deNombre, string $para, string $asunto, string $html, string $texto, array $adjuntos, ?string $responderA): string
+    private function armar(string $de, string $deNombre, string $para, string $asunto, string $html, string $texto, array $adjuntos, ?string $responderA, string $cc = ''): string
     {
         $b1 = 'mix_' . bin2hex(random_bytes(8));
         $b2 = 'alt_' . bin2hex(random_bytes(8));
@@ -227,12 +252,13 @@ class SmtpCliente
         $h = [
             'Date: ' . date('r'),
             'From: ' . ($deNombre !== '' ? self::encab($deNombre) . " <$de>" : $de),
-            "To: <$para>",
+            'To: ' . implode(', ', array_map(fn($m) => "<$m>", correoLista($para))),
             'Subject: ' . self::encab($asunto),
             'Message-ID: <' . bin2hex(random_bytes(12)) . "@$dominio>",
             'MIME-Version: 1.0',
             "Content-Type: multipart/mixed; boundary=\"$b1\"",
         ];
+        if ($cc !== '') $h[] = 'Cc: ' . implode(', ', array_map(fn($m) => "<$m>", correoLista($cc)));
         if ($responderA) $h[] = 'Reply-To: ' . implode(', ', array_map(fn($m) => "<$m>", correoLista($responderA)));
         $cuerpo = "--$b1\r\nContent-Type: multipart/alternative; boundary=\"$b2\"\r\n\r\n"
             . "--$b2\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($texto)) . "\r\n"

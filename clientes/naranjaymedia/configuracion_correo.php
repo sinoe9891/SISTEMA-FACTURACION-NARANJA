@@ -61,9 +61,9 @@ require_once '../../includes/templates/header.php';
                     <div class="form-text">Se guarda cifrada y no se vuelve a mostrar.</div></div>
                 <div class="col-md-6"><label class="form-label">Correo del remitente *</label><input class="form-control" type="email" name="remitente_email" value="<?= $v('remitente_email') ?>" placeholder="avisos@tudominio.com" required></div>
                 <div class="col-md-6"><label class="form-label">Nombre del remitente</label><input class="form-control" name="remitente_nombre" value="<?= $v('remitente_nombre') ?>" placeholder="Administración · Mi empresa"></div>
-                <div class="col-md-6"><label class="form-label">Responder a</label><input class="form-control" type="email" name="responder_a" value="<?= $v('responder_a') ?>" placeholder="administracion@tudominio.com">
-                    <div class="form-text">Adonde llegan las respuestas de los colaboradores.</div></div>
-                <div class="col-md-6"><label class="form-label">Copia oculta (archivo)</label><input class="form-control" type="email" name="copia_oculta" value="<?= $v('copia_oculta') ?>" placeholder="opcional">
+                <div class="col-md-6"><label class="form-label">Responder a</label><input class="form-control" type="text" inputmode="email" name="responder_a" value="<?= $v('responder_a') ?>" placeholder="gerencia@tudominio.com, administracion@tudominio.com">
+                    <div class="form-text">Adonde llegan las respuestas. Puedes poner varios, separados por coma.</div></div>
+                <div class="col-md-6"><label class="form-label">Copia oculta (archivo)</label><input class="form-control" type="text" inputmode="email" name="copia_oculta" value="<?= $v('copia_oculta') ?>" placeholder="opcional (varios separados por coma)">
                     <div class="form-text">Recibe una copia de cada aviso enviado.</div></div>
                 <?php $urlBase = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'facturacion.naranjaymediahn.com'); ?>
                 <div class="col-md-6"><label class="form-label">Logo para los correos (PNG o JPG)</label><input class="form-control" name="logo_url" value="<?= $v('logo_url', $cfg ? '' : $urlBase . '/clientes/css/logo-correo.png') ?>" placeholder="https://…/logo.png">
