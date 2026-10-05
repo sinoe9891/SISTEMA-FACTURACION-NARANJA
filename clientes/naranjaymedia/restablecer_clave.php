@@ -47,7 +47,7 @@ $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
                 <a href="recuperar_clave" class="btn btn-primary w-100"><i class="bi bi-envelope me-1"></i> Pedir un enlace nuevo</a>
             <?php else: ?>
                 <?php if ($error): ?><div class="alert alert-danger d-flex gap-2 py-2" role="alert"><i class="bi bi-exclamation-circle-fill mt-1"></i><span><?= $e($error) ?></span></div><?php endif; ?>
-                <form method="POST" novalidate autocomplete="off">
+                <form method="POST" novalidate autocomplete="off" data-cargando>
                     <input type="hidden" name="_csrf" value="<?= $e($_SESSION['csrf_publico']) ?>">
                     <input type="hidden" name="token" value="<?= $e($token) ?>">
                     <input type="email" class="d-none" name="usuario" value="<?= $e($usuario['correo']) ?>" autocomplete="username" tabindex="-1" aria-hidden="true">
@@ -62,11 +62,23 @@ $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
                         <div class="input-group"><span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
                             <input type="password" class="form-control" id="clave2" name="clave2" required autocomplete="new-password" minlength="10"></div>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100 py-2"><i class="bi bi-check2-circle me-1"></i> Guardar contraseña</button>
+                    <button type="submit" class="btn btn-primary w-100 py-2"><span class="btn-texto"><i class="bi bi-check2-circle me-1"></i> Guardar contraseña</span><span class="btn-cargando d-none"><span class="spinner-border spinner-border-sm me-1"></span> Guardando…</span></button>
                 </form>
             <?php endif; ?>
         </div>
         <p class="app-login-pie">© <?= date('Y') ?> · Sistema de Facturación · Naranja &amp; Media</p>
     </main>
+    <script>
+        // Al enviar: botón desactivado con «cargando», para que se note que algo está pasando (como en el login)
+        document.querySelectorAll('form[data-cargando]').forEach(function (f) {
+            f.addEventListener('submit', function (e) {
+                var b = f.querySelector('button[type=submit]');
+                if (b.disabled) { e.preventDefault(); return; }
+                b.disabled = true;
+                b.querySelector('.btn-texto').classList.add('d-none');
+                b.querySelector('.btn-cargando').classList.remove('d-none');
+            });
+        });
+    </script>
 </body>
 </html>
