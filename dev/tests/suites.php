@@ -1520,3 +1520,53 @@ suite('Estados financieros clásicos', function () {
     check('el balance cuadra: activo = pasivo + patrimonio', abs($b['total_activo'] - ($b['total_pasivo'] + $b['total_patrimonio'])) < 0.01);
     check('el menú tiene Balance general y Estado de resultados clásico', str_contains($r['body'], 'href="balance_general"') && str_contains($r['body'], 'href="estados_financieros"'));
 });
+
+suite('Respaldos de la base de datos', function () {
+    require_once __DIR__ . '/../../includes/respaldos.php';
+    putenv('APP_DB=dev');
+    $dir = respaldoDir();
+    array_map('unlink', glob($dir . 'respaldo_*') ?: []);
+    @unlink($dir . 'respaldos.log');
+    $c = login('qa.admin@local.test');
+    $r = $c->get('respaldos');
+    check('el admin de Naranja & Media ve la página', $r['code'] === 200 && str_contains($r['body'], 'Crear respaldo ahora') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    check('aparece en el menú de Configuración', str_contains($r['body'], 'href="respaldos"'));
+    $r = $c->post('includes/respaldo_accion.php', ['accion' => 'crear']);
+    $lista = respaldoLista();
+    check('crea un respaldo completo y válido', ($r['json']['success'] ?? false) && count($lista) === 1 && $lista[0]['integro'] === true && $lista[0]['tablas'] > 40, $r['body']);
+    $a = $lista[0]['archivo'] ?? '';
+    $d = $c->get('includes/respaldo_accion.php', ['descargar' => $a]);
+    check('descarga el .sql.gz', str_starts_with($d['body'], "\x1f\x8b") && str_contains(gzdecode($d['body']) ?: '', '-- Fin del respaldo'));
+    $r = $c->post('includes/respaldo_accion.php', ['accion' => 'probar', 'archivo' => $a]);
+    check('la prueba de integridad pasa', ($r['json']['ok'] ?? false) === true, $r['body']);
+    $r = $c->get('includes/respaldo_accion.php', ['descargar' => '../../includes/config.php']);
+    check('no permite descargar otros archivos', ($r['json']['success'] ?? true) === false && !str_contains($r['body'], 'DB_PASS'));
+    // Retención: con 9 copias quedan 7, las más recientes
+    for ($i = 1; $i <= 8; $i++) {
+        $n = 'respaldo_2020-01-0' . $i . '_000000.sql.gz';
+        copy($dir . $a, $dir . $n);
+        file_put_contents($dir . $n . '.json', json_encode(['archivo' => $n, 'creado' => "2020-01-0$i 00:00:00", 'sha256' => hash_file('sha256', $dir . $n), 'origen' => 'cron']));
+    }
+    respaldoRetencion();
+    $quedan = array_column(respaldoLista(false), 'archivo');
+    check('conserva solo 7 copias y borra las más antiguas', count($quedan) === 7 && in_array($a, $quedan, true) && !in_array('respaldo_2020-01-01_000000.sql.gz', $quedan, true) && !in_array('respaldo_2020-01-02_000000.sql.gz', $quedan, true), json_encode($quedan));
+    // Una copia alterada no se descarga
+    $alterada = 'respaldo_2020-01-08_000000.sql.gz';
+    file_put_contents($dir . $alterada, 'x', FILE_APPEND);
+    $r = $c->get('includes/respaldo_accion.php', ['descargar' => $alterada]);
+    check('una copia alterada se marca dañada y no se descarga', ($r['json']['success'] ?? true) === false && !respaldoLista()[array_search($alterada, array_column(respaldoLista(false), 'archivo'))]['integro']);
+    // El cron crea la copia automática del día una sola vez
+    $cron = fn() => shell_exec('APP_DB=dev ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/../../cron/respaldo.php') . ' 2>&1');
+    $s1 = $cron(); sleep(1); $s2 = $cron();
+    $auto = array_filter(respaldoLista(false), fn($x) => ($x['origen'] ?? '') === 'cron' && substr($x['creado'], 0, 10) === date('Y-m-d'));
+    check('el cron crea el respaldo diario y no lo duplica', count($auto) === 1 && str_contains((string)$s2, 'Ya existe'), $s1 . $s2);
+    check('el cron no se abre desde la web', $c->get('http://localhost:8383/proyectos/NARANJA/sistemafacturacion/cron/respaldo.php')['code'] !== 200);
+    $bit = array_column(respaldoBitacora(), 'evento');
+    check('la bitácora registra creación, descarga, prueba y retención', !array_diff(['creado', 'descargado', 'verificado', 'eliminado', 'descarga_bloqueada'], $bit), json_encode(array_unique($bit)));
+    check('el superadmin también tiene acceso', login('qa.super@local.test', 1, 2)->get('respaldos')['code'] === 200);
+    $f = login('qa.facturador@local.test');
+    check('un facturador no entra ni descarga', $f->get('respaldos')['code'] === 302 && ($f->get('includes/respaldo_accion.php', ['descargar' => $a])['json']['success'] ?? true) === false);
+    $o = login('qa.ccic@local.test');
+    check('el admin de otra empresa no tiene acceso', ($o->post('includes/respaldo_accion.php', ['accion' => 'crear'])['json']['success'] ?? true) === false);
+    array_map('unlink', glob($dir . 'respaldo_*') ?: []);
+});

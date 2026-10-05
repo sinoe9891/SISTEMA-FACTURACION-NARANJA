@@ -13,6 +13,7 @@ $__menuEsAdmin      = in_array(USUARIO_ROL, ['admin', 'superadmin']);
 // Aviso de inventario: productos en o bajo el mínimo en alguna tienda (en sesión 5 min)
 $__menuPorReponer = 0;
 require_once __DIR__ . '/../inventario.php';
+require_once __DIR__ . '/../respaldos.php';
 if (function_exists('cliente_actual') && cliente_actual() && invDisponible($pdo)) {
 	$__c = $_SESSION['__cache_reponer'] ?? null;
 	if (!$__c || $__c['cid'] !== cliente_actual() || $__c['t'] < time() - 300) {
@@ -30,10 +31,6 @@ if (function_exists('cliente_actual') && cliente_actual() && invDisponible($pdo)
 $menuLateral = [
 	'' => [
 		['dashboard', 'bi-house-door', 'Inicio', []],
-	],
-	'Ventas' => [
-		['pos', 'bi-cart3', 'Punto de venta', []],
-		['pos_turnos', 'bi-clock-history', 'Turnos de caja', []],
 	],
 	'Facturación' => [
 		['generar_factura', 'bi-plus-circle', 'Nueva factura', []],
@@ -61,6 +58,10 @@ $menuLateral = [
 		['colaboradores', 'bi-people', 'Colaboradores', ['colaborador_ver', 'colaborador_reporte']],
 		['pagos_nomina', 'bi-cash-stack', 'Pagos de nómina', []],
 	],
+	'Ventas' => [
+		['pos', 'bi-cart3', 'Punto de venta', []],
+		['pos_turnos', 'bi-clock-history', 'Turnos de caja', []],
+	],
 	'Inventario' => [
 		['inventario', 'bi-boxes', 'Existencias', ['inventario_kardex', 'inventario_reportes'], $__menuPorReponer],
 		['inventario_traslados', 'bi-truck', 'Traslados', []],
@@ -76,6 +77,7 @@ $menuLateral = [
 		$__menuEsAdmin ? ['configuracion_mensajes', 'bi-envelope', 'Mensajes y cuentas de pago', []] : null,
 		$__menuEsAdmin ? ['configuracion_correo', 'bi-envelope-at', 'Correo (SMTP)', []] : null,
 		$__menuEsAdmin ? ['usuarios', 'bi-person-gear', 'Usuarios', []] : null,
+		function_exists('respaldoPuede') && respaldoPuede() ? ['respaldos', 'bi-database-check', 'Respaldos', []] : null,
 	])),
 	// Solo superadmin: administración de la plataforma multiempresa
 	'Plataforma' => $es_superadmin ? [
