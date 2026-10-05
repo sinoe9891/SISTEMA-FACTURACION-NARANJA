@@ -1306,6 +1306,40 @@ suite('Cobros por correo programados', function () {
     check('se puede cancelar', ($r['json']['success'] ?? false) && $pdo->query("SELECT estado FROM cobros_programados WHERE id = $idOtro")->fetchColumn() === 'cancelado');
     $r = $c->post('cobro_accion.php', ['accion' => 'cancelar', 'id' => $idProg]);
     check('no se cancela uno ya enviado', ($r['json']['success'] ?? true) === false);
+    // Ver, editar, reenviar y eliminar
+    $r = $c->get('cobro_accion.php', ['ver' => $idProg]);
+    check('ver muestra el correo, los PDF y los intentos de envío', ($r['json']['success'] ?? false) && str_contains($r['json']['html'] ?? '', 'Adjuntos') && count($r['json']['adjuntos'] ?? []) === count($ids)
+        && ($r['json']['adjuntos'][0]['existe'] ?? false) && count($r['json']['envios'] ?? []) === 1, substr($r['body'], 0, 200));
+    $p = $c->get('cobro_accion.php', ['pdf' => $idProg, 'factura' => $ids[0]]);
+    check('abre el PDF tal como se envió', str_starts_with($p['body'], '%PDF'));
+    $r = $c->post('cobro_accion.php', ['accion' => 'editar', 'id' => $idProg, 'para' => 'x@ejemplo.test', 'asunto' => 'X', 'mensaje_html' => 'X', 'programado_para' => date('Y-m-d\TH:i', strtotime('+1 day'))]);
+    check('no se edita uno ya enviado', ($r['json']['success'] ?? true) === false);
+    $r = $c->post('cobro_accion.php', $base + ['modo' => 'programar', 'programado_para' => date('Y-m-d\TH:i', strtotime('+2 days'))]);
+    $idEd = (int)($r['json']['id'] ?? 0);
+    $r = $c->post('cobro_accion.php', ['accion' => 'editar', 'id' => $idEd, 'para' => 'nuevo@ejemplo.test, otro@ejemplo.test', 'cc' => '', 'asunto' => 'Asunto editado',
+        'mensaje_html' => 'Hola<br>editado<script>x</script>', 'programado_para' => date('Y-m-d\TH:i', strtotime('+4 days'))]);
+    $ed = $pdo->query("SELECT para, cc, asunto, mensaje_html FROM cobros_programados WHERE id = $idEd")->fetch(PDO::FETCH_ASSOC);
+    check('edita un cobro programado', ($r['json']['success'] ?? false) && $ed['para'] === 'nuevo@ejemplo.test, otro@ejemplo.test' && $ed['cc'] === null && $ed['asunto'] === 'Asunto editado' && !str_contains($ed['mensaje_html'], 'script'), $r['body']);
+    $antes = count(glob("$dir/*.eml") ?: []);
+    $r = $c->post('cobro_accion.php', ['accion' => 'reenviar', 'id' => $idProg, 'para' => 'cliente@ejemplo.test', 'cc' => 'copia@ejemplo.test']);
+    $idRe = (int)($r['json']['id'] ?? 0);
+    $ult = glob("$dir/*.eml"); sort($ult); $eml = file_get_contents(end($ult));
+    check('reenvía una copia con los mismos PDF', ($r['json']['success'] ?? false) && $idRe !== $idProg && count($ult) === $antes + 1 && substr_count($eml, 'Content-Type: application/pdf') === count($ids)
+        && $pdo->query("SELECT estado FROM cobros_programados WHERE id = $idRe")->fetchColumn() === 'enviado', $r['body']);
+    $r = $c->post('cobro_accion.php', ['accion' => 'reenviar', 'id' => $idProg, 'para' => 'yo@ejemplo.test', 'cc' => 'copia@ejemplo.test', 'prueba' => 1]);
+    $ult = glob("$dir/*.eml"); sort($ult); $eml = file_get_contents(end($ult));
+    check('reenvía como prueba: solo a mí y sin CC', ($r['json']['success'] ?? false) && str_contains($eml, 'To: <yo@ejemplo.test>') && !str_contains($eml, 'Cc:'), $r['body']);
+    $idPr = (int)($r['json']['id'] ?? 0);
+    $r = $c->post('cobro_accion.php', ['accion' => 'eliminar', 'id' => $idProg]);
+    check('no se elimina un cobro real enviado', ($r['json']['success'] ?? true) === false);
+    $r = $c->post('cobro_accion.php', ['accion' => 'eliminar', 'id' => $idPr]);
+    check('elimina una prueba con sus PDF', ($r['json']['success'] ?? false) && !(int)$pdo->query("SELECT COUNT(*) FROM cobros_programados WHERE id = $idPr")->fetchColumn()
+        && !is_dir(__DIR__ . "/../../clientes/naranjaymedia/includes/uploads/cobros/2/$idPr"), $r['body']);
+    $r = $c->post('cobro_accion.php', ['accion' => 'eliminar', 'id' => $idOtro]);
+    check('elimina un cobro cancelado', ($r['json']['success'] ?? false) === true);
+    $r = login('qa.ccic@local.test')->get('cobro_accion.php', ['ver' => $idProg]);
+    check('otra empresa no ve el cobro', ($r['json']['success'] ?? true) === false);
+
     $f = login('qa.facturador@local.test');
     check('un facturador no puede programar cobros', ($f->get('cobro_accion.php', ['facturas' => $rid])['json']['success'] ?? true) === false);
     check('los PDF no se pueden abrir desde la web', $c->get('includes/uploads/cobros/2/' . $idProg . '/x.pdf')['code'] === 403);

@@ -131,10 +131,17 @@ require_once '../../includes/templates/header.php';
                             <td><span class="app-badge app-badge-<?= $col ?>"><?= $etq ?></span><?= (int)$c['prueba'] ? ' <span class="app-badge app-badge-warning">Prueba</span>' : '' ?>
                                 <?= $c['error'] && $c['estado'] !== 'enviado' ? '<div class="small text-danger">' . htmlspecialchars(mb_strimwidth($c['error'], 0, 80, '…')) . '</div>' : '' ?></td>
                             <td class="text-end text-nowrap">
+                                <button class="btn btn-sm btn-outline-secondary btn-ver" data-id="<?= (int)$c['id'] ?>" title="Ver lo que se envió: correo, PDF e intentos"><i class="bi bi-eye"></i></button>
                                 <?php if (in_array($c['estado'], ['programado', 'error'], true)): ?>
                                     <button class="btn btn-sm btn-outline-primary btn-accion" data-accion="enviar_ya" data-id="<?= (int)$c['id'] ?>" title="Enviar ahora"><i class="bi bi-send"></i></button>
-                                    <button class="btn btn-sm btn-outline-secondary btn-reprogramar" data-id="<?= (int)$c['id'] ?>" data-fecha="<?= date('Y-m-d\TH:i', strtotime($c['programado_para'])) ?>" title="Cambiar fecha"><i class="bi bi-calendar-event"></i></button>
+                                    <button class="btn btn-sm btn-outline-secondary btn-editar" data-id="<?= (int)$c['id'] ?>" title="Editar destinatarios, mensaje y fecha"><i class="bi bi-pencil"></i></button>
                                     <button class="btn btn-sm btn-outline-danger btn-accion" data-accion="cancelar" data-id="<?= (int)$c['id'] ?>" title="Cancelar"><i class="bi bi-x-lg"></i></button>
+                                <?php endif; ?>
+                                <?php if (in_array($c['estado'], ['enviado', 'cancelado', 'error'], true)): ?>
+                                    <button class="btn btn-sm btn-outline-success btn-reenviar" data-id="<?= (int)$c['id'] ?>" data-para="<?= htmlspecialchars($c['para']) ?>" data-cc="<?= htmlspecialchars((string)$c['cc']) ?>" data-prueba="<?= (int)$c['prueba'] ?>" title="Reenviar (mismo mensaje y mismos PDF)"><i class="bi bi-arrow-repeat"></i></button>
+                                <?php endif; ?>
+                                <?php if (((int)$c['prueba'] && $c['estado'] !== 'enviando') || in_array($c['estado'], ['cancelado', 'error'], true)): ?>
+                                    <button class="btn btn-sm btn-outline-danger btn-accion" data-accion="eliminar" data-id="<?= (int)$c['id'] ?>" title="Eliminar"><i class="bi bi-trash"></i></button>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -143,6 +150,43 @@ require_once '../../includes/templates/header.php';
             </table>
         </div>
     </div>
+
+    <!-- Ver cobro -->
+    <div class="modal fade" id="mVer" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-envelope-open me-1"></i> Cobro <span id="vNum"></span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <div class="row g-3">
+                <div class="col-lg-4">
+                    <dl class="small mb-3" id="vDatos"></dl>
+                    <div class="fw-semibold small mb-1"><i class="bi bi-paperclip"></i> PDF adjuntos</div><div id="vAdjuntos" class="mb-3"></div>
+                    <div class="fw-semibold small mb-1"><i class="bi bi-clock-history"></i> Intentos de envío</div><div id="vEnvios"></div>
+                </div>
+                <div class="col-lg-8">
+                    <div class="small text-muted mb-1">Así se ve el correo (con el logo y el pie de la cuenta Facturación actuales)</div>
+                    <iframe id="vHtml" sandbox="" style="width:100%;height:560px;border:1px solid var(--bs-border-color);border-radius:8px;background:#f1f5f9"></iframe>
+                </div>
+            </div>
+        </div>
+    </div></div></div>
+
+    <!-- Editar cobro -->
+    <div class="modal fade" id="mEditar" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <form id="fEditar">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-pencil me-1"></i> Editar cobro <span id="eNum"></span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" name="accion" value="editar"><input type="hidden" name="id" id="eId">
+                <div class="row g-2">
+                    <div class="col-md-6"><label class="form-label">Para *</label><input class="form-control" name="para" id="ePara" required><div class="form-text">Varios separados por coma.</div></div>
+                    <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="eCc"></div>
+                    <div class="col-md-8"><label class="form-label">Asunto *</label><input class="form-control" name="asunto" id="eAsunto" maxlength="255" required></div>
+                    <div class="col-md-4"><label class="form-label">Envío (hora de Honduras)</label><input class="form-control" type="datetime-local" name="programado_para" id="eFecha" required></div>
+                    <div class="col-12"><label class="form-label">Mensaje *</label><div id="eMensaje" contenteditable="true" class="form-control" style="min-height:240px;max-height:380px;overflow:auto"></div>
+                        <div class="form-text">Los PDF adjuntos no cambian. Para otras facturas, cancela este cobro y crea uno nuevo.</div></div>
+                </div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button><button class="btn btn-primary" type="submit"><i class="bi bi-floppy me-1"></i> Guardar cambios</button></div>
+        </form>
+    </div></div></div>
 <?php endif; ?>
 
 <script>
@@ -239,7 +283,7 @@ require_once '../../includes/templates/header.php';
     const accion = (fd, msg) => fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer)
         .then(d => Swal.fire({ icon: 'success', title: d.message }).then(() => location.reload())).catch(err => Swal.fire('No se pudo', err.message, 'error'));
     document.querySelectorAll('.btn-accion').forEach(b => b.addEventListener('click', async () => {
-        const txt = b.dataset.accion === 'cancelar' ? '¿Cancelar este cobro?' : '¿Enviar este cobro ahora?';
+        const txt = { cancelar: '¿Cancelar este cobro?', eliminar: '¿Eliminar este cobro y sus PDF?', enviar_ya: '¿Enviar este cobro ahora?' }[b.dataset.accion];
         if (!(await Swal.fire({ title: txt, icon: 'question', showCancelButton: true, confirmButtonText: 'Sí', cancelButtonText: 'No' })).isConfirmed) return;
         const fd = new FormData(); fd.append('accion', b.dataset.accion); fd.append('id', b.dataset.id);
         if (b.dataset.accion === 'enviar_ya') Swal.fire({ title: 'Enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
@@ -250,6 +294,72 @@ require_once '../../includes/templates/header.php';
             showCancelButton: true, confirmButtonText: 'Reprogramar', cancelButtonText: 'Cancelar', preConfirm: () => document.getElementById('nuevaFecha').value });
         if (!r.isConfirmed) return;
         const fd = new FormData(); fd.append('accion', 'reprogramar'); fd.append('id', b.dataset.id); fd.append('programado_para', r.value);
+        accion(fd);
+    }));
+
+    // ── Ver lo que se envió ──
+    const fmt = d => d ? new Date(d.replace(' ', 'T')).toLocaleString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+    const estadosTxt = <?= json_encode(array_map(fn($e) => $e[0], $estados), JSON_UNESCAPED_UNICODE) ?>;
+    const detalle = id => fetch('cobro_accion.php?ver=' + id).then(leer);
+    document.querySelectorAll('.btn-ver').forEach(b => b.addEventListener('click', async () => {
+        try {
+            const d = await detalle(b.dataset.id), c = d.cobro;
+            document.getElementById('vNum').textContent = '#' + c.id + (+c.prueba ? ' · prueba' : '');
+            const fila = (k, v) => `<dt class="text-muted fw-normal">${k}</dt><dd class="mb-2">${v}</dd>`;
+            document.getElementById('vDatos').innerHTML = fila('Cliente', esc(c.cliente)) + fila('Para', esc(c.para)) + (c.cc ? fila('CC', esc(c.cc)) : '')
+                + fila('Asunto', esc((+c.prueba ? '[PRUEBA] ' : '') + c.asunto)) + fila('Estado', esc(estadosTxt[c.estado] || c.estado) + (c.error ? `<div class="text-danger">${esc(c.error)}</div>` : ''))
+                + fila('Programado', fmt(c.programado_para)) + fila('Enviado', fmt(c.enviado_en)) + fila('Creado', fmt(c.creado_en));
+            document.getElementById('vAdjuntos').innerHTML = d.adjuntos.length ? d.adjuntos.map(a => a.existe
+                ? `<a class="btn btn-sm btn-outline-secondary me-1 mb-1" target="_blank" href="cobro_accion.php?pdf=${c.id}&factura=${a.factura_id}"><i class="bi bi-file-earmark-pdf text-danger"></i> ${esc(a.correlativo)}</a>`
+                : `<span class="badge text-bg-light border me-1">${esc(a.correlativo)} (no disponible)</span>`).join('') : '<span class="text-muted small">Sin adjuntos.</span>';
+            document.getElementById('vEnvios').innerHTML = d.envios.length ? '<ul class="list-unstyled small mb-0">' + d.envios.map(e =>
+                `<li class="mb-1"><i class="bi ${e.estado === 'enviado' ? 'bi-check-circle text-success' : 'bi-x-circle text-danger'}"></i> ${fmt(e.creado_en)} → ${esc(e.destinatario)}${e.error ? `<div class="text-danger">${esc(e.error)}</div>` : ''}</li>`).join('') + '</ul>'
+                : '<span class="text-muted small">Aún no se ha intentado enviar.</span>';
+            document.getElementById('vHtml').srcdoc = d.html;
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('mVer')).show();
+        } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+    }));
+
+    // ── Editar (solo los que aún no se envían) ──
+    document.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', async () => {
+        try {
+            const c = (await detalle(b.dataset.id)).cobro;
+            document.getElementById('eNum').textContent = '#' + c.id;
+            document.getElementById('eId').value = c.id;
+            document.getElementById('ePara').value = c.para;
+            document.getElementById('eCc').value = c.cc || '';
+            document.getElementById('eAsunto').value = c.asunto;
+            document.getElementById('eFecha').value = c.programado_para.slice(0, 16).replace(' ', 'T');
+            document.getElementById('eMensaje').innerHTML = c.mensaje_html.replace(/\r?\n/g, '');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('mEditar')).show();
+        } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+    }));
+    document.getElementById('fEditar')?.addEventListener('submit', e => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        fd.append('mensaje_html', document.getElementById('eMensaje').innerHTML);
+        accion(fd);
+    });
+
+    // ── Reenviar: copia con el mismo mensaje y los mismos PDF ──
+    document.querySelectorAll('.btn-reenviar').forEach(b => b.addEventListener('click', async () => {
+        const r = await Swal.fire({
+            title: 'Reenviar cobro #' + b.dataset.id,
+            html: `<div class="text-start small">
+                <label class="form-label mb-1">Para</label><input id="rPara" class="form-control mb-2" value="${esc(b.dataset.para)}">
+                <label class="form-label mb-1">Con copia (CC)</label><input id="rCc" class="form-control mb-2" value="${esc(b.dataset.cc)}">
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="rPrueba" ${+b.dataset.prueba ? 'checked' : ''}>
+                <label class="form-check-label" for="rPrueba">Enviar como prueba (asunto con [PRUEBA], sin CC)</label></div>
+                <div class="text-muted mt-2">Se envía ahora mismo, con el mismo mensaje y los mismos PDF. Queda como un cobro nuevo en la lista.</div></div>`,
+            showCancelButton: true, confirmButtonText: 'Reenviar', cancelButtonText: 'Cancelar', focusConfirm: false,
+            preConfirm: () => ({ para: document.getElementById('rPara').value.trim(), cc: document.getElementById('rCc').value.trim(), prueba: document.getElementById('rPrueba').checked })
+        });
+        if (!r.isConfirmed) return;
+        if (!r.value.para) return Swal.fire('Falta el destinatario', 'Escribe al menos un correo en «Para».', 'info');
+        const fd = new FormData();
+        fd.append('accion', 'reenviar'); fd.append('id', b.dataset.id); fd.append('para', r.value.para); fd.append('cc', r.value.cc);
+        if (r.value.prueba) fd.append('prueba', '1');
+        Swal.fire({ title: 'Enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         accion(fd);
     }));
 

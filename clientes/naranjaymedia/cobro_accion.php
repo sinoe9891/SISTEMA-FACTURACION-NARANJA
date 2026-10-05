@@ -2,7 +2,10 @@
 // clientes/naranjaymedia/cobro_accion.php — Cobros por correo programados (solo administradores).
 //   GET  ?facturas=<receptor_id>                    → facturas del cliente con su saldo (JSON)
 //   POST accion=crear  modo=programar|ahora|prueba   → crea el cobro (genera los PDF) y, si toca, lo envía
+//   GET  ?ver=<id>                                  → detalle: datos, vista del correo, adjuntos e intentos de envío
+//   GET  ?pdf=<id>&factura=<factura_id>             → PDF adjunto tal como se envió
 //   POST accion=enviar_ya | cancelar | reprogramar   → id (+ programado_para)
+//   POST accion=editar (para, cc, asunto, mensaje_html, programado_para) | reenviar (para, cc, prueba) | eliminar
 // Está junto a ver_factura.php porque los PDF se generan incluyéndolo (como la descarga ZIP).
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
@@ -35,6 +38,23 @@ try {
     if (!$cid) throw new Exception("Empresa no identificada.");
     $uid = (int)USUARIO_ID;
 
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['ver'])) {
+        echo json_encode(['success' => true] + cobroDetalle($pdo, $cid, (int)$_GET['ver']), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['pdf'])) {
+        $cobro = cobroObtener($pdo, $cid, (int)$_GET['pdf']);
+        $st = $pdo->prepare("SELECT archivo FROM cobros_programados_facturas WHERE cobro_id = ? AND factura_id = ?");
+        $st->execute([$cobro['id'], (int)($_GET['factura'] ?? 0)]);
+        $archivo = (string)$st->fetchColumn();
+        $ruta = cobroDir($cid, (int)$cobro['id']) . $archivo;
+        if ($archivo === '' || !is_file($ruta)) throw new Exception("El PDF ya no está disponible.");
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="' . $archivo . '"');
+        header('Content-Length: ' . filesize($ruta));
+        readfile($ruta);
+        exit;
+    }
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $rid = (int)($_GET['facturas'] ?? 0);
         $st = $pdo->prepare("SELECT id, nombre, email, contacto_nombre FROM clientes_factura WHERE id = ? AND cliente_id = ?");
@@ -116,6 +136,29 @@ try {
             $u->execute([$dt->format('Y-m-d H:i:s'), $id, $cid]);
             if (!$u->rowCount()) throw new Exception("Solo se pueden reprogramar cobros que aún no se envían.");
             echo json_encode(['success' => true, 'message' => 'Reprogramado para el ' . $dt->format('d/m/Y \a \l\a\s g:i a') . '.'], JSON_UNESCAPED_UNICODE);
+            break;
+
+        case 'editar':
+            cobroEditar($pdo, $cid, $id, $_POST);
+            echo json_encode(['success' => true, 'message' => 'Cobro actualizado.'], JSON_UNESCAPED_UNICODE);
+            break;
+
+        case 'reenviar':
+            $prueba = !empty($_POST['prueba']);
+            $pdo->beginTransaction();
+            $nuevo = cobroDuplicar($pdo, $cid, $uid, $id, (string)($_POST['para'] ?? ''), (string)($_POST['cc'] ?? ''), $prueba);
+            $pdo->commit();
+            try {
+                cobroEnviar($pdo, $cid, $nuevo, $uid);
+            } catch (Throwable $e) {
+                throw new Exception("Se guardó la copia (#$nuevo), pero no se pudo enviar: " . $e->getMessage());
+            }
+            echo json_encode(['success' => true, 'id' => $nuevo, 'message' => ($prueba ? 'Prueba reenviada' : 'Cobro reenviado') . ' (#' . $nuevo . ').'], JSON_UNESCAPED_UNICODE);
+            break;
+
+        case 'eliminar':
+            cobroEliminar($pdo, $cid, $id);
+            echo json_encode(['success' => true, 'message' => 'Cobro eliminado.'], JSON_UNESCAPED_UNICODE);
             break;
 
         default:
