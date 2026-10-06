@@ -8,7 +8,7 @@
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/nomina_pagos.php';
 
-const BOUCHER_MAX = 150;
+const BOUCHER_MAX = 400;   // por descarga (un año completo cabe)
 const BOUCHER_TIPOS = ['' => 'Todos los pagos', 'nomina' => 'Solo nómina (colaboradores)', 'otros' => 'Otros gastos'];
 
 /** Filtros de la página de bouchers (por defecto: el mes en curso). */
@@ -75,7 +75,7 @@ function boucherColaborador(array $ctx, string $descripcion): ?array
 function boucherGastos(PDO $pdo, int $cid, array $f): array
 {
     $st = $pdo->prepare("SELECT g.*, cg.nombre AS categoria FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id = g.categoria_id
-                         WHERE g.cliente_id = ? AND g.estado = 'pagado' AND g.fecha BETWEEN ? AND ? ORDER BY g.fecha, g.id");
+                         WHERE g.cliente_id = ? AND g.estado = 'pagado' AND g.fecha BETWEEN ? AND ? ORDER BY g.fecha DESC, g.id DESC");   // más reciente primero
     $st->execute([$cid, $f['desde'], $f['hasta']]);
     return array_values(array_filter($st->fetchAll(PDO::FETCH_ASSOC), function ($g) use ($f) {
         $nom = esGastoNomina((string)$g['descripcion']);

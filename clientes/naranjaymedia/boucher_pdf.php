@@ -3,6 +3,7 @@
 //   ?gasto_id=N[&vista=1]                       → un boucher (vista=1 lo abre en el navegador)
 //   ?lote=1&desde=…&hasta=…&tipo=…              → todos los del período en un solo PDF
 //   ?lote=1&formato=zip&desde=…&hasta=…&tipo=…  → ZIP con un PDF por pago
+//   ?ids=1,2,3[&formato=zip]                     → solo los seleccionados (PDF con todos o ZIP)
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/bouchers.php';
@@ -13,9 +14,19 @@ $cid = (int)cliente_actual();
 @set_time_limit(300);
 $ctx = boucherContexto($pdo, $cid, __DIR__ . '/includes/uploads');
 
-if (!empty($_GET['lote'])) {
+if (!empty($_GET['ids'])) {
+    $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', explode(',', (string)$_GET['ids']))))), 0, BOUCHER_MAX + 1);
+    $gastos = [];
+    if ($ids) {
+        $st = $pdo->prepare("SELECT g.*, cg.nombre AS categoria FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id = g.categoria_id
+                             WHERE g.cliente_id = ? AND g.estado = 'pagado' AND g.id IN (" . implode(',', array_fill(0, count($ids), '?')) . ") ORDER BY g.fecha, g.id");
+        $st->execute([$cid, ...$ids]);
+        $gastos = $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+    $nombre = 'bouchers_seleccionados_' . date('Y-m-d');
+} elseif (!empty($_GET['lote'])) {
     $f = boucherFiltros($_GET);
-    $gastos = boucherGastos($pdo, $cid, $f);
+    $gastos = array_reverse(boucherGastos($pdo, $cid, $f));   // en el PDF/ZIP, del más antiguo al más reciente
     $nombre = 'bouchers_' . $f['desde'] . '_al_' . $f['hasta'];
 } else {
     $st = $pdo->prepare("SELECT g.*, cg.nombre AS categoria FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id = g.categoria_id WHERE g.id = ? AND g.cliente_id = ? AND g.estado <> 'anulado'");

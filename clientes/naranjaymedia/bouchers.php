@@ -43,11 +43,15 @@ require_once '../../includes/templates/header.php';
 
 <form class="app-card app-card-body mb-3" method="get">
     <div class="row g-2 align-items-end">
-        <div class="col-6 col-md-2"><label class="form-label small">Mes</label>
+        <div class="col-6 col-md-2"><label class="form-label small">Año o mes</label>
             <select class="form-select form-select-sm" id="selMes"><option value="">— Rango —</option>
-                <?php for ($i = 0; $i < 14; $i++): $t = strtotime(date('Y-m-01') . " -$i month"); $v = date('Y-m', $t); ?>
+                <?php $anioCompleto = substr($f['desde'], 5) === '01-01' && substr($f['hasta'], 5) === '12-31' && substr($f['desde'], 0, 4) === substr($f['hasta'], 0, 4); ?>
+                <optgroup label="Año completo"><?php for ($y = (int)date('Y'); $y >= (int)date('Y') - 2; $y--): ?>
+                    <option value="<?= $y ?>" <?= $anioCompleto && (int)substr($f['desde'], 0, 4) === $y ? 'selected' : '' ?>>Todo <?= $y ?></option>
+                <?php endfor; ?></optgroup>
+                <optgroup label="Mes"><?php for ($i = 0; $i < 14; $i++): $t = strtotime(date('Y-m-01') . " -$i month"); $v = date('Y-m', $t); ?>
                     <option value="<?= $v ?>" <?= $mesActual && substr($f['desde'], 0, 7) === $v ? 'selected' : '' ?>><?= $meses[(int)date('n', $t)] . ' ' . date('Y', $t) ?></option>
-                <?php endfor; ?></select></div>
+                <?php endfor; ?></optgroup></select></div>
         <div class="col-6 col-md-2"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" id="fDesde" value="<?= $f['desde'] ?>"></div>
         <div class="col-6 col-md-2"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" id="fHasta" value="<?= $f['hasta'] ?>"></div>
         <?php if (USUARIO_ROL !== 'nomina'): ?>
@@ -72,13 +76,21 @@ require_once '../../includes/templates/header.php';
 <?php endif; ?>
 
 <div class="app-card">
+    <div class="app-toolbar p-3 border-bottom d-flex flex-wrap gap-2 align-items-center">
+        <div class="app-search flex-grow-1" style="max-width:320px"><i class="bi bi-search"></i><input type="search" class="form-control form-control-sm" id="bBuscar" placeholder="Buscar beneficiario, concepto…"></div>
+        <select class="form-select form-select-sm" id="bPorPagina" style="width:auto"><?php foreach ([10, 20, 50, 100, 200, 300] as $n): ?><option value="<?= $n ?>"><?= $n ?>/pág</option><?php endforeach; ?></select>
+        <span class="ms-auto small text-muted" id="bSelInfo">Ninguno seleccionado</span>
+        <button type="button" class="btn btn-sm btn-outline-danger" id="bSelPdf" disabled><i class="bi bi-file-earmark-pdf me-1"></i> PDF seleccionados</button>
+        <button type="button" class="btn btn-sm btn-primary" id="bSelZip" disabled><i class="bi bi-file-earmark-zip me-1"></i> ZIP seleccionados</button>
+    </div>
     <div class="table-responsive">
-        <table data-paginar class="table app-table mb-0">
-            <thead><tr><th>Fecha</th><th>Beneficiario</th><th>Concepto</th><th>Método</th><th class="app-num">Monto</th><th class="text-center">Captura</th><th class="text-center">Firma</th><th class="text-end">Boucher</th></tr></thead>
+        <table class="table app-table mb-0" id="tablaBouchers">
+            <thead><tr><th style="width:34px"><input type="checkbox" class="form-check-input" id="bTodos" title="Seleccionar todos los del filtro"></th><th class="app-n">#</th><th>Fecha</th><th>Beneficiario</th><th>Concepto</th><th>Método</th><th class="app-num">Monto</th><th class="text-center">Captura</th><th class="text-center">Firma</th><th class="text-end">Boucher</th></tr></thead>
             <tbody>
-                <?php if (!$filas): ?><tr><td colspan="8" class="text-center text-muted py-4">No hay pagos en este período.</td></tr><?php endif; ?>
                 <?php foreach ($filas as $x): ?>
-                    <tr>
+                    <tr data-fila>
+                        <td><input type="checkbox" class="form-check-input b-sel" value="<?= (int)$x['id'] ?>"></td>
+                        <td class="app-n"></td>
                         <td class="text-nowrap"><?= date('d/m/Y', strtotime($x['fecha'])) ?></td>
                         <td><?= htmlspecialchars($x['beneficiario'] ?: '—') ?><?= $x['es_colab'] ? ' <span class="app-badge app-badge-info">Colaborador</span>' : '' ?></td>
                         <td class="small"><?= htmlspecialchars(mb_strimwidth((string)$x['descripcion'], 0, 70, '…')) ?><?= $x['categoria'] ? '<div class="text-muted">' . htmlspecialchars($x['categoria']) . '</div>' : '' ?></td>
@@ -95,6 +107,7 @@ require_once '../../includes/templates/header.php';
             </tbody>
         </table>
     </div>
+    <div class="app-pager" id="bPie"></div>
 </div>
 
 <!-- Vista previa -->
@@ -105,6 +118,7 @@ require_once '../../includes/templates/header.php';
     <div class="modal-body p-0"><iframe id="bFrame" title="Vista previa del boucher" style="width:100%;height:78vh;border:0"></iframe></div>
 </div></div></div>
 
+<script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
 <script>
 (() => {
     const modal = document.getElementById('mBoucher'), frame = document.getElementById('bFrame');
@@ -115,14 +129,43 @@ require_once '../../includes/templates/header.php';
         bootstrap.Modal.getOrCreateInstance(modal).show();
     }));
     modal.addEventListener('hidden.bs.modal', () => frame.src = 'about:blank');
-    // Mes → rango del mes completo
+    // Mes o año → rango completo
     document.getElementById('selMes').addEventListener('change', e => {
-        if (!e.target.value) return;
-        const [y, m] = e.target.value.split('-').map(Number);
-        document.getElementById('fDesde').value = `${e.target.value}-01`;
-        document.getElementById('fHasta').value = `${e.target.value}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+        const v = e.target.value;
+        if (!v) return;
+        if (/^\d{4}$/.test(v)) { document.getElementById('fDesde').value = `${v}-01-01`; document.getElementById('fHasta').value = `${v}-12-31`; }
+        else {
+            const [y, m] = v.split('-').map(Number);
+            document.getElementById('fDesde').value = `${v}-01`;
+            document.getElementById('fHasta').value = `${v}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+        }
         e.target.form.submit();
     });
+
+    // Tabla: numeración, búsqueda y 10/20/50/100/200/300 por página
+    AppTabla('#tablaBouchers', { buscar: '#bBuscar', porPagina: '#bPorPagina', pie: '#bPie', vacio: 'No hay pagos con este filtro.' });
+
+    // Selección: casilla general = todos los del filtro (todas las páginas)
+    const sels = [...document.querySelectorAll('.b-sel')], todos = document.getElementById('bTodos');
+    const elegidos = () => sels.filter(c => c.checked).map(c => c.value);
+    const pintarSel = () => {
+        const n = elegidos().length;
+        document.getElementById('bSelInfo').textContent = n ? `${n} seleccionado${n === 1 ? '' : 's'}` : 'Ninguno seleccionado';
+        document.getElementById('bSelPdf').disabled = document.getElementById('bSelZip').disabled = !n;
+        todos.checked = n > 0 && n === sels.length; todos.indeterminate = n > 0 && n < sels.length;
+    };
+    todos?.addEventListener('change', () => { sels.forEach(c => c.checked = todos.checked); pintarSel(); });
+    sels.forEach(c => c.addEventListener('change', pintarSel));
+    const max = <?= BOUCHER_MAX ?>;
+    const bajar = zip => {
+        const ids = elegidos();
+        if (ids.length > max) return Swal.fire('Demasiados', `Máximo ${max} bouchers por descarga.`, 'info');
+        const url = 'boucher_pdf.php?ids=' + ids.join(',') + (zip ? '&formato=zip' : '&vista=1');
+        if (zip) { Swal.fire({ title: 'Generando ZIP…', text: `${ids.length} PDF; puede tardar unos segundos.`, timer: 4000, showConfirmButton: false, didOpen: () => Swal.showLoading() }); location.href = url; }
+        else window.open(url, '_blank');
+    };
+    document.getElementById('bSelPdf').addEventListener('click', () => bajar(false));
+    document.getElementById('bSelZip').addEventListener('click', () => bajar(true));
     // El ZIP tarda: aviso mientras se genera
     document.getElementById('btnZip')?.addEventListener('click', () => Swal.fire({ title: 'Generando ZIP…', text: 'Un PDF por pago; puede tardar unos segundos.', timer: 4000, showConfirmButton: false, didOpen: () => Swal.showLoading() }));
 })();
