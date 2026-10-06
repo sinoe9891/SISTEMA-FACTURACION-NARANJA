@@ -1825,3 +1825,21 @@ suite('Firmas de documentos y concepto de pago', function () {
     $pdo->prepare("UPDATE colaboradores SET concepto_pago = ? WHERE id = ?")->execute([$col['concepto_pago'], $col['id']]);
     $pdo->exec("DELETE FROM documento_firmantes WHERE cliente_id = 2");
 });
+
+suite('Colaborador sin salario', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $r = $c->post('includes/colaborador_guardar.php', ['nombre' => 'QA Sin', 'apellido' => 'Salario', 'puesto' => 'Gerente QA', 'fecha_ingreso' => date('Y-m-01', strtotime('-2 months')),
+        'salario_base' => 0, 'tipo_pago' => 'quincenal', 'dia_pago' => 15, 'dia_pago_2' => 30, 'telefono' => '33758070', 'email' => 'sinsalario@ejemplo.test']);
+    $id = (int)$pdo->query("SELECT id FROM colaboradores WHERE cliente_id = 2 AND nombre = 'QA Sin'")->fetchColumn();
+    check('se puede crear un colaborador con salario 0', $id > 0, $r['body']);
+    $l = $c->get('colaboradores');
+    if (!$id) return;
+    check('aparece en la lista de colaboradores', str_contains($c->get('colaboradores')['body'], 'QA Sin'));
+    check('no aparece en nóminas vencidas', !preg_match('/QA Sin Salario.{0,400}Pagar/s', $l['body']) && sinErroresPhp($l['body']), errorPhp($l['body']));
+    $v = $c->get('colaborador_ver', ['id' => $id]);
+    check('su ficha carga sin alerta de nómina vencida', $v['code'] === 200 && !str_contains($v['body'], 'Nómina vencida') && sinErroresPhp($v['body']), errorPhp($v['body']));
+    $r = $c->post('includes/colaborador_guardar.php', ['nombre' => 'QA Neg', 'apellido' => 'X', 'puesto' => 'X', 'fecha_ingreso' => date('Y-m-d'), 'salario_base' => -5, 'tipo_pago' => 'quincenal', 'dia_pago' => 15, 'dia_pago_2' => 30]);
+    check('no acepta salario negativo', ($r['json']['success'] ?? true) === false);
+    $pdo->exec("DELETE FROM colaboradores WHERE cliente_id = 2 AND nombre IN ('QA Sin', 'QA Neg')");
+});

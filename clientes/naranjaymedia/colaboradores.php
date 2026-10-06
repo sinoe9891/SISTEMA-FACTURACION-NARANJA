@@ -110,6 +110,7 @@ foreach ($colabs_activos as $col) {
     // Fecha de baja: no se le debe nada después de esa fecha
     $baja    = !empty($col['fecha_baja']) ? new DateTime($col['fecha_baja']) : null;
     if (!(int)$col['activo'] && !$baja) continue;
+    if ((float)$col['salario_base'] <= 0) continue;   // sin salario asignado: no hay nómina pendiente
     $n_calc  = calcNeto((float)$col['salario_base'], (int)$col['aplica_ihss'], (int)$col['aplica_rap'], $col['tipo_pago']);
 
     $checks = $col['tipo_pago'] === 'quincenal'
@@ -1339,7 +1340,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                         </div>
                         <div class="col-md-4"><label class="mf-label">Salario Bruto *</label>
                             <div class="input-group"><span class="input-group-text">L</span><input type="number"
-                                    name="salario_base" id="c_salario" class="mf-input" min="1" step="0.01" required
+                                    name="salario_base" id="c_salario" class="mf-input" min="0" step="0.01" required title="0 = sin salario por ahora (no genera nómina pendiente)"
                                     style="border-radius:0 var(--radius-sm) var(--radius-sm) 0"></div>
                         </div>
                         <div class="col-md-3"><label class="mf-label">Tipo Pago</label>

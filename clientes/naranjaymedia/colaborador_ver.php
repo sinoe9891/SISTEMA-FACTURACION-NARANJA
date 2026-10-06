@@ -201,7 +201,7 @@ $anio_hoy  = (int)$hoy_obj->format('Y');
 $mes_hoy   = (int)$hoy_obj->format('n');
 $dias_mes  = (int)$hoy_obj->format('t');
 
-if ($col['activo']) {
+if ($col['activo'] && (float)$col['salario_base'] > 0) {   // sin salario asignado no hay nómina vencida
     if ($tipo_pago === 'quincenal') {
         $checks_q = [
             1 => ['dia' => (int)$col['dia_pago'],  'pagada' => $q1_pagada, 'label' => '1ª Quincena'],
@@ -2904,7 +2904,7 @@ $tipos_btn_p = [
                         </div>
                         <div class="col-md-4"><label class="mf-label">Salario Bruto *</label>
                             <div class="input-group"><span class="input-group-text">L</span><input type="number"
-                                    name="salario_base" class="form-control" min="1" step="0.01"
+                                    name="salario_base" class="form-control" min="0" step="0.01"
                                     value="<?= number_format($salario, 2, '.', '') ?>" required></div>
                         </div>
                         <div class="col-md-4"><label class="mf-label">Tipo de Pago</label>

@@ -47,7 +47,7 @@ try {
     if (!$nombre)        throw new Exception("El nombre es obligatorio.");
     if (!$apellido)      throw new Exception("El apellido es obligatorio.");
     if (!$puesto)        throw new Exception("El puesto es obligatorio.");
-    if ($salario_base <= 0) throw new Exception("El salario base debe ser mayor a 0.");
+    if ($salario_base < 0) throw new Exception("El salario base no puede ser negativo (0 = sin salario por ahora).");
     if (!$fecha_ingreso) throw new Exception("La fecha de ingreso es obligatoria.");
     if (!in_array($tipo_pago, ['mensual','quincenal'])) throw new Exception("Tipo de pago inválido.");
 
