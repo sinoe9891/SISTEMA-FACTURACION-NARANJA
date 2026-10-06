@@ -1772,3 +1772,29 @@ suite('Gastos: filtros sin recargar', function () {
     check('el buscador encuentra por número de gasto', str_contains($r['body'], '#' . $idUno . ' ' . $idUno . ' '), (string)$idUno);
     check('los botones de cada fila escuchan en el documento', str_contains($r['body'], "ev.target.closest('.btn-editar-gasto')") && str_contains($r['body'], 'gsTabla.recargar()'));
 });
+
+suite('Desglose del boucher y recibo', function () {
+    $pdo = db();
+    require_once __DIR__ . '/../../includes/bouchers.php';
+    $g = $pdo->query("SELECT g.*, NULL AS categoria FROM gastos g WHERE g.cliente_id = 2 AND g.estado = 'pagado' AND g.descripcion LIKE 'Sueldo %' ORDER BY g.id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $col = $pdo->query("SELECT id FROM colaboradores WHERE cliente_id = 2 AND " . $pdo->quote($g['descripcion']) . " LIKE CONCAT('%', nombre, ' ', apellido, '%') LIMIT 1")->fetchColumn();
+    $pdo->prepare("INSERT INTO colaborador_prestamos (cliente_id, colaborador_id, tipo, monto_total, saldo_pendiente, descripcion, fecha, num_cuotas, monto_cuota, estado, notas) VALUES (2, ?, 'adelanto', 1000, 500, 'QA adelanto', ?, 2, 500, 'activo', 'QA-DESG')")->execute([$col, $g['fecha']]);
+    $p = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO colaborador_prestamo_cuotas (prestamo_id, cliente_id, colaborador_id, numero_cuota, monto, fecha_esperada, estado, fecha_pago, metodo_pago, notas) VALUES (?, 2, ?, 1, 500, ?, 'pagado', ?, 'descuento_nomina', ?)")
+        ->execute([$p, $col, $g['fecha'], $g['fecha'], ' | Descontado en nómina gasto #' . $g['id']]);
+    $pdo->prepare("INSERT INTO colaborador_prestamo_cuotas (prestamo_id, cliente_id, colaborador_id, numero_cuota, monto, fecha_esperada, estado, fecha_pago, metodo_pago, notas) VALUES (?, 2, ?, 2, 500, ?, 'pagado', ?, 'descuento_nomina', ?)")
+        ->execute([$p, $col, $g['fecha'], $g['fecha'], ' | Descontado en nómina gasto #' . $g['id'] . '7']);   // otro pago: no debe aparecer
+    $pdo->prepare("INSERT INTO colaborador_prestamos (cliente_id, colaborador_id, tipo, monto_total, saldo_pendiente, descripcion, fecha, num_cuotas, monto_cuota, estado, notas) VALUES (2, ?, 'bono', 800, 0, 'QA bono', ?, 1, 800, 'pagado', ?)")
+        ->execute([$col, $g['fecha'], 'QA-DESG | Aplicado en nómina gasto #' . $g['id'] . ' el ' . $g['fecha']]);
+    $ctx = boucherContexto($pdo, 2, __DIR__ . '/../../clientes/naranjaymedia/includes/uploads');
+    $d = boucherDatos($ctx, $g);
+    check('el boucher trae el descuento y el bono de ese pago', count($d['descuentos']) === 1 && $d['descuentos'][0]['monto'] == 500 && count($d['extras']) === 1 && $d['extras'][0]['monto'] == 800, json_encode([$d['descuentos'], $d['extras']]));
+    $base = $d['monto'] + 500 - 800;
+    check('el desglose cuadra con el total transferido', abs($base - 500 + 800 - $d['monto']) < 0.001);
+    $c = login('qa.admin@local.test');
+    check('el boucher con desglose se genera', str_starts_with($c->get('boucher_pdf.php', ['gasto_id' => $g['id'], 'vista' => 1])['body'], '%PDF'));
+    $r = $c->get('colaborador_recibo_pdf.php', ['gasto_id' => $g['id'], 'vista' => 1]);
+    check('el recibo se genera en PDF', str_starts_with($r['body'], '%PDF'), substr($r['body'], 0, 200));
+    $pdo->exec("DELETE q FROM colaborador_prestamo_cuotas q JOIN colaborador_prestamos p ON p.id = q.prestamo_id WHERE p.notas LIKE 'QA-DESG%'");
+    $pdo->exec("DELETE FROM colaborador_prestamos WHERE notas LIKE 'QA-DESG%'");
+});

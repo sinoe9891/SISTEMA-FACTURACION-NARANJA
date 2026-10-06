@@ -8,6 +8,13 @@
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/nomina_pagos.php';
 
+if (!function_exists('esGastoNomina')) {   // normalmente viene de session.php; aquí por si se usa sin sesión (pruebas, scripts)
+    function esGastoNomina(string $descripcion): bool
+    {
+        return (bool)preg_match('/^(Sueldo |Bono: |Vi[aá]tico: |Pago adicional - )/u', $descripcion);
+    }
+}
+
 const BOUCHER_MAX = 400;   // por descarga (un año completo cabe)
 const BOUCHER_TIPOS = ['' => 'Todos los pagos', 'nomina' => 'Solo nómina (colaboradores)', 'otros' => 'Otros gastos'];
 
@@ -54,7 +61,15 @@ function boucherContexto(PDO $pdo, int $cid, string $uploads): array
         $s3->execute([$cid]);
         foreach ($s3->fetchAll(PDO::FETCH_ASSOC) as $t) $tarjetas[(int)$t['id']] = $t;
     } catch (Throwable $ignorar) {}
+    // Descuentos y extras ligados al pago de nómina (los marca colaborador_pago_guardar.php en las notas)
+    $stCuotas = $stExtras = null;
+    try {
+        $stCuotas = $pdo->prepare("SELECT q.monto, q.numero_cuota, p.tipo, p.descripcion, p.num_cuotas FROM colaborador_prestamo_cuotas q JOIN colaborador_prestamos p ON p.id = q.prestamo_id
+                                   WHERE q.cliente_id = ? AND q.estado = 'pagado' AND q.notas REGEXP ? ORDER BY q.id");
+        $stExtras = $pdo->prepare("SELECT tipo, descripcion, monto_total FROM colaborador_prestamos WHERE cliente_id = ? AND tipo IN ('bono','viatico') AND notas REGEXP ? ORDER BY id");
+    } catch (Throwable $ignorar) {}
     return [
+        'stCuotas' => $stCuotas, 'stExtras' => $stExtras,
         'cid' => $cid, 'uploads' => rtrim($uploads, '/') . '/', 'b64' => $b64, 'logo' => $logo, 'ciudad' => (string)$st->fetchColumn(),
         'banco' => $bancoPred, 'stMov' => $stMov, 'colabs' => $colabs->fetchAll(PDO::FETCH_ASSOC), 'tarjetas' => $tarjetas,
         'usuarios' => $pdo->query("SELECT id, nombre FROM usuarios")->fetchAll(PDO::FETCH_KEY_PAIR),
@@ -112,7 +127,21 @@ function boucherDatos(array $ctx, array $g): array
                            $g['archivo_adjunto'] ? $ctx['uploads'] . 'gastos/' . basename($g['archivo_adjunto']) : null]) as $r) {
         if (is_file($r)) { $comp = ($ctx['b64'])($r); $compPdf = !$comp; break; }
     }
+    // Desglose: descuentos (cuotas de préstamos/adelantos) y extras (bonos/viáticos) aplicados en este pago
+    $desc = $extra = [];
+    if ($c && $ctx['stCuotas']) {
+        $ctx['stCuotas']->execute([$ctx['cid'], 'gasto #' . $g['id'] . '([^0-9]|$)']);
+        foreach ($ctx['stCuotas']->fetchAll(PDO::FETCH_ASSOC) as $q)
+            $desc[] = ['texto' => ucfirst($q['tipo']) . ': ' . $q['descripcion'] . ' (cuota ' . $q['numero_cuota'] . ($q['num_cuotas'] ? ' de ' . $q['num_cuotas'] : '') . ')', 'monto' => (float)$q['monto']];
+        $ctx['stExtras']->execute([$ctx['cid'], 'gasto #' . $g['id'] . ' el ']);
+        foreach ($ctx['stExtras']->fetchAll(PDO::FETCH_ASSOC) as $x)
+            $extra[] = ['texto' => ($x['tipo'] === 'bono' ? 'Bono' : 'Viático') . ': ' . $x['descripcion'], 'monto' => (float)$x['monto_total']];
+    }
+    // Notas con descuentos escritos a mano (pagos registrados antes de ligar las cuotas)
+    $obs = '';
+    if ($c && !$desc && preg_match('/descuent|anticipo|adelanto|deducc/iu', (string)$g['notas'])) $obs = trim(preg_replace('/\s+/', ' ', (string)$g['notas']));
     return [
+        'descuentos' => $desc, 'extras' => $extra, 'observaciones' => $obs,
         'id' => (int)$g['id'], 'fecha' => $g['fecha'], 'monto' => (float)$g['monto'], 'concepto' => $concepto, 'colaborador' => $c,
         'beneficiario' => $nombreColab ?: (trim((string)$g['proveedor']) ?: ''), 'banco' => $banco ?: ($metodo === 'efectivo' ? '' : $ctx['banco']),
         'metodo' => $metodo, 'referencia' => preg_match('/ref\.\s*([A-Za-z0-9-]+)/i', (string)$g['notas'], $m) ? $m[1] : (string)($g['factura_ref'] ?? ''),
@@ -148,8 +177,15 @@ function boucherPagina(array $ctx, array $d): string
 
         <table class="monto">
             <tr><td class="lbl">Concepto</td><td><?= $e($d['concepto']) ?><?= $d['categoria'] ? '<div class="cat">' . $e($d['categoria']) . '</div>' : '' ?></td></tr>
+            <?php if ($d['descuentos'] || $d['extras']):
+                $base = $d['monto'] + array_sum(array_column($d['descuentos'], 'monto')) - array_sum(array_column($d['extras'], 'monto')); ?>
+                <tr class="det"><td class="lbl">Pago del período</td><td><span class="det-n">L <?= number_format($base, 2) ?></span></td></tr>
+                <?php foreach ($d['descuentos'] as $x): ?><tr class="det menos"><td class="lbl">Descuento</td><td><span class="det-t"><?= $e($x['texto']) ?></span><span class="det-n">− L <?= number_format($x['monto'], 2) ?></span></td></tr><?php endforeach; ?>
+                <?php foreach ($d['extras'] as $x): ?><tr class="det mas"><td class="lbl">Más</td><td><span class="det-t"><?= $e($x['texto']) ?></span><span class="det-n">+ L <?= number_format($x['monto'], 2) ?></span></td></tr><?php endforeach; ?>
+            <?php endif; ?>
             <tr class="total"><td class="lbl">Total</td><td class="cifra">L <?= number_format($d['monto'], 2) ?></td></tr>
             <tr><td colspan="2" class="letras">Son: <?= $e(numeroALetras($d['monto'])) ?></td></tr>
+            <?php if ($d['observaciones']): ?><tr><td class="lbl">Observaciones</td><td class="obs"><?= $e($d['observaciones']) ?></td></tr><?php endif; ?>
         </table>
 
         <div class="comp">
@@ -205,6 +241,9 @@ function boucherDocumento(array $paginas): string
         .monto .total td { background: #0f172a; color: #fff; border: 0; } .monto .total .lbl { color: #cbd5e1; }
         .cifra { font-size: 15px; font-weight: bold; text-align: right; }
         .letras { font-style: italic; color: #475569; font-size: 9.5px; }
+        .det td { padding: 4px 8px; font-size: 9.5px; } .det-t { color: #334155; } .det-n { float: right; font-weight: bold; }
+        .det.menos .det-n, .det.menos .lbl { color: #b91c1c; } .det.mas .det-n, .det.mas .lbl { color: #047857; }
+        .obs { font-size: 8.5px; color: #64748b; }
         .comp { margin: 12px 0 6px; text-align: center; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; }
         .comp img { max-width: 100%; max-height: 300px; } .comp-vacio { color: #94a3b8; padding: 26px 0; }
         .firmas-int { margin-top: 10px; } .firmas-int td { width: 25%; text-align: center; padding: 0 8px; vertical-align: bottom; }

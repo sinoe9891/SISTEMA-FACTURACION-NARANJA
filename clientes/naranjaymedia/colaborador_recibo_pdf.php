@@ -2,6 +2,7 @@
 // clientes/naranjaymedia/colaborador_recibo_pdf.php
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
+require_once '../../includes/functions.php';
 
 // ── Buscar autoload de DOMPDF ─────────────────────────────────────────────────
 $candidates = [
@@ -145,6 +146,7 @@ $comp_mime = '';
 $es_pdf_comp = false;
 if (!empty($gasto['archivo_adjunto'])) {
     $cp = __DIR__ . '/includes/uploads/comprobantes_nomina/' . $gasto['archivo_adjunto'];
+    if (!file_exists($cp)) $cp = __DIR__ . '/includes/uploads/gastos/' . basename($gasto['archivo_adjunto']);
     if (file_exists($cp)) {
         $comp_mime   = (new finfo(FILEINFO_MIME_TYPE))->file($cp);
         $es_pdf_comp = ($comp_mime === 'application/pdf');
@@ -183,348 +185,114 @@ $folio = 'RN-' . str_pad($gasto_id, 5, '0', STR_PAD_LEFT);
 // ══════════════════════════════════════════════════════════════════════════════
 // HTML DEL RECIBO
 // ══════════════════════════════════════════════════════════════════════════════
+$meses_es  = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+$ts_pago   = strtotime($gasto['fecha']);
+$periodo_txt = $periodo_lbl . ' · ' . $meses_es[(int)date('n', $ts_pago)] . ' ' . date('Y', $ts_pago);
+$referencia = preg_match('/ref\.\s*([A-Za-z0-9-]+)/i', (string)$gasto['notas'], $mref) ? $mref[1] : '';
+$cuenta_col = trim(($colab['banco'] ?? '') . ' ' . ($colab['tipo_cuenta'] ?? '') . (!empty($colab['numero_cuenta']) ? ' ••' . substr(preg_replace('/\D/', '', $colab['numero_cuenta']), -4) : ''));
+$estado_txt = ['pagado' => 'Pagado', 'pendiente' => 'Pendiente', 'anulado' => 'Anulado'][$gasto['estado']] ?? $gasto['estado'];
+$e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
+$L = fn($n) => 'L ' . number_format((float)$n, 2);
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HTML DEL RECIBO (mismo estilo que el boucher; anchos fijos para que nada se salga de la hoja)
+// ══════════════════════════════════════════════════════════════════════════════
 ob_start(); ?>
 <!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
+<html lang="es"><head><meta charset="UTF-8">
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body {
-    font-family: DejaVu Sans, Arial, sans-serif;
-    font-size: 9pt;
-    color: #1a1a1a;
-    background: #fff;
-}
-.page { width:100%; padding: 18px 22px 14px; }
+    @page { margin: 1.1cm 1.4cm; }
+    body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 9.5px; color: #1e293b; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    td, th { word-wrap: break-word; }
+    .enc td { vertical-align: middle; }
+    .enc-logo img { max-height: 60px; max-width: 130px; }
+    .emp { font-size: 11.5px; font-weight: bold; color: #0f172a; line-height: 1.3; }
+    .emp-sub { font-size: 8.5px; color: #64748b; margin-top: 2px; }
+    .doc { text-align: right; } .doc-t { font-size: 14px; font-weight: bold; letter-spacing: 2px; color: #0f172a; }
+    .doc-n { font-size: 10px; color: #e4550d; font-weight: bold; margin-top: 2px; }
+    .franja { height: 4px; background: #e4550d; margin: 10px 0 12px; }
+    .bloque-t { font-size: 8.5px; font-weight: bold; color: #0f172a; text-transform: uppercase; letter-spacing: 1.5px; border-bottom: 2px solid #0f172a; padding-bottom: 3px; margin-bottom: 4px; }
+    .kv td { padding: 4px 6px; border-bottom: 1px solid #eef2f6; font-size: 9.5px; }
+    .kv td.k { width: 36%; color: #64748b; font-size: 8.5px; text-transform: uppercase; letter-spacing: .5px; }
+    .kv td.v { font-weight: bold; }
+    .pill { background: #dcfce7; color: #166534; padding: 1px 7px; border-radius: 8px; font-size: 8.5px; }
+    .des { margin-top: 14px; } .des th { text-align: left; font-size: 8.5px; color: #64748b; text-transform: uppercase; letter-spacing: .5px; padding: 5px 6px; border-bottom: 1px solid #cbd5e1; }
+    .des td { padding: 5px 6px; border-bottom: 1px solid #eef2f6; } .num { text-align: right; width: 28%; }
+    .menos td { color: #b91c1c; } .mas td { color: #047857; } .sub td { background: #f8fafc; font-weight: bold; }
+    .total td { background: #0f172a; color: #fff; font-weight: bold; font-size: 12px; padding: 8px 6px; border: 0; }
+    .patronal td { color: #94a3b8; font-size: 8.5px; }
+    .letras { font-style: italic; color: #475569; margin-top: 5px; }
+    .comp { margin-top: 12px; text-align: center; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; }
+    .comp img { max-width: 100%; max-height: 260px; } .comp-vacio { color: #94a3b8; padding: 18px 0; }
+    .firmas { margin-top: 18px; } .firmas td { width: 50%; text-align: center; vertical-align: bottom; padding: 0 22px; }
+    .firma-caja { height: 100px; margin-bottom: -18px; } .firma-caja img { max-height: 98px; max-width: 290px; }
+    .linea { border-top: 1px solid #475569; padding-top: 4px; }
+    .linea b { display: block; font-size: 10px; color: #0f172a; } .linea span { font-size: 8.5px; color: #64748b; }
+    .pie { margin-top: 16px; padding-top: 6px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 7.5px; text-align: center; }
+</style></head><body>
 
-/* ── HEADER ─────────────────────────────────────────── */
-.header-wrap {
-    display:table; width:100%;
-    border-bottom: 3px solid #f97316;
-    padding-bottom: 10px; margin-bottom: 12px;
-}
-.hcol-logo  { display:table-cell; width:110px; vertical-align:middle; }
-.hcol-info  { display:table-cell; vertical-align:middle; padding-left:12px; }
-.hcol-badge { display:table-cell; width:130px; vertical-align:middle; text-align:right; }
+<table class="enc"><tr>
+    <td style="width:22%" class="enc-logo"><?php if ($logo_b64): ?><img src="<?= $logo_b64 ?>" alt=""><?php endif; ?></td>
+    <td style="width:52%"><div class="emp"><?= $e($razon) ?></div>
+        <?php if ($direccion): ?><div class="emp-sub"><?= $e($direccion) ?></div><?php endif; ?>
+        <?php if ($tel_emp): ?><div class="emp-sub">Tel. <?= $e($tel_emp) ?></div><?php endif; ?></td>
+    <td style="width:26%" class="doc"><div class="doc-t">RECIBO DE PAGO</div><div class="doc-n">N.º <?= $folio ?></div></td>
+</tr></table>
+<div class="franja"></div>
 
-.hcol-logo img { max-width:105px; max-height:52px; }
-.empresa-name { font-size:11pt; font-weight:bold; color:#111; line-height:1.3; }
-.empresa-sub  { font-size:8pt; color:#666; margin-top:2px; }
-
-.badge-recibo {
-    display:inline-block;
-    background: linear-gradient(135deg,#f97316,#ea580c);
-    color:#fff; border-radius:7px;
-    padding:8px 14px; text-align:center;
-}
-.badge-recibo .br-title { font-size:12pt; font-weight:bold; letter-spacing:1px; }
-.badge-recibo .br-sub   { font-size:7.5pt; opacity:.9; margin-top:2px; }
-.badge-recibo .br-folio { font-size:8pt; margin-top:3px; opacity:.8; letter-spacing:.3px; }
-
-/* ── SECTION TITLE ──────────────────────────────────── */
-.sec {
-    background: #f97316;
-    color:#fff; font-size:7.5pt; font-weight:bold;
-    padding:3px 10px; margin: 10px 0 5px;
-    border-radius:3px; text-transform:uppercase; letter-spacing:.4px;
-}
-
-/* ── DOS COLUMNAS ───────────────────────────────────── */
-.two-col { display:table; width:100%; }
-.tc-l    { display:table-cell; width:50%; vertical-align:top; padding-right:8px; }
-.tc-r    { display:table-cell; width:50%; vertical-align:top; padding-left:8px; }
-
-/* ── INFO TABLE ─────────────────────────────────────── */
-.itbl { width:100%; border-collapse:collapse; }
-.itbl td { padding:3.5px 7px; font-size:8.5pt; vertical-align:top; }
-.itbl .lbl { color:#888; width:38%; font-weight:bold; white-space:nowrap; font-size:8pt; }
-.itbl .val { color:#1a1a1a; }
-.itbl tr:nth-child(even) td { background:#fafafa; }
-
-/* ── DESGLOSE TABLA ─────────────────────────────────── */
-.dtbl { width:100%; border-collapse:collapse; }
-.dtbl th {
-    background:#fff7ed; color:#b45309;
-    font-weight:bold; font-size:8pt;
-    padding:4px 10px; text-align:left; border-bottom:1px solid #fed7aa;
-}
-.dtbl td { padding:4px 10px; font-size:8.5pt; border-bottom:1px solid #f4f4f4; }
-.dtbl .ar { text-align:right; }
-.dtbl .lc { width:65%; }
-.dtbl .row-d td { color:#dc2626; }
-.dtbl .row-e td { color:#16a34a; }
-.dtbl .row-t td {
-    background:#fff7ed; font-weight:bold; color:#ea580c;
-    font-size:10pt; border-top:2px solid #f97316; border-bottom:none;
-}
-.dtbl .row-p td { background:#fffbeb; color:#92400e; font-size:7.5pt; border-bottom:none; }
-
-/* ── BADGES ─────────────────────────────────────────── */
-.badge {
-    display:inline-block; padding:2px 8px;
-    border-radius:10px; font-size:7.5pt; font-weight:bold;
-}
-.b-ok  { background:#dcfce7; color:#166534; }
-.b-pen { background:#fef9c3; color:#854d0e; }
-
-/* ── COMPROBANTE ─────────────────────────────────────── */
-.comp-img {
-    max-width:100%; max-height:210px;
-    object-fit:contain;
-    border:1px solid #e5e7eb; border-radius:4px;
-    display:block; margin:6px auto 0;
-}
-
-/* ── FIRMAS ──────────────────────────────────────────── */
-.firma-row { display:table; width:100%; margin-top:22px; }
-.firma-col { display:table-cell; width:50%; text-align:center; padding:0 24px; vertical-align:bottom; }
-.firma-img { max-width:150px; max-height:55px; margin-bottom:3px; }
-.firma-line {
-    border-top:1px solid #bbb;
-    padding-top:4px; font-size:8pt; color:#555;
-}
-.firma-name { font-weight:bold; font-size:9pt; color:#1a1a1a; }
-
-/* ── WATERMARK / ESTADO ──────────────────────────────── */
-.estado-paid {
-    display:inline-block;
-    border:2px solid #16a34a; color:#16a34a;
-    border-radius:4px; padding:1px 8px;
-    font-size:8pt; font-weight:bold; letter-spacing:.5px;
-    transform:rotate(-5deg); opacity:.7;
-}
-
-/* ── FOOTER ──────────────────────────────────────────── */
-.footer {
-    margin-top:16px; padding-top:7px;
-    border-top:1px solid #f0f0f0;
-    text-align:center; font-size:7pt; color:#bbb;
-}
-
-/* ── SEPARADOR ───────────────────────────────────────── */
-.sep { border:none; border-top:1px dashed #e0e0e0; margin:8px 0; }
-</style>
-</head>
-<body>
-<div class="page">
-
-<!-- ═══════════ HEADER ═══════════ -->
-<div class="header-wrap">
-    <div class="hcol-logo">
-        <?php if ($logo_b64): ?>
-            <img src="<?= $logo_b64 ?>" alt="Logo">
-        <?php else: ?>
-            <div style="font-size:14pt;font-weight:800;color:#f97316;letter-spacing:-1px">
-                <?= strtoupper(mb_substr($razon,0,2)) ?>
-            </div>
-        <?php endif; ?>
-    </div>
-    <div class="hcol-info">
-        <div class="empresa-name"><?= htmlspecialchars($razon) ?></div>
-        <?php if ($direccion): ?>
-            <div class="empresa-sub"><i></i><?= htmlspecialchars($direccion) ?></div>
-        <?php endif; ?>
-        <?php if ($tel_emp): ?>
-            <div class="empresa-sub">Tel. <?= htmlspecialchars($tel_emp) ?></div>
-        <?php endif; ?>
-    </div>
-    <div class="hcol-badge">
-        <div class="badge-recibo">
-            <div class="br-title">RECIBO</div>
-            <div class="br-sub">Pago de Nómina</div>
-            <div class="br-folio"><?= $folio ?></div>
-        </div>
-    </div>
-</div>
-
-<!-- ═══════════ DATOS DEL PAGO + COLABORADOR ═══════════ -->
-<div class="two-col">
-    <div class="tc-l">
-        <div class="sec">&#128203; Datos del Pago</div>
-        <table class="itbl">
-            <tr>
-                <td class="lbl">Folio</td>
-                <td class="val"><strong><?= $folio ?></strong></td>
-            </tr>
-            <tr>
-                <td class="lbl">Fecha</td>
-                <td class="val"><?= fmtFecha($gasto['fecha']) ?></td>
-            </tr>
-            <tr>
-                <td class="lbl">Período</td>
-                <td class="val">
-                    <?= $periodo_lbl ?>&nbsp;&middot;&nbsp;<?= date('F Y', strtotime($gasto['fecha'])) ?>
-                </td>
-            </tr>
-            <tr>
-                <td class="lbl">Método</td>
-                <td class="val"><?= htmlspecialchars($metodo_lbl) ?></td>
-            </tr>
-            <tr>
-                <td class="lbl">Estado</td>
-                <td class="val">
-                    <span class="badge <?= $gasto['estado'] === 'pagado' ? 'b-ok' : 'b-pen' ?>">
-                        <?= strtoupper($gasto['estado']) ?>
-                    </span>
-                </td>
-            </tr>
-            <?php if ($gasto['notas']): ?>
-            <tr>
-                <td class="lbl">Referencia</td>
-                <td class="val" style="font-size:7.5pt"><?= htmlspecialchars(mb_substr($gasto['notas'],0,80)) ?></td>
-            </tr>
-            <?php endif; ?>
+<table><tr>
+    <td style="width:49%; vertical-align:top">
+        <div class="bloque-t">Datos del pago</div>
+        <table class="kv">
+            <tr><td class="k">Fecha</td><td class="v"><?= fmtFecha($gasto['fecha']) ?></td></tr>
+            <tr><td class="k">Período</td><td class="v"><?= $e($periodo_txt) ?></td></tr>
+            <tr><td class="k">Método</td><td class="v"><?= $e($metodo_lbl) ?></td></tr>
+            <?php if ($referencia): ?><tr><td class="k">Referencia</td><td class="v"><?= $e($referencia) ?></td></tr><?php endif; ?>
+            <tr><td class="k">Estado</td><td class="v"><span class="pill"><?= $e($estado_txt) ?></span></td></tr>
         </table>
-    </div>
-    <div class="tc-r">
-        <div class="sec">&#128100; Colaborador</div>
-        <table class="itbl">
-            <tr>
-                <td class="lbl">Nombre</td>
-                <td class="val"><strong><?= htmlspecialchars($nombre_col) ?></strong></td>
-            </tr>
-            <tr>
-                <td class="lbl">Puesto</td>
-                <td class="val"><?= htmlspecialchars($puesto_col) ?></td>
-            </tr>
-            <?php if ($dpi_col): ?>
-            <tr>
-                <td class="lbl">DPI / RTN</td>
-                <td class="val"><?= htmlspecialchars($dpi_col) ?></td>
-            </tr>
-            <?php endif; ?>
-            <?php if ($banco_col): ?>
-            <tr>
-                <td class="lbl">Banco</td>
-                <td class="val"><?= htmlspecialchars($banco_col) ?></td>
-            </tr>
-            <?php endif; ?>
-            <?php if ($ciudad_col): ?>
-            <tr>
-                <td class="lbl">Ciudad</td>
-                <td class="val"><?= htmlspecialchars($ciudad_col) ?></td>
-            </tr>
-            <?php endif; ?>
-            <tr>
-                <td class="lbl">Tipo Pago</td>
-                <td class="val"><?= ucfirst($tipo_pago) ?></td>
-            </tr>
+    </td>
+    <td style="width:2%"></td>
+    <td style="width:49%; vertical-align:top">
+        <div class="bloque-t">Colaborador</div>
+        <table class="kv">
+            <tr><td class="k">Nombre</td><td class="v"><?= $e($nombre_col) ?></td></tr>
+            <tr><td class="k">Puesto</td><td class="v"><?= $e($puesto_col) ?></td></tr>
+            <?php if ($dpi_col): ?><tr><td class="k">Identidad</td><td class="v"><?= $e($dpi_col) ?></td></tr><?php endif; ?>
+            <?php if ($cuenta_col): ?><tr><td class="k">Cuenta</td><td class="v"><?= $e($cuenta_col) ?></td></tr><?php endif; ?>
+            <tr><td class="k">Tipo de pago</td><td class="v"><?= $e(ucfirst($tipo_pago)) ?></td></tr>
         </table>
-    </div>
-</div>
+    </td>
+</tr></table>
 
-<!-- ═══════════ DESGLOSE SALARIAL ═══════════ -->
-<div class="sec">&#128176; Desglose del Pago</div>
-<table class="dtbl">
-    <tr>
-        <th class="lc">Concepto</th>
-        <th class="ar">Monto</th>
-    </tr>
-
-    <?php if ($bruto > 0): ?>
-    <tr>
-        <td>Salario bruto &mdash; <?= $periodo_lbl ?></td>
-        <td class="ar"><?= fmtL($bruto) ?></td>
-    </tr>
-    <?php endif; ?>
-
-    <?php if ($ihss_e > 0): ?>
-    <tr class="row-d">
-        <td>&minus; Descuento IHSS empleado (3.5%)</td>
-        <td class="ar">&minus;<?= fmtL($ihss_e) ?></td>
-    </tr>
-    <?php endif; ?>
-
-    <?php if ($rap_e > 0): ?>
-    <tr class="row-d">
-        <td>&minus; Descuento RAP empleado (1.5%)</td>
-        <td class="ar">&minus;<?= fmtL($rap_e) ?></td>
-    </tr>
-    <?php endif; ?>
-
-    <?php if (($ihss_e + $rap_e) > 0): ?>
-    <tr style="background:#f0fdf4">
-        <td><strong>= Neto base</strong></td>
-        <td class="ar"><strong style="color:#16a34a"><?= fmtL($neto) ?></strong></td>
-    </tr>
-    <?php endif; ?>
-
-    <?php foreach ($deducciones as $d): ?>
-    <tr class="row-d">
-        <td>&minus; <?= htmlspecialchars($d['desc_prest']) ?> (cuota #<?= $d['numero_cuota'] ?>)</td>
-        <td class="ar">&minus;<?= fmtL((float)$d['monto']) ?></td>
-    </tr>
-    <?php endforeach; ?>
-
-    <?php foreach ($extras as $ex):
-        $icono = str_starts_with($ex['descripcion'], 'Bono:') ? '&#127873;' : '&#129523;';
-    ?>
-    <tr class="row-e">
-        <td><?= $icono ?> + <?= htmlspecialchars($ex['descripcion']) ?></td>
-        <td class="ar">+<?= fmtL((float)$ex['monto']) ?></td>
-    </tr>
-    <?php endforeach; ?>
-
-    <tr class="row-t">
-        <td>&#9989; TOTAL A PAGAR</td>
-        <td class="ar"><?= fmtL((float)$gasto['monto']) ?></td>
-    </tr>
-
-    <?php if (($ihss_p + $rap_p) > 0): ?>
-    <tr class="row-p">
-        <td>+ Carga patronal empresa (IHSS <?= $ihss_p>0?number_format($ihss_p,2):'' ?> + RAP <?= $rap_p>0?number_format($rap_p,2):'' ?>)</td>
-        <td class="ar">+<?= fmtL($ihss_p + $rap_p) ?></td>
-    </tr>
-    <?php endif; ?>
+<table class="des">
+    <tr><th>Concepto</th><th class="num">Monto</th></tr>
+    <?php if ($bruto > 0): ?><tr><td>Salario bruto · <?= $e($periodo_lbl) ?></td><td class="num"><?= $L($bruto) ?></td></tr><?php endif; ?>
+    <?php if ($ihss_e > 0): ?><tr class="menos"><td>− IHSS empleado (3.5%)</td><td class="num">− <?= $L($ihss_e) ?></td></tr><?php endif; ?>
+    <?php if ($rap_e > 0): ?><tr class="menos"><td>− RAP empleado (1.5%)</td><td class="num">− <?= $L($rap_e) ?></td></tr><?php endif; ?>
+    <?php if (($ihss_e + $rap_e) > 0): ?><tr class="sub"><td>Neto base</td><td class="num"><?= $L($neto) ?></td></tr><?php endif; ?>
+    <?php foreach ($deducciones as $d): ?><tr class="menos"><td>− <?= $e($d['desc_prest']) ?> (cuota <?= (int)$d['numero_cuota'] ?>)</td><td class="num">− <?= $L($d['monto']) ?></td></tr><?php endforeach; ?>
+    <?php foreach ($extras as $ex): ?><tr class="mas"><td>+ <?= $e($ex['descripcion']) ?></td><td class="num">+ <?= $L($ex['monto']) ?></td></tr><?php endforeach; ?>
+    <tr class="total"><td>TOTAL PAGADO</td><td class="num"><?= $L($gasto['monto']) ?></td></tr>
+    <?php if (($ihss_p + $rap_p) > 0): ?><tr class="patronal"><td>Aporte patronal de la empresa (IHSS + RAP), no se descuenta al colaborador</td><td class="num"><?= $L($ihss_p + $rap_p) ?></td></tr><?php endif; ?>
 </table>
+<div class="letras">Son: <?= $e(numeroALetras((float)$gasto['monto'])) ?></div>
 
-<!-- ═══════════ COMPROBANTE DE TRANSFERENCIA ═══════════ -->
-<?php if ($comp_b64): ?>
-    <div class="sec">&#128206; Comprobante de Transferencia</div>
-    <div style="text-align:center">
-        <img src="<?= $comp_b64 ?>" class="comp-img" alt="Comprobante">
-    </div>
-<?php elseif ($es_pdf_comp): ?>
-    <div class="sec">&#128206; Comprobante</div>
-    <p style="font-size:8pt;color:#888;margin:5px 0">
-        El comprobante adjunto es un archivo PDF. Ver documento original.
-    </p>
-<?php endif; ?>
-
-<!-- ═══════════ FIRMAS ═══════════ -->
-<div class="firma-row">
-    <div class="firma-col">
-        <?php if ($firma_b64): ?>
-            <img src="<?= $firma_b64 ?>" class="firma-img" alt="Firma">
-        <?php else: ?>
-            <div style="height:48px"></div>
-        <?php endif; ?>
-        <div class="firma-line">
-            <div class="firma-name"><?= htmlspecialchars($nombre_col) ?></div>
-            <div style="font-size:7.5pt;color:#777"><?= htmlspecialchars($puesto_col) ?> &mdash; Colaborador</div>
-        </div>
-    </div>
-    <div class="firma-col">
-        <div style="height:48px"></div>
-        <div class="firma-line">
-            <div class="firma-name">Autorizado por</div>
-            <div style="font-size:7.5pt;color:#777"><?= htmlspecialchars($razon) ?></div>
-        </div>
-    </div>
+<div class="comp">
+    <?php if ($comp_b64): ?><img src="<?= $comp_b64 ?>" alt="Comprobante">
+    <?php elseif ($es_pdf_comp): ?><div class="comp-vacio">El comprobante de este pago es un PDF: se archiva por separado.</div>
+    <?php else: ?><div class="comp-vacio">Sin captura del comprobante.</div><?php endif; ?>
 </div>
 
-<!-- ═══════════ FOOTER ═══════════ -->
-<div class="footer">
-    Generado el <?= fmtFecha(date('Y-m-d')) ?>
-    &nbsp;&middot;&nbsp; <?= htmlspecialchars($razon) ?>
-    &nbsp;&middot;&nbsp; <?= $folio ?>
-    &nbsp;&middot;&nbsp; Documento de pago interno &mdash; no válido como factura fiscal
-</div>
+<table class="firmas"><tr>
+    <td><div class="firma-caja"><?php if ($firma_b64): ?><img src="<?= $firma_b64 ?>" alt="Firma"><?php endif; ?></div>
+        <div class="linea"><b><?= $e($nombre_col) ?></b><span>Recibí conforme · <?= $e($puesto_col) ?></span></div></td>
+    <td><div class="firma-caja"></div>
+        <div class="linea"><b>Autorizado por</b><span><?= $e($razon) ?></span></div></td>
+</tr></table>
 
-</div><!-- /page -->
-</body>
-</html>
+<div class="pie">Generado el <?= fmtFecha(date('Y-m-d')) ?> · <?= $folio ?> · Documento de pago interno, no válido como factura fiscal</div>
+</body></html>
 <?php
 $html = ob_get_clean();
 
