@@ -1798,3 +1798,30 @@ suite('Desglose del boucher y recibo', function () {
     $pdo->exec("DELETE q FROM colaborador_prestamo_cuotas q JOIN colaborador_prestamos p ON p.id = q.prestamo_id WHERE p.notas LIKE 'QA-DESG%'");
     $pdo->exec("DELETE FROM colaborador_prestamos WHERE notas LIKE 'QA-DESG%'");
 });
+
+suite('Firmas de documentos y concepto de pago', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $r = $c->get('configuracion_firmas');
+    check('la página de firmas carga con los 3 firmantes', $r['code'] === 200 && substr_count($r['body'], 'class="app-card h-100 f-firmante"') === 3 && !str_contains($r['body'], 'data-rol="revisado"') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $r = $c->post('includes/firmante_accion.php', ['accion' => 'guardar', 'rol' => 'autorizado', 'nombre' => 'QA Firmante', 'cargo' => 'Gerente QA']);
+    $f = $pdo->query("SELECT nombre, cargo FROM documento_firmantes WHERE cliente_id = 2 AND rol = 'autorizado'")->fetch(PDO::FETCH_ASSOC);
+    check('guarda nombre y cargo', ($r['json']['success'] ?? false) && $f['nombre'] === 'QA Firmante' && $f['cargo'] === 'Gerente QA', $r['body']);
+    $r = $c->post('includes/firmante_accion.php', ['accion' => 'guardar', 'rol' => 'revisado', 'nombre' => 'X']);
+    check('«Revisado» ya no es un firmante', ($r['json']['success'] ?? true) === false);
+    $tmp = tempnam(sys_get_temp_dir(), 'fd') . '.png';
+    $im = imagecreatetruecolor(300, 100); imagefill($im, 0, 0, imagecolorallocate($im, 255, 255, 255)); imageline($im, 30, 80, 270, 20, imagecolorallocate($im, 0, 0, 0)); imagepng($im, $tmp);
+    $r = $c->post('includes/firmante_accion.php', ['accion' => 'subir', 'rol' => 'vobo', 'firma' => new CURLFile($tmp, 'image/png', 'f.png')]);
+    check('sube la firma del firmante', ($r['json']['success'] ?? false) && str_starts_with($c->get('includes/firmante_accion.php', ['firma' => 'vobo'])['body'], "\x89PNG"), $r['body']);
+    check('un facturador no configura firmantes', (login('qa.facturador@local.test')->post('includes/firmante_accion.php', ['accion' => 'guardar', 'rol' => 'vobo', 'nombre' => 'X'])['json']['success'] ?? true) === false);
+    // Concepto de pago del colaborador en el boucher
+    require_once __DIR__ . '/../../includes/bouchers.php';
+    $g = $pdo->query("SELECT g.*, NULL AS categoria FROM gastos g WHERE g.cliente_id = 2 AND g.estado = 'pagado' AND g.descripcion LIKE 'Sueldo %' AND g.quincena_num = 2 ORDER BY g.id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $col = $pdo->query("SELECT id, concepto_pago FROM colaboradores WHERE cliente_id = 2 AND " . $pdo->quote($g['descripcion']) . " LIKE CONCAT('%', nombre, ' ', apellido, '%') LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $pdo->prepare("UPDATE colaboradores SET concepto_pago = 'Pago por servicios de QA' WHERE id = ?")->execute([$col['id']]);
+    $d = boucherDatos(boucherContexto($pdo, 2, __DIR__ . '/../../clientes/naranjaymedia/includes/uploads'), $g);
+    check('el boucher usa el concepto del colaborador con la quincena y el mes', str_starts_with($d['concepto'], 'Pago por servicios de QA, 2da quincena '), $d['concepto']);
+    check('el boucher y el recibo se generan con los firmantes', str_starts_with($c->get('boucher_pdf.php', ['gasto_id' => $g['id']])['body'], '%PDF') && str_starts_with($c->get('colaborador_recibo_pdf.php', ['gasto_id' => $g['id']])['body'], '%PDF'));
+    $pdo->prepare("UPDATE colaboradores SET concepto_pago = ? WHERE id = ?")->execute([$col['concepto_pago'], $col['id']]);
+    $pdo->exec("DELETE FROM documento_firmantes WHERE cliente_id = 2");
+});

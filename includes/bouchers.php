@@ -7,6 +7,7 @@
  */
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/nomina_pagos.php';
+require_once __DIR__ . '/firmantes.php';
 
 if (!function_exists('esGastoNomina')) {   // normalmente viene de session.php; aquí por si se usa sin sesión (pruebas, scripts)
     function esGastoNomina(string $descripcion): bool
@@ -69,6 +70,7 @@ function boucherContexto(PDO $pdo, int $cid, string $uploads): array
         $stExtras = $pdo->prepare("SELECT tipo, descripcion, monto_total FROM colaborador_prestamos WHERE cliente_id = ? AND tipo IN ('bono','viatico') AND notas REGEXP ? ORDER BY id");
     } catch (Throwable $ignorar) {}
     return [
+        'firmantes' => firmantesParaPdf($pdo, $cid, $uploads),
         'stCuotas' => $stCuotas, 'stExtras' => $stExtras,
         'cid' => $cid, 'uploads' => rtrim($uploads, '/') . '/', 'b64' => $b64, 'logo' => $logo, 'ciudad' => (string)$st->fetchColumn(),
         'banco' => $bancoPred, 'stMov' => $stMov, 'colabs' => $colabs->fetchAll(PDO::FETCH_ASSOC), 'tarjetas' => $tarjetas,
@@ -108,7 +110,10 @@ function boucherDatos(array $ctx, array $g): array
     $nombreColab = $c ? trim($c['nombre'] . ' ' . $c['apellido']) : '';
     if ($c && nominaTipo($g['descripcion']) === 'sueldo') {
         $q = $g['quincena_num'] === null ? '' : ((int)$g['quincena_num'] === 1 ? '1ra quincena ' : '2da quincena ');
-        $concepto = 'Pago ' . ($c['puesto'] ?: 'de sueldo') . ', ' . $q . $periodo;
+        // Concepto del colaborador («Pago por servicios de diseño gráfico»); si no tiene, se arma con el puesto
+        $base = trim((string)($c['concepto_pago'] ?? ''));
+        if ($base === '') $base = preg_match('/gerente/i', (string)$c['puesto']) ? 'Pago ' . $c['puesto'] : 'Pago por servicios de ' . ($c['puesto'] ?: 'nómina');
+        $concepto = $base . ', ' . $q . $periodo;
     } elseif ($c) {
         $concepto = trim(preg_replace('/\s+—\s+' . preg_quote($nombreColab, '/') . '$/u', '', $g['descripcion'])) . ' · ' . $periodo;
     } else {
@@ -195,10 +200,16 @@ function boucherPagina(array $ctx, array $d): string
         </div>
 
         <table class="firmas-int"><tr>
-            <td><div class="quien"><?= $e($d['elaborado'] ?: ' ') ?></div><div class="linea">Elaborado por</div></td>
-            <td><div class="quien"> </div><div class="linea">Revisado</div></td>
-            <td><div class="quien"> </div><div class="linea">Autorizado</div></td>
-            <td><div class="quien"> </div><div class="linea">Vo.Bo.</div></td>
+            <?php foreach (FIRMANTES_ROLES as $rol => $titulo):
+                $f = $ctx['firmantes'][$rol] ?? ['nombre' => '', 'cargo' => '', 'firma_b64' => ''];
+                $nombre = $f['nombre'] ?: ($rol === 'elaborado' ? $d['elaborado'] : ''); ?>
+                <td>
+                    <div class="fi-caja"><?php if ($f['firma_b64']): ?><img src="<?= $f['firma_b64'] ?>" alt=""><?php endif; ?></div>
+                    <div class="linea"><?= $titulo ?></div>
+                    <div class="quien"><?= $e($nombre ?: ' ') ?></div>
+                    <?php if ($f['cargo']): ?><div class="cargo"><?= $e($f['cargo']) ?></div><?php endif; ?>
+                </td>
+            <?php endforeach; ?>
         </tr></table>
 
         <div class="recibe-tit">Recibí conforme</div>
@@ -246,8 +257,9 @@ function boucherDocumento(array $paginas): string
         .obs { font-size: 8.5px; color: #64748b; }
         .comp { margin: 12px 0 6px; text-align: center; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; }
         .comp img { max-width: 100%; max-height: 300px; } .comp-vacio { color: #94a3b8; padding: 26px 0; }
-        .firmas-int { margin-top: 10px; } .firmas-int td { width: 25%; text-align: center; padding: 0 8px; vertical-align: bottom; }
-        .quien { min-height: 13px; font-size: 9.5px; color: #1e293b; }
+        .firmas-int { margin-top: 8px; } .firmas-int td { width: 33%; text-align: center; padding: 0 12px; vertical-align: bottom; }
+        .fi-caja { height: 58px; margin-bottom: -12px; } .fi-caja img { max-height: 56px; max-width: 170px; }
+        .quien { min-height: 12px; font-size: 9.5px; color: #1e293b; font-weight: bold; margin-top: 2px; } .cargo { font-size: 8.5px; color: #64748b; }
         .linea { border-top: 1px solid #64748b; padding-top: 3px; color: #64748b; font-size: 8.5px; text-transform: uppercase; letter-spacing: 1px; }
         .recibe-tit { margin-top: 14px; font-size: 9px; font-weight: bold; color: #0f172a; text-transform: uppercase; letter-spacing: 2px; border-bottom: 2px solid #0f172a; padding-bottom: 3px; }
         .recibe td { vertical-align: bottom; padding-top: 8px; } .r-datos { width: 50%; } .r-datos div { margin-bottom: 7px; font-size: 10.5px; }

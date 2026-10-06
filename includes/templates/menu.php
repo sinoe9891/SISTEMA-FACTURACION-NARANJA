@@ -88,6 +88,7 @@ $menuLateral = [
 		$__menuEsAdmin ? ['configuracion_cai', 'bi-key', 'Configuración CAI', ['crear_cai', 'editar_cai']] : null,
 		$__menuEsAdmin ? ['configuracion_mensajes', 'bi-envelope', 'Mensajes y cuentas de pago', []] : null,
 		$__menuEsAdmin ? ['configuracion_correo', 'bi-envelope-at', 'Correo (SMTP)', []] : null,
+		$__menuEsAdmin ? ['configuracion_firmas', 'bi-pen', 'Firmas de documentos', []] : null,
 		$__menuEsAdmin ? ['usuarios', 'bi-person-gear', 'Usuarios', []] : null,
 		function_exists('respaldoPuede') && respaldoPuede() ? ['respaldos', 'bi-database-check', 'Respaldos', []] : null,
 		$es_superadmin ? ['configuracion_permisos', 'bi-shield-lock', 'Permisos por rol', []] : null,

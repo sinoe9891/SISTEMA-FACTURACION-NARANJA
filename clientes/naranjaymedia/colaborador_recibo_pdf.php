@@ -3,6 +3,7 @@
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/firmantes.php';
 
 // ── Buscar autoload de DOMPDF ─────────────────────────────────────────────────
 $candidates = [
@@ -192,6 +193,7 @@ $referencia = preg_match('/ref\.\s*([A-Za-z0-9-]+)/i', (string)$gasto['notas'], 
 $cuenta_col = trim(($colab['banco'] ?? '') . ' ' . ($colab['tipo_cuenta'] ?? '') . (!empty($colab['numero_cuenta']) ? ' ••' . substr(preg_replace('/\D/', '', $colab['numero_cuenta']), -4) : ''));
 $estado_txt = ['pagado' => 'Pagado', 'pendiente' => 'Pendiente', 'anulado' => 'Anulado'][$gasto['estado']] ?? $gasto['estado'];
 $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
+$firmantes = firmantesParaPdf($pdo, $cliente_id, __DIR__ . '/includes/uploads');
 $L = fn($n) => 'L ' . number_format((float)$n, 2);
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -225,8 +227,8 @@ ob_start(); ?>
     .letras { font-style: italic; color: #475569; margin-top: 5px; }
     .comp { margin-top: 12px; text-align: center; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; }
     .comp img { max-width: 100%; max-height: 260px; } .comp-vacio { color: #94a3b8; padding: 18px 0; }
-    .firmas { margin-top: 18px; } .firmas td { width: 50%; text-align: center; vertical-align: bottom; padding: 0 22px; }
-    .firma-caja { height: 100px; margin-bottom: -18px; } .firma-caja img { max-height: 98px; max-width: 290px; }
+    .firmas { margin-top: 18px; } .firmas td { width: 33%; text-align: center; vertical-align: bottom; padding: 0 12px; }
+    .firma-caja { height: 90px; margin-bottom: -16px; } .firma-caja img { max-height: 88px; max-width: 200px; }
     .linea { border-top: 1px solid #475569; padding-top: 4px; }
     .linea b { display: block; font-size: 10px; color: #0f172a; } .linea span { font-size: 8.5px; color: #64748b; }
     .pie { margin-top: 16px; padding-top: 6px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 7.5px; text-align: center; }
@@ -287,8 +289,10 @@ ob_start(); ?>
 <table class="firmas"><tr>
     <td><div class="firma-caja"><?php if ($firma_b64): ?><img src="<?= $firma_b64 ?>" alt="Firma"><?php endif; ?></div>
         <div class="linea"><b><?= $e($nombre_col) ?></b><span>Recibí conforme · <?= $e($puesto_col) ?></span></div></td>
-    <td><div class="firma-caja"></div>
-        <div class="linea"><b>Autorizado por</b><span><?= $e($razon) ?></span></div></td>
+    <?php foreach (['autorizado' => 'Autorizado por', 'vobo' => 'Vo.Bo.'] as $rolF => $tituloF): $f = $firmantes[$rolF]; ?>
+        <td><div class="firma-caja"><?php if ($f['firma_b64']): ?><img src="<?= $f['firma_b64'] ?>" alt="Firma"><?php endif; ?></div>
+            <div class="linea"><b><?= $e($f['nombre'] ?: $tituloF) ?></b><span><?= $e($tituloF) ?><?= $f['cargo'] ? ' · ' . $e($f['cargo']) : '' ?></span></div></td>
+    <?php endforeach; ?>
 </tr></table>
 
 <div class="pie">Generado el <?= fmtFecha(date('Y-m-d')) ?> · <?= $folio ?> · Documento de pago interno, no válido como factura fiscal</div>

@@ -2890,6 +2890,8 @@ $tipos_btn_p = [
                         <div class="col-md-4"><label class="mf-label">Departamento</label><input type="text"
                                 name="departamento" class="mf-input"
                                 value="<?= htmlspecialchars($col['departamento'] ?? '') ?>"></div>
+                        <div class="col-12"><label class="mf-label">Concepto de pago (boucher)</label><input type="text" name="concepto_pago"
+                                class="mf-input" maxlength="200" value="<?= htmlspecialchars($col['concepto_pago'] ?? '') ?>" placeholder="Ej: Pago por servicios de diseño gráfico · el sistema agrega la quincena y el mes"></div>
                         <div class="col-md-3"><label class="mf-label">Categoría</label>
                             <select name="categoria_gasto_id" class="mf-select">
                                 <option value="">— Sin categoría —</option>

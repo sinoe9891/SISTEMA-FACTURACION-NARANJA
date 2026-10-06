@@ -1328,6 +1328,8 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                                 id="c_puesto" class="mf-input" maxlength="150" required></div>
                         <div class="col-md-4"><label class="mf-label">Departamento</label><input type="text"
                                 name="departamento" id="c_depto" class="mf-input" maxlength="100"></div>
+                        <div class="col-12"><label class="mf-label">Concepto de pago (boucher)</label><input type="text" name="concepto_pago"
+                                id="c_concepto" class="mf-input" maxlength="200" placeholder="Ej: Pago por servicios de diseño gráfico · el sistema agrega la quincena y el mes"></div>
                         <div class="col-md-3"><label class="mf-label">Categoría Gasto</label>
                             <select name="categoria_gasto_id" id="c_cat" class="mf-select">
                                 <option value="">— Sin categoría —</option><?php foreach ($categorias as $cat): ?>
@@ -1735,6 +1737,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
             document.getElementById('c_ingreso').value = c.fecha_ingreso || '';
             document.getElementById('c_puesto').value = c.puesto || '';
             document.getElementById('c_depto').value = c.departamento || '';
+            document.getElementById('c_concepto').value = c.concepto_pago || '';
             document.getElementById('c_cat').value = c.categoria_gasto_id || '';
             document.getElementById('c_salario').value = parseFloat(c.salario_base || 0).toFixed(2);
             document.getElementById('c_tipo').value = c.tipo_pago || 'quincenal';

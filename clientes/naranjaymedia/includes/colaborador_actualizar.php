@@ -87,6 +87,9 @@ try {
     $genero = in_array($_POST['genero'] ?? '', ['masculino', 'femenino'], true) ? $_POST['genero'] : null;
     $hayGenero = (bool)$pdo->query("SHOW COLUMNS FROM colaboradores LIKE 'genero'")->fetchColumn();
     if ($hayGenero) $pdo->prepare("UPDATE colaboradores SET genero = ? WHERE id = ? AND cliente_id = ?")->execute([$genero, $id, $cid]);
+    // Concepto de pago del boucher (opcional; migración 2026-10-06_firmantes_concepto.sql)
+    if ($pdo->query("SHOW COLUMNS FROM colaboradores LIKE 'concepto_pago'")->fetchColumn())
+        $pdo->prepare("UPDATE colaboradores SET concepto_pago = ? WHERE id = ? AND cliente_id = ?")->execute([mb_substr(trim((string)($_POST['concepto_pago'] ?? '')), 0, 200) ?: null, $id, $cid]);
     // Cuenta bancaria del colaborador (migración 2026-10-04_colaborador_cuenta.sql)
     if ($pdo->query("SHOW COLUMNS FROM colaboradores LIKE 'numero_cuenta'")->fetchColumn()) {
         $tipoCta = in_array($_POST['tipo_cuenta'] ?? '', ['ahorro', 'cheques'], true) ? $_POST['tipo_cuenta'] : null;
