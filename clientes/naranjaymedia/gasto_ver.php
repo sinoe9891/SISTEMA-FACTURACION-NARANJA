@@ -71,11 +71,14 @@ if ($g['frecuencia'] === 'quincenal') {
 
 // Archivo adjunto
 $archivoRaw    = $g['archivo_adjunto'] ?? '';
-$subDir        = (strpos($g['descripcion'], 'Sueldo ') === 0) ? 'comprobantes_nomina' : 'gastos';
-// Se sirve por gasto_archivo.php (verifica sesión y empresa); uploads/ está bloqueado
+// Se sirve por gasto_archivo.php (verifica sesión y empresa); uploads/ está bloqueado.
+// Mismas carpetas que gasto_archivo.php: un comprobante puede estar en gastos/ o en comprobantes_nomina/
+// (p. ej. un gasto que se pagó junto con la nómina comparte la captura de esa transferencia).
 $uploadUrl     = 'gasto_archivo?id=' . (int)$g['id'];
-$uploadPath    = __DIR__ . '/includes/uploads/' . $subDir . '/' . $archivoRaw;
-$tieneArchivo  = !empty($archivoRaw) && file_exists($uploadPath);
+$tieneArchivo  = false;
+foreach ($archivoRaw ? [__DIR__ . '/includes/uploads/gastos/' . basename($archivoRaw), __DIR__ . '/includes/uploads/comprobantes_nomina/' . $archivoRaw] : [] as $__ruta) {
+    if (is_file($__ruta)) { $tieneArchivo = true; break; }
+}
 $extArchivo    = $tieneArchivo ? strtolower(pathinfo($archivoRaw, PATHINFO_EXTENSION)) : '';
 $esImagen      = in_array($extArchivo, ['jpg', 'jpeg', 'png', 'webp']);
 $esPDF         = ($extArchivo === 'pdf');

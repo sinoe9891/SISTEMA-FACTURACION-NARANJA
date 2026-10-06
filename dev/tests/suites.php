@@ -1743,3 +1743,16 @@ suite('Permisos por rol (menú)', function () {
     $pdo->exec("DELETE FROM permisos_menu");
     check('al quitar las reglas todo vuelve a como estaba', str_contains(login('qa.facturador@local.test')->get('dashboard')['body'], 'href="gastos"'));
 });
+
+suite('Ver gasto: comprobante en cualquier carpeta', function () {
+    $pdo = db();
+    $d = __DIR__ . '/../../clientes/naranjaymedia/includes/uploads/comprobantes_nomina/qa3';
+    @mkdir($d, 0775, true);
+    $im = imagecreatetruecolor(40, 20); imagepng($im, "$d/c.png");
+    $pdo->exec("INSERT INTO gastos (cliente_id, descripcion, monto, fecha, estado, archivo_adjunto, notas) VALUES (2, 'Mueble QA', 10, CURDATE(), 'pagado', 'qa3/c.png', 'QA-GV')");
+    $id = (int)$pdo->lastInsertId();
+    $r = login('qa.admin@local.test')->get('gasto_ver', ['id' => $id]);
+    check('un gasto que no es sueldo muestra su comprobante guardado con la nómina', str_contains($r['body'], 'alt="Comprobante"') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $pdo->exec("DELETE FROM gastos WHERE notas = 'QA-GV'");
+    @unlink("$d/c.png"); @rmdir($d);
+});
