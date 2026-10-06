@@ -1765,5 +1765,8 @@ suite('Gastos: filtros sin recargar', function () {
     $r2 = $c->get('gastos', ['vista' => 'mensual', 'mes' => 4, 'anio' => 2026]);
     preg_match('/id="gsBody">(.*?)<\/tbody>/s', $r['body'], $a); preg_match('/id="gsBody">(.*?)<\/tbody>/s', $r2['body'], $b);
     check('otro mes trae otras filas', ($a[1] ?? '') !== ($b[1] ?? ''));
+    preg_match('/<tr data-search="([^"]*)"/', $r['body'], $ds);
+    $idUno = (int)db()->query("SELECT id FROM gastos WHERE cliente_id = 2 AND estado <> 'anulado' AND MONTH(fecha) = 3 AND YEAR(fecha) = 2026 ORDER BY fecha DESC, id DESC LIMIT 1")->fetchColumn();
+    check('el buscador encuentra por número de gasto', str_contains($r['body'], '#' . $idUno . ' ' . $idUno . ' '), (string)$idUno);
     check('los botones de cada fila escuchan en el documento', str_contains($r['body'], "ev.target.closest('.btn-editar-gasto')") && str_contains($r['body'], 'gsTabla.recargar()'));
 });

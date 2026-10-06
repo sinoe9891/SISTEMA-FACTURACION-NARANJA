@@ -919,6 +919,9 @@ $total  = count($gastos);
                         $est = $g['estado'] ?? 'pendiente';
                         $dias_diff = ($est === 'pendiente' && $g['fecha'] < date('Y-m-d')) ? (int)((time() - strtotime($g['fecha'])) / 86400) : 0;
                         $src = strtolower(($g['descripcion'] ?? '') . ' ' . ($g['tipo'] ?? '') . ' ' . ($g['estado'] ?? '') . ' ' . ($g['cat_nombre'] ?? '') . ' ' . ($g['proveedor'] ?? '') . ' ' . (($g['tipo'] === 'viaticos') ? ($g['viatico_destino'] ?? '') . ' ' . ($g['viatico_colaborador'] ?? '') : ''));
+                        // También por número de gasto (247 o #247), monto (7000 / 7,000.00), fecha, método, referencia y notas
+                        $src .= ' #' . (int)$g['id'] . ' ' . (int)$g['id'] . ' ' . number_format((float)$g['monto'], 2) . ' ' . number_format((float)$g['monto'], 2, '.', '') . ' ' . (float)$g['monto']
+                            . ' ' . (!empty($g['fecha']) ? date('d/m/Y', strtotime($g['fecha'])) : '') . ' ' . ($g['metodo_pago'] ?? '') . ' ' . strtolower(($g['factura_ref'] ?? '') . ' ' . ($g['notas'] ?? ''));
                     ?>
                         <tr data-search="<?= htmlspecialchars($src) ?>"
                             data-tipo="<?= htmlspecialchars($g['tipo'] ?? '') ?>"
