@@ -1716,3 +1716,30 @@ suite('Firmas y bouchers', function () {
     check('quita la firma y borra el archivo', ($r['json']['success'] ?? false) && !is_file($ruta));
     $pdo->prepare("UPDATE colaboradores SET url_firma = ? WHERE id = ?")->execute([$antes, $col['id']]);
 });
+
+suite('Permisos por rol (menú)', function () {
+    $pdo = db();
+    if (!$pdo->query("SHOW TABLES LIKE 'permisos_menu'")->fetchColumn()) { check('migración permisos_menu instalada', false); return; }
+    $pdo->exec("DELETE FROM permisos_menu");
+    $s = login('qa.super@local.test', 1, 2);
+    $r = $s->get('configuracion_permisos');
+    check('el superadmin ve la página de permisos', $r['code'] === 200 && str_contains($r['body'], 'value="facturador|gastos"') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    check('no ofrece habilitar lo que el rol no puede usar', !str_contains($r['body'], 'value="facturador|usuarios"') && !str_contains($r['body'], 'value="nomina|lista_facturas"'));
+    // Apagar «Gastos» para el facturador (el resto encendido)
+    preg_match_all('/name="pares\[\]" value="([^"]+)"/', $r['body'], $m);
+    $ver = array_values(array_filter($m[1], fn($p) => $p !== 'facturador|gastos'));
+    $r = $s->req('POST', $s->base . 'configuracion_permisos', http_build_query(['pares' => $m[1], 'ver' => $ver]));
+    check('guarda los permisos', in_array($r['code'], [302, 303], true) && (int)$pdo->query("SELECT permitido FROM permisos_menu WHERE rol = 'facturador' AND pagina = 'gastos'")->fetchColumn() === 0
+        && (int)$pdo->query("SELECT COUNT(*) FROM permisos_menu WHERE permitido = 1")->fetchColumn() > 10, $r['code'] . ' ' . substr($r['body'], 0, 200));
+    $f = login('qa.facturador@local.test');
+    $d = $f->get('dashboard');
+    check('el facturador ya no ve Gastos en el menú', !str_contains($d['body'], 'href="gastos"') && str_contains($d['body'], 'href="lista_facturas"'));
+    $g = $f->get('gastos');
+    check('y si abre Gastos directo lo redirige', in_array($g['code'], [301, 302], true));
+    check('el admin sigue viendo Gastos', str_contains(login('qa.admin@local.test')->get('dashboard')['body'], 'href="gastos"'));
+    check('un admin no entra a la configuración de permisos', in_array(login('qa.admin@local.test')->get('configuracion_permisos')['code'], [301, 302], true));
+    $r = $s->req('POST', $s->base . 'configuracion_permisos', http_build_query(['pares' => ['facturador|usuarios', 'nomina|lista_facturas'], 'ver' => ['facturador|usuarios', 'nomina|lista_facturas']]));
+    check('no se puede habilitar por la fuerza lo que el código prohíbe', !(int)$pdo->query("SELECT COUNT(*) FROM permisos_menu WHERE (rol = 'facturador' AND pagina = 'usuarios') OR (rol = 'nomina' AND pagina = 'lista_facturas')")->fetchColumn());
+    $pdo->exec("DELETE FROM permisos_menu");
+    check('al quitar las reglas todo vuelve a como estaba', str_contains(login('qa.facturador@local.test')->get('dashboard')['body'], 'href="gastos"'));
+});

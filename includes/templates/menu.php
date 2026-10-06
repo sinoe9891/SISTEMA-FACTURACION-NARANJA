@@ -14,6 +14,7 @@ $__menuEsAdmin      = in_array(USUARIO_ROL, ['admin', 'superadmin']);
 $__menuPorReponer = 0;
 require_once __DIR__ . '/../inventario.php';
 require_once __DIR__ . '/../respaldos.php';
+require_once __DIR__ . '/../permisos.php';
 if (function_exists('cliente_actual') && cliente_actual() && invDisponible($pdo)) {
 	$__c = $_SESSION['__cache_reponer'] ?? null;
 	if (!$__c || $__c['cid'] !== cliente_actual() || $__c['t'] < time() - 300) {
@@ -89,6 +90,7 @@ $menuLateral = [
 		$__menuEsAdmin ? ['configuracion_correo', 'bi-envelope-at', 'Correo (SMTP)', []] : null,
 		$__menuEsAdmin ? ['usuarios', 'bi-person-gear', 'Usuarios', []] : null,
 		function_exists('respaldoPuede') && respaldoPuede() ? ['respaldos', 'bi-database-check', 'Respaldos', []] : null,
+		$es_superadmin ? ['configuracion_permisos', 'bi-shield-lock', 'Permisos por rol', []] : null,
 	])),
 	// Solo superadmin: administración de la plataforma multiempresa
 	'Plataforma' => $es_superadmin ? [
@@ -99,6 +101,28 @@ $menuLateral = [
 
 // Rol Nómina: solo la sección Personal (session.php bloquea el resto)
 if (USUARIO_ROL === 'nomina') $menuLateral = ['Personal' => $menuLateral['Personal']];
+
+// Permisos por rol (Configuración → Permisos por rol): se ocultan las opciones desactivadas para este rol
+// y, si se abre una de sus páginas directamente, se redirige a la primera opción permitida. «Inicio» siempre se ve.
+if (USUARIO_ROL !== 'superadmin') {
+	$__menuBloqueada = false;
+	foreach ($menuLateral as $__menuSec => $__menuItems) {
+		foreach ($__menuItems as $__menuK => $__menuIt) {
+			if ($__menuIt[0] === 'dashboard' || permisoMenu($pdo, USUARIO_ROL, $__menuIt[0])) continue;
+			if ($__menuIt[0] === $paginaActual || in_array($paginaActual, $__menuIt[3], true)) $__menuBloqueada = true;
+			unset($menuLateral[$__menuSec][$__menuK]);
+		}
+		$menuLateral[$__menuSec] = array_values($menuLateral[$__menuSec]);
+	}
+	if ($__menuBloqueada) {
+		$__menuDestino = 'dashboard';
+		foreach ($menuLateral as $__menuItems) if ($__menuItems) { $__menuDestino = $__menuItems[0][0]; break; }
+		if (!headers_sent()) header('Location: ' . $__menuDestino);
+		else echo '<script>location.replace(' . json_encode($__menuDestino) . ')</script>';
+		exit;
+	}
+	unset($__menuBloqueada, $__menuDestino, $__menuSec, $__menuK);
+}
 
 // Título de la página actual para la barra superior
 $tituloActual = $titulo ?? null;
