@@ -1762,7 +1762,7 @@ $tipos_btn_p = [
                             <span class="info-lbl">Firma</span>
                             <?php if (puedeNomina()): ?>
                                 <span class="no-print">
-                                    <label class="btn btn-sm btn-outline-primary py-0 mb-0" title="PNG o JPG con fondo blanco"><i class="bi bi-upload"></i> <?= $col['url_firma'] ? 'Cambiar' : 'Subir' ?>
+                                    <label class="btn btn-sm btn-outline-primary py-0 mb-0" title="PNG o JPG, firma oscura sobre fondo blanco. Cualquier tamaño: se recorta sola."><i class="bi bi-upload"></i> <?= $col['url_firma'] ? 'Cambiar' : 'Subir' ?>
                                         <input type="file" id="firmaArchivo" accept="image/png,image/jpeg" hidden></label>
                                     <?php if ($col['url_firma']): ?><button type="button" class="btn btn-sm btn-outline-danger py-0" id="firmaQuitar" title="Quitar firma"><i class="bi bi-trash"></i></button><?php endif; ?>
                                 </span>
@@ -1772,7 +1772,7 @@ $tipos_btn_p = [
                             <img src="includes/colaborador_firma.php?id=<?= (int)$col['id'] ?>&v=<?= substr(md5((string)$col['url_firma']), 0, 8) ?>" alt="Firma de <?= htmlspecialchars($nombreCompleto) ?>"
                                 style="max-width:100%;max-height:80px;background:#fff;border:1px dashed #cbd5e1;border-radius:6px;padding:4px">
                         <?php else: ?>
-                            <div class="small text-muted">Sin firma. Sube una imagen PNG o JPG (firma en tinta oscura sobre fondo blanco) para que salga en sus bouchers.</div>
+                            <div class="small text-muted">Sin firma. Sube una foto o imagen PNG/JPG de la firma en tinta oscura sobre fondo blanco (cualquier tamaño: el sistema recorta los bordes blancos solo).</div>
                         <?php endif; ?>
                     </div>
                     <?php if ($col['notas']): ?>
