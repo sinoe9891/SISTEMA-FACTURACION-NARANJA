@@ -1756,3 +1756,14 @@ suite('Ver gasto: comprobante en cualquier carpeta', function () {
     $pdo->exec("DELETE FROM gastos WHERE notas = 'QA-GV'");
     @unlink("$d/c.png"); @rmdir($d);
 });
+
+suite('Gastos: filtros sin recargar', function () {
+    $c = login('qa.admin@local.test');
+    $r = $c->get('gastos', ['vista' => 'mensual', 'mes' => 3, 'anio' => 2026]);
+    check('la página trae las zonas que se actualizan y el formulario de filtros', str_contains($r['body'], 'id="gsZonaHead"') && str_contains($r['body'], 'id="gsZonaKpi"')
+        && str_contains($r['body'], 'id="gsZonaTabla"') && str_contains($r['body'], 'id="gsFiltros"') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $r2 = $c->get('gastos', ['vista' => 'mensual', 'mes' => 4, 'anio' => 2026]);
+    preg_match('/id="gsBody">(.*?)<\/tbody>/s', $r['body'], $a); preg_match('/id="gsBody">(.*?)<\/tbody>/s', $r2['body'], $b);
+    check('otro mes trae otras filas', ($a[1] ?? '') !== ($b[1] ?? ''));
+    check('los botones de cada fila escuchan en el documento', str_contains($r['body'], "ev.target.closest('.btn-editar-gasto')") && str_contains($r['body'], 'gsTabla.recargar()'));
+});

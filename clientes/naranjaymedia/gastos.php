@@ -715,6 +715,7 @@ $total  = count($gastos);
 <div class="gs-page container-xxl">
 
     <!-- Header -->
+    <div id="gsZonaHead">
     <div class="gs-header">
         <div>
             <h4 style="font-size:1.35rem;font-weight:700;margin:0"><i class="bi bi-cash-stack me-2"></i>Gestión de Gastos</h4>
@@ -728,7 +729,10 @@ $total  = count($gastos);
         <?php endif; ?>
     </div>
 
+    </div><!-- /gsZonaHead -->
+
     <!-- Stats -->
+    <div id="gsZonaKpi">
     <div class="gs-stats">
         <div class="gs-stat">
             <div class="gs-stat-icon si-amb"><i class="bi bi-receipt-cutoff"></i></div>
@@ -788,10 +792,12 @@ $total  = count($gastos);
         </div>
     <?php endif; ?>
 
+    </div><!-- /gsZonaKpi -->
+
     <!-- Filtros GET -->
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-body py-3">
-            <form method="GET" class="row g-2 align-items-end">
+            <form method="GET" class="row g-2 align-items-end" id="gsFiltros">
                 <div class="col-auto"><label class="form-label small fw-semibold mb-1">Vista</label>
                     <select name="vista" id="sVista" class="form-select form-select-sm">
                         <option value="mensual" <?= $vista === 'mensual' ? 'selected' : '' ?>>🗓️ Mensual</option>
@@ -878,6 +884,7 @@ $total  = count($gastos);
     </div>
 
     <!-- Tabla -->
+    <div id="gsZonaTabla">
     <div class="gs-card">
         <div class="gs-card-header">
             <span style="font-weight:700;font-size:.95rem;display:flex;align-items:center;gap:.5rem;"><i
@@ -1016,6 +1023,7 @@ $total  = count($gastos);
             <div class="gs-page-btns" id="gsPageBtns"></div>
         </div>
     </div>
+    </div><!-- /gsZonaTabla -->
 </div>
 
 <!-- ══ MODAL: Nuevo / Editar Gasto ════════════════════════════════════════ -->
@@ -1335,7 +1343,7 @@ $total  = count($gastos);
     }
 
     /* ══ TABLE ENGINE ══════════════════════════════════════════════════════════ */
-    (() => {
+    const gsTabla = (() => {
         let query = '',
             filtroTipo = '',
             filtroEstado = '',
@@ -1343,19 +1351,27 @@ $total  = count($gastos);
             perPage = 10,
             sortCol = -1,
             sortDir = 'asc';
-        const allRows = Array.from(document.querySelectorAll('#gsBody tr'));
+        let allRows = Array.from(document.querySelectorAll('#gsBody tr'));
         const $s = document.getElementById('gsSearch'),
             $cl = document.getElementById('gsClear'),
             $pp = document.getElementById('gsPerPage');
         const $ft = document.getElementById('gsFiltroTipo'),
             $fe = document.getElementById('gsFiltroEstado');
-        const $empty = document.getElementById('gsEmpty'),
-            $sub = document.getElementById('gsEmptySub');
-        const $info = document.getElementById('gsPageInfo'),
-            $btns = document.getElementById('gsPageBtns');
-        const $badge = document.getElementById('gsBadge'),
-            $sf = document.getElementById('statFiltered');
-        const headers = document.querySelectorAll('#gsTable thead th[data-col]');
+        let $empty, $sub, $info, $btns, $badge, $sf, headers;
+        const tomarElementos = () => {   // están dentro de las zonas que se reemplazan al filtrar
+            $empty = document.getElementById('gsEmpty'); $sub = document.getElementById('gsEmptySub');
+            $info = document.getElementById('gsPageInfo'); $btns = document.getElementById('gsPageBtns');
+            $badge = document.getElementById('gsBadge'); $sf = document.getElementById('statFiltered');
+            headers = document.querySelectorAll('#gsTable thead th[data-col]');
+            headers.forEach(th => th.addEventListener('click', () => {
+                const i = parseInt(th.dataset.col);
+                sortDir = (sortCol === i && sortDir === 'asc') ? 'desc' : 'asc';
+                sortCol = i;
+                page = 1;
+                updIcons();
+                render();
+            }));
+        };
         const hl = (t, q) => !q ? t : t.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'),
             '<mark class="gs-highlight">$1</mark>');
         const colTxt = (r, i) => {
@@ -1437,14 +1453,7 @@ $total  = count($gastos);
             mk('<i class="bi bi-chevron-right"></i>', cur + 1, cur === tot ? 'disabled' : '');
             mk('<i class="bi bi-chevron-double-right"></i>', tot, cur === tot ? 'disabled' : '');
         };
-        headers.forEach(th => th.addEventListener('click', () => {
-            const i = parseInt(th.dataset.col);
-            sortDir = (sortCol === i && sortDir === 'asc') ? 'desc' : 'asc';
-            sortCol = i;
-            page = 1;
-            updIcons();
-            render();
-        }));
+        tomarElementos();
         let deb;
         $s.addEventListener('input', () => {
             clearTimeout(deb);
@@ -1480,6 +1489,13 @@ $total  = count($gastos);
         });
         updIcons();
         render();
+        return {
+            recargar() {   // después de traer los datos de otro mes/filtro sin recargar la página
+                allRows = Array.from(document.querySelectorAll('#gsBody tr'));
+                sortCol = -1; page = 1;
+                tomarElementos(); updIcons(); render();
+            }
+        };
     })();
 
     /* ══ MODAL GASTO ══════════════════════════════════════════════════════════ */
@@ -1529,8 +1545,10 @@ $total  = count($gastos);
         new bootstrap.Modal(document.getElementById('modalGasto')).show();
     });
 
-    document.querySelectorAll('.btn-editar-gasto').forEach(btn => {
-        btn.addEventListener('click', () => {
+    document.addEventListener('click', ev => {
+        const btn = ev.target.closest('.btn-editar-gasto');
+        if (!btn) return;
+        (() => {
             const g = JSON.parse(btn.dataset.gasto);
             document.getElementById('modalGastoTitulo').innerHTML =
                 '<i class="bi bi-pencil-square me-2"></i>Editar Gasto';
@@ -1577,7 +1595,7 @@ $total  = count($gastos);
                 document.getElementById('g_vregreso').value = g.viatico_fecha_regreso || '';
             }
             new bootstrap.Modal(document.getElementById('modalGasto')).show();
-        });
+        })();
     });
 
     document.getElementById('btnGuardarGasto').addEventListener('click', () => {
@@ -1608,8 +1626,10 @@ $total  = count($gastos);
             });
     });
 
-    document.querySelectorAll('.btn-pagar-gasto').forEach(btn => {
-        btn.addEventListener('click', () => {
+    document.addEventListener('click', ev => {
+        const btn = ev.target.closest('.btn-pagar-gasto');
+        if (!btn) return;
+        (() => {
             // Registrar el pago: fecha, método (tarjeta opcional) y comprobante opcional
             const hoy = new Date().toLocaleDateString('sv-SE'); // AAAA-MM-DD en hora local
             const tarjetas = <?= json_encode(array_map(fn($t) => ['id' => (int)$t['id'], 'txt' => trim(($t['banco'] ?? '') . ' ' . ($t['tipo'] ?? '') . ' ••' . ($t['ultimos_digitos'] ?? ''))], $tarjetas_gasto), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
@@ -1679,10 +1699,12 @@ $total  = count($gastos);
                     location.reload();
                 }
             });
-        });
+        })();
     });
-    document.querySelectorAll('.btn-anular-gasto').forEach(btn => {
-        btn.addEventListener('click', () => {
+    document.addEventListener('click', ev => {
+        const btn = ev.target.closest('.btn-anular-gasto');
+        if (!btn) return;
+        (() => {
             Swal.fire({
                 title: '¿Anular este gasto?',
                 html: `<strong>${btn.dataset.desc}</strong>`,
@@ -1705,10 +1727,12 @@ $total  = count($gastos);
                     else Swal.fire('Error', d.error, 'error');
                 });
             });
-        });
+        })();
     });
-    document.querySelectorAll('.btn-eliminar-gasto').forEach(btn => {
-        btn.addEventListener('click', () => {
+    document.addEventListener('click', ev => {
+        const btn = ev.target.closest('.btn-eliminar-gasto');
+        if (!btn) return;
+        (() => {
             Swal.fire({
                 title: '¿Eliminar definitivamente?',
                 html: `<strong>${btn.dataset.desc}</strong>`,
@@ -1731,8 +1755,37 @@ $total  = count($gastos);
                     else Swal.fire('Error', d.error, 'error');
                 });
             });
-        });
+        })();
     });
+
+    /* ══ FILTROS SIN RECARGAR: al cambiar un select se traen los datos y se actualiza la tabla ══ */
+    (() => {
+        const form = document.getElementById('gsFiltros');
+        if (!form) return;
+        let pedido = 0;
+        const zonas = ['gsZonaHead', 'gsZonaKpi', 'gsZonaTabla'];
+        const actualizar = async () => {
+            const qs = new URLSearchParams(new FormData(form)).toString();
+            const url = location.pathname + (qs ? '?' + qs : '');
+            const yo = ++pedido;
+            zonas.forEach(z => document.getElementById(z)?.style.setProperty('opacity', '.5'));
+            try {
+                const r = await fetch(url, { credentials: 'same-origin' });
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+                if (yo !== pedido) return;   // llegó otra respuesta más nueva
+                zonas.forEach(z => { const n = doc.getElementById(z), v = document.getElementById(z); if (n && v) v.replaceWith(n); });
+                history.replaceState(null, '', url);
+                gsTabla.recargar();
+            } catch (e) {
+                location.href = url;   // si algo falla, se carga la página normal
+            } finally {
+                zonas.forEach(z => document.getElementById(z)?.style.removeProperty('opacity'));
+            }
+        };
+        form.querySelectorAll('select, input').forEach(el => el.addEventListener('change', actualizar));
+        form.addEventListener('submit', e => { e.preventDefault(); actualizar(); });
+    })();
 </script>
 
 <script src="../../clientes/js/nomina-pago.js?v=<?= @filemtime(__DIR__ . '/../js/nomina-pago.js') ?>"></script>
