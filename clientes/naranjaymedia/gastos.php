@@ -1407,7 +1407,8 @@ $total  = count($gastos);
             allRows.forEach(r => r.style.display = 'none');
             if (!total) {
                 $empty.style.display = 'block';
-                $sub.textContent = query ? `Sin resultados para "${query}".` : 'Sin gastos.';
+                const mensual = document.getElementById('sVista')?.value === 'mensual';
+                $sub.textContent = query ? `Sin resultados para "${query}" en este período.${mensual ? ' Cambia la vista a «Anual» para buscar en todo el año.' : ''}` : 'Sin gastos.';
             } else {
                 $empty.style.display = 'none';
                 rows.slice(s, e).forEach(r => {
