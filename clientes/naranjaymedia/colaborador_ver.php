@@ -2027,10 +2027,28 @@ $tipos_btn_p = [
                         <?php endif; ?>
                     </div>
                 <?php else: ?>
+                    <!-- Filtros y selección del historial -->
+                    <div class="no-print d-flex flex-wrap gap-2 align-items-end px-3 py-2 border-bottom" style="font-size:.8rem">
+                        <div><label class="form-label small mb-0">Desde</label><input type="date" class="form-control form-control-sm" id="hDesde"></div>
+                        <div><label class="form-label small mb-0">Hasta</label><input type="date" class="form-control form-control-sm" id="hHasta"></div>
+                        <div style="width:110px"><label class="form-label small mb-0">Monto mín.</label><input type="number" step="0.01" min="0" class="form-control form-control-sm" id="hMin" placeholder="L"></div>
+                        <div style="width:110px"><label class="form-label small mb-0">Monto máx.</label><input type="number" step="0.01" min="0" class="form-control form-control-sm" id="hMax" placeholder="L"></div>
+                        <div class="flex-grow-1" style="min-width:150px"><label class="form-label small mb-0">Buscar</label><input type="search" class="form-control form-control-sm" id="hBuscar" placeholder="Concepto, notas…"></div>
+                        <div><label class="form-label small mb-0">Por página</label><select class="form-select form-select-sm" id="hPorPagina"><?php foreach ([10, 20, 50, 100] as $n): ?><option value="<?= $n ?>"><?= $n ?></option><?php endforeach; ?></select></div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="hLimpiar" title="Quitar filtros"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                    <?php if (in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true)): ?>
+                        <div class="no-print d-flex flex-wrap gap-2 align-items-center px-3 py-2 border-bottom" style="font-size:.8rem">
+                            <span class="text-muted" id="hSelInfo">Ninguno seleccionado</span>
+                            <button type="button" class="btn btn-sm btn-outline-danger ms-auto" id="hSelPdf" disabled><i class="bi bi-file-earmark-pdf me-1"></i> Bouchers PDF</button>
+                            <button type="button" class="btn btn-sm btn-primary" id="hSelZip" disabled><i class="bi bi-file-earmark-zip me-1"></i> Bouchers ZIP</button>
+                        </div>
+                    <?php endif; ?>
                     <div style="overflow-x:auto">
-                        <table data-paginar class="pay-table">
+                        <table class="pay-table" id="tablaPagosColab">
                             <thead>
                                 <tr>
+                                    <th class="no-print" style="width:30px"><?php if (in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true)): ?><input type="checkbox" class="form-check-input" id="hTodos" title="Seleccionar todos los del filtro"><?php endif; ?></th>
                                     <th>Fecha</th>
                                     <th>Concepto</th>
                                     <th class="text-center">Q</th>
@@ -2048,12 +2066,13 @@ $tipos_btn_p = [
                                     $esViat   = strpos($p['descripcion'], 'Viático: ') === 0;
                                     $esBono   = strpos($p['descripcion'], 'Bono: ') === 0;
                                 ?>
-                                    <tr class="<?= $p['estado'] === 'anulado' ? 'opacity-50' : '' ?>">
+                                    <tr data-fila data-fecha="<?= $p['fecha'] ?>" data-monto="<?= (float)$p['monto'] ?>" data-anulado="<?= $p['estado'] === 'anulado' ? 1 : 0 ?>" class="<?= $p['estado'] === 'anulado' ? 'opacity-50' : '' ?>">
+                                        <td class="no-print"><?php if ($p['estado'] === 'pagado' && in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true)): ?><input type="checkbox" class="form-check-input h-sel" value="<?= (int)$p['id'] ?>"><?php endif; ?></td>
                                         <td>
                                             <div class="fw-semibold text-nowrap" style="font-size:.8rem">
                                                 <?= date('d/m/Y', strtotime($p['fecha'])) ?></div>
                                             <div class="text-muted" style="font-size:.7rem">
-                                                <?= date('D', strtotime($p['fecha'])) ?></div>
+                                                <?= ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][(int)date('w', strtotime($p['fecha']))] ?></div>
                                         </td>
                                         <td>
                                             <div class="fw-semibold <?= $p['estado'] === 'anulado' ? 'text-decoration-line-through text-muted' : '' ?>"
@@ -2142,14 +2161,15 @@ $tipos_btn_p = [
                             </tbody>
                             <tfoot>
                                 <tr style="background:#f8fafc;font-size:.82rem">
-                                    <td colspan="3" class="text-end fw-bold" style="padding:.65rem 1rem">TOTAL:</td>
-                                    <td class="text-end fw-bold text-primary" style="padding:.65rem 1rem">L
+                                    <td colspan="4" class="text-end fw-bold" style="padding:.65rem 1rem">TOTAL<span class="fw-normal text-muted" id="hTotalNota"></span>:</td>
+                                    <td class="text-end fw-bold text-primary text-nowrap" style="padding:.65rem 1rem" id="hTotal">L
                                         <?= number_format($total_pagado + $total_pend, 2) ?></td>
                                     <td colspan="3"></td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
+                    <div class="app-pager no-print" id="hPie"></div>
                 <?php endif; ?>
             </div>
         </div>
@@ -3991,6 +4011,53 @@ document.addEventListener('click', e => {
             const fd = new FormData(); fd.append('accion', 'quitar');
             try { await enviar(fd); location.reload(); } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
         });
+    })();
+</script>
+<script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
+<script>
+    /* ══ HISTORIAL: filtros por fecha y monto, total del filtro, selección y bouchers ══ */
+    (() => {
+        const tabla = document.getElementById('tablaPagosColab');
+        if (!tabla) return;
+        const $ = id => document.getElementById(id);
+        const filas = [...tabla.querySelectorAll('tr[data-fila]')];
+        const pasa = tr => {
+            const f = tr.dataset.fecha, m = +tr.dataset.monto, q = $('hBuscar').value.trim().toLowerCase();
+            return (!$('hDesde').value || f >= $('hDesde').value) && (!$('hHasta').value || f <= $('hHasta').value)
+                && ($('hMin').value === '' || m >= +$('hMin').value) && ($('hMax').value === '' || m <= +$('hMax').value)
+                && (!q || tr.textContent.toLowerCase().includes(q));
+        };
+        const t = AppTabla(tabla, { porPagina: '#hPorPagina', pie: '#hPie', filtro: pasa, vacio: 'Ningún pago con estos filtros.' });
+        const L = n => 'L ' + n.toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const sels = [...tabla.querySelectorAll('.h-sel')], todos = $('hTodos');
+        const pintar = () => {
+            const vis = filas.filter(pasa), filtrado = vis.length !== filas.length;
+            $('hTotal').textContent = L(vis.filter(tr => tr.dataset.anulado !== '1').reduce((s, tr) => s + +tr.dataset.monto, 0));
+            $('hTotalNota').textContent = filtrado ? ` (${vis.length} de ${filas.length} con el filtro)` : '';
+            const n = sels.filter(c => c.checked).length;
+            if ($('hSelInfo')) {
+                $('hSelInfo').textContent = n ? `${n} seleccionado${n === 1 ? '' : 's'}` : 'Ninguno seleccionado';
+                $('hSelPdf').disabled = $('hSelZip').disabled = !n;
+                const elegibles = sels.filter(c => pasa(c.closest('tr')));
+                todos.checked = elegibles.length > 0 && elegibles.every(c => c.checked);
+                todos.indeterminate = !todos.checked && elegibles.some(c => c.checked);
+            }
+        };
+        const refrescar = () => { t.refrescar(); pintar(); };
+        ['hDesde', 'hHasta', 'hMin', 'hMax', 'hBuscar'].forEach(id => $(id).addEventListener('input', refrescar));
+        $('hLimpiar').addEventListener('click', () => { ['hDesde', 'hHasta', 'hMin', 'hMax', 'hBuscar'].forEach(id => $(id).value = ''); refrescar(); });
+        todos?.addEventListener('change', () => { sels.forEach(c => c.checked = todos.checked && pasa(c.closest('tr'))); pintar(); });
+        sels.forEach(c => c.addEventListener('change', pintar));
+        const bajar = zip => {
+            const ids = sels.filter(c => c.checked).map(c => c.value);
+            if (!ids.length) return;
+            const url = 'boucher_pdf.php?ids=' + ids.join(',') + (zip ? '&formato=zip' : '&vista=1');
+            if (zip) { Swal.fire({ title: 'Generando ZIP…', text: `${ids.length} boucher(s)`, timer: 3500, showConfirmButton: false, didOpen: () => Swal.showLoading() }); location.href = url; }
+            else window.open(url, '_blank');
+        };
+        $('hSelPdf')?.addEventListener('click', () => bajar(false));
+        $('hSelZip')?.addEventListener('click', () => bajar(true));
+        pintar();
     })();
 </script>
 <script src="../../clientes/js/nomina-pago.js?v=<?= @filemtime(__DIR__ . '/../js/nomina-pago.js') ?>"></script>
