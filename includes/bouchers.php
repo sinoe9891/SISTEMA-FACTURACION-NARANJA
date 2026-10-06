@@ -257,7 +257,7 @@ function boucherDocumento(array $paginas): string
         .obs { font-size: 8.5px; color: #64748b; }
         .comp { margin: 12px 0 6px; text-align: center; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; }
         .comp img { max-width: 100%; max-height: 300px; } .comp-vacio { color: #94a3b8; padding: 26px 0; }
-        .firmas-int { margin-top: 8px; } .firmas-int td { width: 33%; text-align: center; padding: 0 12px; vertical-align: bottom; }
+        .firmas-int { margin-top: 8px; } .firmas-int td { width: 33%; text-align: center; padding: 0 12px; vertical-align: top; }
         .fi-caja { height: 58px; margin-bottom: -12px; } .fi-caja img { max-height: 56px; max-width: 170px; }
         .quien { min-height: 12px; font-size: 9.5px; color: #1e293b; font-weight: bold; margin-top: 2px; } .cargo { font-size: 8.5px; color: #64748b; }
         .linea { border-top: 1px solid #64748b; padding-top: 3px; color: #64748b; font-size: 8.5px; text-transform: uppercase; letter-spacing: 1px; }

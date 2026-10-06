@@ -227,7 +227,8 @@ ob_start(); ?>
     .letras { font-style: italic; color: #475569; margin-top: 5px; }
     .comp { margin-top: 12px; text-align: center; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; }
     .comp img { max-width: 100%; max-height: 260px; } .comp-vacio { color: #94a3b8; padding: 18px 0; }
-    .firmas { margin-top: 18px; } .firmas td { width: 33%; text-align: center; vertical-align: bottom; padding: 0 12px; }
+    /* Arriba + caja de firma de alto fijo: las tres líneas quedan a la misma altura aunque el texto de abajo ocupe 2 renglones */
+    .firmas { margin-top: 18px; } .firmas td { width: 33%; text-align: center; vertical-align: top; padding: 0 12px; }
     .firma-caja { height: 90px; margin-bottom: -16px; } .firma-caja img { max-height: 88px; max-width: 200px; }
     .linea { border-top: 1px solid #475569; padding-top: 4px; }
     .linea b { display: block; font-size: 10px; color: #0f172a; } .linea span { font-size: 8.5px; color: #64748b; }
