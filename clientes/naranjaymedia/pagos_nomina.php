@@ -93,7 +93,7 @@ require_once '../../includes/templates/header.php';
             <div class="app-card-header flex-wrap">
                 <span><i class="bi bi-list-ul me-1"></i> Pagos</span>
                 <div class="app-toolbar flex-grow-1 justify-content-end">
-                    <div class="app-search" style="max-width:280px"><i class="bi bi-search"></i><input type="search" class="form-control form-control-sm" id="buscarPago" placeholder="Buscar colaborador, período, referencia…"></div>
+                    <div class="app-search" style="max-width:280px"><i class="bi bi-search"></i><input type="search" class="form-control form-control-sm" id="buscarPago" placeholder="Buscar por n.º, fecha, colaborador, monto, referencia…"></div>
                     <select class="form-select form-select-sm" id="porPagina" style="width:auto"><option value="10">10/pág</option><option value="25">25/pág</option><option value="50">50/pág</option><option value="100">100/pág</option></select>
                 </div>
             </div>
@@ -102,7 +102,10 @@ require_once '../../includes/templates/header.php';
                     <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Colaborador</th><th>Concepto</th><th>Período</th><th>Método / ref.</th><th class="app-num">Monto</th><th class="text-center">Comprobante</th><th class="text-center">Aviso</th><th class="text-end">Acciones</th></tr></thead>
                     <tbody>
                         <?php foreach ($pagos as $p): ?>
-                            <tr data-fila>
+                            <tr data-fila data-buscar="<?= htmlspecialchars(mb_strtolower(implode(' ', [
+                                '#' . (int)$p['id'], (int)$p['id'], date('d/m/Y', strtotime($p['fecha'])), $p['fecha'], $p['colaborador'], $p['tipo_txt'], $p['descripcion'], $p['periodo'],
+                                $p['metodo_pago'], $p['referencia'], number_format((float)$p['monto'], 2), number_format((float)$p['monto'], 2, '.', ''), (float)$p['monto'],
+                            ]))) ?>">
                                 <td class="app-n"></td>
                                 <td class="text-nowrap"><?= date('d/m/Y', strtotime($p['fecha'])) ?></td>
                                 <td><a href="colaborador_ver?id=<?= $p['colaborador_id'] ?>&todo=1"><?= htmlspecialchars($p['colaborador']) ?></a><?= $p['colaborador_activo'] ? '' : ' <span class="app-badge app-badge-muted">Inactivo</span>' ?></td>

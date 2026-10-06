@@ -1363,14 +1363,16 @@ suite('Pagos de nómina', function () {
     $r = $c->get('pagos_nomina', ['desde' => $desde, 'hasta' => $hasta]);
     check('la página carga sin avisos', $r['code'] === 200 && sinErroresPhp($r['body']), errorPhp($r['body']));
     $esperado = (float)$pdo->query("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id = 2 AND estado <> 'anulado' AND descripcion LIKE 'Sueldo %' AND fecha BETWEEN '$desde' AND '$hasta'")->fetchColumn();
-    $filas = substr_count($r['body'], '<tr data-fila>');
+    $filas = preg_match_all('/<tr data-fila[ >]/', $r['body']);
     check('muestra pagos del periodo', $filas > 0, "filas=$filas");
     $r2 = $c->get('pagos_nomina', ['desde' => $desde, 'hasta' => $hasta, 'tipo' => 'sueldo']);
     check('el total de sueldos coincide con la BD', str_contains($r2['body'], number_format($esperado, 2)), number_format($esperado, 2));
     $col = (int)$pdo->query("SELECT c.id FROM colaboradores c WHERE c.cliente_id = 2 AND EXISTS (SELECT 1 FROM gastos g WHERE g.cliente_id = 2 AND g.descripcion = CONCAT('Sueldo ', c.nombre, ' ', c.apellido, ' — 1ª Quincena') COLLATE utf8mb4_general_ci) LIMIT 1")->fetchColumn();
     $r3 = $c->get('pagos_nomina', ['desde' => $desde, 'hasta' => $hasta, 'colaborador' => $col]);
-    check('filtra por colaborador', substr_count($r3['body'], '<tr data-fila>') > 0 && substr_count($r3['body'], '<tr data-fila>') < $filas);
+    check('filtra por colaborador', preg_match_all('/<tr data-fila[ >]/', $r3['body']) > 0 && preg_match_all('/<tr data-fila[ >]/', $r3['body']) < $filas);
     $x = $c->get('pagos_nomina_exportar.php', ['formato' => 'xlsx', 'desde' => $desde, 'hasta' => $hasta]);
+    preg_match('/data-buscar="([^"]*)"/', $r['body'], $db);
+    check('el buscador de Pagos de nómina incluye número, fecha y monto', isset($db[1]) && preg_match('/#\d+ \d+ \d{2}\/\d{2}\/\d{4}/', $db[1]) === 1, $db[1] ?? '');
     check('exporta XLSX válido', str_contains($x['head'], 'spreadsheetml') && str_starts_with($x['body'], "PK\x03\x04"));
     $p = $c->get('pagos_nomina_exportar.php', ['formato' => 'pdf', 'desde' => $desde, 'hasta' => $hasta]);
     check('exporta PDF válido', str_starts_with($p['body'], '%PDF'), substr($p['body'], 0, 120));
