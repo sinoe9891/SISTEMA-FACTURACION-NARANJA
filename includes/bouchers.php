@@ -211,8 +211,9 @@ function boucherDocumento(array $paginas): string
         .quien { min-height: 13px; font-size: 9.5px; color: #1e293b; }
         .linea { border-top: 1px solid #64748b; padding-top: 3px; color: #64748b; font-size: 8.5px; text-transform: uppercase; letter-spacing: 1px; }
         .recibe-tit { margin-top: 14px; font-size: 9px; font-weight: bold; color: #0f172a; text-transform: uppercase; letter-spacing: 2px; border-bottom: 2px solid #0f172a; padding-bottom: 3px; }
-        .recibe td { vertical-align: bottom; padding-top: 8px; } .r-datos { width: 55%; } .r-datos div { margin-bottom: 7px; font-size: 10.5px; }
-        .r-firma { text-align: center; } .firma-caja { height: 72px; } .firma-caja img { max-height: 70px; max-width: 230px; }
+        .recibe td { vertical-align: bottom; padding-top: 8px; } .r-datos { width: 50%; } .r-datos div { margin-bottom: 7px; font-size: 10.5px; }
+        /* Firma 50% más grande y montada un poco sobre la línea (como firmada a mano) */
+        .r-firma { text-align: center; } .firma-caja { height: 108px; margin-bottom: -18px; } .firma-caja img { max-height: 105px; max-width: 320px; }
         .sin { color: #b91c1c; text-transform: none; letter-spacing: 0; }
     </style></head><body>' . implode('', $paginas) . '</body></html>';
 }
