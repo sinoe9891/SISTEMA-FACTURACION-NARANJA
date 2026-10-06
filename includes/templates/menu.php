@@ -47,6 +47,7 @@ $menuLateral = [
 		['bancos', 'bi-bank', 'Bancos', ['banco_cuenta']],
 		['cheques', 'bi-journal-check', 'Cheques', []],
 		['gastos', 'bi-wallet2', 'Gastos', ['gasto_ver']],
+		$__menuEsAdmin ? ['bouchers', 'bi-receipt-cutoff', 'Bouchers', []] : null,
 		['tarjetas', 'bi-credit-card', 'Tarjetas', []],
 		['categorias_gastos', 'bi-tags', 'Categorías de gastos', []],
 		['financiero', 'bi-graph-up', 'Estado de resultados', []],
@@ -54,10 +55,11 @@ $menuLateral = [
 		['estados_financieros', 'bi-journal-text', 'Estado de resultados clásico', []],
 		['balance_general', 'bi-bank2', 'Balance general', []],
 	])),
-	'Personal' => [
+	'Personal' => array_values(array_filter([
 		['colaboradores', 'bi-people', 'Colaboradores', ['colaborador_ver', 'colaborador_reporte']],
 		['pagos_nomina', 'bi-cash-stack', 'Pagos de nómina', []],
-	],
+		USUARIO_ROL === 'nomina' ? ['bouchers', 'bi-receipt-cutoff', 'Bouchers', []] : null,
+	])),
 	'Ventas' => [
 		['pos', 'bi-cart3', 'Punto de venta', []],
 		['pos_turnos', 'bi-clock-history', 'Turnos de caja', []],

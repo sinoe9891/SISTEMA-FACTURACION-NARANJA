@@ -721,7 +721,11 @@ $total  = count($gastos);
             <p style="font-size:.82rem;opacity:.8;margin:.25rem 0 0"><?= $periodo ?> — egresos, viáticos y gastos
                 recurrentes</p>
         </div>
-        <div style="font-size:3rem;opacity:.2;font-weight:900;line-height:1">💸</div>
+        <?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?>
+            <a href="bouchers?desde=<?= sprintf('%04d-%02d-01', $anio_filtro, $mes_filtro) ?>&hasta=<?= date('Y-m-t', strtotime(sprintf('%04d-%02d-01', $anio_filtro, $mes_filtro))) ?>" class="btn btn-light fw-semibold text-nowrap" style="position:relative;z-index:1"><i class="bi bi-receipt-cutoff me-1"></i> Bouchers del mes</a>
+        <?php else: ?>
+            <div style="font-size:3rem;opacity:.2;font-weight:900;line-height:1">💸</div>
+        <?php endif; ?>
     </div>
 
     <!-- Stats -->
@@ -959,6 +963,9 @@ $total  = count($gastos);
                                     <a href="gasto_ver?id=<?= $g['id'] ?>" class="btn-a btn-ver" title="Ver detalle">
                                         <i class="bi bi-eye-fill"></i>
                                     </a>
+                                    <?php if ($est === 'pagado' && in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?>
+                                        <a href="boucher_pdf.php?gasto_id=<?= (int)$g['id'] ?>&vista=1" target="_blank" class="btn-a btn-ver" title="Boucher"><i class="bi bi-receipt-cutoff"></i></a>
+                                    <?php endif; ?>
                                     <?php if (stripos((string)$g['descripcion'], 'Sueldo ') === 0 && in_array(USUARIO_ROL, ['admin', 'superadmin'])): ?>
                                         <!-- Pago de nómina: se edita/anula con su propio flujo para no dejar préstamos y bonos desfasados -->
                                         <?php if ($est !== 'anulado'): ?>

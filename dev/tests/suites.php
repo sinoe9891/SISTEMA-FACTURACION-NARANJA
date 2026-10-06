@@ -1670,3 +1670,49 @@ suite('Recuperar contraseña por correo', function () {
     $pdo->exec("DELETE FROM configuracion_correo WHERE cliente_id = 2");
     $pdo->exec("DELETE FROM correos_enviados WHERE cliente_id = 2");
 });
+
+suite('Firmas y bouchers', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $col = $pdo->query("SELECT * FROM colaboradores WHERE cliente_id = 2 AND activo = 1 ORDER BY id LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $antes = $col['url_firma'];
+    // Firma de prueba: PNG con transparencia (debe quedar con fondo blanco)
+    $tmp = tempnam(sys_get_temp_dir(), 'firma') . '.png';
+    $im = imagecreatetruecolor(300, 120); imagesavealpha($im, true); imagefill($im, 0, 0, imagecolorallocatealpha($im, 0, 0, 0, 127));
+    imageline($im, 20, 90, 280, 30, imagecolorallocate($im, 10, 10, 60)); imagepng($im, $tmp);
+    $r = $c->post('includes/colaborador_firma.php', ['accion' => 'subir', 'id' => $col['id'], 'firma' => new CURLFile($tmp, 'image/png', 'firma.png')]);
+    $nueva = $pdo->query("SELECT url_firma FROM colaboradores WHERE id = {$col['id']}")->fetchColumn();
+    check('sube la firma del colaborador', ($r['json']['success'] ?? false) && $nueva && $nueva !== $antes, $r['code'] . ' ' . substr($r['body'], 0, 300));
+    $ruta = __DIR__ . '/../../clientes/naranjaymedia/includes/uploads/firmas/' . $nueva;
+    $px = imagecolorat(imagecreatefrompng($ruta), 0, 0);
+    check('la guarda como PNG con fondo blanco', is_file($ruta) && (($px >> 16) & 255) === 255 && ($px & 255) === 255);
+    check('se ve en la ficha', str_contains($c->get('colaborador_ver', ['id' => $col['id']])['body'], 'colaborador_firma.php?id=' . $col['id']));
+    $img = $c->get('includes/colaborador_firma.php', ['id' => $col['id']]);
+    check('la vista previa devuelve la imagen', str_starts_with($img['body'], "\x89PNG"));
+    $r = $c->post('includes/colaborador_firma.php', ['accion' => 'subir', 'id' => $col['id'], 'firma' => new CURLFile(__FILE__, 'image/png', 'x.png')]);
+    check('rechaza un archivo que no es imagen', ($r['json']['success'] ?? true) === false);
+
+    $g = (int)$pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND estado = 'pagado' AND descripcion LIKE " . $pdo->quote('Sueldo ' . $col['nombre'] . ' ' . $col['apellido'] . '%') . " ORDER BY fecha DESC LIMIT 1")->fetchColumn();
+    $p = $c->get('boucher_pdf.php', ['gasto_id' => $g, 'vista' => 1]);
+    check('genera el boucher en PDF', str_starts_with($p['body'], '%PDF') && str_contains($p['head'], 'inline'), substr($p['body'], 0, 200));
+    $mes = $pdo->query("SELECT DATE_FORMAT(fecha, '%Y-%m') FROM gastos WHERE id = $g")->fetchColumn();
+    $r = $c->get('bouchers', ['desde' => "$mes-01", 'hasta' => date('Y-m-t', strtotime("$mes-01"))]);
+    check('la página de bouchers lista los pagos del mes', str_contains($r['body'], 'data-id="' . $g . '"') && str_contains($r['body'], 'Descargar ZIP') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    $todos = $c->get('boucher_pdf.php', ['lote' => 1, 'desde' => "$mes-01", 'hasta' => "$mes-15", 'tipo' => 'nomina']);
+    check('PDF con todos los bouchers del período', str_starts_with($todos['body'], '%PDF'));
+    $z = $c->get('boucher_pdf.php', ['lote' => 1, 'formato' => 'zip', 'desde' => "$mes-01", 'hasta' => "$mes-15", 'tipo' => 'nomina']);
+    $zf = tempnam(sys_get_temp_dir(), 'z'); file_put_contents($zf, $z['body']);
+    $zip = new ZipArchive(); $ok = $zip->open($zf) === true && $zip->numFiles > 0 && str_starts_with((string)$zip->getFromIndex(0), '%PDF');
+    check('ZIP con un PDF por pago', $ok, substr($z['body'], 0, 120));
+    $n = $pdo->query("SELECT COUNT(*) FROM gastos WHERE cliente_id = 2 AND estado = 'pagado' AND fecha BETWEEN '$mes-01' AND '$mes-15' AND (descripcion LIKE 'Sueldo %' OR descripcion LIKE 'Bono:%' OR descripcion LIKE 'Viático:%' OR descripcion LIKE 'Pago adicional - %')")->fetchColumn();
+    check('el ZIP trae un archivo por cada pago', $ok && $zip->numFiles === (int)$n, $zip->numFiles . " vs $n");
+    $otro = (int)$pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND estado = 'pagado' AND descripcion NOT LIKE 'Sueldo %' AND descripcion NOT LIKE 'Bono:%' LIMIT 1")->fetchColumn();
+    if ($otro) check('también genera bouchers de otros gastos', str_starts_with($c->get('boucher_pdf.php', ['gasto_id' => $otro])['body'], '%PDF'));
+    $f = login('qa.facturador@local.test');
+    check('un facturador no genera bouchers', $f->get('boucher_pdf.php', ['gasto_id' => $g])['code'] === 403 && $f->get('bouchers')['code'] === 302);
+    $o = login('qa.ccic@local.test');
+    check('otra empresa no ve la firma', $o->get('includes/colaborador_firma.php', ['id' => $col['id']])['code'] !== 200);
+    $r = $c->post('includes/colaborador_firma.php', ['accion' => 'quitar', 'id' => $col['id']]);
+    check('quita la firma y borra el archivo', ($r['json']['success'] ?? false) && !is_file($ruta));
+    $pdo->prepare("UPDATE colaboradores SET url_firma = ? WHERE id = ?")->execute([$antes, $col['id']]);
+});

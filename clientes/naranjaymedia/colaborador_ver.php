@@ -1756,6 +1756,25 @@ $tipos_btn_p = [
                             <?php endif; ?>
                         </span>
                     </div>
+                    <!-- Firma digital: sale en los bouchers y recibos de sus pagos -->
+                    <div class="info-row d-block" id="firma">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="info-lbl">Firma</span>
+                            <?php if (puedeNomina()): ?>
+                                <span class="no-print">
+                                    <label class="btn btn-sm btn-outline-primary py-0 mb-0" title="PNG o JPG con fondo blanco"><i class="bi bi-upload"></i> <?= $col['url_firma'] ? 'Cambiar' : 'Subir' ?>
+                                        <input type="file" id="firmaArchivo" accept="image/png,image/jpeg" hidden></label>
+                                    <?php if ($col['url_firma']): ?><button type="button" class="btn btn-sm btn-outline-danger py-0" id="firmaQuitar" title="Quitar firma"><i class="bi bi-trash"></i></button><?php endif; ?>
+                                </span>
+                            <?php endif; ?>
+                        </div>
+                        <?php if ($col['url_firma']): ?>
+                            <img src="includes/colaborador_firma.php?id=<?= (int)$col['id'] ?>&v=<?= substr(md5((string)$col['url_firma']), 0, 8) ?>" alt="Firma de <?= htmlspecialchars($nombreCompleto) ?>"
+                                style="max-width:100%;max-height:80px;background:#fff;border:1px dashed #cbd5e1;border-radius:6px;padding:4px">
+                        <?php else: ?>
+                            <div class="small text-muted">Sin firma. Sube una imagen PNG o JPG (firma en tinta oscura sobre fondo blanco) para que salga en sus bouchers.</div>
+                        <?php endif; ?>
+                    </div>
                     <?php if ($col['notas']): ?>
                         <div class="mt-2 p-2 rounded-2"
                             style="background:#f8fafc;font-size:.8rem;color:#555;border:1px solid var(--border)">
@@ -2084,6 +2103,9 @@ $tipos_btn_p = [
                                                         style="font-size:10px;padding:2px 7px">
                                                         <i class="bi bi-paperclip"></i>
                                                     </a>
+                                                <?php endif; ?>
+                                                <?php if ($p['estado'] === 'pagado' && in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true)): ?>
+                                                    <a href="boucher_pdf.php?gasto_id=<?= (int)$p['id'] ?>&vista=1" target="_blank" class="btn btn-xs btn-outline-dark" style="font-size:10px;padding:2px 7px" title="Boucher con firma"><i class="bi bi-receipt-cutoff"></i></a>
                                                 <?php endif; ?>
                                                 <a href="colaborador_recibo_pdf.php?gasto_id=<?= $p['id'] ?>&vista=1"
                                                     target="_blank" class="btn btn-xs btn-outline-danger"
@@ -3944,6 +3966,32 @@ document.addEventListener('click', e => {
                 .catch(err => Swal.fire('No se pudo enviar', err.message, 'error'));
         });
 });
+</script>
+<script>
+    /* ══ FIRMA DIGITAL ═════════════════════════════════════════════════════════ */
+    (() => {
+        const id = <?= (int)$col['id'] ?>;
+        const enviar = async fd => {
+            fd.append('id', id);
+            const r = await fetch('includes/colaborador_firma.php', { method: 'POST', body: fd });
+            let d; try { d = await r.json(); } catch (e) { throw new Error('Respuesta inesperada del servidor (' + r.status + ').'); }
+            if (!d.success) throw new Error(d.error);
+            return d;
+        };
+        document.getElementById('firmaArchivo')?.addEventListener('change', async e => {
+            const f = e.target.files[0];
+            if (!f) return;
+            const fd = new FormData(); fd.append('accion', 'subir'); fd.append('firma', f);
+            Swal.fire({ title: 'Guardando firma…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            try { const d = await enviar(fd); await Swal.fire({ icon: 'success', title: 'Listo', text: d.message }); location.hash = 'firma'; location.reload(); }
+            catch (err) { Swal.fire('No se pudo', err.message, 'error'); e.target.value = ''; }
+        });
+        document.getElementById('firmaQuitar')?.addEventListener('click', async () => {
+            if (!(await Swal.fire({ title: '¿Quitar la firma?', text: 'Sus bouchers saldrán sin firma.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc3545' })).isConfirmed) return;
+            const fd = new FormData(); fd.append('accion', 'quitar');
+            try { await enviar(fd); location.reload(); } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+        });
+    })();
 </script>
 <script src="../../clientes/js/nomina-pago.js?v=<?= @filemtime(__DIR__ . '/../js/nomina-pago.js') ?>"></script>
 <?php require_once '../../includes/templates/footer.php'; ?>
