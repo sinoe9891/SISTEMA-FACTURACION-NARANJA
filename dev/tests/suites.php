@@ -1862,3 +1862,28 @@ suite('ZIP de bouchers por partes (barra de progreso)', function () {
     check('borra los temporales al descargar', ($c->get('boucher_lote.php', ['descargar' => $token])['json']['success'] ?? true) === false);
     check('un facturador no puede generar', (login('qa.facturador@local.test')->post('boucher_lote.php', ['accion' => 'iniciar', 'ids' => implode(',', $ids)])['json']['success'] ?? true) === false);
 });
+
+suite('Sucursales: CRUD', function () {
+    $pdo = db();
+    $s = login('qa.super@local.test', 1, 2);
+    $r = $s->post('includes/empresa_sucursales.php', ['accion' => 'establecimiento', 'empresa_id' => 2, 'nombre' => 'QA Sucursal', 'codigo' => '987']);
+    $est = (int)($r['json']['id'] ?? 0);
+    check('crea un establecimiento con su punto 01', $est > 0 && (int)$pdo->query("SELECT COUNT(*) FROM puntos_emision WHERE establecimiento_id = $est")->fetchColumn() === 1, $r['body']);
+    $u = $s->get('includes/empresa_sucursales.php', ['ubicaciones' => 1]);
+    $mun = $pdo->query("SELECT id, departamento_id FROM municipios ORDER BY id LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    check('devuelve departamentos y municipios', count($u['json']['departamentos'] ?? []) > 10 && count($u['json']['municipios'] ?? []) > 100);
+    $p1 = (int)$pdo->query("SELECT id FROM puntos_emision WHERE establecimiento_id = $est")->fetchColumn();
+    $r = $s->post('includes/empresa_sucursales.php', ['accion' => 'punto', 'establecimiento_id' => $est, 'id' => $p1, 'codigo' => '01', 'descripcion' => 'Punto QA', 'municipio_id' => $mun['id']]);
+    $p = $pdo->query("SELECT descripcion, departamento_id, municipio_id FROM puntos_emision WHERE id = $p1")->fetch(PDO::FETCH_ASSOC);
+    check('edita el punto con su ubicación', ($r['json']['success'] ?? false) && $p['descripcion'] === 'Punto QA' && (int)$p['municipio_id'] === (int)$mun['id'] && (int)$p['departamento_id'] === (int)$mun['departamento_id'], $r['body']);
+    $r = $s->post('includes/empresa_sucursales.php', ['accion' => 'eliminar_punto', 'id' => $p1]);
+    check('no elimina el único punto', ($r['json']['success'] ?? true) === false);
+    $s->post('includes/empresa_sucursales.php', ['accion' => 'punto', 'establecimiento_id' => $est, 'codigo' => '02', 'descripcion' => 'Caja 2']);
+    $p2 = (int)$pdo->query("SELECT id FROM puntos_emision WHERE establecimiento_id = $est AND codigo_punto = '02'")->fetchColumn();
+    check('elimina un punto sin CAI', ($s->post('includes/empresa_sucursales.php', ['accion' => 'eliminar_punto', 'id' => $p2])['json']['success'] ?? false) === true);
+    $conFact = (int)$pdo->query("SELECT establecimiento_id FROM facturas WHERE cliente_id = 2 LIMIT 1")->fetchColumn();
+    check('no elimina un establecimiento con facturas', ($s->post('includes/empresa_sucursales.php', ['accion' => 'eliminar_establecimiento', 'id' => $conFact])['json']['success'] ?? true) === false);
+    $r = $s->post('includes/empresa_sucursales.php', ['accion' => 'eliminar_establecimiento', 'id' => $est]);
+    check('elimina un establecimiento sin uso', ($r['json']['success'] ?? false) && !(int)$pdo->query("SELECT COUNT(*) FROM establecimientos WHERE establecimiento_id = $est")->fetchColumn(), $r['body']);
+    check('un admin no administra sucursales', (login('qa.admin@local.test')->post('includes/empresa_sucursales.php', ['accion' => 'eliminar_establecimiento', 'id' => $conFact])['json']['success'] ?? true) === false);
+});

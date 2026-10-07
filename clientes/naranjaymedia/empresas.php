@@ -282,15 +282,28 @@ require_once '../../includes/templates/header.php';
                         <span class="fw-semibold">${esc(e.nombre)}</span>
                         ${e.codigo_duplicado ? '<span class="app-badge app-badge-warning" title="Otro establecimiento de esta empresa usa el mismo código">Código repetido</span>' : ''}
                         <small class="text-muted">${e.facturas} factura(s)</small>
-                        <button class="btn btn-sm btn-link ms-auto p-0 btn-edit-est" data-id="${e.id}" data-nombre="${esc(e.nombre)}" data-codigo="${esc(e.codigo)}">Editar</button>
+                        <span class="ms-auto d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-secondary py-0 btn-edit-est" data-id="${e.id}" data-nombre="${esc(e.nombre)}" data-codigo="${esc(e.codigo)}" title="Editar"><i class="bi bi-pencil"></i></button>
+                            ${+e.facturas === 0 ? `<button class="btn btn-sm btn-outline-danger py-0 btn-del-est" data-id="${e.id}" data-nombre="${esc(e.nombre)}" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
+                        </span>
                     </div>
-                    <div class="d-flex flex-wrap gap-2 mt-2">
-                        ${e.puntos.map(p => `<span class="app-badge app-badge-muted" title="${p.cais} CAI">Punto ${esc(p.codigo)}${p.descripcion ? ' · ' + esc(p.descripcion) : ''}</span>`).join('')}
-                        <button class="btn btn-sm btn-outline-primary py-0 btn-add-punto" data-est="${e.id}"><i class="bi bi-plus"></i> Punto</button>
+                    <div class="d-flex flex-column gap-1 mt-2">
+                        ${e.puntos.map(p => `<div class="d-flex flex-wrap align-items-center gap-2 small border rounded px-2 py-1">
+                            <span class="font-monospace fw-semibold">Punto ${esc(p.codigo)}</span><span>${esc(p.descripcion || '')}</span>
+                            <span class="text-muted">${p.municipio ? esc(p.municipio + ', ' + p.departamento) : 'Sin ubicación'}</span>
+                            <span class="text-muted">· ${p.cais} CAI</span>
+                            <span class="ms-auto d-flex gap-1">
+                                <button class="btn btn-sm btn-link p-0 btn-edit-punto" data-est="${e.id}" data-punto='${esc(JSON.stringify(p))}' title="Editar punto"><i class="bi bi-pencil"></i></button>
+                                ${+p.cais === 0 && e.puntos.length > 1 ? `<button class="btn btn-sm btn-link p-0 text-danger btn-del-punto" data-id="${p.id}" title="Eliminar punto"><i class="bi bi-trash"></i></button>` : ''}
+                            </span></div>`).join('')}
+                        <div><button class="btn btn-sm btn-outline-primary py-0 btn-add-punto" data-est="${e.id}"><i class="bi bi-plus"></i> Punto de emisión</button></div>
                     </div>
                 </div>`).join('');
-            cont.querySelectorAll('.btn-add-punto').forEach(b => b.addEventListener('click', () => nuevoPunto(b.dataset.est)));
+            cont.querySelectorAll('.btn-add-punto').forEach(b => b.addEventListener('click', () => editarPunto(b.dataset.est, null)));
+            cont.querySelectorAll('.btn-edit-punto').forEach(b => b.addEventListener('click', () => editarPunto(b.dataset.est, JSON.parse(b.dataset.punto))));
             cont.querySelectorAll('.btn-edit-est').forEach(b => b.addEventListener('click', () => editarEst(b.dataset)));
+            cont.querySelectorAll('.btn-del-est').forEach(b => b.addEventListener('click', () => eliminar('eliminar_establecimiento', b.dataset.id, `¿Eliminar el establecimiento «${b.dataset.nombre}» y sus puntos de emisión?`)));
+            cont.querySelectorAll('.btn-del-punto').forEach(b => b.addEventListener('click', () => eliminar('eliminar_punto', b.dataset.id, '¿Eliminar este punto de emisión?')));
         }).catch(err => cont.innerHTML = `<div class="alert alert-danger mb-0">${esc(err.message)}</div>`);
     }
     document.querySelectorAll('.btn-sucursales').forEach(b => b.addEventListener('click', () => {
@@ -322,20 +335,40 @@ require_once '../../includes/templates/header.php';
             }
         }).then(r => { if (r.isConfirmed) cargarSucursales(); });
     }
-    function nuevoPunto(est) {
+    // Departamentos y municipios (se cargan una vez)
+    let ubic = null;
+    const ubicaciones = () => ubic ? Promise.resolve(ubic) : fetch('includes/empresa_sucursales.php?ubicaciones=1').then(r => r.json()).then(d => (ubic = d));
+    async function editarPunto(est, p) {
+        const u = await ubicaciones();
+        const opDep = u.departamentos.map(d => `<option value="${d.id}" ${p && +p.departamento_id === +d.id ? 'selected' : ''}>${esc(d.nombre)}</option>`).join('');
         Swal.fire({
-            title: 'Nuevo punto de emisión',
-            html: `<input id="pCodigo" class="swal2-input" placeholder="Código (ej. 02)" maxlength="3">
-                   <input id="pDesc" class="swal2-input" placeholder="Descripción (ej. Caja 2)">`,
-            showCancelButton: true, confirmButtonText: 'Crear', cancelButtonText: 'Cancelar',
+            title: p ? 'Editar punto de emisión' : 'Nuevo punto de emisión',
+            html: `<div class="text-start small">
+                <label class="form-label mb-1">Código</label><input id="pCodigo" class="form-control mb-2" maxlength="3" placeholder="01" value="${p ? esc(p.codigo) : ''}" ${p && +p.cais > 0 ? 'readonly title="Tiene CAI: el código no se puede cambiar"' : ''}>
+                <label class="form-label mb-1">Descripción</label><input id="pDesc" class="form-control mb-2" maxlength="100" placeholder="Ej: Punto Tegucigalpa" value="${p ? esc(p.descripcion || '') : ''}">
+                <label class="form-label mb-1">Departamento</label><select id="pDep" class="form-select mb-2"><option value="">—</option>${opDep}</select>
+                <label class="form-label mb-1">Municipio</label><select id="pMun" class="form-select"></select></div>`,
+            showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', focusConfirm: false,
+            didOpen: () => {
+                const dep = document.getElementById('pDep'), mun = document.getElementById('pMun');
+                const llenar = () => { mun.innerHTML = '<option value="">—</option>' + u.municipios.filter(m => +m.departamento_id === +dep.value)
+                    .map(m => `<option value="${m.id}" ${p && +p.municipio_id === +m.id ? 'selected' : ''}>${esc(m.nombre)}</option>`).join(''); };
+                dep.addEventListener('change', llenar); llenar();
+            },
             preConfirm: () => {
                 const fd = new FormData();
-                fd.append('accion', 'punto'); fd.append('establecimiento_id', est);
+                fd.append('accion', 'punto'); fd.append('establecimiento_id', est); if (p) fd.append('id', p.id);
                 fd.append('codigo', document.getElementById('pCodigo').value); fd.append('descripcion', document.getElementById('pDesc').value);
+                fd.append('departamento_id', document.getElementById('pDep').value); fd.append('municipio_id', document.getElementById('pMun').value);
                 return enviar('includes/empresa_sucursales.php', fd).then(d => { if (!d.success) throw new Error(d.error); })
                     .catch(e => Swal.showValidationMessage(e.message));
             }
         }).then(r => { if (r.isConfirmed) cargarSucursales(); });
+    }
+    async function eliminar(accion, id, pregunta) {
+        if (!(await Swal.fire({ title: pregunta, icon: 'warning', showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc3545' })).isConfirmed) return;
+        const fd = new FormData(); fd.append('accion', accion); fd.append('id', id);
+        enviar('includes/empresa_sucursales.php', fd).then(d => { if (!d.success) return Swal.fire('No se pudo', d.error, 'error'); cargarSucursales(); });
     }
 })();
 </script>
