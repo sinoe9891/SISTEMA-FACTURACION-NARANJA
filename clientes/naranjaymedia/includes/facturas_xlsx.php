@@ -106,7 +106,7 @@ foreach ($facturas as $f) {
         $f['orden_compra_exenta'], $f['constancia_exoneracion'], $f['registro_sag'],
         $f['cai'], $f['rango_cai_inicio'] ? $f['rango_cai_inicio'] . ' al ' . $f['rango_cai_fin'] : '', $f['fecha_limite'],
         $f['estado_declarada'] ? 'Sí' : 'No',
-    ]);
+    ], false, $anulada);   // anuladas en rojo tachado: no suman en los totales
     if ($anulada) { $anuladas++; continue; }
     $sum['exento'] += (float)$f['exento_total'];
     $sum['exonerado'] += (float)$f['importe_exonerado'];

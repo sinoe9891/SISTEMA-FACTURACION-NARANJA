@@ -24,15 +24,17 @@ class XlsxSimple
         $this->cols = array_map(fn($c) => ['titulo' => $c[0], 'ancho' => $c[1] ?? 15, 'fmt' => $c[2] ?? 'texto'], $cols);
     }
 
-    public function fila(array $valores, bool $negrita = false): void
+    /** $anulada: la fila sale con fondo rojo claro y texto rojo tachado (p. ej. facturas anuladas). */
+    public function fila(array $valores, bool $negrita = false, bool $anulada = false): void
     {
-        $this->filas[] = [$valores, $negrita];
+        $this->filas[] = [$valores, $negrita, $anulada];
     }
 
     // Estilos (índices de cellXfs): 0 normal, 1 encabezado, 2 dinero, 3 entero, 4 fecha, 5 texto ajustado,
-    // 6 negrita, 7 dinero negrita
-    private function estilo(string $fmt, bool $negrita, bool $multilinea): int
+    // 6 negrita, 7 dinero negrita · anuladas: 8 texto, 9 dinero, 10 entero, 11 fecha
+    private function estilo(string $fmt, bool $negrita, bool $multilinea, bool $anulada = false): int
     {
+        if ($anulada) return match ($fmt) { 'dinero' => 9, 'entero' => 10, 'fecha' => 11, default => 8 };
         if ($negrita) return $fmt === 'dinero' ? 7 : 6;
         return match ($fmt) { 'dinero' => 2, 'entero' => 3, 'fecha' => 4, default => $multilinea ? 5 : 0 };
     }
@@ -72,7 +74,7 @@ class XlsxSimple
         foreach ($this->cols as $i => $c) $x .= '<c r="' . self::col($i) . '1" t="inlineStr" s="1"><is><t>' . self::esc($c['titulo']) . '</t></is></c>';
         $x .= '</row>';
 
-        foreach ($this->filas as $n => [$valores, $negrita]) {
+        foreach ($this->filas as $n => [$valores, $negrita, $anulada]) {
             $r = $n + 2;
             $x .= '<row r="' . $r . '">';
             foreach (array_values($valores) as $i => $v) {
@@ -80,12 +82,12 @@ class XlsxSimple
                 $fmt = $this->cols[$i]['fmt'] ?? 'texto';
                 $ref = self::col($i) . $r;
                 if (in_array($fmt, ['dinero', 'entero'], true) && is_numeric($v)) {
-                    $x .= '<c r="' . $ref . '" s="' . $this->estilo($fmt, $negrita, false) . '"><v>' . (0 + $v) . '</v></c>';
+                    $x .= '<c r="' . $ref . '" s="' . $this->estilo($fmt, $negrita, false, $anulada) . '"><v>' . (0 + $v) . '</v></c>';
                 } elseif ($fmt === 'fecha' && ($serial = self::serialFecha((string)$v)) !== null) {
-                    $x .= '<c r="' . $ref . '" s="' . $this->estilo('fecha', $negrita, false) . '"><v>' . $serial . '</v></c>';
+                    $x .= '<c r="' . $ref . '" s="' . $this->estilo('fecha', $negrita, false, $anulada) . '"><v>' . $serial . '</v></c>';
                 } else {
                     $v = (string)$v;
-                    $x .= '<c r="' . $ref . '" t="inlineStr" s="' . $this->estilo('texto', $negrita, str_contains($v, "\n")) . '"><is><t xml:space="preserve">' . self::esc($v) . '</t></is></c>';
+                    $x .= '<c r="' . $ref . '" t="inlineStr" s="' . $this->estilo('texto', $negrita, str_contains($v, "\n"), $anulada) . '"><is><t xml:space="preserve">' . self::esc($v) . '</t></is></c>';
                 }
             }
             $x .= '</row>';
@@ -104,11 +106,11 @@ class XlsxSimple
             'xl/_rels/workbook.xml.rels' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
             'xl/styles.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
                 . '<numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.00"/><numFmt numFmtId="165" formatCode="dd/mm/yyyy"/></numFmts>'
-                . '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
-                . '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2563EB"/><bgColor indexed="64"/></patternFill></fill></fills>'
+                . '<fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><strike/><sz val="11"/><color rgb="FFB91C1C"/><name val="Calibri"/></font></fonts>'
+                . '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2563EB"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFEE2E2"/><bgColor indexed="64"/></patternFill></fill></fills>'
                 . '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
                 . '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-                . '<cellXfs count="8">'
+                . '<cellXfs count="12">'
                 . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top"/></xf>'
                 . '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>'
                 . '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf>'
@@ -117,6 +119,10 @@ class XlsxSimple
                 . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>'
                 . '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
                 . '<xf numFmtId="164" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/>'
+                . '<xf numFmtId="0" fontId="3" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="top"/></xf>'
+                . '<xf numFmtId="164" fontId="3" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf>'
+                . '<xf numFmtId="1" fontId="3" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf>'
+                . '<xf numFmtId="165" fontId="3" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf>'
                 . '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
             'xl/worksheets/sheet1.xml' => $this->hojaXml(),
         ];
