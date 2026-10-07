@@ -3,8 +3,9 @@
  * cobros.php — Cobros por correo programados (facturas en PDF + mensaje + fecha y hora).
  *
  *   cobroCrear($pdo, $cid, $uid, $datos, $renderPdf)   → id (genera y guarda los PDF al programar)
- *   Tipos: saldo_pendiente y envio_factura (facturas en PDF), envio_recibo (recibos en PDF, contratos sin factura)
- *   y recordatorio_pago (pagos pendientes del plan de pagos; sin adjuntos).
+ *   Tipos: envio_factura, saldo_pendiente y factura_y_saldo (factura nueva + facturas con saldo, con sus abonos), todas
+ *   con las facturas en PDF; envio_recibo (recibos en PDF, contratos sin factura) y recordatorio_pago (pagos del plan).
+ *   Cualquier cobro puede llevar además documentos de la empresa (includes/documentos.php), p. ej. la Constancia del SAR.
  *   cobroEnviar($pdo, $cid, $cobroId, $uid)            → envía (desde la cuenta «facturacion»)
  *   cobrosPendientesEnviar($pdo, $log)                  → para el cron: envía los que ya tocan
  *
@@ -12,8 +13,16 @@
  */
 require_once __DIR__ . '/correo.php';
 
-const COBRO_TIPOS = ['saldo_pendiente' => 'Saldo pendiente', 'envio_factura' => 'Envío de facturas',
+const COBRO_TIPOS = ['envio_factura' => 'Envío de factura', 'saldo_pendiente' => 'Cobro de saldo pendiente', 'factura_y_saldo' => 'Factura + saldo pendiente',
                      'recordatorio_pago' => 'Recordatorio de pago (plan de pagos)', 'envio_recibo' => 'Envío de recibos'];
+/** Tipos que adjuntan facturas */
+const COBRO_TIPOS_FACTURA = ['envio_factura', 'saldo_pendiente', 'factura_y_saldo'];
+
+/** Plantilla por defecto de «Factura + saldo pendiente»: la factura nueva con sus conceptos y las que tienen saldo (con abonos). */
+const COBRO_PLANTILLA_FACTURA_Y_SALDO = [
+    'asunto' => 'Factura N.° {{numeros_facturas}} y saldo pendiente - {{cliente_nombre}}',
+    'contenido' => "{{saludo}}\n\nEspero que se encuentre bien.\n\nAdjunto {{detalle_facturas}}\n\nAsimismo, le recordamos las facturas que tienen saldo pendiente de pago:\n\n{{saldo_pendiente}}\n\nCon la nueva factura, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,",
+];
 
 /** Plantillas por defecto de los tipos sin factura (se pueden cambiar en Mensajes y cuentas de pago). */
 const COBRO_PLANTILLAS_EXTRA = [
@@ -155,7 +164,21 @@ function cobroAdjuntos(PDO $pdo, int $cid, int $cobroId): array
         $st->execute([$cobroId]);
         $out = array_merge($out, $st->fetchAll(PDO::FETCH_ASSOC));
     }
+    if (cobroDocumentosDisponible($pdo)) {
+        $st = $pdo->prepare("SELECT NULL AS factura_id, NULL AS recibo_id, x.documento_id, x.archivo, x.nombre AS correlativo, x.nombre AS etiqueta FROM cobros_programados_documentos x WHERE x.cobro_id = ? ORDER BY x.id");
+        $st->execute([$cobroId]);
+        $out = array_merge($out, $st->fetchAll(PDO::FETCH_ASSOC));
+    }
     return array_map(fn($a) => $a + ['existe' => is_file(cobroDir($cid, $cobroId) . $a['archivo'])], $out);
+}
+
+function cobroDocumentosDisponible(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) {
+        try { $ok = (bool)$pdo->query("SHOW TABLES LIKE 'cobros_programados_documentos'")->fetchColumn(); } catch (Throwable $e) { $ok = false; }
+    }
+    return $ok;
 }
 
 function cobrosDisponible(PDO $pdo): bool
@@ -216,7 +239,7 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
     if (($recIds || $planIds) && !cobrosExtrasDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-07_cobros_plan_recibos.sql.");
     if ($tipo === 'envio_recibo' && !$recIds && !$antIds) throw new Exception("Selecciona al menos un recibo.");
     if ($tipo === 'recordatorio_pago' && !$planIds) throw new Exception("Selecciona al menos un pago del plan.");
-    if (in_array($tipo, ['saldo_pendiente', 'envio_factura'], true) && !$ids) throw new Exception("Selecciona al menos una factura.");
+    if (in_array($tipo, COBRO_TIPOS_FACTURA, true) && !$ids) throw new Exception("Selecciona al menos una factura.");
     if (count($ids) + count($recIds) + count($antIds) > 30) throw new Exception("Máximo 30 documentos por cobro.");
     if ($antIds) {
         $in = implode(',', array_fill(0, count($antIds), '?'));
@@ -225,6 +248,18 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
         if ((int)$st->fetchColumn() !== count($antIds)) throw new Exception("Algún pago anticipado no es de este cliente o está anulado.");
     }
     if (count($planIds) > 60) throw new Exception("Máximo 60 pagos por recordatorio.");
+    // Documentos de la empresa que van adjuntos (se copian al cobro tal como están hoy)
+    $docIds = $lista('documento_ids');
+    $docs = [];
+    if ($docIds) {
+        require_once __DIR__ . '/documentos.php';
+        if (!docsDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-09_documentos_empresa.sql.");
+        foreach ($docIds as $did) {
+            $doc = docObtener($pdo, $cid, $did);
+            if (!is_file(docDir($cid) . $doc['archivo'])) throw new Exception("Falta el archivo del documento «{$doc['nombre']}».");
+            $docs[] = $doc;
+        }
+    }
     $facturas = $recibos = [];
     if ($ids) {
         $in = implode(',', array_fill(0, count($ids), '?'));
@@ -305,6 +340,14 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
             $insA->execute([$id, $aid, $archivo]);
         }
     }
+    if ($docs) {
+        $insD = $pdo->prepare("INSERT INTO cobros_programados_documentos (cobro_id, documento_id, nombre, archivo) VALUES (?, ?, ?, ?)");
+        foreach ($docs as $doc) {
+            $archivo = 'doc_' . (int)$doc['id'] . '_' . preg_replace('/[^A-Za-z0-9._-]+/', '_', iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', docNombreAdjunto($doc)));
+            if (!copy(docDir($cid) . $doc['archivo'], $dir . $archivo)) throw new Exception("No se pudo adjuntar «{$doc['nombre']}».");
+            $insD->execute([$id, $doc['id'], $doc['nombre'], $archivo]);
+        }
+    }
     // Pagos del plan que se recuerdan (para mostrar en el plan que ya se avisó)
     if ($planIds) {
         $insP = $pdo->prepare("INSERT INTO cobros_programados_plan (cobro_id, plan_id) VALUES (?, ?)");
@@ -325,7 +368,7 @@ function cobroPlantilla(string $mensaje, array $empresa, array $cfg, array $fact
         : '<span style="font-size:18px;font-weight:700;color:#0f172a">' . $e($empresaNombre) . '</span>';
     if ($enlace) $logo = '<a href="' . $e($enlace) . '" target="_blank" style="text-decoration:none">' . $logo . '</a>';
     // $facturas: etiquetas de los adjuntos («factura 000-…», «recibo 00012»); un número suelto se toma como factura
-    $adjuntos = $facturas ? '<p style="margin:18px 0 0;font-size:13px;color:#64748b">📎 Adjuntos: ' . $e(implode(', ', array_map(fn($f) => preg_match('/^(factura|recibo) /', $f) ? $f : 'factura ' . $f, $facturas))) . '</p>' : '';
+    $adjuntos = $facturas ? '<p style="margin:18px 0 0;font-size:13px;color:#64748b">📎 Adjuntos: ' . $e(implode(', ', array_map(fn($f) => preg_match('/^(factura|recibo) /', $f) || !preg_match('/^[\d-]+$/', $f) ? $f : 'factura ' . $f, $facturas))) . '</p>' : '';
     $aviso = $prueba ? '<tr><td style="padding:10px 28px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:600">PRUEBA · Este correo es una vista previa y no se envió al cliente.</td></tr>' : '';
 
     $html = '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>'
@@ -360,8 +403,8 @@ function cobroEnviar(PDO $pdo, int $cid, int $cobroId, ?int $uid = null): void
     try {
         $adjuntos = $nums = [];
         foreach (cobroAdjuntos($pdo, $cid, $cobroId) as $a) {
-            if (!$a['existe']) throw new Exception("Falta el PDF de la {$a['etiqueta']}.");
-            $adjuntos[] = ['ruta' => cobroDir($cid, $cobroId) . $a['archivo'], 'nombre' => $a['archivo']];
+            if (!$a['existe']) throw new Exception(!empty($a['documento_id']) ? "Falta el documento «{$a['etiqueta']}»." : "Falta el PDF de la {$a['etiqueta']}.");
+            $adjuntos[] = ['ruta' => cobroDir($cid, $cobroId) . $a['archivo'], 'nombre' => !empty($a['documento_id']) ? $a['etiqueta'] . '.' . pathinfo($a['archivo'], PATHINFO_EXTENSION) : $a['archivo']];
             $nums[] = $a['etiqueta'];
         }
         $emp = $pdo->prepare("SELECT nombre, alias FROM clientes_saas WHERE id = ?");
@@ -467,6 +510,15 @@ function cobroDuplicar(PDO $pdo, int $cid, int $uid, int $id, string $para, stri
             $insA->execute([$nuevo, $a['anticipo_id'], $a['archivo']]);
         }
     }
+    if (cobroDocumentosDisponible($pdo)) {
+        $st = $pdo->prepare("SELECT documento_id, nombre, archivo FROM cobros_programados_documentos WHERE cobro_id = ?");
+        $st->execute([$id]);
+        $insD = $pdo->prepare("INSERT INTO cobros_programados_documentos (cobro_id, documento_id, nombre, archivo) VALUES (?, ?, ?, ?)");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $a) {
+            if (!copy(cobroDir($cid, $id) . $a['archivo'], $dir . $a['archivo'])) throw new Exception("Falta el documento «{$a['nombre']}».");
+            $insD->execute([$nuevo, $a['documento_id'], $a['nombre'], $a['archivo']]);
+        }
+    }
     return $nuevo;
 }
 
@@ -482,9 +534,10 @@ function cobroEliminar(PDO $pdo, int $cid, int $id): void
         $pdo->prepare("DELETE FROM cobros_programados_plan WHERE cobro_id = ?")->execute([$id]);
     }
     if (cobroAnticiposDisponible($pdo)) $pdo->prepare("DELETE FROM cobros_programados_anticipos WHERE cobro_id = ?")->execute([$id]);
+    if (cobroDocumentosDisponible($pdo)) $pdo->prepare("DELETE FROM cobros_programados_documentos WHERE cobro_id = ?")->execute([$id]);
     $pdo->prepare("DELETE FROM cobros_programados WHERE id = ? AND cliente_id = ?")->execute([$id, $cid]);
     $dir = cobroDir($cid, $id);
-    foreach (glob($dir . '*.pdf') ?: [] as $f) @unlink($f);
+    foreach (glob($dir . '*') ?: [] as $f) if (is_file($f)) @unlink($f);
     @rmdir($dir);
 }
 

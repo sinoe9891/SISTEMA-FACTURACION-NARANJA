@@ -295,7 +295,7 @@ require_once '../../includes/templates/header.php';
                             <div class="col-md-6">
                                 <label class="fv-form-label">Cliente (Receptor) <span
                                         class="text-danger">*</span></label>
-                                <select name="receptor_id" id="receptor_id" class="form-select" required>
+                                <select name="receptor_id" id="receptor_id" class="form-select" required data-buscar>
                                     <option value="">— Seleccione un cliente —</option>
                                     <?php foreach ($clientes as $cl): ?>
                                         <option value="<?= $cl['id'] ?>"
@@ -340,7 +340,7 @@ require_once '../../includes/templates/header.php';
                                 <div class="row g-2 align-items-end">
                                     <div class="col-md-5">
                                         <label class="fv-form-label">Producto / Servicio</label>
-                                        <select name="productos[0][id]" class="form-select" required>
+                                        <select name="productos[0][id]" class="form-select" required data-buscar>
                                             <option value="">— Seleccionar —</option>
                                             <?php foreach ($productos_iniciales as $prod):
                                                 $precio = (float)$prod['precio'];
@@ -391,8 +391,8 @@ require_once '../../includes/templates/header.php';
                             <div class="col-md-4">
                                 <label class="fv-form-label">Condición</label>
                                 <select name="condicion_pago" class="form-select" required>
+                                    <option value="Credito" selected>Crédito</option>
                                     <option value="Contado">Contado</option>
-                                    <option value="Credito">Crédito</option>
                                 </select>
                             </div>
                             <div class="col-md-4 d-flex align-items-end pb-1">

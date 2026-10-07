@@ -5,7 +5,7 @@
 //   POST accion=generar_mensaje (receptor_id, tipo recordatorio_pago|envio_recibo, ids[]) → asunto y mensaje con la plantilla
 //   POST accion=crear  modo=programar|ahora|prueba   → crea el cobro (genera los PDF) y, si toca, lo envía
 //   GET  ?ver=<id>                                  → detalle: datos, vista del correo, adjuntos e intentos de envío
-//   GET  ?pdf=<id>&factura=<factura_id>             → PDF adjunto tal como se envió
+//   GET  ?pdf=<id>&factura=<factura_id>             → PDF adjunto tal como se envió (&documento=<id>: documento de la empresa)
 //   POST accion=enviar_ya | cancelar | reprogramar   → id (+ programado_para)
 //   POST accion=editar (para, cc, asunto, mensaje_html, programado_para) | reenviar (para, cc, prueba) | eliminar
 //   POST accion=previsualizar (receptor_id, factura_ids[], asunto, mensaje_html) → HTML del correo tal como llegará (no envía)
@@ -16,6 +16,7 @@ require_once '../../includes/cobros.php';
 require_once '../../includes/cuentas.php';
 require_once '../../includes/contrato_plan.php';
 require_once '../../includes/recibo_pdf.php';
+require_once '../../includes/documentos.php';
 header('Content-Type: application/json; charset=utf-8');
 
 /** PDF de una factura, tal como «Imprimir / PDF». */
@@ -52,6 +53,9 @@ try {
         if (isset($_GET['recibo'])) {
             $st = $pdo->prepare("SELECT archivo FROM cobros_programados_recibos WHERE cobro_id = ? AND recibo_id = ?");
             $st->execute([$cobro['id'], (int)$_GET['recibo']]);
+        } elseif (isset($_GET['documento'])) {
+            $st = $pdo->prepare("SELECT archivo FROM cobros_programados_documentos WHERE cobro_id = ? AND documento_id = ?");
+            $st->execute([$cobro['id'], (int)$_GET['documento']]);
         } elseif (isset($_GET['anticipo'])) {
             $st = $pdo->prepare("SELECT archivo FROM cobros_programados_anticipos WHERE cobro_id = ? AND anticipo_id = ?");
             $st->execute([$cobro['id'], (int)$_GET['anticipo']]);
@@ -62,8 +66,9 @@ try {
         $archivo = (string)$st->fetchColumn();
         $ruta = cobroDir($cid, (int)$cobro['id']) . $archivo;
         if ($archivo === '' || !is_file($ruta)) throw new Exception("El PDF ya no está disponible.");
-        header('Content-Type: application/pdf');
+        header('Content-Type: ' . ((string)(new finfo(FILEINFO_MIME_TYPE))->file($ruta) ?: 'application/pdf'));
         header('Content-Disposition: inline; filename="' . $archivo . '"');
+        header('X-Content-Type-Options: nosniff');
         header('Content-Length: ' . filesize($ruta));
         readfile($ruta);
         exit;
@@ -76,7 +81,7 @@ try {
         if (!$cli) throw new Exception("Cliente no encontrado.");
         $hayCxc = cxcDisponible($pdo);
         $st = $pdo->prepare("
-            SELECT f.id, f.correlativo, f.contrato_id, DATE(f.fecha_emision) AS fecha, f.total, f.pagada,
+            SELECT f.id, f.correlativo, f.contrato_id, DATE(f.fecha_emision) AS fecha, f.total, f.pagada, f.enviada_receptor AS enviada,
                    COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) AS pm, COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) AS pa,
                    " . ($hayCxc ? "COALESCE((SELECT SUM(c.monto) FROM cobros_factura c WHERE c.factura_id = f.id AND c.anulado = 0), 0)" : "0") . " AS abonado
             FROM facturas f
@@ -122,7 +127,12 @@ try {
             }
             usort($plan, fn($a, $b) => $a['fecha'] <=> $b['fecha']);
         }
-        echo json_encode(['success' => true, 'cliente' => $cli, 'facturas' => $facturas, 'recibos' => $recibos, 'plan' => $plan, 'contactos' => $contactos], JSON_UNESCAPED_UNICODE);
+        // Documentos de la empresa que se pueden adjuntar (con su semáforo de vencimiento)
+        $documentos = array_map(function ($d) {
+            [$bg, $fg, $txt] = docSemaforo($d);
+            return ['id' => (int)$d['id'], 'nombre' => $d['nombre'], 'vence' => $d['fecha_vencimiento'], 'estado' => $d['estado'], 'defecto' => (int)$d['adjuntar_por_defecto'], 'bg' => $bg, 'fg' => $fg, 'txt' => $txt];
+        }, docsLista($pdo, $cid));
+        echo json_encode(['success' => true, 'cliente' => $cli, 'facturas' => $facturas, 'recibos' => $recibos, 'plan' => $plan, 'contactos' => $contactos, 'documentos' => $documentos], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -197,6 +207,7 @@ try {
                 $st->execute([$cid, $rid, ...$rids]);
                 $nums = array_merge($nums, $st->fetchAll(PDO::FETCH_COLUMN));
             }
+            foreach (array_filter(array_map('intval', (array)($_POST['documento_ids'] ?? []))) as $did) $nums[] = docObtener($pdo, $cid, $did)['nombre'];
             $emp = $pdo->prepare("SELECT nombre, alias FROM clientes_saas WHERE id = ?");
             $emp->execute([$cid]);
             [$html] = cobroPlantilla(cobroLimpiarHtml((string)($_POST['mensaje_html'] ?? '')), $emp->fetch(PDO::FETCH_ASSOC) ?: [], correoConfig($pdo, $cid, 'facturacion') ?? [], $nums, false);

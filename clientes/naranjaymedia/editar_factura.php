@@ -287,7 +287,7 @@ require_once '../../includes/templates/header.php';
 				<div class="fe-card">
 					<div class="fe-card-header"><i class="bi bi-person-fill text-primary"></i>Cliente (Receptor)</div>
 					<div class="fe-card-body">
-						<select name="receptor_id" id="receptorSelect" class="form-select"
+						<select name="receptor_id" id="receptorSelect" class="form-select" data-buscar
 							data-original="<?= $factura['receptor_id'] ?>" <?= $puedeEditarReceptor ? '' : 'disabled' ?>>
 							<?php foreach ($clientes as $cl): ?>
 								<option value="<?= $cl['id'] ?>" <?= $cl['id'] == $factura['receptor_id'] ? 'selected' : '' ?>>
@@ -375,7 +375,7 @@ require_once '../../includes/templates/header.php';
 							<div class="producto-item">
 								<div class="row g-2 align-items-end">
 									<div class="col-md-5"><label class="fe-form-label">Producto</label>
-										<select name="productos[0][id]" class="form-select">
+										<select name="productos[0][id]" class="form-select" data-buscar>
 											<option value="">Seleccione producto</option>
 											<?php foreach ($productos as $prod):
 												$precio = $prod['precio_especial'] !== null ? $prod['precio_especial'] : $prod['precio_base'];
@@ -413,7 +413,7 @@ require_once '../../includes/templates/header.php';
 								<div class="producto-item">
 									<div class="row g-2 align-items-end">
 										<div class="col-md-5"><label class="fe-form-label">Producto</label>
-											<select name="productos[<?= $index ?>][id]" class="form-select" required>
+											<select name="productos[<?= $index ?>][id]" class="form-select" required data-buscar>
 												<option value="">Seleccione producto</option>
 												<?php foreach ($productos as $prod):
 													$precio = $prod['precio_especial'] !== null ? $prod['precio_especial'] : $prod['precio_base'];

@@ -90,6 +90,7 @@ $menuLateral = [
 		$__menuEsAdmin ? ['configuracion_mensajes', 'bi-envelope', 'Mensajes y cuentas de pago', []] : null,
 		$__menuEsAdmin ? ['configuracion_correo', 'bi-envelope-at', 'Correo (SMTP)', []] : null,
 		$__menuEsAdmin ? ['configuracion_firmas', 'bi-pen', 'Firmas de documentos', []] : null,
+		$__menuEsAdmin ? ['configuracion_documentos', 'bi-folder-check', 'Documentos de la empresa', []] : null,
 		$__menuEsAdmin ? ['usuarios', 'bi-person-gear', 'Usuarios', []] : null,
 		function_exists('respaldoPuede') && respaldoPuede() ? ['respaldos', 'bi-database-check', 'Respaldos', []] : null,
 		$es_superadmin ? ['configuracion_permisos', 'bi-shield-lock', 'Permisos por rol', []] : null,

@@ -272,6 +272,18 @@ unset($__v);
             <div><strong>Tu CAI está por vencer.</strong> Fecha límite: <strong><?= formatFechaLimite($fecha_limite) ?></strong>. Solicita uno nuevo al SAR antes de esa fecha.</div>
         </div>
     <?php endif; ?>
+    <?php // Documentos de la empresa por vencer (30 días) o vencidos: semáforo por días que faltan
+    require_once '../../includes/documentos.php';
+    $docsAviso = in_array(USUARIO_ROL, ['admin', 'superadmin'], true) ? array_filter(docsLista($pdo, (int)cliente_actual()), fn($d) => in_array($d['estado'], ['vencido', 'por_vencer'], true)) : [];
+    if ($docsAviso): ?>
+        <div class="db-card mb-3"><div class="card-body py-2 px-3 d-flex flex-wrap align-items-center gap-2 small">
+            <span class="fw-semibold"><i class="bi bi-folder-check me-1"></i>Documentos de la empresa:</span>
+            <?php foreach ($docsAviso as $d): [$bg, $fg, $txt] = docSemaforo($d); ?>
+                <a href="configuracion_documentos" class="text-decoration-none badge rounded-pill" style="background:<?= $bg ?>;color:<?= $fg ?>;font-size:.78rem"><?= htmlspecialchars($d['nombre']) ?> · <?= $txt ?></a>
+            <?php endforeach; ?>
+            <a href="configuracion_documentos" class="ms-auto">Renovar</a>
+        </div></div>
+    <?php endif; ?>
     <?php if (($facturas_restantes ?? 999999) <= (defined('ALERTA_FACTURAS_RESTANTES') ? ALERTA_FACTURAS_RESTANTES : 0) && ($total_facturas ?? 0) > 0): ?>
         <div class="alert alert-warning d-flex align-items-center gap-3 mb-3 rounded-3">
             <i class="bi bi-exclamation-triangle-fill fs-5"></i>

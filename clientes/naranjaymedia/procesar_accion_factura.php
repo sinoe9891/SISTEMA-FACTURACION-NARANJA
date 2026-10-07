@@ -4,6 +4,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/intentos.php';
 require_once '../../includes/inventario.php';
+require_once '../../includes/cobros.php';
 
 function renderFacturaPdfToString($factura_id)
 {
@@ -150,7 +151,7 @@ try {
 		header('Content-Type: application/json; charset=utf-8');
 
 		$tipo = $data['tipo'] ?? '';
-		if (!in_array($tipo, ['envio_factura', 'saldo_pendiente'])) {
+		if (!in_array($tipo, ['envio_factura', 'saldo_pendiente', 'factura_y_saldo'])) {
 			throw new Exception('Tipo de mensaje inválido.');
 		}
 		if (!is_array($factura_ids) || empty($factura_ids)) {
@@ -170,7 +171,7 @@ try {
 
 		$placeholders = implode(',', array_fill(0, count($factura_ids), '?'));
 		$stmtFacturas = $pdo->prepare("
-			SELECT f.id, f.correlativo, f.total, f.receptor_id, f.cliente_id,
+			SELECT f.id, f.correlativo, f.total, f.receptor_id, f.cliente_id, f.enviada_receptor, f.fecha_emision,
 			       cf.nombre AS receptor_nombre, cf.contacto_nombre
 			FROM facturas f
 			INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
@@ -214,9 +215,21 @@ try {
 			$fs['saldo'] = max(0, round((float)$fs['total'] - $fs['abonado'], 2));
 		}
 		unset($fs);
-		$total = $tipo === 'saldo_pendiente'
-			? array_sum(array_column($facturasSel, 'saldo'))
-			: array_sum(array_map(fn($f) => (float)$f['total'], $facturasSel));
+		// Factura + saldo pendiente: las nuevas (aún no enviadas al cliente; si todas ya se enviaron, la más reciente)
+		// van con sus conceptos y las demás se listan como saldo pendiente con sus abonos. Sin pendientes, es un envío normal.
+		$facturasNuevas = $facturasSel;
+		$facturasPend = [];
+		if ($tipo === 'factura_y_saldo') {
+			usort($facturasSel, fn($a, $b) => [$a['fecha_emision'], $a['id']] <=> [$b['fecha_emision'], $b['id']]);
+			$facturasNuevas = array_values(array_filter($facturasSel, fn($f) => !(int)$f['enviada_receptor']));
+			if (!$facturasNuevas) $facturasNuevas = [end($facturasSel)];
+			$idsNuevas = array_column($facturasNuevas, 'id');
+			$facturasPend = array_values(array_filter($facturasSel, fn($f) => !in_array($f['id'], $idsNuevas) && $f['saldo'] > 0));
+			if (!$facturasPend) $tipo = 'envio_factura';
+		}
+		$total = $tipo === 'envio_factura'
+			? array_sum(array_map(fn($f) => (float)$f['total'], $facturasSel))
+			: array_sum(array_column($tipo === 'factura_y_saldo' ? array_merge($facturasNuevas, $facturasPend) : $facturasSel, 'saldo'));
 
 		$mesesEs = [
 			1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio',
@@ -229,7 +242,15 @@ try {
 		$h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 		$b = fn($v) => '<strong>' . htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8') . '</strong>';
 
-		if ($tipo === 'envio_factura') {
+		// Línea de saldo de una factura, con el detalle de lo abonado
+		$lineaSaldo = fn($f, $fmt) => 'Factura N.° ' . $fmt($f['correlativo']) . ': ' . $fmt('L ' . number_format($f['saldo'], 2))
+			. ($f['abonado'] > 0 ? ' (saldo; total L ' . number_format((float)$f['total'], 2) . ', abonado L ' . number_format($f['abonado'], 2) . ')' : '');
+		$saldo_pendiente = implode("\n", array_map(fn($f) => $lineaSaldo($f, fn($v) => $v), $facturasPend));
+		$saldo_pendiente_html = implode("\n", array_map(fn($f) => $lineaSaldo($f, $b), $facturasPend));
+		$numeros_facturas = implode(', ', array_column($tipo === 'factura_y_saldo' ? $facturasNuevas : $facturasSel, 'correlativo'));
+
+		if ($tipo === 'envio_factura' || $tipo === 'factura_y_saldo') {
+			$facturasSel = $tipo === 'factura_y_saldo' ? $facturasNuevas : $facturasSel;
 			$conceptos = [];
 			foreach ($facturasSel as $f) {
 				$stmtItems = $pdo->prepare("
@@ -249,9 +270,11 @@ try {
 			}
 			$conceptos = array_values(array_unique($conceptos));
 
+			// En «Factura + saldo» se dice el monto de la factura nueva (el total incluye también los saldos)
+			$porMonto = fn($f, $fmt) => $tipo === 'factura_y_saldo' ? ' por ' . $fmt('L ' . number_format((float)$f['total'], 2)) : '';
 			if (count($facturasSel) === 1) {
-				$intro = 'la factura correspondiente al N.° ' . $facturasSel[0]['correlativo'] . ', que incluye los siguientes conceptos:';
-				$introHtml = 'la factura correspondiente al N.° ' . $b($facturasSel[0]['correlativo']) . ', que incluye los siguientes conceptos:';
+				$intro = 'la factura correspondiente al N.° ' . $facturasSel[0]['correlativo'] . $porMonto($facturasSel[0], fn($v) => $v) . ', que incluye los siguientes conceptos:';
+				$introHtml = 'la factura correspondiente al N.° ' . $b($facturasSel[0]['correlativo']) . $porMonto($facturasSel[0], $b) . ', que incluye los siguientes conceptos:';
 			} else {
 				$numeros = implode(', ', array_map(fn($f) => 'N.° ' . $f['correlativo'], $facturasSel));
 				$numerosHtml = implode(', ', array_map(fn($f) => 'N.° ' . $b($f['correlativo']), $facturasSel));
@@ -263,16 +286,8 @@ try {
 			$detalle_facturas = $intro . "\n\n" . $listaConceptos;
 			$detalle_facturas_html = $introHtml . "\n\n" . $listaConceptosHtml;
 		} else {
-			$lineas = array_map(
-				fn($f) => 'Factura N.° ' . $f['correlativo'] . ': L ' . number_format($f['saldo'], 2)
-					. ($f['abonado'] > 0 ? ' (saldo; total L ' . number_format((float)$f['total'], 2) . ', abonado L ' . number_format($f['abonado'], 2) . ')' : ''),
-				$facturasSel
-			);
-			$lineasHtml = array_map(
-				fn($f) => 'Factura N.° ' . $b($f['correlativo']) . ': ' . $b('L ' . number_format($f['saldo'], 2))
-					. ($f['abonado'] > 0 ? ' (saldo; total L ' . number_format((float)$f['total'], 2) . ', abonado L ' . number_format($f['abonado'], 2) . ')' : ''),
-				$facturasSel
-			);
+			$lineas = array_map(fn($f) => $lineaSaldo($f, fn($v) => $v), $facturasSel);
+			$lineasHtml = array_map(fn($f) => $lineaSaldo($f, $b), $facturasSel);
 			$detalle_facturas = implode("\n", $lineas);
 			$detalle_facturas_html = implode("\n", $lineasHtml);
 		}
@@ -303,12 +318,12 @@ try {
 		if (!$plantilla) {
 			$defaults = [
 				'envio_factura' => "{{saludo}}\n\nEspero que se encuentre bien.\n\nAdjunto {{detalle_facturas}}\n\n{{cuentas_pago}}\n\nQuedo atento a cualquier consulta o confirmación de recepción.\n\nSaludos cordiales,",
-				'saldo_pendiente' => "{{saludo}}\n\nEspero que se encuentre muy bien.\n\nLe escribo para darle seguimiento a las siguientes facturas pendientes de pago:\n\n{{detalle_facturas}}\n\nPor lo anterior, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,"
+				'saldo_pendiente' => "{{saludo}}\n\nEspero que se encuentre muy bien.\n\nLe escribo para darle seguimiento a las siguientes facturas pendientes de pago:\n\n{{detalle_facturas}}\n\nPor lo anterior, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,",
+				'factura_y_saldo' => COBRO_PLANTILLA_FACTURA_Y_SALDO['contenido'],
 			];
 			$contenido = $defaults[$tipo];
-			$asunto = $tipo === 'envio_factura'
-				? 'Facturas {{cliente_nombre}} - Mes de {{mes_actual}} de {{anio_actual}}'
-				: 'Saldo pendiente de pago - {{cliente_nombre}}';
+			$asunto = ['envio_factura' => 'Facturas {{cliente_nombre}} - Mes de {{mes_actual}} de {{anio_actual}}', 'saldo_pendiente' => 'Saldo pendiente de pago - {{cliente_nombre}}',
+				'factura_y_saldo' => COBRO_PLANTILLA_FACTURA_Y_SALDO['asunto']][$tipo];
 		} else {
 			$contenido = $plantilla['contenido'];
 			$asunto = $plantilla['asunto'];
@@ -323,6 +338,8 @@ try {
 			'{{cuentas_pago}}' => $cuentas_pago,
 			'{{mes_actual}}' => $mes_actual,
 			'{{anio_actual}}' => $anio_actual,
+			'{{saldo_pendiente}}' => $saldo_pendiente,
+			'{{numeros_facturas}}' => $numeros_facturas,
 		];
 		$textoFinal = strtr($contenido, $reemplazos);
 		$asunto = strtr($asunto, $reemplazos);
@@ -337,12 +354,15 @@ try {
 			'{{cuentas_pago}}' => $cuentas_pago_html,
 			'{{mes_actual}}' => $h($mes_actual),
 			'{{anio_actual}}' => $h($anio_actual),
+			'{{saldo_pendiente}}' => $saldo_pendiente_html,
+			'{{numeros_facturas}}' => $h($numeros_facturas),
 		];
 		$textoFinalHtml = nl2br(strtr($contenidoEscapado, $reemplazosHtml), false);
 
 		echo json_encode([
 			'success' => true,
 			'asunto' => $asunto,
+			'tipo' => $tipo,
 			'mensaje' => $textoFinal,
 			'mensaje_html' => $textoFinalHtml,
 		]);

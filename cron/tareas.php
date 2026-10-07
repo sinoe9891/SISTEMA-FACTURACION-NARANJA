@@ -1,7 +1,7 @@
 <?php
 /**
  * cron/tareas.php — Envíos automáticos (hora de Honduras): avisos de pago pendientes (se pone al día desde la
- * fecha de corte de la cuenta Nómina) y cobros programados. En cPanel → Trabajos de cron, cada 5 minutos:
+ * fecha de corte de la cuenta Nómina), cobros programados, tasa del dólar y aviso de documentos por vencer. En cPanel → Trabajos de cron, cada 5 minutos:
  *   /usr/local/bin/php /home/USUARIO/public_html/facturacion.naranjaymediahn.com/cron/tareas.php >> /home/USUARIO/tareas.log 2>&1
  */
 if (PHP_SAPI !== 'cli') {
@@ -19,3 +19,4 @@ $log = fn(string $m) => print('[' . date('Y-m-d H:i') . "] $m\n");
 cronAvisosPago($pdo, $log);
 cobrosPendientesEnviar($pdo, $log);
 cronTasaCambio($pdo, $log);
+cronDocumentosVencimiento($pdo, $log);

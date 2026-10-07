@@ -248,6 +248,17 @@ if (!function_exists('formatFecha')) {
 			color: #fff !important;
 		}
 
+		.btn-ab-mail {
+			background: #0f766e;
+			color: #fff !important;
+			box-shadow: 0 1px 6px rgba(15, 118, 110, .35);
+		}
+
+		.btn-ab-mail:hover {
+			background: #115e59;
+			color: #fff !important;
+		}
+
 		/* ══════════════════════════════════════════
 		   ESTILOS ORIGINALES DE LA FACTURA
 		══════════════════════════════════════════ */
@@ -618,6 +629,11 @@ if (!function_exists('formatFecha')) {
 				<button onclick="window.print()" class="btn-ab btn-ab-print">
 					🖨️ Imprimir / PDF
 				</button>
+				<?php if ($esAdmin && $factura['estado'] === 'emitida'): ?>
+					<a href="cobros_programados?receptor_id=<?= (int)$factura['receptor_id'] ?>&tipo=envio_factura&facturas=<?= (int)$factura_id ?>" class="btn-ab btn-ab-mail" title="Enviar esta factura por correo (ahora o programado)">
+						✉️ Enviar por correo
+					</a>
+				<?php endif; ?>
 			</div>
 		</div>
 	<?php endif; ?>

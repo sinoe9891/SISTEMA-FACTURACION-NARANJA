@@ -56,7 +56,7 @@ require_once '../../includes/templates/header.php';
 <div class="app-page-header">
     <div>
         <h1 class="app-page-title"><i class="bi bi-send-check me-2"></i>Cobros por correo</h1>
-        <p class="app-page-sub">Envía al cliente sus facturas o recibos en PDF, o un recordatorio de los pagos de su plan, ahora o programado (hora de Honduras).</p>
+        <p class="app-page-sub">Envía al cliente sus facturas o recibos en PDF (con los documentos de la empresa que quieras, como la Constancia del SAR), un cobro del saldo pendiente o un recordatorio de los pagos de su plan, ahora o programado (hora de Honduras).</p>
     </div>
     <button class="btn btn-primary" id="btnNuevoCobro" <?= $instalado ? '' : 'disabled' ?>><i class="bi bi-plus-lg me-1"></i> Nuevo cobro</button>
 </div>
@@ -77,14 +77,24 @@ require_once '../../includes/templates/header.php';
             <input type="hidden" name="accion" value="crear">
             <div class="row g-3">
                 <div class="col-md-6"><label class="form-label">1. Cliente *</label>
-                    <select class="form-select" name="receptor_id" id="cCliente" required>
+                    <select class="form-select" name="receptor_id" id="cCliente" required data-buscar>
                         <option value="">— Selecciona —</option>
                         <?php foreach ($clientes as $cl): ?><option value="<?= (int)$cl['id'] ?>" <?= $preRid === (int)$cl['id'] ? 'selected' : '' ?>><?= htmlspecialchars($cl['nombre']) ?></option><?php endforeach; ?>
                     </select></div>
                 <div class="col-md-6"><label class="form-label">Tipo de mensaje</label>
-                    <select class="form-select" name="tipo" id="cTipo">
+                    <select class="form-select d-none" name="tipo" id="cTipo">
                         <?php foreach (COBRO_TIPOS as $k => $t): if (!$extras && in_array($k, ['recordatorio_pago', 'envio_recibo'], true)) continue; ?><option value="<?= $k ?>" <?= $preTipo === $k ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?>
-                    </select></div>
+                    </select>
+                    <div class="small text-muted" id="cTipoAyuda"></div></div>
+                <!-- Tipo de mensaje en pestañas: el asunto y el mensaje dicen si es una factura, un cobro o la factura con el saldo pendiente -->
+                <div class="col-12">
+                    <ul class="nav nav-pills flex-wrap gap-1 small" id="cTipoTabs">
+                        <?php $iconos = ['envio_factura' => 'bi-receipt', 'saldo_pendiente' => 'bi-cash-coin', 'factura_y_saldo' => 'bi-receipt-cutoff', 'recordatorio_pago' => 'bi-calendar2-check', 'envio_recibo' => 'bi-file-earmark-text'];
+                        foreach (COBRO_TIPOS as $k => $t): if (!$extras && in_array($k, ['recordatorio_pago', 'envio_recibo'], true)) continue; ?>
+                            <li class="nav-item"><button type="button" class="nav-link py-1 px-3 border" data-tipo="<?= $k ?>"><i class="bi <?= $iconos[$k] ?? 'bi-envelope' ?> me-1"></i><?= $t ?></button></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
                 <div class="col-12" data-bloque="facturas">
                     <label class="form-label d-flex justify-content-between align-items-center">2. Facturas a adjuntar (PDF) *
                         <span class="small fw-normal"><a href="#" id="selConSaldo">Con saldo</a> · <a href="#" id="selNinguna">Ninguna</a></span></label>
@@ -119,6 +129,10 @@ require_once '../../includes/templates/header.php';
                     <div class="form-text">Pagos pendientes del plan de pagos de sus contratos (con recibo o con factura). El recordatorio no lleva adjuntos.</div>
                 </div>
                 <?php endif; ?>
+                <div class="col-12" data-bloque-docs hidden>
+                    <label class="form-label mb-1"><i class="bi bi-paperclip"></i> Documentos de la empresa a adjuntar <span class="small fw-normal text-muted">(<a href="configuracion_documentos" target="_blank">administrar</a>)</span></label>
+                    <div id="cDocs" class="d-flex flex-wrap gap-2"></div>
+                </div>
                 <div class="col-md-6"><label class="form-label">3. Para *</label><input class="form-control" name="para" id="cPara" placeholder="correo@cliente.com (varios separados por coma)" required></div>
                 <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="cCc" placeholder="opcional"><div class="form-text" id="cCcInfo">Se llena con los correos de «Responder a» de la cuenta Facturación y los contactos del cliente marcados «Copiar en cobros». Puedes editarlo; varios separados por coma.</div></div>
                 <div class="col-12"><label class="form-label d-flex justify-content-between">4. Asunto y mensaje *
@@ -268,9 +282,45 @@ require_once '../../includes/templates/header.php';
     // Qué lista usa cada tipo: facturas (saldo/envío), recibos o pagos del plan
     const bloque = () => ({ envio_recibo: 'recibos', recordatorio_pago: 'plan' }[$tipo.value] || 'facturas');
     const tablaActiva = () => ({ facturas: $tb, recibos: $rec, plan: $plan }[bloque()]);
+    const AYUDA = { envio_factura: 'Factura nueva: el asunto y el mensaje la presentan con sus conceptos.',
+        saldo_pendiente: 'Cobro: lista las facturas con saldo, lo abonado y el total pendiente.',
+        factura_y_saldo: 'La factura nueva (aún no enviada) con sus conceptos y, además, las otras facturas con saldo y sus abonos, con el total.',
+        recordatorio_pago: 'Recordatorio de los pagos del plan de pagos (sin adjuntos de facturas).', envio_recibo: 'Recibos de pago en PDF (contratos sin factura).' };
     function mostrarBloque() {
         document.querySelectorAll('[data-bloque]').forEach(b => b.hidden = b.dataset.bloque !== bloque());
+        document.querySelectorAll('#cTipoTabs [data-tipo]').forEach(t => { const on = t.dataset.tipo === $tipo.value; t.classList.toggle('active', on); t.classList.toggle('border-primary', on); });
+        document.getElementById('cTipoAyuda').textContent = AYUDA[$tipo.value] || '';
     }
+    document.querySelectorAll('#cTipoTabs [data-tipo]').forEach(t => t.addEventListener('click', () => {
+        if ($tipo.value === t.dataset.tipo) return;
+        $tipo.value = t.dataset.tipo;
+        // Factura + saldo: además de las marcadas, todas las que tienen saldo
+        if ($tipo.value === 'factura_y_saldo') $tb.querySelectorAll('input[type=checkbox]').forEach(i => { if (Number(i.dataset.saldo) > 0) i.checked = true; });
+        if ($tipo.value === 'saldo_pendiente') $tb.querySelectorAll('input[type=checkbox]').forEach(i => { if (!(Number(i.dataset.saldo) > 0)) i.checked = false; });
+        resumen(); llenarCc(); pintarDocs(false);
+        $tipo.dispatchEvent(new Event('change'));
+    }));
+
+    // Documentos de la empresa (Constancia del SAR…): los marcados «por defecto» se marcan solos en los envíos de facturas
+    let docs = [];
+    function pintarDocs(inicial) {
+        const cont = document.getElementById('cDocs'), blq = document.querySelector('[data-bloque-docs]');
+        if (!cont) return;
+        blq.hidden = !docs.length;
+        const marcados = new Set([...cont.querySelectorAll('input:checked')].map(i => +i.value));
+        const conFactura = bloque() === 'facturas';
+        cont.innerHTML = docs.map(d => {
+            const on = inicial ? (conFactura && d.defecto && d.estado !== 'vencido') : marcados.has(d.id);
+            return `<label class="border rounded px-2 py-1 small d-flex align-items-center gap-2" style="cursor:pointer">
+                <input class="form-check-input m-0" type="checkbox" name="documento_ids[]" value="${d.id}" ${on ? 'checked' : ''}>
+                <span>${esc(d.nombre)}</span><span class="badge rounded-pill" style="background:${d.bg};color:${d.fg}">${esc(d.txt)}</span></label>`;
+        }).join('');
+    }
+    document.getElementById('cDocs')?.addEventListener('change', e => {
+        const d = docs.find(x => x.id === +e.target.value);
+        if (e.target.checked && d && d.estado === 'vencido') Swal.fire('Documento vencido', '«' + d.nombre + '» está vencido. Súbelo renovado en Documentos de la empresa o desmárcalo.', 'warning');
+    });
+    const docsMarcados = () => [...document.querySelectorAll('#cDocs input:checked')].map(i => i.value);
     const marcarInicial = f => pre.ids.length ? pre.ids.includes(+f.id) : (pre.contrato ? f.contrato_id == pre.contrato && f.saldo > 0 : f.saldo > 0);
     const seleccionadas = () => [...(tablaActiva() || $tb).querySelectorAll('input[type=checkbox]:checked')].map(i => i.value);
     function resumen() {
@@ -309,7 +359,8 @@ require_once '../../includes/templates/header.php';
             ccManual = false;
             $tb.innerHTML = d.facturas.length ? d.facturas.map(f => `<tr>
                 <td><input class="form-check-input" type="checkbox" name="factura_ids[]" value="${f.id}" data-saldo="${f.saldo}" data-contrato="${f.contrato_id || ''}" ${marcarInicial(f) ? 'checked' : ''}></td>
-                <td class="font-monospace small text-nowrap"><a href="ver_factura?id=${f.id}" target="_blank">${esc(f.correlativo)}</a></td>
+                <td class="font-monospace small text-nowrap"><a href="ver_factura?id=${f.id}" target="_blank">${esc(f.correlativo)}</a>
+                    <div style="font-size:.68rem">${+f.enviada ? '<span class="text-muted">Ya enviada</span>' : '<span class="badge rounded-pill" style="background:#dbeafe;color:#1e40af">Nueva</span>'}</div></td>
                 <td class="small">${meses[f.pm]} ${f.pa}</td><td class="small text-nowrap">${f.fecha.split('-').reverse().join('/')}</td>
                 <td class="app-num">${L(f.total)}</td><td class="app-num ${f.saldo > 0 ? 'text-danger fw-semibold' : 'text-success'}">${f.saldo > 0 ? L(f.saldo) : 'Pagada'}</td></tr>`).join('')
                 : '<tr><td colspan="6" class="text-center text-muted py-3">Este cliente no tiene facturas en los últimos 24 meses.</td></tr>';
@@ -328,6 +379,8 @@ require_once '../../includes/templates/header.php';
                 <td class="small"><a href="facturas_contrato?contrato_id=${l.contrato_id}" target="_blank">#${l.contrato_id}</a></td>
                 <td class="app-num">${L(l.total)}</td><td><span class="badge rounded-pill" style="background:${bg};color:${fg}">${txt}</span></td></tr>`;
             }).join('') : '<tr><td colspan="6" class="text-center text-muted py-3">Este cliente no tiene pagos pendientes en un plan de pagos.</td></tr>';
+            docs = d.documentos || [];
+            pintarDocs(true);
             pre = { ids: [], contrato: 0, recibos: [], plan: [], anticipos: [] };
             resumen();
             llenarCc();
@@ -354,6 +407,7 @@ require_once '../../includes/templates/header.php';
         const r = await fetch('procesar_accion_factura.php', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ accion: 'generar_mensaje', factura_ids: ids, tipo: document.getElementById('cTipo').value }) }).then(leer).catch(err => (Swal.fire('Error', err.message, 'error'), null));
         if (!r) return;
+        if (r.tipo && r.tipo !== $tipo.value) document.getElementById('cTipoAyuda').textContent = 'No hay otras facturas con saldo entre las marcadas: el mensaje se generó como envío de factura.';
         document.getElementById('cAsunto').value = r.asunto || '';
         // mensaje_html ya trae <br> (nl2br): los saltos de línea que quedan son solo espacio en HTML; no se convierten otra vez
         setMensaje('cMensaje', (r.mensaje_html || '').replace(/\r?\n/g, ''));
@@ -375,7 +429,8 @@ require_once '../../includes/templates/header.php';
         if (modo === 'prueba') fd.append('para_prueba', document.getElementById('cParaPrueba').value);
         if (!fd.get('receptor_id') || !seleccionadas().length) return Swal.fire('Faltan datos', 'Elige el cliente y al menos ' + ({ facturas: 'una factura', recibos: 'un recibo', plan: 'un pago del plan' }[bloque()]) + '.', 'info');
         if (modo === 'ahora') {
-            const ok = await Swal.fire({ title: '¿Enviar ahora al cliente?', text: 'Se enviará a ' + fd.get('para') + ' con ' + seleccionadas().length + ' ' + ({ facturas: 'factura(s) adjunta(s)', recibos: 'recibo(s) adjunto(s)', plan: 'pago(s) del plan' }[bloque()]) + '.', icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' });
+            const nd = docsMarcados().length;
+            const ok = await Swal.fire({ title: '¿Enviar ahora al cliente?', text: 'Se enviará a ' + fd.get('para') + ' con ' + seleccionadas().length + ' ' + ({ facturas: 'factura(s) adjunta(s)', recibos: 'recibo(s) adjunto(s)', plan: 'pago(s) del plan' }[bloque()]) + (nd ? ' y ' + nd + ' documento(s) de la empresa' : '') + '.', icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' });
             if (!ok.isConfirmed) return;
         }
         Swal.fire({ title: modo === 'programar' ? 'Generando PDF y programando…' : 'Generando PDF y enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
@@ -402,31 +457,32 @@ require_once '../../includes/templates/header.php';
     }));
 
     // ── Vista previa del correo (redacción y edición) ──
-    async function previa({ para, cc, asunto, html, receptor, ids, recibos, anticipos }) {
+    async function previa({ para, cc, asunto, html, receptor, ids, recibos, anticipos, documentos }) {
         const fd = new FormData();
         fd.append('accion', 'previsualizar'); fd.append('receptor_id', receptor || ''); fd.append('mensaje_html', html); fd.append('asunto', asunto);
         (ids || []).forEach(i => fd.append('factura_ids[]', i));
         (recibos || []).forEach(i => fd.append('recibo_ids[]', i));
         (anticipos || []).forEach(i => fd.append('anticipo_ids[]', i));
+        (documentos || []).forEach(i => fd.append('documento_ids[]', i));
         try {
             const d = await fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer);
             const fila = (k, v) => `<dt class="col-sm-2 text-muted fw-normal">${k}</dt><dd class="col-sm-10 mb-1">${v || '<span class="text-muted">—</span>'}</dd>`;
             document.getElementById('pDatos').innerHTML = fila('Para', esc(para)) + fila('CC', esc(cc)) + fila('Asunto', '<strong>' + esc(asunto) + '</strong>')
-                + fila('Adjuntos', d.adjuntos.length ? d.adjuntos.map(n => `<span class="badge text-bg-light border me-1"><i class="bi bi-file-earmark-pdf text-danger"></i> ${esc(n)}</span>`).join('') : '');
+                + fila('Adjuntos', d.adjuntos.length ? d.adjuntos.map(n => `<span class="badge text-bg-light border me-1"><i class="bi ${/^(factura|recibo) /.test(n) ? 'bi-file-earmark-pdf text-danger' : 'bi-paperclip text-primary'}"></i> ${esc(n)}</span>`).join('') : '');
             document.getElementById('pHtml').srcdoc = d.html;
             bootstrap.Modal.getOrCreateInstance(document.getElementById('mPrevia')).show();
         } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
     }
     document.getElementById('btnPrevia')?.addEventListener('click', () => previa({
         para: document.getElementById('cPara').value, cc: document.getElementById('cCc').value, asunto: document.getElementById('cAsunto').value,
-        html: getMensaje('cMensaje'), receptor: $cli.value, ids: bloque() === 'facturas' ? seleccionadas() : [],
+        html: getMensaje('cMensaje'), receptor: $cli.value, ids: bloque() === 'facturas' ? seleccionadas() : [], documentos: docsMarcados(),
         recibos: bloque() === 'recibos' ? [...$rec.querySelectorAll('input[data-ant="0"]:checked')].map(i => i.value) : [],
         anticipos: bloque() === 'recibos' ? [...$rec.querySelectorAll('input[data-ant="1"]:checked')].map(i => i.value) : [],
     }));
     let editando = null;   // cobro abierto en «Editar» (para la vista previa)
     document.getElementById('ePrevia')?.addEventListener('click', () => previa({
         para: document.getElementById('ePara').value, cc: document.getElementById('eCc').value, asunto: document.getElementById('eAsunto').value,
-        html: getMensaje('eMensaje'), receptor: editando?.receptor_id, ids: editando?.facturas || [], recibos: editando?.recibos || [],
+        html: getMensaje('eMensaje'), receptor: editando?.receptor_id, ids: editando?.facturas || [], recibos: editando?.recibos || [], documentos: editando?.documentos || [],
     }));
 
     // ── Ver lo que se envió ──
@@ -442,7 +498,7 @@ require_once '../../includes/templates/header.php';
                 + fila('Asunto', esc((+c.prueba ? '[PRUEBA] ' : '') + c.asunto)) + fila('Estado', esc(estadosTxt[c.estado] || c.estado) + (c.error ? `<div class="text-danger">${esc(c.error)}</div>` : ''))
                 + fila('Programado', fmt(c.programado_para)) + fila('Enviado', fmt(c.enviado_en)) + fila('Creado', fmt(c.creado_en));
             document.getElementById('vAdjuntos').innerHTML = d.adjuntos.length ? d.adjuntos.map(a => a.existe
-                ? `<a class="btn btn-sm btn-outline-secondary me-1 mb-1" target="_blank" href="cobro_accion.php?pdf=${c.id}&${a.recibo_id ? 'recibo=' + a.recibo_id : (a.anticipo_id ? 'anticipo=' + a.anticipo_id : 'factura=' + a.factura_id)}"><i class="bi bi-file-earmark-pdf text-danger"></i> ${esc(a.etiqueta)}</a>`
+                ? `<a class="btn btn-sm btn-outline-secondary me-1 mb-1" target="_blank" href="cobro_accion.php?pdf=${c.id}&${a.recibo_id ? 'recibo=' + a.recibo_id : (a.anticipo_id ? 'anticipo=' + a.anticipo_id : (a.documento_id ? 'documento=' + a.documento_id : 'factura=' + a.factura_id))}"><i class="bi ${a.documento_id ? 'bi-paperclip text-primary' : 'bi-file-earmark-pdf text-danger'}"></i> ${esc(a.etiqueta)}</a>`
                 : `<span class="badge text-bg-light border me-1">${esc(a.etiqueta)} (no disponible)</span>`).join('') : '<span class="text-muted small">Sin adjuntos.</span>';
             document.getElementById('vEnvios').innerHTML = d.envios.length ? '<ul class="list-unstyled small mb-0">' + d.envios.map(e =>
                 `<li class="mb-1"><i class="bi ${e.estado === 'enviado' ? 'bi-check-circle text-success' : 'bi-x-circle text-danger'}"></i> ${fmt(e.creado_en)} → ${esc(e.destinatario)}${e.error ? `<div class="text-danger">${esc(e.error)}</div>` : ''}</li>`).join('') + '</ul>'
@@ -456,7 +512,7 @@ require_once '../../includes/templates/header.php';
     document.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', async () => {
         try {
             const det = await detalle(b.dataset.id), c = det.cobro;
-            editando = { receptor_id: c.receptor_id, facturas: det.adjuntos.filter(x => x.factura_id).map(x => x.factura_id), recibos: det.adjuntos.filter(x => x.recibo_id).map(x => x.recibo_id) };
+            editando = { receptor_id: c.receptor_id, facturas: det.adjuntos.filter(x => x.factura_id).map(x => x.factura_id), recibos: det.adjuntos.filter(x => x.recibo_id).map(x => x.recibo_id), documentos: det.adjuntos.filter(x => x.documento_id).map(x => x.documento_id) };
             document.getElementById('eNum').textContent = '#' + c.id;
             document.getElementById('eId').value = c.id;
             document.getElementById('ePara').value = c.para;
