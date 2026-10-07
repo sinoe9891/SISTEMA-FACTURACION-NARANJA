@@ -94,18 +94,25 @@ require_once '../../includes/templates/header.php';
                 <span><i class="bi bi-list-ul me-1"></i> Pagos</span>
                 <div class="app-toolbar flex-grow-1 justify-content-end">
                     <div class="app-search" style="max-width:280px"><i class="bi bi-search"></i><input type="search" class="form-control form-control-sm" id="buscarPago" placeholder="Buscar por n.º, fecha, colaborador, monto, referencia…"></div>
-                    <select class="form-select form-select-sm" id="porPagina" style="width:auto"><option value="10">10/pág</option><option value="25">25/pág</option><option value="50">50/pág</option><option value="100">100/pág</option></select>
+                    <input type="number" step="0.01" min="0" class="form-control form-control-sm" id="pMin" placeholder="Monto mín." style="width:115px"><input type="number" step="0.01" min="0" class="form-control form-control-sm" id="pMax" placeholder="Monto máx." style="width:115px">
+                    <select class="form-select form-select-sm" id="porPagina" style="width:auto"><option value="10">10/pág</option><option value="20">20/pág</option><option value="50">50/pág</option><option value="100">100/pág</option><option value="200">200/pág</option><option value="300">300/pág</option></select>
                 </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center px-3 py-2 border-bottom small">
+                <span class="text-muted" id="pSelInfo">Ninguno seleccionado</span>
+                <button type="button" class="btn btn-sm btn-outline-danger ms-auto" id="pSelPdf" disabled><i class="bi bi-file-earmark-pdf me-1"></i> Bouchers PDF</button>
+                <button type="button" class="btn btn-sm btn-primary" id="pSelZip" disabled><i class="bi bi-file-earmark-zip me-1"></i> Bouchers ZIP</button>
             </div>
             <div class="table-responsive">
                 <table class="table app-table mb-0" id="tablaPagos">
-                    <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Colaborador</th><th>Concepto</th><th>Período</th><th>Método / ref.</th><th class="app-num">Monto</th><th class="text-center">Comprobante</th><th class="text-center">Aviso</th><th class="text-end">Acciones</th></tr></thead>
+                    <thead><tr><th style="width:30px"><input type="checkbox" class="form-check-input" id="pTodos" title="Seleccionar todos los del filtro"></th><th class="app-n">#</th><th>Fecha</th><th>Colaborador</th><th>Concepto</th><th>Período</th><th>Método / ref.</th><th class="app-num">Monto</th><th class="text-center">Comprobante</th><th class="text-center">Aviso</th><th class="text-end">Acciones</th></tr></thead>
                     <tbody>
                         <?php foreach ($pagos as $p): ?>
                             <tr data-fila data-buscar="<?= htmlspecialchars(mb_strtolower(implode(' ', [
                                 '#' . (int)$p['id'], (int)$p['id'], date('d/m/Y', strtotime($p['fecha'])), $p['fecha'], $p['colaborador'], $p['tipo_txt'], $p['descripcion'], $p['periodo'],
                                 $p['metodo_pago'], $p['referencia'], number_format((float)$p['monto'], 2), number_format((float)$p['monto'], 2, '.', ''), (float)$p['monto'],
-                            ]))) ?>">
+                            ]))) ?>" data-monto="<?= (float)$p['monto'] ?>">
+                                <td><input type="checkbox" class="form-check-input p-sel" value="<?= (int)$p['id'] ?>"></td>
                                 <td class="app-n"></td>
                                 <td class="text-nowrap"><?= date('d/m/Y', strtotime($p['fecha'])) ?></td>
                                 <td><a href="colaborador_ver?id=<?= $p['colaborador_id'] ?>&todo=1"><?= htmlspecialchars($p['colaborador']) ?></a><?= $p['colaborador_activo'] ? '' : ' <span class="app-badge app-badge-muted">Inactivo</span>' ?></td>
@@ -128,7 +135,7 @@ require_once '../../includes/templates/header.php';
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
-                    <?php if ($pagos): ?><tfoot><tr class="fw-semibold"><td colspan="6" class="text-end">Total (filtros aplicados)</td><td class="app-num"><?= number_format($res['total'], 2) ?></td><td colspan="3"></td></tr></tfoot><?php endif; ?>
+                    <?php if ($pagos): ?><tfoot><tr class="fw-semibold"><td colspan="7" class="text-end">Total (filtros aplicados)<span class="fw-normal text-muted" id="pTotalNota"></span></td><td class="app-num" id="pTotal"><?= number_format($res['total'], 2) ?></td><td colspan="3"></td></tr></tfoot><?php endif; ?>
                 </table>
             </div>
             <div class="app-pager" id="pagosPie"></div>
@@ -189,7 +196,37 @@ require_once '../../includes/templates/header.php';
 <script src="../../clientes/js/nomina-pago.js?v=<?= @filemtime(__DIR__ . '/../js/nomina-pago.js') ?>"></script>
 <script>
 (function () {
-    AppTabla('#tablaPagos', { buscar: '#buscarPago', porPagina: '#porPagina', pie: '#pagosPie', porPaginaInicial: 10, vacio: 'Sin pagos con estos filtros.' });
+    // Filtro por monto, total de lo filtrado, selección y bouchers de los seleccionados
+    const tbl = document.getElementById('tablaPagos'), filas = [...tbl.querySelectorAll('tr[data-fila]')];
+    const pMin = document.getElementById('pMin'), pMax = document.getElementById('pMax'), pBuscar = document.getElementById('buscarPago');
+    const pasa = tr => { const m = +tr.dataset.monto, q = pBuscar.value.trim().toLowerCase();
+        return (pMin.value === '' || m >= +pMin.value) && (pMax.value === '' || m <= +pMax.value) && (!q || (tr.dataset.buscar || tr.textContent.toLowerCase()).includes(q)); };
+    const tPagos = AppTabla('#tablaPagos', { buscar: '#buscarPago', porPagina: '#porPagina', pie: '#pagosPie', porPaginaInicial: 10, filtro: tr => pasa(tr), vacio: 'Sin pagos con estos filtros.' });
+    const sels = [...tbl.querySelectorAll('.p-sel')], todos = document.getElementById('pTodos');
+    const pintarSel = () => {
+        const vis = filas.filter(pasa);
+        document.getElementById('pTotal').textContent = vis.reduce((s, tr) => s + +tr.dataset.monto, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        document.getElementById('pTotalNota').textContent = vis.length !== filas.length ? ` · ${vis.length} de ${filas.length} con monto/búsqueda` : '';
+        const n = sels.filter(c => c.checked).length;
+        document.getElementById('pSelInfo').textContent = n ? `${n} seleccionado${n === 1 ? '' : 's'}` : 'Ninguno seleccionado';
+        document.getElementById('pSelPdf').disabled = document.getElementById('pSelZip').disabled = !n;
+        const eleg = sels.filter(c => pasa(c.closest('tr')));
+        todos.checked = eleg.length > 0 && eleg.every(c => c.checked); todos.indeterminate = !todos.checked && eleg.some(c => c.checked);
+    };
+    [pMin, pMax, pBuscar].forEach(i => i.addEventListener('input', () => { tPagos.refrescar(); pintarSel(); }));
+    todos.addEventListener('change', () => { sels.forEach(c => c.checked = todos.checked && pasa(c.closest('tr'))); pintarSel(); });
+    sels.forEach(c => c.addEventListener('change', pintarSel));
+    const bajarSel = zip => {
+        const ids = sels.filter(c => c.checked).map(c => c.value);
+        if (!ids.length) return;
+        if (ids.length > 400) return Swal.fire('Demasiados', 'Máximo 400 bouchers por descarga.', 'info');
+        const url = 'boucher_pdf.php?ids=' + ids.join(',') + (zip ? '&formato=zip' : '&vista=1');
+        if (zip) { Swal.fire({ title: 'Generando ZIP…', text: `${ids.length} boucher(s)`, timer: 3500, showConfirmButton: false, didOpen: () => Swal.showLoading() }); location.href = url; }
+        else window.open(url, '_blank');
+    };
+    document.getElementById('pSelPdf').addEventListener('click', () => bajarSel(false));
+    document.getElementById('pSelZip').addEventListener('click', () => bajarSel(true));
+    pintarSel();
     // Los filtros se aplican al cambiar (las pestañas de abajo no recargan)
     document.querySelectorAll('#formFiltros select, #formFiltros input[type=date]').forEach(el => el.addEventListener('change', () => document.getElementById('formFiltros').submit()));
     document.querySelectorAll('.btn-aviso').forEach(b => b.addEventListener('click', async () => {
