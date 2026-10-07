@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$tipo = $_POST['tipo'] ?? '';
 			$contenido = $_POST['contenido'] ?? '';
 			$asunto = trim($_POST['asunto'] ?? '');
-			if (!in_array($tipo, ['envio_factura', 'saldo_pendiente'])) {
+			if (!in_array($tipo, ['envio_factura', 'saldo_pendiente', 'recordatorio_pago', 'envio_recibo'])) {
 				throw new Exception('Plantilla inválida.');
 			}
 			if (trim($contenido) === '') {
@@ -99,6 +99,8 @@ $defaults = [
 		'contenido' => "{{saludo}}\n\nEspero que se encuentre muy bien.\n\nLe escribo para darle seguimiento a las siguientes facturas pendientes de pago:\n\n{{detalle_facturas}}\n\nPor lo anterior, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,"
 	]
 ];
+require_once '../../includes/cobros.php';
+$defaults += COBRO_PLANTILLAS_EXTRA;   // Recordatorio del plan de pagos y envío de recibos
 
 require_once '../../includes/templates/header.php';
 ?>
@@ -389,9 +391,9 @@ require_once '../../includes/templates/header.php';
 		<div class="cm-card-body">
 			<div class="cm-placeholders">
 				Placeholders disponibles (funcionan tanto en el <strong>Asunto</strong> como en el
-				<strong>Contenido</strong>): <code>{{saludo}}</code> (saluda por nombre de contacto o "Estimado equipo de
-				[Cliente]"), <code>{{cliente_nombre}}</code>, <code>{{detalle_facturas}}</code> (lista de facturas con
-				sus conceptos o montos, según la plantilla), <code>{{total}}</code> (suma en Lempiras),
+				<strong>Contenido</strong>): <code>{{saludo}}</code> («Buen día, equipo de
+				[Cliente]:»), <code>{{cliente_nombre}}</code>, <code>{{detalle_facturas}}</code> (lista de facturas, recibos
+				o pagos del plan, según la plantilla), <code>{{total}}</code> (suma en Lempiras),
 				<code>{{cuentas_pago}}</code> (lista de cuentas activas), <code>{{mes_actual}}</code> (ej. "Agosto"),
 				<code>{{anio_actual}}</code> (ej. "2026").
 			</div>
@@ -399,9 +401,11 @@ require_once '../../includes/templates/header.php';
 			<div class="cm-tabs">
 				<div class="cm-tab active" data-tab="envio_factura">Envío de factura(s)</div>
 				<div class="cm-tab" data-tab="saldo_pendiente">Saldo pendiente</div>
+				<div class="cm-tab" data-tab="recordatorio_pago">Recordatorio de pago</div>
+				<div class="cm-tab" data-tab="envio_recibo">Envío de recibos</div>
 			</div>
 
-			<?php foreach (['envio_factura', 'saldo_pendiente'] as $tipo):
+			<?php foreach (['envio_factura', 'saldo_pendiente', 'recordatorio_pago', 'envio_recibo'] as $tipo):
 				$p = $plantillas[$tipo] ?? $defaults[$tipo];
 			?>
 				<form method="POST" class="cm-plantilla-form <?= $tipo === 'envio_factura' ? 'active' : '' ?>"

@@ -706,4 +706,34 @@ $contratos_por_vencer = array_filter(
 	fn($c) =>
 	$c['fecha_fin'] !== null && (int)$c['dias_restantes'] <= 3 && (int)$c['dias_restantes'] >= 0
 );
-$contratos_proximos_pagos = array_slice($contratos_dashboard, 0, 8);
+// Contratos con plan de pagos: en vez del día de pago mensual se usan las fechas del plan
+// (lo vencido sin cobrar y lo que vence en los próximos 45 días), con o sin factura.
+$planFilas = [];
+try {
+	require_once __DIR__ . '/contrato_plan.php';
+	if (planDisponible($pdo)) {
+		$conPlanIds = planContratosConPlan($pdo, (int)$cliente_id);
+		if ($conPlanIds) {
+			$contratos_dashboard = array_values(array_filter($contratos_dashboard, fn($c) => !in_array((int)$c['id'], $conPlanIds, true)));
+			$stCp = $pdo->prepare("SELECT c.id, c.receptor_id, c.producto_id, c.tipo_contrato, c.dia_pago, c.fecha_fin, cf.nombre AS receptor_nombre, cf.telefono AS receptor_tel
+			                       FROM contratos c JOIN clientes_factura cf ON cf.id = c.receptor_id AND cf.cliente_id = c.cliente_id
+			                       WHERE c.cliente_id = ? AND c.estado = 'activo' AND c.id IN (" . implode(',', $conPlanIds) . ")");
+			$stCp->execute([$cliente_id]);
+			foreach ($stCp->fetchAll(PDO::FETCH_ASSOC) as $ct) {
+				foreach (planLineas($pdo, (int)$cliente_id, (int)$ct['id']) as $l) {
+					if (!in_array($l['estado'], ['pendiente', 'vencido', 'facturado'], true) || -$l['dias'] > 45) continue;
+					$planFilas[] = $ct + [
+						'servicio_nombre' => $l['concepto'], 'monto' => $l['total'], 'proxima_fecha_pago' => $l['fecha'],
+						'dias_para_pago' => -(int)$l['dias'], 'dias_restantes' => $ct['fecha_fin'] ? (int)((strtotime($ct['fecha_fin']) - strtotime(date('Y-m-d'))) / 86400) : null,
+						'factura_pendiente_id' => $l['estado'] === 'facturado' ? $l['factura_id'] : null, 'plan_linea' => (int)$l['id'],
+					];
+				}
+			}
+		}
+	}
+} catch (Throwable $e) {
+	$planFilas = [];   // sin módulo de plan de pagos: queda el cálculo mensual
+}
+$contratos_proximos_pagos = array_merge($contratos_dashboard, $planFilas);
+usort($contratos_proximos_pagos, fn($a, $b) => (int)$a['dias_para_pago'] <=> (int)$b['dias_para_pago']);
+$contratos_proximos_pagos = array_slice($contratos_proximos_pagos, 0, 8);

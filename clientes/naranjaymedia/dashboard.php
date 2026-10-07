@@ -431,7 +431,7 @@ require_once '../../includes/templates/header.php';
         </div>
 
         <!-- Contratos por vencer -->
-        <?php if (!empty($contratos_dashboard)): ?>
+        <?php if (!empty($contratos_dashboard) || !empty($contratos_proximos_pagos)): ?>
             <?php if (!empty($contratos_por_vencer)): ?>
                 <div class="db-card">
                     <div class="db-card-header">
@@ -516,6 +516,7 @@ require_once '../../includes/templates/header.php';
                                     $dias = (int)$p['dias_para_pago'];
                                     $bCls = $dias <= 3 ? 'bg-danger' : ($dias <= 7 ? 'bg-warning text-dark' : ($dias <= 15 ? 'bg-info' : 'bg-secondary'));
                                     $ico = $dias <= 3 ? '🔴' : ($dias <= 7 ? '🟡' : ($dias <= 15 ? '🔵' : '⚪'));
+                                    $esPlan = !empty($p['plan_linea']);
                                 ?>
                                     <tr>
                                         <td>
@@ -539,12 +540,14 @@ require_once '../../includes/templates/header.php';
                                         <td class="text-end fw-bold">L <?= number_format((float)$p['monto'], 2) ?></td>
                                         <td class="text-center">
                                             <div class="fw-semibold small"><?= htmlspecialchars($p['proxima_fecha_pago']) ?></div>
-                                            <small class="text-muted">Día <?= (int)$p['dia_pago'] ?></small>
+                                            <small class="text-muted"><?= $esPlan ? 'Plan de pagos' : 'Día ' . (int)$p['dia_pago'] ?></small>
                                         </td>
                                         <td class="text-center"><span class="badge <?= $bCls ?>"><?= $ico ?>
-                                                <?= $dias === 0 ? '¡Hoy!' : $dias . 'd' ?></span></td>
+                                                <?= $dias === 0 ? '¡Hoy!' : ($dias < 0 ? 'Vencido ' . -$dias . 'd' : $dias . 'd') ?></span></td>
                                         <td class="text-center d-none d-sm-table-cell">
-                                            <?php if (!empty($p['factura_pendiente_id'])): ?><a
+                                            <?php if ($esPlan && empty($p['factura_pendiente_id'])): ?>
+                                                <a href="facturas_contrato?contrato_id=<?= (int)$p['id'] ?>#planPagos" class="btn btn-sm btn-outline-primary" title="Registrar el cobro de este pago del plan"><i class="bi bi-cash-coin"></i></a>
+                                            <?php elseif (!empty($p['factura_pendiente_id'])): ?><a
                                                     href="ver_factura?id=<?= $p['factura_pendiente_id'] ?>" target="_blank"
                                                     class="btn btn-sm btn-outline-info"><i
                                                         class="fa-solid fa-file-invoice me-1"></i><span class="d-none d-md-inline">Ver

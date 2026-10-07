@@ -25,12 +25,25 @@ function reciboRegistrar(PDO $pdo, int $cid, int $usuario, int $contratoId, arra
     if ($mes < 1 || $mes > 12) throw new Exception("Mes inválido.");
     if ($anio < 2020) throw new Exception("Año inválido.");
 
+    // Cuenta donde se depositó: entra a Bancos (salvo que sea anterior al saldo inicial de la cuenta)
+    $cuentaId = (int)($d['cuenta_id'] ?? 0) ?: null;
+    $movId = null;
+    if ($cuentaId) {
+        require_once __DIR__ . '/bancos.php';
+        $movId = bancoDepositoCobro($pdo, $cid, $cuentaId, $fecha, $monto, 'Recibo contrato #' . $contratoId . ' · ' . $desc, null, $usuario);
+    }
+
     // Próximo número de la empresa (bloquea para que dos recibos simultáneos no tomen el mismo)
     $st = $pdo->prepare("SELECT COALESCE(MAX(CAST(numero_recibo AS UNSIGNED)),0)+1 FROM contratos_recibos WHERE cliente_id = ? FOR UPDATE");
     $st->execute([$cid]);
     $num = (int)$st->fetchColumn();
-    $pdo->prepare("INSERT INTO contratos_recibos (cliente_id, contrato_id, receptor_id, numero_recibo, concepto, monto, fecha_emision, periodo_mes, periodo_anio, metodo_pago, notas, estado, usuario_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'emitido', ?)")
-        ->execute([$cid, $contratoId, (int)$c['receptor_id'], $num, $desc, $monto, $fecha, $mes, $anio, $metodo, trim((string)($d['notas'] ?? '')) ?: null, $usuario]);
-    return [(int)$pdo->lastInsertId(), $num];
+    $hayCuenta = (bool)$pdo->query("SHOW COLUMNS FROM contratos_recibos LIKE 'cuenta_id'")->fetchColumn();
+    $pdo->prepare("INSERT INTO contratos_recibos (cliente_id, contrato_id, receptor_id, numero_recibo, concepto, monto, fecha_emision, periodo_mes, periodo_anio, metodo_pago, notas, estado, usuario_id"
+                  . ($hayCuenta ? ", cuenta_id, movimiento_id" : "") . ")
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'emitido', ?" . ($hayCuenta ? ", ?, ?" : "") . ")")
+        ->execute(array_merge([$cid, $contratoId, (int)$c['receptor_id'], $num, $desc, $monto, $fecha, $mes, $anio, $metodo, trim((string)($d['notas'] ?? '')) ?: null, $usuario],
+            $hayCuenta ? [$cuentaId, $movId] : []));
+    $recId = (int)$pdo->lastInsertId();
+    if ($movId) $pdo->prepare("UPDATE movimientos_bancarios SET referencia = ? WHERE id = ?")->execute(['Recibo ' . str_pad((string)$num, 5, '0', STR_PAD_LEFT), $movId]);
+    return [$recId, $num];
 }

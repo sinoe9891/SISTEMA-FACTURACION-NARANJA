@@ -2014,3 +2014,94 @@ suite('Plan de pagos del contrato y recibos en los reportes', function () {
     $pdo->exec("DELETE FROM contratos_recibos WHERE id = $recId");
     $pdo->exec("DELETE FROM contratos_plan WHERE contrato_id IN ($recCtr, $facCtr)");
 });
+
+suite('Recibos con banco, PDF, recordatorios del plan y envío de recibos por correo', function () {
+    global $pdo;
+    $f = fn($sql) => $pdo->query($sql)->fetchColumn();
+    $dir = '/private/tmp/claude-501/-Applications-XAMPP-xamppfiles-htdocs-proyectos-NARANJA-sistemafacturacion/ee82cda1-ff6c-4bf7-8e00-1c9a72466389/scratchpad/correos';
+    $c = login('qa.admin@local.test');
+    // Cuenta de Facturación hacia el servidor de correo falso (por si esta suite corre sola)
+    $c->post('includes/correo_accion.php', ['accion' => 'guardar', 'perfil' => 'facturacion', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna',
+        'usuario' => 'qa', 'clave' => 'clave-de-prueba', 'remitente_email' => 'facturacion@ejemplo.test', 'responder_a' => 'gerencia@ejemplo.test, administracion@ejemplo.test', 'activo' => 1]);
+    $pdo->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, moneda, saldo_inicial, fecha_saldo_inicial, activa, predeterminada) VALUES (2, 'QA Banco', 'ahorro', 'QA0000076', 'HNL', 0, '2026-10-03', 1, 0)");
+    $cta = (int)$pdo->lastInsertId();
+    $ctr = (int)$f("SELECT id FROM contratos WHERE cliente_id = 2 AND tipo_contrato = 'sin_factura' ORDER BY id LIMIT 1");
+    $rid = (int)$f("SELECT receptor_id FROM contratos WHERE id = $ctr");
+
+    // Cuenta bancaria: desde el saldo inicial crea el depósito; antes, solo liga la cuenta (ya está en el saldo inicial)
+    $r = $c->post('includes/recibo_guardar.php', ['contrato_id' => $ctr, 'monto' => 1500, 'fecha_emision' => date('Y-m-d'), 'descripcion' => 'QA recibo banco', 'metodo_pago' => 'transferencia', 'cuenta_id' => $cta, 'periodo_mes' => date('n'), 'periodo_anio' => date('Y')]);
+    $rec1 = (int)($r['json']['recibo_id'] ?? 0);
+    $mov = (int)$f("SELECT movimiento_id FROM contratos_recibos WHERE id = $rec1");
+    check('un recibo con cuenta entra a Bancos como depósito', $rec1 && $mov && (float)$f("SELECT monto FROM movimientos_bancarios WHERE id = $mov AND sentido = 'entrada' AND cuenta_id = $cta") == 1500, $r['body']);
+    $r = $c->post('includes/recibo_guardar.php', ['contrato_id' => $ctr, 'monto' => 900, 'fecha_emision' => '2026-05-13', 'descripcion' => 'QA recibo viejo', 'metodo_pago' => 'transferencia', 'cuenta_id' => $cta, 'periodo_mes' => 5, 'periodo_anio' => 2026]);
+    $rec2 = (int)($r['json']['recibo_id'] ?? 0);
+    check('un cobro anterior al saldo inicial liga la cuenta sin crear el depósito', $rec2 && (int)$f("SELECT cuenta_id FROM contratos_recibos WHERE id = $rec2") === $cta && !$f("SELECT movimiento_id FROM contratos_recibos WHERE id = $rec2"), $r['body']);
+
+    // PDF del recibo
+    $p = $c->get('recibo_pdf', ['id' => $rec1]);
+    check('el recibo se descarga en PDF', $p['code'] === 200 && str_starts_with($p['body'], '%PDF'), substr($p['body'], 0, 100));
+    $o = login('qa.ccic@local.test');
+    check('otra empresa no ve el recibo', !str_starts_with($o->get('recibo_pdf', ['id' => $rec1])['body'], '%PDF'));
+
+    // Plan con un pago vencido y uno próximo, para el recordatorio
+    $pdo->exec("DELETE FROM contratos_plan WHERE contrato_id = $ctr");
+    $c->post('includes/contrato_plan_accion.php', ['accion' => 'guardar', 'contrato_id' => $ctr, 'lineas' => json_encode([
+        ['tipo' => 'anticipo', 'concepto' => 'QA anticipo', 'fecha' => date('Y-m-d', strtotime('-3 days')), 'monto' => 1000],
+        ['tipo' => 'cuota', 'concepto' => 'QA cuota', 'fecha' => date('Y-m-d', strtotime('+5 days')), 'monto' => 2000]])]);
+    $lin = $pdo->query("SELECT id FROM contratos_plan WHERE contrato_id = $ctr ORDER BY orden")->fetchAll(PDO::FETCH_COLUMN);
+    $g = $c->get('cobro_accion.php', ['facturas' => $rid]);
+    check('Cobros por correo lista los recibos y los pagos pendientes del plan del cliente', in_array($rec1, array_map('intval', array_column($g['json']['recibos'] ?? [], 'id')), true)
+        && count(array_intersect(array_map('intval', $lin), array_column($g['json']['plan'] ?? [], 'id'))) === 2, substr($g['body'], 0, 300));
+    $m = $c->post('cobro_accion.php', ['accion' => 'generar_mensaje', 'receptor_id' => $rid, 'tipo' => 'recordatorio_pago', 'ids[0]' => $lin[0], 'ids[1]' => $lin[1]]);
+    check('el recordatorio separa vencidos y próximos, con saludo y total', ($m['json']['success'] ?? false) && str_contains($m['json']['mensaje_html'], 'Buen día, equipo de')
+        && str_contains($m['json']['mensaje_html'], 'Pagos vencidos') && str_contains($m['json']['mensaje_html'], 'Próximos pagos') && str_contains($m['json']['mensaje_html'], '3,000.00'), substr($m['body'], 0, 300));
+
+    $antes = count(glob("$dir/*.eml") ?: []);
+    $r = $c->post('cobro_accion.php', ['accion' => 'crear', 'modo' => 'prueba', 'para_prueba' => 'yo@ejemplo.test', 'receptor_id' => $rid, 'tipo' => 'recordatorio_pago',
+        'asunto' => $m['json']['asunto'] ?? 'Recordatorio', 'mensaje_html' => $m['json']['mensaje_html'] ?? 'Hola', 'plan_ids[0]' => $lin[0], 'plan_ids[1]' => $lin[1]]);
+    $ult = glob("$dir/*.eml") ?: []; sort($ult);
+    check('envía el recordatorio de prueba, sin adjuntos', ($r['json']['success'] ?? false) && count($ult) === $antes + 1 && !str_contains(file_get_contents(end($ult)), 'application/pdf'), $r['body']);
+    $cobroRec = (int)($r['json']['id'] ?? 0);
+    check('el recordatorio queda ligado a sus pagos del plan', (int)$f("SELECT COUNT(*) FROM cobros_programados_plan WHERE cobro_id = $cobroRec") === 2);
+
+    $m2 = $c->post('cobro_accion.php', ['accion' => 'generar_mensaje', 'receptor_id' => $rid, 'tipo' => 'envio_recibo', 'ids[0]' => $rec1]);
+    $r = $c->post('cobro_accion.php', ['accion' => 'crear', 'modo' => 'prueba', 'para_prueba' => 'yo@ejemplo.test', 'receptor_id' => $rid, 'tipo' => 'envio_recibo',
+        'asunto' => $m2['json']['asunto'] ?? 'Recibo', 'mensaje_html' => $m2['json']['mensaje_html'] ?? 'Hola', 'recibo_ids[0]' => $rec1]);
+    $ult = glob("$dir/*.eml") ?: []; sort($ult); $eml = file_get_contents(end($ult));
+    check('envía el recibo por correo con su PDF adjunto', ($r['json']['success'] ?? false) && substr_count($eml, 'Content-Type: application/pdf') === 1 && str_contains($eml, 'recibo_'), $r['body']);
+    $cobroRecibo = (int)($r['json']['id'] ?? 0);
+    $v = $c->get('cobro_accion.php', ['ver' => $cobroRecibo]);
+    check('el detalle del cobro muestra el recibo adjunto', ($v['json']['adjuntos'][0]['recibo_id'] ?? 0) == $rec1 && str_starts_with($c->get('cobro_accion.php', ['pdf' => $cobroRecibo, 'recibo' => $rec1])['body'], '%PDF'));
+    $r = $c->post('cobro_accion.php', ['accion' => 'crear', 'modo' => 'prueba', 'para_prueba' => 'yo@ejemplo.test', 'receptor_id' => $rid, 'tipo' => 'envio_recibo', 'asunto' => 'X', 'mensaje_html' => 'Hola']);
+    check('no envía un recibo sin elegir recibos', !($r['json']['success'] ?? true));
+    $pg = $c->get('cobros_programados', ['receptor_id' => $rid, 'tipo' => 'recordatorio_pago', 'plan' => implode(',', $lin)]);
+    check('la página de cobros ofrece recordatorio y envío de recibos', sinErroresPhp($pg['body']) && str_contains($pg['body'], 'value="recordatorio_pago" selected') && str_contains($pg['body'], 'id="cPlan"') && str_contains($pg['body'], 'Recordatorio de'), errorPhp($pg['body']));
+    $fc = $c->get('facturas_contrato', ['contrato_id' => $ctr]);
+    check('la ficha ofrece «Enviar recordatorio» y el PDF de cada recibo', sinErroresPhp($fc['body']) && str_contains($fc['body'], 'tipo=recordatorio_pago') && str_contains($fc['body'], 'recibo_pdf?id=' . $rec1), errorPhp($fc['body']));
+    $cm = $c->get('configuracion_mensajes');
+    check('las plantillas nuevas se pueden editar', sinErroresPhp($cm['body']) && str_contains($cm['body'], 'data-tab="recordatorio_pago"') && str_contains($cm['body'], 'data-tab="envio_recibo"'), errorPhp($cm['body']));
+
+    // Factura emitida desde «Emitir su factura» queda ligada a su línea
+    $fctr = (int)$f("SELECT c.id FROM contratos c WHERE c.cliente_id = 2 AND c.tipo_contrato = 'estandar' AND c.estado = 'activo' ORDER BY c.id LIMIT 1");
+    $pdo->exec("DELETE FROM contratos_plan WHERE contrato_id = $fctr");
+    $c->post('includes/contrato_plan_accion.php', ['accion' => 'guardar', 'contrato_id' => $fctr, 'con_isv' => '1', 'lineas' => json_encode([['tipo' => 'cuota', 'concepto' => 'QA cuota facturable', 'fecha' => date('Y-m-d'), 'monto' => 100]])]);
+    $linF = (int)$f("SELECT id FROM contratos_plan WHERE contrato_id = $fctr");
+    $db = $c->get('dashboard');
+    check('el dashboard muestra los pagos del plan en «Próximas fechas de cobro»', sinErroresPhp($db['body']) && str_contains($db['body'], 'Plan de pagos') && str_contains($db['body'], 'contrato_id=' . $fctr . '#planPagos'), errorPhp($db['body']));
+    $ok = false;
+    try {
+        require_once __DIR__ . '/../../includes/contrato_plan.php';
+        $fid = (int)$f("SELECT id FROM facturas WHERE cliente_id = 2 AND contrato_id = $fctr AND estado = 'emitida' AND NOT EXISTS (SELECT 1 FROM contratos_plan p WHERE p.factura_id = facturas.id) LIMIT 1");
+        if ($fid) { planVincular($pdo, 2, $linF, 'factura', $fid); $ok = (int)$f("SELECT factura_id FROM contratos_plan WHERE id = $linF") === $fid; }
+    } catch (Throwable $e) {}
+    check('una factura del contrato se liga a la línea del plan', $ok);
+    $gf = $c->get('generar_factura', ['contrato_id' => $fctr, 'plan_linea' => $linF]);
+    check('«Emitir su factura» lleva la línea del plan al formulario', sinErroresPhp($gf['body']) && str_contains($gf['body'], 'name="plan_linea" value="' . $linF . '"'), errorPhp($gf['body']));
+
+    // limpieza
+    foreach ([$cobroRec, $cobroRecibo] as $cb) if ($cb) $c->post('cobro_accion.php', ['accion' => 'eliminar', 'id' => $cb]);
+    $pdo->exec("DELETE FROM contratos_plan WHERE contrato_id IN ($ctr, $fctr)");
+    $pdo->exec("DELETE FROM contratos_recibos WHERE id IN ($rec1, $rec2)");
+    $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id = $cta");
+    $pdo->exec("DELETE FROM cuentas_bancarias WHERE id = $cta");
+});

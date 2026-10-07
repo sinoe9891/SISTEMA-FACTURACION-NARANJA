@@ -9,6 +9,7 @@ $titulo = 'Generar Recibo';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/bancos.php';
 require_once '../../includes/templates/header.php';
 
 $cliente_id = (int)(USUARIO_ROL === 'superadmin'
@@ -45,6 +46,9 @@ $stmtCnt = $pdo->prepare("
 $stmtCnt->execute([$cliente_id]);
 $next_num = (int)$stmtCnt->fetchColumn();
 $num_formateado = str_pad($next_num, 5, '0', STR_PAD_LEFT);
+
+// Cuentas en lempiras donde se deposita el cobro (la predeterminada va seleccionada)
+$cuentasRec = bancosDisponible($pdo) ? array_values(array_filter(bancoCuentas($pdo, $cliente_id, true), fn($c) => $c['moneda'] === 'HNL')) : [];
 
 // Datos del cliente SaaS (para encabezado)
 $stmtEmp = $pdo->prepare("SELECT nombre, rtn FROM clientes_saas WHERE id = ?");
@@ -355,6 +359,16 @@ $meses_es = [
                                 </select>
                             </div>
 
+                            <?php if ($cuentasRec): ?>
+                            <div class="col-12 rc-field">
+                                <label>Depositado en</label>
+                                <select name="cuenta_id">
+                                    <option value="">— No registrar en banco —</option>
+                                    <?php foreach ($cuentasRec as $cb): ?><option value="<?= (int)$cb['id'] ?>"<?= bancoSel($cb) ?>><?= htmlspecialchars($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?>
+                                </select>
+                            </div>
+                            <?php endif; ?>
+
                             <div class="col-12 rc-field">
                                 <label>Notas (opcional)</label>
                                 <textarea name="notas" rows="2" placeholder="Observaciones adicionales…"
@@ -440,7 +454,8 @@ $meses_es = [
                                     <span class="text-muted ms-2"><?= $meses_es[(int)$r['periodo_mes']] ?>
                                         <?= $r['periodo_anio'] ?></span>
                                 </div>
-                                <span class="fw-bold" style="color:#059669">L <?= number_format((float)$r['monto'], 0) ?></span>
+                                <span><span class="fw-bold" style="color:#059669">L <?= number_format((float)$r['monto'], 0) ?></span>
+                                    <a href="recibo_pdf?id=<?= (int)$r['id'] ?>" target="_blank" class="ms-2 text-secondary" title="Ver el recibo en PDF"><i class="bi bi-file-earmark-pdf"></i></a></span>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -518,13 +533,20 @@ $meses_es = [
             .then(r => r.json())
             .then(d => {
                 if (d.success) {
+                    // Después de emitirlo: ver el PDF o enviarlo al cliente por correo (Cobros por correo)
+                    const puedeCorreo = <?= in_array(USUARIO_ROL, ['admin', 'superadmin'], true) ? 'true' : 'false' ?>;
                     Swal.fire({
                         icon: 'success',
                         title: '¡Recibo emitido!',
                         html: `Recibo <strong>#${d.numero}</strong> generado correctamente.`,
-                        timer: 2000,
-                        showConfirmButton: false
-                    }).then(() => window.location.href = 'contratos');
+                        showConfirmButton: puedeCorreo, confirmButtonText: '<i class="bi bi-send me-1"></i>Enviar por correo',
+                        showDenyButton: true, denyButtonText: '<i class="bi bi-file-earmark-pdf me-1"></i>Ver PDF', denyButtonColor: '#475569',
+                        showCancelButton: true, cancelButtonText: 'Listo',
+                    }).then(r => {
+                        if (r.isConfirmed) window.location.href = 'cobros_programados?receptor_id=<?= (int)$ct['receptor_id'] ?>&tipo=envio_recibo&recibos=' + d.recibo_id;
+                        else if (r.isDenied) { window.open('recibo_pdf?id=' + d.recibo_id, '_blank'); window.location.href = 'facturas_contrato?contrato_id=<?= (int)$ct['id'] ?>'; }
+                        else window.location.href = 'facturas_contrato?contrato_id=<?= (int)$ct['id'] ?>';
+                    });
                 } else {
                     Swal.fire('Error', d.error || 'No se pudo emitir el recibo.', 'error');
                     btn.disabled = false;

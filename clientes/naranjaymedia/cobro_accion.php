@@ -1,6 +1,8 @@
 <?php
 // clientes/naranjaymedia/cobro_accion.php — Cobros por correo programados (solo administradores).
-//   GET  ?facturas=<receptor_id>                    → facturas del cliente con su saldo (JSON)
+//   GET  ?facturas=<receptor_id>                    → facturas del cliente con su saldo, sus recibos y los pagos pendientes de sus planes (JSON)
+//   GET  ?pdf=<id>&recibo=<recibo_id>               → recibo adjunto tal como se envió
+//   POST accion=generar_mensaje (receptor_id, tipo recordatorio_pago|envio_recibo, ids[]) → asunto y mensaje con la plantilla
 //   POST accion=crear  modo=programar|ahora|prueba   → crea el cobro (genera los PDF) y, si toca, lo envía
 //   GET  ?ver=<id>                                  → detalle: datos, vista del correo, adjuntos e intentos de envío
 //   GET  ?pdf=<id>&factura=<factura_id>             → PDF adjunto tal como se envió
@@ -12,6 +14,8 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/cobros.php';
 require_once '../../includes/cuentas.php';
+require_once '../../includes/contrato_plan.php';
+require_once '../../includes/recibo_pdf.php';
 header('Content-Type: application/json; charset=utf-8');
 
 /** PDF de una factura, tal como «Imprimir / PDF». */
@@ -45,8 +49,13 @@ try {
     }
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['pdf'])) {
         $cobro = cobroObtener($pdo, $cid, (int)$_GET['pdf']);
-        $st = $pdo->prepare("SELECT archivo FROM cobros_programados_facturas WHERE cobro_id = ? AND factura_id = ?");
-        $st->execute([$cobro['id'], (int)($_GET['factura'] ?? 0)]);
+        if (isset($_GET['recibo'])) {
+            $st = $pdo->prepare("SELECT archivo FROM cobros_programados_recibos WHERE cobro_id = ? AND recibo_id = ?");
+            $st->execute([$cobro['id'], (int)$_GET['recibo']]);
+        } else {
+            $st = $pdo->prepare("SELECT archivo FROM cobros_programados_facturas WHERE cobro_id = ? AND factura_id = ?");
+            $st->execute([$cobro['id'], (int)($_GET['factura'] ?? 0)]);
+        }
         $archivo = (string)$st->fetchColumn();
         $ruta = cobroDir($cid, (int)$cobro['id']) . $archivo;
         if ($archivo === '' || !is_file($ruta)) throw new Exception("El PDF ya no está disponible.");
@@ -84,7 +93,25 @@ try {
             $st->execute([$cid, $rid]);
             $contactos = array_values(array_filter($st->fetchAll(PDO::FETCH_ASSOC), fn($c) => strcasecmp($c['email'], (string)$cli['email']) !== 0));
         }
-        echo json_encode(['success' => true, 'cliente' => $cli, 'facturas' => $facturas, 'contactos' => $contactos], JSON_UNESCAPED_UNICODE);
+        // Recibos (contratos sin factura) y pagos del plan aún no cobrados, de los contratos de este cliente
+        $recibos = $plan = [];
+        if (cobrosExtrasDisponible($pdo)) {
+            $st = $pdo->prepare("SELECT r.id, r.numero_recibo, r.fecha_emision AS fecha, r.monto, r.concepto, r.contrato_id FROM contratos_recibos r
+                                 WHERE r.cliente_id = ? AND r.receptor_id = ? AND r.estado = 'emitido' AND r.fecha_emision >= DATE_SUB(CURDATE(), INTERVAL 24 MONTH) ORDER BY r.fecha_emision DESC, r.id DESC");
+            $st->execute([$cid, $rid]);
+            $recibos = $st->fetchAll(PDO::FETCH_ASSOC);
+            $st = $pdo->prepare("SELECT id, nombre_contrato FROM contratos WHERE cliente_id = ? AND receptor_id = ? AND estado IN ('activo','vencido')");
+            $st->execute([$cid, $rid]);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $ct) {
+                foreach (planLineas($pdo, $cid, (int)$ct['id']) as $l) {
+                    if ($l['estado'] === 'pagado') continue;
+                    $plan[] = ['id' => (int)$l['id'], 'contrato_id' => (int)$ct['id'], 'contrato' => $ct['nombre_contrato'], 'fecha' => $l['fecha'], 'concepto' => $l['concepto'],
+                               'total' => (float)$l['total'], 'estado' => $l['estado'], 'dias' => $l['dias'], 'cobro' => $l['cobro']];
+                }
+            }
+            usort($plan, fn($a, $b) => $a['fecha'] <=> $b['fecha']);
+        }
+        echo json_encode(['success' => true, 'cliente' => $cli, 'facturas' => $facturas, 'recibos' => $recibos, 'plan' => $plan, 'contactos' => $contactos], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -103,7 +130,7 @@ try {
             }
             $datos['enviar_ahora'] = $modo === 'ahora';
             $pdo->beginTransaction();
-            $nuevo = cobroCrear($pdo, $cid, $uid, $datos, 'cobroPdfFactura');
+            $nuevo = cobroCrear($pdo, $cid, $uid, $datos, 'cobroPdfFactura', fn($recId) => reciboPdf($pdo, $cid, $recId));
             $pdo->commit();
             if ($modo === 'programar') {
                 $cuando = $pdo->query("SELECT programado_para FROM cobros_programados WHERE id = $nuevo")->fetchColumn();
@@ -139,14 +166,24 @@ try {
             echo json_encode(['success' => true, 'message' => 'Reprogramado para el ' . $dt->format('d/m/Y \a \l\a\s g:i a') . '.'], JSON_UNESCAPED_UNICODE);
             break;
 
+        case 'generar_mensaje':
+            echo json_encode(['success' => true] + cobroMensajeGenerar($pdo, $cid, (int)($_POST['receptor_id'] ?? 0), (string)($_POST['tipo'] ?? ''), (array)($_POST['ids'] ?? [])), JSON_UNESCAPED_UNICODE);
+            break;
+
         case 'previsualizar':
             $rid = (int)($_POST['receptor_id'] ?? 0);
             $ids = array_values(array_filter(array_map('intval', (array)($_POST['factura_ids'] ?? []))));
             $nums = [];
             if ($ids) {
-                $st = $pdo->prepare("SELECT correlativo FROM facturas WHERE cliente_id = ? AND receptor_id = ? AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ") ORDER BY correlativo");
+                $st = $pdo->prepare("SELECT CONCAT('factura ', correlativo) FROM facturas WHERE cliente_id = ? AND receptor_id = ? AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ") ORDER BY correlativo");
                 $st->execute([$cid, $rid, ...$ids]);
                 $nums = $st->fetchAll(PDO::FETCH_COLUMN);
+            }
+            $rids = array_values(array_filter(array_map('intval', (array)($_POST['recibo_ids'] ?? []))));
+            if ($rids) {
+                $st = $pdo->prepare("SELECT CONCAT('recibo ', LPAD(numero_recibo, 5, '0')) FROM contratos_recibos WHERE cliente_id = ? AND receptor_id = ? AND id IN (" . implode(',', array_fill(0, count($rids), '?')) . ") ORDER BY numero_recibo");
+                $st->execute([$cid, $rid, ...$rids]);
+                $nums = array_merge($nums, $st->fetchAll(PDO::FETCH_COLUMN));
             }
             $emp = $pdo->prepare("SELECT nombre, alias FROM clientes_saas WHERE id = ?");
             $emp->execute([$cid]);

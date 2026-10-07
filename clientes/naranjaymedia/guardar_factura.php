@@ -16,11 +16,22 @@ try {
 	// Toda la lógica (validaciones, correlativo, totales, inventario) está en includes/facturacion.php
 	$pdo->beginTransaction();
 	$factura = crearFactura($pdo, $cliente_id, (int)USUARIO_ID, $_POST);
+	// Emitida desde el plan de pagos del contrato («Emitir su factura»): queda ligada a esa línea
+	$avisoPlan = '';
+	$planLinea = (int)($_POST['plan_linea'] ?? 0);
+	if ($planLinea && !empty($_POST['contrato_id'])) {
+		require_once '../../includes/contrato_plan.php';
+		try {
+			if (planDisponible($pdo)) planVincular($pdo, (int)$cliente_id, $planLinea, 'factura', (int)$factura['id']);
+		} catch (Exception $e) {
+			$avisoPlan = ' No se ligó al plan de pagos: ' . $e->getMessage();
+		}
+	}
 	$pdo->commit();
 
 	echo json_encode([
 		'success'    => true,
-		'message'    => 'Factura creada correctamente.',
+		'message'    => 'Factura creada correctamente.' . $avisoPlan,
 		'factura_id' => $factura['id'],
 	]);
 } catch (Exception $e) {

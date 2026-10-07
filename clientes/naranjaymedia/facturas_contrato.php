@@ -133,6 +133,16 @@ $hayPlan = planDisponible($pdo);
 $plan = $hayPlan ? planLineas($pdo, $cliente_id, $contrato_id) : [];
 $planRes = planResumen($plan);
 $puedePlan = in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true);
+// Recordatorios por correo de cada pago del plan (el último enviado o programado)
+$recordados = [];
+if ($plan && $pdo->query("SHOW TABLES LIKE 'cobros_programados_plan'")->fetchColumn()) {
+    $stRc = $pdo->prepare("SELECT x.plan_id, c.estado, c.programado_para, c.enviado_en FROM cobros_programados_plan x JOIN cobros_programados c ON c.id = x.cobro_id
+                           WHERE c.cliente_id = ? AND c.prueba = 0 AND c.estado IN ('programado','enviando','enviado') AND x.plan_id IN (" . implode(',', array_map(fn($l) => (int)$l['id'], $plan)) . ")
+                           ORDER BY c.programado_para");
+    $stRc->execute([$cliente_id]);
+    foreach ($stRc->fetchAll(PDO::FETCH_ASSOC) as $rc) $recordados[(int)$rc['plan_id']] = $rc;
+}
+$planPendIds = array_map(fn($l) => (int)$l['id'], array_filter($plan, fn($l) => in_array($l['estado'], ['pendiente', 'vencido'], true)));
 // El mes actual nunca es "atrasado" — puede que aún no haya vencido el día de cobro
 $keyActual       = date('Y') . '-' . (int)date('n');
 $mesesSinFactura = array_filter($mesesEsperados, fn($m) => !isset($mesesConFactura[$m]) && $m !== $keyActual);
@@ -914,6 +924,9 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
             <div class="fc-card-hdr">
                 <span class="fc-card-title"><i class="bi bi-calendar2-check text-success"></i> Plan de pagos
                     <?php if ($plan): ?><small class="text-muted fw-normal"><?= $planRes['n_pagadas'] ?> de <?= $planRes['n'] ?> pagados</small><?php endif; ?></span>
+                <?php if ($puedeCorreo && $planPendIds): ?>
+                    <a class="btn btn-sm btn-outline-secondary me-1" href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=recordatorio_pago&plan=<?= implode(',', $planPendIds) ?>" title="Enviar o programar por correo un recordatorio de los pagos pendientes"><i class="bi bi-send me-1"></i>Enviar recordatorio</a>
+                <?php endif; ?>
                 <?php if ($puedePlan): ?>
                     <button class="btn btn-sm btn-outline-primary" id="btnEditarPlan"><i class="bi bi-<?= $plan ? 'pencil' : 'plus-lg' ?> me-1"></i><?= $plan ? 'Editar plan' : 'Crear plan de pagos' ?></button>
                 <?php endif; ?>
@@ -944,7 +957,10 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                     <td class="text-end text-nowrap">L <?= number_format((float)$l['monto'], 2) ?></td>
                                     <?php if ($planRes['isv'] > 0): ?><td class="text-end text-nowrap text-muted">L <?= number_format((float)$l['isv'], 2) ?></td><?php endif; ?>
                                     <td class="text-end text-nowrap fw-bold">L <?= number_format((float)$l['total'], 2) ?></td>
-                                    <td class="text-nowrap"><span class="badge" style="background:<?= $bg ?>;color:<?= $fg ?>"><i class="bi <?= $ico ?> me-1"></i><?= $txt ?></span></td>
+                                    <td class="text-nowrap"><span class="badge" style="background:<?= $bg ?>;color:<?= $fg ?>"><i class="bi <?= $ico ?> me-1"></i><?= $txt ?></span>
+                                        <?php if (($rc = $recordados[(int)$l['id']] ?? null) && $l['estado'] !== 'pagado'): ?>
+                                            <div class="small text-muted mt-1"><i class="bi bi-envelope<?= $rc['estado'] === 'enviado' ? '-check' : '' ?> me-1"></i><?= $rc['estado'] === 'enviado' ? 'Recordado ' . date('d/m', strtotime($rc['enviado_en'] ?: $rc['programado_para'])) : 'Recordatorio programado ' . date('d/m', strtotime($rc['programado_para'])) ?></div>
+                                        <?php endif; ?></td>
                                     <td class="text-end text-nowrap">
                                         <?php if ($puedePlan && !$l['vinculado']): ?>
                                             <div class="btn-group">
@@ -952,7 +968,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                                     <i class="bi bi-cash-coin me-1"></i>Registrar cobro</button>
                                                 <button class="btn btn-sm btn-outline-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-label="Más opciones"></button>
                                                 <ul class="dropdown-menu dropdown-menu-end">
-                                                    <?php if (!$esRecibo): ?><li><a class="dropdown-item" href="generar_factura?receptor_id=<?= (int)$contrato['receptor_id'] ?>&producto_id=<?= (int)$contrato['producto_id'] ?>&monto=<?= (float)$l['monto'] ?>&contrato_id=<?= (int)$contrato['id'] ?>"><i class="bi bi-file-earmark-plus me-2"></i>Emitir su factura</a></li><?php endif; ?>
+                                                    <?php if (!$esRecibo): ?><li><a class="dropdown-item" href="generar_factura?receptor_id=<?= (int)$contrato['receptor_id'] ?>&producto_id=<?= (int)$contrato['producto_id'] ?>&monto=<?= (float)$l['monto'] ?>&contrato_id=<?= (int)$contrato['id'] ?>&plan_linea=<?= (int)$l['id'] ?>"><i class="bi bi-file-earmark-plus me-2"></i>Emitir su factura (queda ligada)</a></li><?php endif; ?>
                                                     <li><button class="dropdown-item btn-plan-vincular" data-id="<?= (int)$l['id'] ?>" data-concepto="<?= htmlspecialchars($l['concepto']) ?>"><i class="bi bi-link-45deg me-2"></i>Vincular <?= $esRecibo ? 'un recibo' : 'una factura o pago' ?> ya registrado</button></li>
                                                 </ul>
                                             </div>
@@ -1071,7 +1087,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
         <?php else: ?>
             <div style="overflow-x:auto">
                 <table class="fc-table">
-                    <thead><tr><th>Recibo</th><th>Fecha</th><th class="text-center">Período</th><th>Concepto</th><th>Método</th><th class="text-end">Monto</th></tr></thead>
+                    <thead><tr><th>Recibo</th><th>Fecha</th><th class="text-center">Período</th><th>Concepto</th><th>Método</th><th class="text-end">Monto</th><th class="text-center">PDF</th></tr></thead>
                     <tbody>
                         <?php foreach ($recibos as $r): ?>
                             <tr>
@@ -1081,10 +1097,12 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 <td class="small"><?= htmlspecialchars($r['concepto'] ?? '') ?></td>
                                 <td class="small"><?= htmlspecialchars(ucfirst($r['metodo_pago'])) ?></td>
                                 <td class="text-end fw-bold" style="color:var(--brand)">L <?= number_format((float)$r['monto'], 2) ?></td>
+                                <td class="text-center text-nowrap"><a href="recibo_pdf?id=<?= (int)$r['id'] ?>" target="_blank" class="btn btn-sm btn-outline-secondary" title="Ver el recibo en PDF"><i class="bi bi-file-earmark-pdf"></i></a>
+                                    <?php if ($puedeCorreo): ?><a href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&recibos=<?= (int)$r['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Enviar este recibo por correo"><i class="bi bi-send"></i></a><?php endif; ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
-                    <tfoot><tr><td colspan="5" class="text-end text-muted">Total cobrado con recibo (sin ISV):</td><td class="text-end" style="color:var(--brand)">L <?= number_format($totalRecibos, 2) ?></td></tr></tfoot>
+                    <tfoot><tr><td colspan="5" class="text-end text-muted">Total cobrado con recibo (sin ISV):</td><td class="text-end" style="color:var(--brand)">L <?= number_format($totalRecibos, 2) ?></td><td></td></tr></tfoot>
                 </table>
             </div>
         <?php endif; ?>
@@ -1846,7 +1864,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                 <label class="form-label small">Fecha de pago</label><input type="date" id="pcFecha" class="form-control form-control-sm" value="${hoy}">
                 ${ES_RECIBO ? '' : `<label class="form-label small mt-2">Monto recibido</label><input type="number" step="0.01" id="pcMonto" class="form-control form-control-sm" value="${Number(b.dataset.total).toFixed(2)}">`}
                 <label class="form-label small mt-2">Método</label><select id="pcMetodo" class="form-select form-select-sm">${metodos}</select>
-                ${!ES_RECIBO && CUENTAS.length ? `<label class="form-label small mt-2">Depositado en</label><select id="pcCuenta" class="form-select form-select-sm"><option value="">— No registrar en banco —</option>${CUENTAS.map(c => `<option value="${c.id}"${c.pred ? ' selected' : ''}>${esc(c.txt)}</option>`).join('')}</select>` : ''}
+                ${CUENTAS.length ? `<label class="form-label small mt-2">Depositado en</label><select id="pcCuenta" class="form-select form-select-sm"><option value="">— No registrar en banco —</option>${CUENTAS.map(c => `<option value="${c.id}"${c.pred ? ' selected' : ''}>${esc(c.txt)}</option>`).join('')}</select>` : ''}
                 ${ES_RECIBO ? '<label class="form-label small mt-2">Notas</label><input id="pcNotas" class="form-control form-control-sm" maxlength="255">' : '<label class="form-label small mt-2">Referencia</label><input id="pcRef" class="form-control form-control-sm" maxlength="100">'}
             </div>`,
             showCancelButton: true, confirmButtonText: ES_RECIBO ? 'Emitir recibo' : 'Registrar cobro', cancelButtonText: 'Cancelar', focusConfirm: false,

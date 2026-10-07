@@ -184,6 +184,7 @@ function planCobrarRecibo(PDO $pdo, int $cid, int $usuario, int $lineaId, array 
         'monto' => $l['total'], 'fecha_emision' => $fecha, 'descripcion' => $l['concepto'],
         'metodo_pago' => $d['metodo'] ?? 'transferencia', 'notas' => $d['notas'] ?? null,
         'periodo_mes' => (int)substr($l['fecha'], 5, 2), 'periodo_anio' => (int)substr($l['fecha'], 0, 4),
+        'cuenta_id' => $d['cuenta_id'] ?? 0,
     ]);
     $pdo->prepare("UPDATE contratos_plan SET recibo_id = ?, factura_id = NULL, anticipo_id = NULL WHERE id = ? AND cliente_id = ?")->execute([$recId, $lineaId, $cid]);
     return $recId;

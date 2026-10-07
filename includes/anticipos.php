@@ -59,13 +59,8 @@ function anticipoRegistrar(PDO $pdo, int $cid, int $usuario, array $d): int
     $movId = null;
     $cuentaId = (int)($d['cuenta_id'] ?? 0) ?: null;
     if ($cuentaId) {
-        $cuenta = bancoCuenta($pdo, $cid, $cuentaId, true);
-        if ($cuenta['moneda'] !== 'HNL') throw new Exception("Elige una cuenta en lempiras.");
-        $movId = bancoInsertarMovimiento($pdo, $cid, $cuentaId, [
-            'fecha' => $fecha, 'sentido' => 'entrada', 'tipo' => 'deposito', 'monto' => $monto,
-            'descripcion' => mb_substr('Anticipo contrato #' . $c['id'] . ($concepto ? " · $concepto" : ''), 0, 255),
-            'referencia' => $ref, 'usuario_id' => $usuario,
-        ]);
+        // Entra a Bancos como depósito (salvo que sea anterior al saldo inicial de la cuenta)
+        $movId = bancoDepositoCobro($pdo, $cid, $cuentaId, $fecha, $monto, 'Anticipo contrato #' . $c['id'] . ($concepto ? " · $concepto" : ''), $ref, $usuario);
     }
     $pdo->prepare("INSERT INTO contratos_anticipos (cliente_id, contrato_id, fecha, monto, metodo, referencia, concepto, cuenta_id, movimiento_id, usuario_id)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")

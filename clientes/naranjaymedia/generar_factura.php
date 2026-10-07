@@ -257,6 +257,7 @@ require_once '../../includes/templates/header.php';
     </div>
 
     <form id="formFactura" action="guardar_factura" method="POST">
+        <?php if ((int)($_GET['plan_linea'] ?? 0)): ?><input type="hidden" name="plan_linea" value="<?= (int)$_GET['plan_linea'] ?>"><?php endif; ?>
         <input type="hidden" name="establecimiento_id"
             value="<?= htmlspecialchars($_SESSION['establecimiento_activo'] ?? '') ?>">
         <input type="hidden" name="estado" value="emitida">

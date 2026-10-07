@@ -23,12 +23,18 @@ $preRid = (int)($_GET['receptor_id'] ?? 0);
 $preFacturas = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['facturas'] ?? '')))));
 $preContrato = (int)($_GET['contrato_id'] ?? 0);
 $preTipo = isset(COBRO_TIPOS[$_GET['tipo'] ?? '']) ? $_GET['tipo'] : '';
+// &recibos=1,2 → envío de esos recibos · &plan=5,6 → recordatorio de esos pagos del plan
+$preRecibos = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['recibos'] ?? '')))));
+$prePlan = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['plan'] ?? '')))));
+$extras = $instalado && cobrosExtrasDisponible($pdo);
 
 $cobros = [];
 if ($instalado) {
     $st = $pdo->prepare("
         SELECT c.*, cf.nombre AS cliente, u.nombre AS usuario,
-               (SELECT GROUP_CONCAT(f.correlativo ORDER BY f.correlativo SEPARATOR ', ') FROM cobros_programados_facturas x JOIN facturas f ON f.id = x.factura_id WHERE x.cobro_id = c.id) AS facturas
+               (SELECT GROUP_CONCAT(f.correlativo ORDER BY f.correlativo SEPARATOR ', ') FROM cobros_programados_facturas x JOIN facturas f ON f.id = x.factura_id WHERE x.cobro_id = c.id) AS facturas" . ($extras ? ",
+               (SELECT GROUP_CONCAT(CONCAT('Recibo ', LPAD(r.numero_recibo, 5, '0')) ORDER BY r.numero_recibo SEPARATOR ', ') FROM cobros_programados_recibos x JOIN contratos_recibos r ON r.id = x.recibo_id WHERE x.cobro_id = c.id) AS recibos,
+               (SELECT COUNT(*) FROM cobros_programados_plan x WHERE x.cobro_id = c.id) AS pagos_plan" : "") . "
         FROM cobros_programados c
         JOIN clientes_factura cf ON cf.id = c.receptor_id
         LEFT JOIN usuarios u ON u.id = c.usuario_id
@@ -49,7 +55,7 @@ require_once '../../includes/templates/header.php';
 <div class="app-page-header">
     <div>
         <h1 class="app-page-title"><i class="bi bi-send-check me-2"></i>Cobros por correo</h1>
-        <p class="app-page-sub">Envía al cliente sus facturas en PDF con un mensaje de cobro, ahora o programado (hora de Honduras).</p>
+        <p class="app-page-sub">Envía al cliente sus facturas o recibos en PDF, o un recordatorio de los pagos de su plan, ahora o programado (hora de Honduras).</p>
     </div>
     <button class="btn btn-primary" id="btnNuevoCobro" <?= $instalado ? '' : 'disabled' ?>><i class="bi bi-plus-lg me-1"></i> Nuevo cobro</button>
 </div>
@@ -76,9 +82,9 @@ require_once '../../includes/templates/header.php';
                     </select></div>
                 <div class="col-md-6"><label class="form-label">Tipo de mensaje</label>
                     <select class="form-select" name="tipo" id="cTipo">
-                        <?php foreach (COBRO_TIPOS as $k => $t): ?><option value="<?= $k ?>" <?= $preTipo === $k ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?>
+                        <?php foreach (COBRO_TIPOS as $k => $t): if (!$extras && in_array($k, ['recordatorio_pago', 'envio_recibo'], true)) continue; ?><option value="<?= $k ?>" <?= $preTipo === $k ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?>
                     </select></div>
-                <div class="col-12">
+                <div class="col-12" data-bloque="facturas">
                     <label class="form-label d-flex justify-content-between align-items-center">2. Facturas a adjuntar (PDF) *
                         <span class="small fw-normal"><a href="#" id="selConSaldo">Con saldo</a> · <a href="#" id="selNinguna">Ninguna</a></span></label>
                     <div class="border rounded" style="max-height:260px;overflow:auto">
@@ -89,6 +95,29 @@ require_once '../../includes/templates/header.php';
                     </div>
                     <div class="small mt-1" id="cResumen"></div>
                 </div>
+                <?php if ($extras): ?>
+                <div class="col-12" data-bloque="recibos" hidden>
+                    <label class="form-label">2. Recibos a adjuntar (PDF) *</label>
+                    <div class="border rounded" style="max-height:260px;overflow:auto">
+                        <table class="table app-table mb-0">
+                            <thead><tr><th style="width:1%"></th><th>Recibo</th><th>Fecha</th><th>Concepto</th><th class="app-num">Monto</th></tr></thead>
+                            <tbody id="cRecibos"><tr><td colspan="5" class="text-center text-muted py-3">Selecciona un cliente.</td></tr></tbody>
+                        </table>
+                    </div>
+                    <div class="form-text">Recibos de los contratos sin factura de este cliente. Se adjuntan en PDF.</div>
+                </div>
+                <div class="col-12" data-bloque="plan" hidden>
+                    <label class="form-label d-flex justify-content-between align-items-center">2. Pagos del plan a recordar *
+                        <span class="small fw-normal"><a href="#" id="selPlanVencidos">Vencidos y próximos 30 días</a> · <a href="#" id="selPlanNinguno">Ninguno</a></span></label>
+                    <div class="border rounded" style="max-height:260px;overflow:auto">
+                        <table class="table app-table mb-0">
+                            <thead><tr><th style="width:1%"></th><th>Fecha de pago</th><th>Concepto</th><th>Contrato</th><th class="app-num">Total</th><th>Estado</th></tr></thead>
+                            <tbody id="cPlan"><tr><td colspan="6" class="text-center text-muted py-3">Selecciona un cliente.</td></tr></tbody>
+                        </table>
+                    </div>
+                    <div class="form-text">Pagos pendientes del plan de pagos de sus contratos (con recibo o con factura). El recordatorio no lleva adjuntos.</div>
+                </div>
+                <?php endif; ?>
                 <div class="col-md-6"><label class="form-label">3. Para *</label><input class="form-control" name="para" id="cPara" placeholder="correo@cliente.com (varios separados por coma)" required></div>
                 <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="cCc" placeholder="opcional"><div class="form-text" id="cCcInfo">Se llena con los correos de «Responder a» de la cuenta Facturación y los contactos del cliente marcados «Copiar en cobros». Puedes editarlo; varios separados por coma.</div></div>
                 <div class="col-12"><label class="form-label d-flex justify-content-between">4. Asunto y mensaje *
@@ -117,7 +146,7 @@ require_once '../../includes/templates/header.php';
         <div class="app-card-header"><span><i class="bi bi-list-check me-1"></i> Cobros</span><span class="app-badge"><?= count($cobros) ?></span></div>
         <div class="table-responsive">
             <table data-paginar class="table app-table mb-0">
-                <thead><tr><th class="app-n">#</th><th>Cliente</th><th>Facturas</th><th>Para</th><th>Envío</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
+                <thead><tr><th class="app-n">#</th><th>Cliente</th><th>Documentos</th><th>Para</th><th>Envío</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
                 <tbody>
                     <?php if (!$cobros): ?><tr><td colspan="7" class="text-center text-muted py-4">Aún no hay cobros. Usa «Nuevo cobro».</td></tr><?php endif; ?>
                     <?php foreach ($cobros as $c): [$etq, $col] = $estados[$c['estado']] ?? [$c['estado'], 'muted']; ?>
@@ -125,7 +154,8 @@ require_once '../../includes/templates/header.php';
                             <td class="app-n"><?= (int)$c['id'] ?></td>
                             <td><a href="estado_cuenta?receptor_id=<?= (int)$c['receptor_id'] ?>"><?= htmlspecialchars($c['cliente']) ?></a>
                                 <div class="small text-muted"><?= htmlspecialchars(mb_strimwidth($c['asunto'], 0, 60, '…')) ?></div></td>
-                            <td class="small font-monospace"><?= htmlspecialchars($c['facturas'] ?? '') ?></td>
+                            <td class="small"><span class="font-monospace"><?= htmlspecialchars(trim(($c['facturas'] ?? '') . (($c['facturas'] ?? '') && ($c['recibos'] ?? '') ? ', ' : '') . ($c['recibos'] ?? ''))) ?></span>
+                                <?php if (!empty($c['pagos_plan'])): ?><div class="text-muted"><i class="bi bi-calendar2-check"></i> Recordatorio de <?= (int)$c['pagos_plan'] ?> pago<?= $c['pagos_plan'] > 1 ? 's' : '' ?> del plan</div><?php endif; ?></td>
                             <td class="small"><?= htmlspecialchars($c['para']) ?><?= $c['cc'] ? '<div class="text-muted">CC: ' . htmlspecialchars($c['cc']) . '</div>' : '' ?></td>
                             <td class="small text-nowrap"><?= date('d/m/Y g:i a', strtotime($c['programado_para'])) ?>
                                 <?= $c['enviado_en'] ? '<div class="text-success">Enviado ' . date('d/m g:i a', strtotime($c['enviado_en'])) . '</div>' : '' ?></td>
@@ -232,9 +262,16 @@ require_once '../../includes/templates/header.php';
     document.getElementById('btnNuevoCobro')?.addEventListener('click', abrir);
     document.getElementById('btnCerrarNuevo')?.addEventListener('click', () => card.style.display = 'none');
 
-    let pre = <?= json_encode(['ids' => $preFacturas, 'contrato' => $preContrato]) ?>;   // preselección del acceso directo (solo la primera carga)
+    let pre = <?= json_encode(['ids' => $preFacturas, 'contrato' => $preContrato, 'recibos' => $preRecibos, 'plan' => $prePlan]) ?>;   // preselección del acceso directo (solo la primera carga)
+    const $tipo = document.getElementById('cTipo'), $rec = document.getElementById('cRecibos'), $plan = document.getElementById('cPlan');
+    // Qué lista usa cada tipo: facturas (saldo/envío), recibos o pagos del plan
+    const bloque = () => ({ envio_recibo: 'recibos', recordatorio_pago: 'plan' }[$tipo.value] || 'facturas');
+    const tablaActiva = () => ({ facturas: $tb, recibos: $rec, plan: $plan }[bloque()]);
+    function mostrarBloque() {
+        document.querySelectorAll('[data-bloque]').forEach(b => b.hidden = b.dataset.bloque !== bloque());
+    }
     const marcarInicial = f => pre.ids.length ? pre.ids.includes(+f.id) : (pre.contrato ? f.contrato_id == pre.contrato && f.saldo > 0 : f.saldo > 0);
-    const seleccionadas = () => [...$tb.querySelectorAll('input[type=checkbox]:checked')].map(i => i.value);
+    const seleccionadas = () => [...(tablaActiva() || $tb).querySelectorAll('input[type=checkbox]:checked')].map(i => i.value);
     function resumen() {
         const filas = [...$tb.querySelectorAll('input[type=checkbox]:checked')];
         const saldo = filas.reduce((s, i) => s + Number(i.dataset.saldo), 0);
@@ -275,7 +312,22 @@ require_once '../../includes/templates/header.php';
                 <td class="small">${meses[f.pm]} ${f.pa}</td><td class="small text-nowrap">${f.fecha.split('-').reverse().join('/')}</td>
                 <td class="app-num">${L(f.total)}</td><td class="app-num ${f.saldo > 0 ? 'text-danger fw-semibold' : 'text-success'}">${f.saldo > 0 ? L(f.saldo) : 'Pagada'}</td></tr>`).join('')
                 : '<tr><td colspan="6" class="text-center text-muted py-3">Este cliente no tiene facturas en los últimos 24 meses.</td></tr>';
-            pre = { ids: [], contrato: 0 };
+            const SEM = { vencido: ['#fee2e2', '#991b1b'], facturado: ['#dbeafe', '#1e40af'] };
+            if ($rec) $rec.innerHTML = (d.recibos || []).length ? d.recibos.map(r => `<tr>
+                <td><input class="form-check-input" type="checkbox" name="recibo_ids[]" value="${r.id}" ${pre.recibos.includes(+r.id) ? 'checked' : ''}></td>
+                <td class="font-monospace small"><a href="recibo_pdf?id=${r.id}" target="_blank">${String(r.numero_recibo).padStart(5, '0')}</a></td>
+                <td class="small text-nowrap">${r.fecha.split('-').reverse().join('/')}</td><td class="small">${esc(r.concepto)}</td><td class="app-num">${L(r.monto)}</td></tr>`).join('')
+                : '<tr><td colspan="5" class="text-center text-muted py-3">Este cliente no tiene recibos.</td></tr>';
+            if ($plan) $plan.innerHTML = (d.plan || []).length ? d.plan.map(l => {
+                const dd = -l.dias, txt = l.estado === 'facturado' ? 'Facturado, por cobrar' : (l.dias > 0 ? `Vencido hace ${l.dias} d` : (dd === 0 ? 'Vence hoy' : `En ${dd} d`));
+                const [bg, fg] = SEM[l.estado] || (dd <= 3 ? ['#ffedd5', '#9a3412'] : dd <= 7 ? ['#fef9c3', '#854d0e'] : ['#f1f5f9', '#475569']);
+                const marcar = pre.plan.length ? pre.plan.includes(l.id) : (pre.recibos.length ? false : l.dias > -30);
+                return `<tr><td><input class="form-check-input" type="checkbox" name="plan_ids[]" value="${l.id}" data-dias="${l.dias}" ${marcar ? 'checked' : ''}></td>
+                <td class="small text-nowrap">${l.fecha.split('-').reverse().join('/')}</td><td class="small">${esc(l.concepto)}</td>
+                <td class="small"><a href="facturas_contrato?contrato_id=${l.contrato_id}" target="_blank">#${l.contrato_id}</a></td>
+                <td class="app-num">${L(l.total)}</td><td><span class="badge rounded-pill" style="background:${bg};color:${fg}">${txt}</span></td></tr>`;
+            }).join('') : '<tr><td colspan="6" class="text-center text-muted py-3">Este cliente no tiene pagos pendientes en un plan de pagos.</td></tr>';
+            pre = { ids: [], contrato: 0, recibos: [], plan: [] };
             resumen();
             llenarCc();
             if (seleccionadas().length) generar();
@@ -286,6 +338,17 @@ require_once '../../includes/templates/header.php';
     // Asunto y mensaje con las plantillas de «Mensajes y cuentas de pago»
     async function generar() {
         const ids = seleccionadas().map(Number);
+        if (bloque() !== 'facturas') {
+            if (!ids.length) return Swal.fire('Falta seleccionar', bloque() === 'recibos' ? 'Marca al menos un recibo.' : 'Marca al menos un pago del plan.', 'info');
+            const fd = new FormData();
+            fd.append('accion', 'generar_mensaje'); fd.append('receptor_id', $cli.value); fd.append('tipo', $tipo.value);
+            ids.forEach(i => fd.append('ids[]', i));
+            const r = await fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer).catch(err => (Swal.fire('Error', err.message, 'error'), null));
+            if (!r) return;
+            document.getElementById('cAsunto').value = r.asunto || '';
+            setMensaje('cMensaje', r.mensaje_html || '');
+            return;
+        }
         if (!ids.length) return Swal.fire('Selecciona facturas', 'Marca al menos una factura para generar el mensaje.', 'info');
         const r = await fetch('procesar_accion_factura.php', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ accion: 'generar_mensaje', factura_ids: ids, tipo: document.getElementById('cTipo').value }) }).then(leer).catch(err => (Swal.fire('Error', err.message, 'error'), null));
@@ -295,7 +358,13 @@ require_once '../../includes/templates/header.php';
         setMensaje('cMensaje', (r.mensaje_html || '').replace(/\r?\n/g, ''));
     }
     document.getElementById('btnGenerar')?.addEventListener('click', e => { e.preventDefault(); generar(); });
-    document.getElementById('cTipo')?.addEventListener('change', () => seleccionadas().length && generar());
+    $tipo?.addEventListener('change', () => { mostrarBloque(); if (seleccionadas().length) generar(); });
+    mostrarBloque();
+    $rec?.addEventListener('change', () => generar());
+    $plan?.addEventListener('change', () => seleccionadas().length && generar());
+    const marcarPlan = fn => { $plan.querySelectorAll('input[type=checkbox]').forEach(i => i.checked = fn(+i.dataset.dias)); if (seleccionadas().length) generar(); };
+    document.getElementById('selPlanVencidos')?.addEventListener('click', e => { e.preventDefault(); marcarPlan(d => d > -30); });
+    document.getElementById('selPlanNinguno')?.addEventListener('click', e => { e.preventDefault(); marcarPlan(() => false); });
 
     form?.querySelectorAll('[data-modo]').forEach(b => b.addEventListener('click', async () => {
         const modo = b.dataset.modo;
@@ -303,9 +372,9 @@ require_once '../../includes/templates/header.php';
         fd.append('modo', modo);
         fd.append('mensaje_html', getMensaje('cMensaje'));
         if (modo === 'prueba') fd.append('para_prueba', document.getElementById('cParaPrueba').value);
-        if (!fd.get('receptor_id') || !seleccionadas().length) return Swal.fire('Faltan datos', 'Elige el cliente y al menos una factura.', 'info');
+        if (!fd.get('receptor_id') || !seleccionadas().length) return Swal.fire('Faltan datos', 'Elige el cliente y al menos ' + ({ facturas: 'una factura', recibos: 'un recibo', plan: 'un pago del plan' }[bloque()]) + '.', 'info');
         if (modo === 'ahora') {
-            const ok = await Swal.fire({ title: '¿Enviar ahora al cliente?', text: 'Se enviará a ' + fd.get('para') + ' con ' + seleccionadas().length + ' factura(s) adjunta(s).', icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' });
+            const ok = await Swal.fire({ title: '¿Enviar ahora al cliente?', text: 'Se enviará a ' + fd.get('para') + ' con ' + seleccionadas().length + ' ' + ({ facturas: 'factura(s) adjunta(s)', recibos: 'recibo(s) adjunto(s)', plan: 'pago(s) del plan' }[bloque()]) + '.', icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' });
             if (!ok.isConfirmed) return;
         }
         Swal.fire({ title: modo === 'programar' ? 'Generando PDF y programando…' : 'Generando PDF y enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
@@ -332,27 +401,28 @@ require_once '../../includes/templates/header.php';
     }));
 
     // ── Vista previa del correo (redacción y edición) ──
-    async function previa({ para, cc, asunto, html, receptor, ids }) {
+    async function previa({ para, cc, asunto, html, receptor, ids, recibos }) {
         const fd = new FormData();
         fd.append('accion', 'previsualizar'); fd.append('receptor_id', receptor || ''); fd.append('mensaje_html', html); fd.append('asunto', asunto);
         (ids || []).forEach(i => fd.append('factura_ids[]', i));
+        (recibos || []).forEach(i => fd.append('recibo_ids[]', i));
         try {
             const d = await fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer);
             const fila = (k, v) => `<dt class="col-sm-2 text-muted fw-normal">${k}</dt><dd class="col-sm-10 mb-1">${v || '<span class="text-muted">—</span>'}</dd>`;
             document.getElementById('pDatos').innerHTML = fila('Para', esc(para)) + fila('CC', esc(cc)) + fila('Asunto', '<strong>' + esc(asunto) + '</strong>')
-                + fila('Adjuntos', d.adjuntos.length ? d.adjuntos.map(n => `<span class="badge text-bg-light border me-1"><i class="bi bi-file-earmark-pdf text-danger"></i> factura ${esc(n)}</span>`).join('') : '');
+                + fila('Adjuntos', d.adjuntos.length ? d.adjuntos.map(n => `<span class="badge text-bg-light border me-1"><i class="bi bi-file-earmark-pdf text-danger"></i> ${esc(n)}</span>`).join('') : '');
             document.getElementById('pHtml').srcdoc = d.html;
             bootstrap.Modal.getOrCreateInstance(document.getElementById('mPrevia')).show();
         } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
     }
     document.getElementById('btnPrevia')?.addEventListener('click', () => previa({
         para: document.getElementById('cPara').value, cc: document.getElementById('cCc').value, asunto: document.getElementById('cAsunto').value,
-        html: getMensaje('cMensaje'), receptor: $cli.value, ids: seleccionadas(),
+        html: getMensaje('cMensaje'), receptor: $cli.value, ids: bloque() === 'facturas' ? seleccionadas() : [], recibos: bloque() === 'recibos' ? seleccionadas() : [],
     }));
     let editando = null;   // cobro abierto en «Editar» (para la vista previa)
     document.getElementById('ePrevia')?.addEventListener('click', () => previa({
         para: document.getElementById('ePara').value, cc: document.getElementById('eCc').value, asunto: document.getElementById('eAsunto').value,
-        html: getMensaje('eMensaje'), receptor: editando?.receptor_id, ids: editando?.facturas || [],
+        html: getMensaje('eMensaje'), receptor: editando?.receptor_id, ids: editando?.facturas || [], recibos: editando?.recibos || [],
     }));
 
     // ── Ver lo que se envió ──
@@ -368,8 +438,8 @@ require_once '../../includes/templates/header.php';
                 + fila('Asunto', esc((+c.prueba ? '[PRUEBA] ' : '') + c.asunto)) + fila('Estado', esc(estadosTxt[c.estado] || c.estado) + (c.error ? `<div class="text-danger">${esc(c.error)}</div>` : ''))
                 + fila('Programado', fmt(c.programado_para)) + fila('Enviado', fmt(c.enviado_en)) + fila('Creado', fmt(c.creado_en));
             document.getElementById('vAdjuntos').innerHTML = d.adjuntos.length ? d.adjuntos.map(a => a.existe
-                ? `<a class="btn btn-sm btn-outline-secondary me-1 mb-1" target="_blank" href="cobro_accion.php?pdf=${c.id}&factura=${a.factura_id}"><i class="bi bi-file-earmark-pdf text-danger"></i> ${esc(a.correlativo)}</a>`
-                : `<span class="badge text-bg-light border me-1">${esc(a.correlativo)} (no disponible)</span>`).join('') : '<span class="text-muted small">Sin adjuntos.</span>';
+                ? `<a class="btn btn-sm btn-outline-secondary me-1 mb-1" target="_blank" href="cobro_accion.php?pdf=${c.id}&${a.recibo_id ? 'recibo=' + a.recibo_id : 'factura=' + a.factura_id}"><i class="bi bi-file-earmark-pdf text-danger"></i> ${esc(a.etiqueta)}</a>`
+                : `<span class="badge text-bg-light border me-1">${esc(a.etiqueta)} (no disponible)</span>`).join('') : '<span class="text-muted small">Sin adjuntos.</span>';
             document.getElementById('vEnvios').innerHTML = d.envios.length ? '<ul class="list-unstyled small mb-0">' + d.envios.map(e =>
                 `<li class="mb-1"><i class="bi ${e.estado === 'enviado' ? 'bi-check-circle text-success' : 'bi-x-circle text-danger'}"></i> ${fmt(e.creado_en)} → ${esc(e.destinatario)}${e.error ? `<div class="text-danger">${esc(e.error)}</div>` : ''}</li>`).join('') + '</ul>'
                 : '<span class="text-muted small">Aún no se ha intentado enviar.</span>';
@@ -382,7 +452,7 @@ require_once '../../includes/templates/header.php';
     document.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', async () => {
         try {
             const det = await detalle(b.dataset.id), c = det.cobro;
-            editando = { receptor_id: c.receptor_id, facturas: det.adjuntos.map(x => x.factura_id) };
+            editando = { receptor_id: c.receptor_id, facturas: det.adjuntos.filter(x => x.factura_id).map(x => x.factura_id), recibos: det.adjuntos.filter(x => x.recibo_id).map(x => x.recibo_id) };
             document.getElementById('eNum').textContent = '#' + c.id;
             document.getElementById('eId').value = c.id;
             document.getElementById('ePara').value = c.para;

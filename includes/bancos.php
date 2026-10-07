@@ -106,6 +106,22 @@ function bancoInsertarMovimiento(PDO $pdo, int $cid, int $cuentaId, array $m): i
     return (int)$pdo->lastInsertId();
 }
 
+/**
+ * Depósito por un cobro (recibo o pago anticipado) en una cuenta en lempiras.
+ * Si el cobro es anterior al saldo inicial de la cuenta, ese dinero ya está en ese saldo:
+ * la cuenta queda ligada pero no se crea el depósito (devuelve null), para no contarlo dos veces.
+ */
+function bancoDepositoCobro(PDO $pdo, int $cid, int $cuentaId, string $fecha, float $monto, string $descripcion, ?string $referencia, int $usuario): ?int
+{
+    $cuenta = bancoCuenta($pdo, $cid, $cuentaId, true);
+    if ($cuenta['moneda'] !== 'HNL') throw new Exception("Elige una cuenta en lempiras.");
+    if (!empty($cuenta['fecha_saldo_inicial']) && $fecha < $cuenta['fecha_saldo_inicial']) return null;
+    return bancoInsertarMovimiento($pdo, $cid, $cuentaId, [
+        'fecha' => $fecha, 'sentido' => 'entrada', 'tipo' => 'deposito', 'monto' => $monto,
+        'descripcion' => mb_substr($descripcion, 0, 255), 'referencia' => $referencia, 'usuario_id' => $usuario,
+    ]);
+}
+
 /** Movimiento manual: depósito, retiro, comisión, interés o ajuste. */
 function bancoMovimientoManual(PDO $pdo, int $cid, int $usuario, array $d): int
 {
