@@ -169,6 +169,9 @@ function cobroEnviar(PDO $pdo, int $cid, int $cobroId, ?int $uid = null): void
         $asunto = ((int)$c['prueba'] ? '[PRUEBA] ' : '') . $c['asunto'];
         correoEnviar($pdo, $cid, $c['para'], $asunto, $html, $texto, $adjuntos, (int)$c['prueba'] ? 'cobro_prueba' : 'cobro', $cobroId, $uid, 'facturacion', (string)$c['cc']);
         $pdo->prepare("UPDATE cobros_programados SET estado = 'enviado', enviado_en = NOW(), error = NULL WHERE id = ?")->execute([$cobroId]);
+        // Las facturas adjuntas quedan como «Enviada al cliente» (las pruebas no cuentan)
+        if (!(int)$c['prueba'])
+            $pdo->prepare("UPDATE facturas f JOIN cobros_programados_facturas x ON x.factura_id = f.id SET f.enviada_receptor = 1 WHERE x.cobro_id = ? AND f.cliente_id = ?")->execute([$cobroId, $cid]);
     } catch (Throwable $e) {
         // Hasta 3 intentos automáticos; después queda en «error» para revisarlo
         $pdo->prepare("UPDATE cobros_programados SET estado = IF(intentos >= 3, 'error', 'programado'), error = ? WHERE id = ?")

@@ -78,6 +78,23 @@ $stmtFacturas = $pdo->prepare("
 $stmtFacturas->execute($params);
 $facturas = $stmtFacturas->fetchAll();
 
+// Envíos por correo de cada factura (Cobros por correo): el programado pendiente manda; si no, el último enviado o con error
+$enviosCorreo = [];
+try {
+    $stEnv = $pdo->prepare("SELECT x.factura_id, c.estado, c.programado_para, c.enviado_en FROM cobros_programados_facturas x
+                            JOIN cobros_programados c ON c.id = x.cobro_id
+                            WHERE c.cliente_id = ? AND c.prueba = 0 AND c.estado IN ('programado','enviando','enviado','error')
+                            ORDER BY c.programado_para");
+    $stEnv->execute([$cliente_id]);
+    foreach ($stEnv->fetchAll(PDO::FETCH_ASSOC) as $ev) {
+        $prev = $enviosCorreo[$ev['factura_id']] ?? null;
+        $peso = ['programado' => 3, 'enviando' => 3, 'error' => 2, 'enviado' => 1][$ev['estado']];
+        if (!$prev || $peso > $prev['peso'] || ($peso === $prev['peso'] && $ev['programado_para'] >= $prev['programado_para'])) $enviosCorreo[$ev['factura_id']] = $ev + ['peso' => $peso];
+    }
+} catch (Throwable $e) {
+    $enviosCorreo = [];   // módulo de cobros no instalado
+}
+
 if ($caix) {
 	$stmtUltimo = $pdo->prepare("SELECT ultimo_correlativo FROM cai_rangos WHERE id = ?");
 	$stmtUltimo->execute([$caix]);
@@ -1390,6 +1407,12 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 							<td class="fh-select-col"><input type="checkbox" class="fh-row-check fh-row-select"
 									data-factura-id="<?= $f['id'] ?>" data-receptor-id="<?= (int)$f['receptor_id'] ?>" data-estado="<?= htmlspecialchars($f['estado']) ?>"></td>
 							<td><span class="corr-mono" data-col="corr"><?= htmlspecialchars($f['correlativo']) ?></span>
+								<?php if ($ev = $enviosCorreo[$f['id']] ?? null):
+									$evTxt = in_array($ev['estado'], ['programado', 'enviando'], true) ? ['bi-clock-history text-primary', 'Envío por correo programado para el ' . date('d/m/Y g:i a', strtotime($ev['programado_para']))]
+										: ($ev['estado'] === 'enviado' ? ['bi-envelope-check text-success', 'Enviada por correo el ' . date('d/m/Y g:i a', strtotime($ev['enviado_en'] ?: $ev['programado_para']))]
+										: ['bi-exclamation-triangle text-danger', 'El envío por correo falló: revísalo en Cobros por correo']); ?>
+									<a href="cobros_programados" class="ms-1 text-decoration-none" title="<?= htmlspecialchars($evTxt[1]) ?>" aria-label="<?= htmlspecialchars($evTxt[1]) ?>"><i class="bi <?= $evTxt[0] ?>"></i></a>
+								<?php endif; ?>
 							</td>
 							<td data-col="fecha"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
 							<td data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></td>
