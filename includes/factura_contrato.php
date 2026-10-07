@@ -2,16 +2,27 @@
 /** Contratos facturables de la empresa; incluye históricos y receptores de turnos rotativos. */
 function facturaContratosDisponibles(PDO $pdo, int $cid): array
 {
-    $st = $pdo->prepare("SELECT c.id, c.nombre_contrato, c.receptor_id, c.tipo_contrato, c.estado,
-        r.receptor_id AS receptor_rotativo
+    $st = $pdo->prepare("SELECT c.id, c.nombre_contrato, c.receptor_id, c.tipo_contrato, c.estado, c.monto, c.frecuencia_meses,
+        r.receptor_id AS receptor_rotativo, r.monto AS monto_rotativo
         FROM contratos c LEFT JOIN contratos_clientes_rotativos r ON r.contrato_id=c.id AND r.activo=1
         WHERE c.cliente_id=? AND c.tipo_contrato<>'sin_factura' ORDER BY c.nombre_contrato, c.id");
     $st->execute([$cid]);
     $out = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $id = (int)$r['id'];
-        if (!isset($out[$id])) $out[$id] = ['id'=>$id,'nombre'=>$r['nombre_contrato'] ?: 'Contrato #'.$id,'estado'=>$r['estado'],'receptores'=>[(int)$r['receptor_id']]];
-        if ($r['tipo_contrato']==='rotativo' && $r['receptor_rotativo']) $out[$id]['receptores'][]=(int)$r['receptor_rotativo'];
+        if (!isset($out[$id])) $out[$id] = ['id'=>$id,'nombre'=>$r['nombre_contrato'] ?: 'Contrato #'.$id,'estado'=>$r['estado'],'receptores'=>[(int)$r['receptor_id']], 'etiquetas'=>[]];
+        $periodo = match ($r['tipo_contrato']) {
+            'proyecto' => 'total del proyecto',
+            'periodico' => 'cada ' . max(1, (int)$r['frecuencia_meses']) . ' mes(es)',
+            'rotativo' => 'por turno',
+            default => 'mensual',
+        };
+        $etiqueta = fn($monto) => '#' . $id . ' · ' . $out[$id]['nombre'] . ' — L ' . number_format((float)$monto, 2) . ' (' . $periodo . ')' . ($r['estado'] !== 'activo' ? ' · ' . $r['estado'] : '');
+        if (!isset($out[$id]['etiquetas'][(int)$r['receptor_id']])) $out[$id]['etiquetas'][(int)$r['receptor_id']] = $etiqueta($r['monto']);
+        if ($r['tipo_contrato']==='rotativo' && $r['receptor_rotativo']) {
+            $out[$id]['receptores'][]=(int)$r['receptor_rotativo'];
+            $out[$id]['etiquetas'][(int)$r['receptor_rotativo']]=$etiqueta($r['monto_rotativo']);
+        }
     }
     return array_values($out);
 }

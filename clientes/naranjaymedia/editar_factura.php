@@ -288,7 +288,7 @@ require_once '../../includes/templates/header.php';
 				<div class="fe-card">
 					<div class="fe-card-header"><i class="bi bi-person-fill text-primary"></i>Cliente y Contrato</div>
 					<div class="fe-card-body">
-                        <div class="row g-3"><div class="col-md-6">
+                        <div class="row g-3"><div class="col-12">
                         <label for="receptorSelect" class="fe-form-label">Cliente (Receptor)</label>
 						<select name="receptor_id" id="receptorSelect" class="form-select" data-buscar
 							data-original="<?= $factura['receptor_id'] ?>" <?= $puedeEditarReceptor ? '' : 'disabled' ?>>
@@ -309,12 +309,12 @@ require_once '../../includes/templates/header.php';
 							<small class="text-muted"><i class="bi bi-lock me-1"></i>El receptor no se puede cambiar al
 								editar una factura.</small>
 						<?php endif; ?>
-                        </div><div class="col-md-6">
+                        </div><div class="col-12">
                         <label for="contratoSelect" class="fe-form-label">Contrato asociado <span class="text-muted">Opcional</span></label>
                         <select name="contrato_id" id="contratoSelect" class="form-select" data-buscar <?= $es_admin ? '' : 'disabled' ?>>
                             <option value="">— Sin contrato (factura directa) —</option>
                             <?php foreach ($contratosEdicion as $ct): if (!in_array((int)$factura['receptor_id'], $ct['receptores'], true)) continue; ?>
-                            <option value="<?= $ct['id'] ?>" <?= (int)$factura['contrato_id'] === $ct['id'] ? 'selected' : '' ?>><?= htmlspecialchars('#'.$ct['id'].' · '.$ct['nombre'].' · '.$ct['estado']) ?></option>
+                            <option value="<?= $ct['id'] ?>" <?= (int)$factura['contrato_id'] === $ct['id'] ? 'selected' : '' ?>><?= htmlspecialchars($ct['etiquetas'][(int)$factura['receptor_id']] ?? '#'.$ct['id'].' · '.$ct['nombre'].' · '.$ct['estado']) ?></option>
                             <?php endforeach; ?>
                         </select>
                         <div class="form-text" id="contratoAyuda">Selecciona el contrato al que corresponde o «Sin contrato». La asociación se guarda al guardar la factura y no cambia sus productos ni importes.</div>
@@ -809,7 +809,7 @@ require_once '../../includes/templates/header.php';
         const sel = document.getElementById('contratoSelect'), previo = sel.value;
         sel.replaceChildren(new Option('— Sin contrato (factura directa) —', ''));
         contratosFactura.filter(c => c.receptores.includes(Number(receptor))).forEach(c => {
-            sel.add(new Option(`#${c.id} · ${c.nombre} · ${c.estado}`, c.id));
+            sel.add(new Option(c.etiquetas?.[Number(receptor)] || `#${c.id} · ${c.nombre} · ${c.estado}`, c.id));
         });
         if ([...sel.options].some(o => o.value === previo)) sel.value = previo;
         sel.dispatchEvent(new Event('change', {bubbles:true}));
