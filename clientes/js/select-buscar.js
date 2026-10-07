@@ -119,7 +119,7 @@
     const buscar = raiz => {
         if (raiz.matches && raiz.matches('select[data-buscar]')) armar(raiz);
         raiz.querySelectorAll && raiz.querySelectorAll('select[data-buscar]').forEach(s => {
-            if (!s.closest('[style*="display:none"], [style*="display: none"], template')) armar(s);   // plantillas ocultas: se arman al clonarlas
+            if (!s.closest('template, [id$="-template"], [data-plantilla]')) armar(s);   // plantillas de filas: se arman al clonarlas
         });
     };
     const iniciar = () => {

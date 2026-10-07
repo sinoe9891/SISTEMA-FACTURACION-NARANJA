@@ -10,7 +10,7 @@ function facturaContratosDisponibles(PDO $pdo, int $cid): array
     $out = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $id = (int)$r['id'];
-        if (!isset($out[$id])) $out[$id] = ['id'=>$id,'nombre'=>$r['nombre_contrato'] ?: 'Contrato #'.$id,'estado'=>$r['estado'],'receptores'=>[(int)$r['receptor_id']], 'etiquetas'=>[]];
+        if (!isset($out[$id])) $out[$id] = ['id'=>$id,'nombre'=>$r['nombre_contrato'] ?: 'Contrato #'.$id,'estado'=>$r['estado'],'receptores'=>[(int)$r['receptor_id']], 'etiquetas'=>[], 'montos'=>[]];
         $periodo = match ($r['tipo_contrato']) {
             'proyecto' => 'total del proyecto',
             'periodico' => 'cada ' . max(1, (int)$r['frecuencia_meses']) . ' mes(es)',
@@ -18,10 +18,14 @@ function facturaContratosDisponibles(PDO $pdo, int $cid): array
             default => 'mensual',
         };
         $etiqueta = fn($monto) => '#' . $id . ' · ' . $out[$id]['nombre'] . ' — L ' . number_format((float)$monto, 2) . ' (' . $periodo . ')' . ($r['estado'] !== 'activo' ? ' · ' . $r['estado'] : '');
-        if (!isset($out[$id]['etiquetas'][(int)$r['receptor_id']])) $out[$id]['etiquetas'][(int)$r['receptor_id']] = $etiqueta($r['monto']);
+        if (!isset($out[$id]['etiquetas'][(int)$r['receptor_id']])) {
+            $out[$id]['etiquetas'][(int)$r['receptor_id']] = $etiqueta($r['monto']);
+            $out[$id]['montos'][(int)$r['receptor_id']] = (float)$r['monto'];
+        }
         if ($r['tipo_contrato']==='rotativo' && $r['receptor_rotativo']) {
             $out[$id]['receptores'][]=(int)$r['receptor_rotativo'];
             $out[$id]['etiquetas'][(int)$r['receptor_rotativo']]=$etiqueta($r['monto_rotativo']);
+            $out[$id]['montos'][(int)$r['receptor_rotativo']]=(float)$r['monto_rotativo'];
         }
     }
     return array_values($out);

@@ -67,8 +67,10 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
     if (!$stmt->fetchColumn()) throw new Exception("Establecimiento inválido para este cliente.");
 
     if ($contrato_id) {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM contratos WHERE id = ? AND cliente_id = ? AND receptor_id = ? AND estado = 'activo'");
-        $stmt->execute([$contrato_id, $cliente_id, $receptor_id]);
+        // Del cliente, o de una de las empresas de un contrato rotativo (igual que al editar la factura)
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM contratos c WHERE c.id = ? AND c.cliente_id = ? AND c.estado = 'activo' AND c.tipo_contrato <> 'sin_factura'
+            AND (c.receptor_id = ? OR (c.tipo_contrato = 'rotativo' AND EXISTS (SELECT 1 FROM contratos_clientes_rotativos r WHERE r.contrato_id = c.id AND r.receptor_id = ? AND r.activo = 1)))");
+        $stmt->execute([$contrato_id, $cliente_id, $receptor_id, $receptor_id]);
         if (!$stmt->fetchColumn()) throw new Exception("El contrato seleccionado no corresponde a este cliente.");
     }
 

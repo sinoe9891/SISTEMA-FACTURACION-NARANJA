@@ -44,16 +44,12 @@ if ($get_receptor_id) {
     $stmtProd->execute([$cliente_id]);
     $productos_iniciales = $stmtProd->fetchAll(PDO::FETCH_ASSOC);
 
-    $stmtCt = $pdo->prepare("SELECT c.id, c.nombre_contrato, c.monto, c.dia_pago,
-        GROUP_CONCAT(p.nombre ORDER BY p.nombre SEPARATOR ' + ') AS servicios
-        FROM contratos c
-        LEFT JOIN contratos_servicios cs ON cs.contrato_id=c.id
-        LEFT JOIN productos_clientes  p  ON p.id=cs.producto_id
-        WHERE c.receptor_id=? AND c.cliente_id=? AND c.estado='activo'
-        GROUP BY c.id ORDER BY c.nombre_contrato ASC");
-    $stmtCt->execute([$get_receptor_id, $cliente_id]);
-    $contratos_iniciales = $stmtCt->fetchAll(PDO::FETCH_ASSOC);
 }
+// Contratos que se pueden facturar: misma lista y mismo texto que en Editar factura (incluye los rotativos)
+require_once '../../includes/factura_contrato.php';
+$contratosFactura = array_values(array_filter(facturaContratosDisponibles($pdo, (int)$cliente_id), fn($c) => $c['estado'] === 'activo'));
+if ($get_receptor_id)
+    $contratos_iniciales = array_values(array_filter($contratosFactura, fn($c) => in_array($get_receptor_id, $c['receptores'], true)));
 
 require_once '../../includes/templates/header.php';
 ?>
@@ -312,11 +308,8 @@ require_once '../../includes/templates/header.php';
                                 <select name="contrato_id" id="contrato_id" class="form-select" data-buscar>
                                     <option value="">— Sin contrato (factura directa) —</option>
                                     <?php foreach ($contratos_iniciales as $ct): ?>
-                                        <option value="<?= $ct['id'] ?>" data-monto="<?= $ct['monto'] ?>"
-                                            <?= $ct['id'] == $get_contrato_id ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($ct['nombre_contrato']) ?><?= $ct['servicios'] ? ' — ' . htmlspecialchars($ct['servicios']) : '' ?>
-                                            — L <?= number_format((float)$ct['monto'], 2) ?>
-                                        </option>
+                                        <option value="<?= $ct['id'] ?>" data-monto="<?= $ct['montos'][$get_receptor_id] ?? 0 ?>"
+                                            <?= $ct['id'] == $get_contrato_id ? 'selected' : '' ?>><?= htmlspecialchars($ct['etiquetas'][$get_receptor_id]) ?></option>
                                     <?php endforeach; ?>
                                 </select>
                                 <div class="form-text">Selecciona el contrato al que corresponde o «Sin contrato». Asociarla facilita el seguimiento mensual desde Contratos.</div>
@@ -463,6 +456,7 @@ require_once '../../includes/templates/header.php';
 
 <script>
     const CLIENTE_ID = <?= json_encode($cliente_id) ?>;
+    const CONTRATOS_FACTURA = <?= json_encode($contratosFactura, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
     let productoIndex = 1;
 
     /* ── Cambio de receptor ──────────────────────────────────────────────────── */
@@ -492,19 +486,16 @@ require_once '../../includes/templates/header.php';
                 });
             }).catch(() => Swal.fire('Error', 'No se pudieron cargar los productos.', 'error'));
 
-        fetch(`../../includes/api/contratos_por_receptor.php?cliente_id=${CLIENTE_ID}&receptor_id=${rId}`)
-            .then(r => r.json()).then(cts => {
-                if (cts.length > 0) {
-                    bloque.style.display = 'block';
-                    cts.forEach(ct => {
-                        const o = new Option(
-                            `${ct.nombre_contrato}${ct.servicios_nombres?' — '+ct.servicios_nombres:''} — L ${parseFloat(ct.monto).toFixed(2)}`,
-                            ct.id);
-                        o.dataset.monto = ct.monto;
-                        selCt.appendChild(o);
-                    });
-                }
-            }).catch(() => {});
+        // Mismo texto que en Editar factura: «#id · nombre — L monto (mensual)»
+        const cts = CONTRATOS_FACTURA.filter(c => c.receptores.includes(Number(rId)));
+        if (cts.length > 0) {
+            bloque.style.display = 'block';
+            cts.forEach(c => {
+                const o = new Option(c.etiquetas[Number(rId)] || `#${c.id} · ${c.nombre}`, c.id);
+                o.dataset.monto = c.montos?.[Number(rId)] ?? 0;
+                selCt.appendChild(o);
+            });
+        }
     });
 
     /* ── Seleccionar producto → prellenar precio ─────────────────────────────── */
