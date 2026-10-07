@@ -4015,6 +4015,7 @@ document.addEventListener('click', e => {
         });
     })();
 </script>
+<script src="../../clientes/js/bouchers-descarga.js?v=<?= @filemtime(__DIR__ . '/../js/bouchers-descarga.js') ?>"></script>
 <script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
 <script>
     /* ══ HISTORIAL: filtros por fecha y monto, total del filtro, selección y bouchers ══ */
@@ -4050,15 +4051,9 @@ document.addEventListener('click', e => {
         $('hLimpiar').addEventListener('click', () => { ['hDesde', 'hHasta', 'hMin', 'hMax', 'hBuscar'].forEach(id => $(id).value = ''); refrescar(); });
         todos?.addEventListener('change', () => { sels.forEach(c => c.checked = todos.checked && pasa(c.closest('tr'))); pintar(); });
         sels.forEach(c => c.addEventListener('change', pintar));
-        const bajar = zip => {
-            const ids = sels.filter(c => c.checked).map(c => c.value);
-            if (!ids.length) return;
-            const url = 'boucher_pdf.php?ids=' + ids.join(',') + (zip ? '&formato=zip' : '&vista=1');
-            if (zip) { Swal.fire({ title: 'Generando ZIP…', text: `${ids.length} boucher(s)`, timer: 3500, showConfirmButton: false, didOpen: () => Swal.showLoading() }); location.href = url; }
-            else window.open(url, '_blank');
-        };
-        $('hSelPdf')?.addEventListener('click', () => bajar(false));
-        $('hSelZip')?.addEventListener('click', () => bajar(true));
+        const elegidosIds = () => sels.filter(c => c.checked).map(c => c.value);
+        $('hSelPdf')?.addEventListener('click', () => bouchersPdf(elegidosIds()));
+        $('hSelZip')?.addEventListener('click', () => bouchersZip(elegidosIds()));
         pintar();
     })();
 </script>

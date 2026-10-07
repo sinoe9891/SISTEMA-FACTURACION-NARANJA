@@ -19,6 +19,36 @@ if (!function_exists('esGastoNomina')) {   // normalmente viene de session.php; 
 const BOUCHER_MAX = 400;   // por descarga (un año completo cabe)
 const BOUCHER_TIPOS = ['' => 'Todos los pagos', 'nomina' => 'Solo nómina (colaboradores)', 'otros' => 'Otros gastos'];
 
+/**
+ * Captura del comprobante lista para el PDF: se reduce a máx. 1100 × 900 px y se pasa a JPEG (calidad 82) con fondo
+ * blanco. Las capturas originales (hasta 1920 px) hacían cada boucher lento y pesado. Se guarda en caché por archivo.
+ */
+function boucherCaptura(string $ruta): string
+{
+    if (!is_file($ruta)) return '';
+    $mime = (string)(new finfo(FILEINFO_MIME_TYPE))->file($ruta);
+    if (!str_starts_with($mime, 'image/')) return '';
+    $orig = fn() => 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($ruta));
+    if (!function_exists('imagecreatefromstring')) return $orig();
+    $dir = sys_get_temp_dir() . '/bouchers_cache/';
+    $cache = $dir . md5($ruta . '|' . filemtime($ruta) . '|' . filesize($ruta)) . '.jpg';
+    if (!is_file($cache)) {
+        [$w, $h] = @getimagesize($ruta) ?: [0, 0];
+        if (!$w || ($w <= 1100 && $h <= 900 && filesize($ruta) < 250000)) return $orig();   // ya es liviana
+        $src = @imagecreatefromstring((string)file_get_contents($ruta));
+        if (!$src) return $orig();
+        $k = min(1, 1100 / $w, 900 / $h);
+        $nw = max(1, (int)round($w * $k)); $nh = max(1, (int)round($h * $k));
+        $dst = imagecreatetruecolor($nw, $nh);
+        imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
+        if (!is_dir($dir)) @mkdir($dir, 0700, true);
+        if (!@imagejpeg($dst, $cache, 82)) return $orig();
+        imagedestroy($src); imagedestroy($dst);
+    }
+    return 'data:image/jpeg;base64,' . base64_encode(file_get_contents($cache));
+}
+
 /** Filtros de la página de bouchers (por defecto: el mes en curso). */
 function boucherFiltros(array $g): array
 {
@@ -130,7 +160,7 @@ function boucherDatos(array $ctx, array $g): array
     $compPdf = false;
     foreach (array_filter([$g['archivo_adjunto'] ? $ctx['uploads'] . 'comprobantes_nomina/' . $g['archivo_adjunto'] : null,
                            $g['archivo_adjunto'] ? $ctx['uploads'] . 'gastos/' . basename($g['archivo_adjunto']) : null]) as $r) {
-        if (is_file($r)) { $comp = ($ctx['b64'])($r); $compPdf = !$comp; break; }
+        if (is_file($r)) { $comp = boucherCaptura($r); $compPdf = !$comp; break; }
     }
     // Desglose: descuentos (cuotas de préstamos/adelantos) y extras (bonos/viáticos) aplicados en este pago
     $desc = $extra = [];

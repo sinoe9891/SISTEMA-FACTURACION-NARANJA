@@ -118,6 +118,7 @@ require_once '../../includes/templates/header.php';
     <div class="modal-body p-0"><iframe id="bFrame" title="Vista previa del boucher" style="width:100%;height:78vh;border:0"></iframe></div>
 </div></div></div>
 
+<script src="../../clientes/js/bouchers-descarga.js?v=<?= @filemtime(__DIR__ . '/../js/bouchers-descarga.js') ?>"></script>
 <script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
 <script>
 (() => {
@@ -157,17 +158,12 @@ require_once '../../includes/templates/header.php';
     todos?.addEventListener('change', () => { sels.forEach(c => c.checked = todos.checked); pintarSel(); });
     sels.forEach(c => c.addEventListener('change', pintarSel));
     const max = <?= BOUCHER_MAX ?>;
-    const bajar = zip => {
-        const ids = elegidos();
-        if (ids.length > max) return Swal.fire('Demasiados', `Máximo ${max} bouchers por descarga.`, 'info');
-        const url = 'boucher_pdf.php?ids=' + ids.join(',') + (zip ? '&formato=zip' : '&vista=1');
-        if (zip) { Swal.fire({ title: 'Generando ZIP…', text: `${ids.length} PDF; puede tardar unos segundos.`, timer: 4000, showConfirmButton: false, didOpen: () => Swal.showLoading() }); location.href = url; }
-        else window.open(url, '_blank');
-    };
-    document.getElementById('bSelPdf').addEventListener('click', () => bajar(false));
-    document.getElementById('bSelZip').addEventListener('click', () => bajar(true));
+    const elegidosIds = () => sels.filter(c => c.checked).map(c => c.value);
+    document.getElementById('bSelPdf').addEventListener('click', () => bouchersPdf(elegidosIds()));
+    document.getElementById('bSelZip').addEventListener('click', () => bouchersZip(elegidosIds()));
     // El ZIP tarda: aviso mientras se genera
-    document.getElementById('btnZip')?.addEventListener('click', () => Swal.fire({ title: 'Generando ZIP…', text: 'Un PDF por pago; puede tardar unos segundos.', timer: 4000, showConfirmButton: false, didOpen: () => Swal.showLoading() }));
+    // «Descargar ZIP» (todos los del filtro): por partes, con barra de progreso
+    document.getElementById('btnZip')?.addEventListener('click', e => { e.preventDefault(); bouchersZip(sels.map(c => c.value)); });
 })();
 </script>
 

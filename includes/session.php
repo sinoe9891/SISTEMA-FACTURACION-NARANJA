@@ -124,7 +124,7 @@ const ROL_NOMINA_ARCHIVOS = [
     // Acciones (clientes/<empresa>/includes/)
     'colaborador_guardar', 'colaborador_actualizar', 'colaborador_cuotas_info', 'colaborador_pago_guardar',
     'prestamo_guardar', 'prestamo_editar', 'prestamo_cancelar', 'prestamo_eliminar', 'prestamo_cuota_pagar', 'prestamo_cuota_editar',
-    'nomina_pago_accion', 'correo_accion', 'colaborador_firma', 'boucher_pdf', 'bouchers',
+    'nomina_pago_accion', 'correo_accion', 'colaborador_firma', 'boucher_pdf', 'boucher_lote', 'bouchers',
 ];
 if (USUARIO_ROL === 'nomina' && !in_array(basename($_SERVER['SCRIPT_NAME'] ?? '', '.php'), ROL_NOMINA_ARCHIVOS, true)) {
     $__esAccion = str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/includes/') || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET';

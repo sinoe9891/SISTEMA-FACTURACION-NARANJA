@@ -192,6 +192,7 @@ require_once '../../includes/templates/header.php';
     </div>
 </div>
 
+<script src="../../clientes/js/bouchers-descarga.js?v=<?= @filemtime(__DIR__ . '/../js/bouchers-descarga.js') ?>"></script>
 <script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
 <script src="../../clientes/js/nomina-pago.js?v=<?= @filemtime(__DIR__ . '/../js/nomina-pago.js') ?>"></script>
 <script>
@@ -216,16 +217,9 @@ require_once '../../includes/templates/header.php';
     [pMin, pMax, pBuscar].forEach(i => i.addEventListener('input', () => { tPagos.refrescar(); pintarSel(); }));
     todos.addEventListener('change', () => { sels.forEach(c => c.checked = todos.checked && pasa(c.closest('tr'))); pintarSel(); });
     sels.forEach(c => c.addEventListener('change', pintarSel));
-    const bajarSel = zip => {
-        const ids = sels.filter(c => c.checked).map(c => c.value);
-        if (!ids.length) return;
-        if (ids.length > 400) return Swal.fire('Demasiados', 'Máximo 400 bouchers por descarga.', 'info');
-        const url = 'boucher_pdf.php?ids=' + ids.join(',') + (zip ? '&formato=zip' : '&vista=1');
-        if (zip) { Swal.fire({ title: 'Generando ZIP…', text: `${ids.length} boucher(s)`, timer: 3500, showConfirmButton: false, didOpen: () => Swal.showLoading() }); location.href = url; }
-        else window.open(url, '_blank');
-    };
-    document.getElementById('pSelPdf').addEventListener('click', () => bajarSel(false));
-    document.getElementById('pSelZip').addEventListener('click', () => bajarSel(true));
+    const elegidosIds = () => sels.filter(c => c.checked).map(c => c.value);
+    document.getElementById('pSelPdf').addEventListener('click', () => bouchersPdf(elegidosIds()));
+    document.getElementById('pSelZip').addEventListener('click', () => bouchersZip(elegidosIds()));
     pintarSel();
     // Los filtros se aplican al cambiar (las pestañas de abajo no recargan)
     document.querySelectorAll('#formFiltros select, #formFiltros input[type=date]').forEach(el => el.addEventListener('change', () => document.getElementById('formFiltros').submit()));

@@ -1843,3 +1843,22 @@ suite('Colaborador sin salario', function () {
     check('no acepta salario negativo', ($r['json']['success'] ?? true) === false);
     $pdo->exec("DELETE FROM colaboradores WHERE cliente_id = 2 AND nombre IN ('QA Sin', 'QA Neg')");
 });
+
+suite('ZIP de bouchers por partes (barra de progreso)', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $ids = $pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND estado = 'pagado' AND descripcion LIKE 'Sueldo %' ORDER BY id DESC LIMIT 9")->fetchAll(PDO::FETCH_COLUMN);
+    $r = $c->post('boucher_lote.php', ['accion' => 'iniciar', 'ids' => implode(',', $ids) . ',999999']);
+    check('inicia la descarga con los pagos válidos', ($r['json']['success'] ?? false) && ($r['json']['total'] ?? 0) === count($ids), $r['body']);
+    $token = $r['json']['token'] ?? ''; $pasos = 0; $hechos = 0;
+    while ($token && $hechos < count($ids) && $pasos < 10) { $p = $c->post('boucher_lote.php', ['accion' => 'paso', 'token' => $token]); $hechos = $p['json']['hechos'] ?? 99; $pasos++; }
+    check('avanza por partes hasta terminar', $hechos === count($ids) && $pasos === (int)ceil(count($ids) / 4), "hechos=$hechos pasos=$pasos");
+    $o = login('qa.ccic@local.test');
+    check('otro usuario no puede usar esa descarga', ($o->post('boucher_lote.php', ['accion' => 'paso', 'token' => $token])['json']['success'] ?? true) === false);
+    $z = $c->get('boucher_lote.php', ['descargar' => $token]);
+    $f = tempnam(sys_get_temp_dir(), 'zl'); file_put_contents($f, $z['body']);
+    $zip = new ZipArchive(); $ok = $zip->open($f) === true;
+    check('descarga un ZIP con un PDF por pago', $ok && $zip->numFiles === count($ids) && str_starts_with((string)$zip->getFromIndex(0), '%PDF'), $ok ? $zip->numFiles . ' archivos' : substr($z['body'], 0, 150));
+    check('borra los temporales al descargar', ($c->get('boucher_lote.php', ['descargar' => $token])['json']['success'] ?? true) === false);
+    check('un facturador no puede generar', (login('qa.facturador@local.test')->post('boucher_lote.php', ['accion' => 'iniciar', 'ids' => implode(',', $ids)])['json']['success'] ?? true) === false);
+});
