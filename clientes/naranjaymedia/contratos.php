@@ -719,6 +719,18 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
         min-width: 190px;
     }
 
+    /* Casilla para eliminar (administradores): angosta; el cliente queda con su ancho */
+    .ct-table th.ct-col-sel,
+    .ct-table td.ct-col-sel {
+        min-width: 0;
+        width: 36px;
+        padding-right: 0 !important;
+    }
+
+    .ct-table td.ct-col-sel + td {
+        min-width: 190px;
+    }
+
     #ctTable th,
     #ctTable td {
         padding-left: .55rem !important;
@@ -966,12 +978,16 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
             <div class="ct-card-header">
                 <span class="ct-card-title"><i class="bi bi-calendar-check-fill"></i> Próximas Fechas de Cobro —
                     <?= $mesesTitulo[(int)date('n')] . ' ' . date('Y') ?></span>
-                <span class="ct-result-badge"><?= count($proximos) ?> activos</span>
+                <span class="d-flex align-items-center gap-2">
+                    <?php if ($ctEsAdmin): ?><button type="button" class="btn btn-sm btn-outline-danger ct-eliminar-sel" disabled><i class="bi bi-trash me-1"></i>Eliminar seleccionados <span class="ct-sel-n"></span></button><?php endif; ?>
+                    <span class="ct-result-badge"><?= count($proximos) ?> activos</span>
+                </span>
             </div>
             <div class="ct-table-wrap">
                 <table class="ct-table">
                     <thead>
                         <tr>
+                            <?php if ($ctEsAdmin): ?><th class="ct-col-sel"></th><?php endif; ?>
                             <th>Cliente</th>
                             <th>Servicio</th>
                             <th class="text-end">Monto</th>
@@ -1010,6 +1026,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                             }
                         ?>
                             <tr <?= $facturado ? 'class="table-success"' : '' ?>>
+                                <?php if ($ctEsAdmin): ?><td class="ct-col-sel"><input type="checkbox" class="form-check-input ct-sel" value="<?= (int)$p['id'] ?>" aria-label="Seleccionar contrato #<?= (int)$p['id'] ?>"></td><?php endif; ?>
                                 <td><?= $celdaCliente($p, false) ?></td>
                                 <td class="small text-muted"><div class="ct-clamp" title="<?= htmlspecialchars($p['producto_nombre']) ?>"><?= htmlspecialchars($p['producto_nombre']) ?></div></td>
                                 <td class="text-end fw-bold">L <?= number_format((float)($p['monto_proximo'] ?? $p['monto']), 2) ?></td>
@@ -1074,7 +1091,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
         </select>
         <span class="ct-result-badge" id="ctBadge"><?= $total_contratos ?> contratos</span>
         <?php if ($ctEsAdmin): ?>
-            <button type="button" class="btn btn-sm btn-outline-danger" id="ctEliminarSel" disabled><i class="bi bi-trash me-1"></i>Eliminar seleccionados <span id="ctSelN"></span></button>
+            <button type="button" class="btn btn-sm btn-outline-danger ct-eliminar-sel" id="ctEliminarSel" disabled><i class="bi bi-trash me-1"></i>Eliminar seleccionados <span class="ct-sel-n"></span></button>
         <?php endif; ?>
     </div>
 
@@ -1086,7 +1103,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
             <table class="ct-table" id="ctTable">
                 <thead>
                     <tr>
-                        <?php if ($ctEsAdmin): ?><th style="width:1%;cursor:default"><input type="checkbox" class="form-check-input" id="ctSelTodos" title="Marcar los de esta página"></th><?php endif; ?>
+                        <?php if ($ctEsAdmin): ?><th class="ct-col-sel" style="cursor:default"><input type="checkbox" class="form-check-input" id="ctSelTodos" title="Marcar los de esta página"></th><?php endif; ?>
                         <th data-col="0"><i class="bi bi-person me-1"></i>Cliente<i
                                 class="bi bi-arrow-up sort-icon"></i></th>
                         <th data-col="1"><i class="bi bi-box me-1"></i>Servicio<i class="bi bi-arrow-up sort-icon"></i>
@@ -1117,7 +1134,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                         $searchStr  = mb_strtolower('#' . $c['id'] . ' ' . $c['receptor_nombre'] . ' ' . implode(' ', $rotEmpresas[(int)$c['id']] ?? []) . ' ' . $c['nombre_contrato'] . ' ' . $c['producto_nombre'] . ' ' . $c['estado']);
                     ?>
                         <tr class="<?= $rowCls ?>" data-search="<?= htmlspecialchars($searchStr) ?>">
-                            <?php if ($ctEsAdmin): ?><td><input type="checkbox" class="form-check-input ct-sel" value="<?= (int)$c['id'] ?>" aria-label="Seleccionar contrato #<?= (int)$c['id'] ?>"></td><?php endif; ?>
+                            <?php if ($ctEsAdmin): ?><td class="ct-col-sel"><input type="checkbox" class="form-check-input ct-sel" value="<?= (int)$c['id'] ?>" aria-label="Seleccionar contrato #<?= (int)$c['id'] ?>"></td><?php endif; ?>
                             <td><?= $celdaCliente($c, true) ?></td>
                             <td>
                                 <div class="ct-clamp" data-col="servicio" title="<?= htmlspecialchars($c['producto_nombre']) ?>"><?= htmlspecialchars($c['producto_nombre']) ?></div>
@@ -1379,16 +1396,21 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 
     /* ── Eliminar contratos seleccionados ── */
     (() => {
-        const $btn = document.getElementById('ctEliminarSel');
-        if (!$btn) return;
-        const marcados = () => [...document.querySelectorAll('.ct-sel:checked')].map(i => +i.value);
-        const actualizar = () => { const n = marcados().length; $btn.disabled = !n; document.getElementById('ctSelN').textContent = n ? '(' + n + ')' : ''; };
-        document.getElementById('ctBody').addEventListener('change', e => { if (e.target.classList.contains('ct-sel')) actualizar(); });
-        document.getElementById('ctSelTodos').addEventListener('change', e => {
-            document.querySelectorAll('#ctBody tr').forEach(tr => { if (tr.style.display !== 'none') tr.querySelector('.ct-sel').checked = e.target.checked; });
+        const botones = document.querySelectorAll('.ct-eliminar-sel');
+        if (!botones.length) return;
+        // El mismo contrato puede estar en «Próximas fechas» y en «Todos»: se marca en las dos tablas a la vez
+        const marcados = () => [...new Set([...document.querySelectorAll('.ct-sel:checked')].map(i => +i.value))];
+        const actualizar = () => { const n = marcados().length; botones.forEach(b => { b.disabled = !n; b.querySelector('.ct-sel-n').textContent = n ? '(' + n + ')' : ''; }); };
+        document.addEventListener('change', e => {
+            if (!e.target.classList.contains('ct-sel')) return;
+            document.querySelectorAll('.ct-sel[value="' + e.target.value + '"]').forEach(i => i.checked = e.target.checked);
             actualizar();
         });
-        $btn.addEventListener('click', () => eliminarContratos(marcados()));
+        document.getElementById('ctSelTodos').addEventListener('change', e => {
+            document.querySelectorAll('#ctBody tr').forEach(tr => { if (tr.style.display !== 'none') document.querySelectorAll('.ct-sel[value="' + tr.querySelector('.ct-sel').value + '"]').forEach(i => i.checked = e.target.checked); });
+            actualizar();
+        });
+        botones.forEach(b => b.addEventListener('click', () => eliminarContratos(marcados())));
     })();
 
     /* ── Cancelar contrato ── */
