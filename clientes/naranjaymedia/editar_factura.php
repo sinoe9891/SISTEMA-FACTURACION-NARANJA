@@ -41,7 +41,8 @@ $stmtClientes = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cli
 $stmtClientes->execute([$cliente_id]);
 $clientes = $stmtClientes->fetchAll();
 
-$contratosEdicion = facturaContratosDisponibles($pdo, $cliente_id);
+// Solo contratos activos (los vencidos o cancelados no se ofrecen), salvo el que la factura ya tiene asociado
+$contratosEdicion = array_values(array_filter(facturaContratosDisponibles($pdo, $cliente_id), fn($c) => $c['estado'] === 'activo' || $c['id'] === (int)($factura['contrato_id'] ?? 0)));
 // Mantener visible una asociación histórica aunque ya no sea elegible para nuevas facturas.
 if (!empty($factura['contrato_id']) && !array_filter($contratosEdicion, fn($c) => $c['id']==(int)$factura['contrato_id'] && in_array((int)$factura['receptor_id'], $c['receptores'], true))) {
     $contratosEdicion[] = ['id'=>(int)$factura['contrato_id'], 'nombre'=>'Asociación actual (revisar contrato)', 'estado'=>'histórico', 'receptores'=>[(int)$factura['receptor_id']]];
