@@ -1263,8 +1263,10 @@ suite('Cobros por correo programados', function () {
     $ids = array_slice(array_column($r['json']['facturas'] ?? [], 'id'), 0, 2);
     $r = $c->get('cobros_programados', ['receptor_id' => $rid]);
     check('la página de cobros carga', $r['code'] === 200 && sinErroresPhp($r['body']), errorPhp($r['body']));
+    check('la copia (CC) trae los correos de «Responder a» de Facturación', str_contains($r['body'], 'const ccBase = ["gerencia@ejemplo.test","administracion@ejemplo.test"]'));
     $msg = $c->postJson('procesar_accion_factura.php', ['accion' => 'generar_mensaje', 'factura_ids' => $ids, 'tipo' => 'saldo_pendiente']);
     check('genera asunto y mensaje con la plantilla', ($msg['json']['success'] ?? false) && ($msg['json']['asunto'] ?? '') !== '', substr($msg['body'], 0, 200));
+    check('el saludo es «Buen día, equipo de …»', str_contains($msg['json']['mensaje'] ?? '', 'Buen día, equipo de '), substr($msg['json']['mensaje'] ?? '', 0, 80));
 
     $base = ['accion' => 'crear', 'receptor_id' => $rid, 'tipo' => 'saldo_pendiente', 'para' => 'cliente@ejemplo.test', 'cc' => 'copia@ejemplo.test',
              'asunto' => 'Saldo pendiente QA ✅', 'mensaje_html' => ($msg['json']['mensaje_html'] ?? 'Hola') . '<script>alert(1)</script>'];

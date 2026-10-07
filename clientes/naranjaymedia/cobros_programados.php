@@ -90,7 +90,7 @@ require_once '../../includes/templates/header.php';
                     <div class="small mt-1" id="cResumen"></div>
                 </div>
                 <div class="col-md-6"><label class="form-label">3. Para *</label><input class="form-control" name="para" id="cPara" placeholder="correo@cliente.com (varios separados por coma)" required></div>
-                <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="cCc" placeholder="opcional"><div class="form-text" id="cCcInfo">Se llena con los contactos del cliente marcados «Copiar en cobros». Varios correos separados por coma.</div></div>
+                <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="cCc" placeholder="opcional"><div class="form-text" id="cCcInfo">Se llena con los correos de «Responder a» de la cuenta Facturación y los contactos del cliente marcados «Copiar en cobros». Puedes editarlo; varios separados por coma.</div></div>
                 <div class="col-12"><label class="form-label d-flex justify-content-between">4. Asunto y mensaje *
                     <a href="#" id="btnGenerar" class="small fw-normal"><i class="bi bi-magic"></i> Generar con la plantilla</a></label>
                     <input class="form-control mb-2" name="asunto" id="cAsunto" required>
@@ -214,14 +214,18 @@ require_once '../../includes/templates/header.php';
 
     // CC: contactos generales del cliente + los del proyecto/contrato de las facturas marcadas.
     // Si el usuario escribe en el campo, ya no se reemplaza automáticamente.
+    // Siempre en copia: los correos de «Responder a» de la cuenta Facturación (Configuración → Correo)
+    const ccBase = <?= json_encode(array_values(array_filter(correoLista((string)($cfgFact['responder_a'] ?? ''))))) ?>;
     let contactos = [], ccManual = false;
     const $cc = document.getElementById('cCc');
     $cc.addEventListener('input', () => ccManual = true);
     function llenarCc() {
         if (ccManual) return;
         const ks = new Set([...$tb.querySelectorAll('input[type=checkbox]:checked')].map(i => i.dataset.contrato).filter(Boolean));
-        $cc.value = [...new Set(contactos.filter(c => !c.contrato_id || ks.has(String(c.contrato_id))).map(c => c.email))].join(', ');
+        const correos = [...ccBase, ...contactos.filter(c => !c.contrato_id || ks.has(String(c.contrato_id))).map(c => c.email)];
+        $cc.value = [...new Set(correos.map(c => c.trim().toLowerCase()).filter(Boolean))].join(', ');
     }
+    llenarCc();
     $tb.addEventListener('change', llenarCc);
     function marcar(fn) { $tb.querySelectorAll('input[type=checkbox]').forEach(i => i.checked = fn(i)); resumen(); llenarCc(); }
     document.getElementById('selConSaldo')?.addEventListener('click', e => { e.preventDefault(); marcar(i => Number(i.dataset.saldo) > 0); });

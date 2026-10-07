@@ -197,9 +197,8 @@ try {
 
 		$receptor_nombre = $facturasSel[0]['receptor_nombre'];
 		$contacto_nombre = trim($facturasSel[0]['contacto_nombre'] ?? '');
-		$saludo = $contacto_nombre !== ''
-			? 'Buen día, ' . $contacto_nombre . ':'
-			: 'Estimado equipo de ' . $receptor_nombre . ':';
+		// Saludo al equipo del cliente (el cobro suele ir a varias personas en copia)
+		$saludo = 'Buen día, equipo de ' . $receptor_nombre . ':';
 
 		// Saldo real de cada factura (descuenta abonos registrados en cuentas por cobrar)
 		$abonos = [];
