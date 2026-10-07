@@ -8,7 +8,7 @@
 #   dev/deploy_ftp.sh archivo1 archivo2 ...      → muestra la lista, pide confirmación y sube
 #   dev/deploy_ftp.sh --probar                   → solo prueba la conexión (lista la carpeta remota)
 #
-# Nunca sube config.php, la carpeta dev/, uploads/ ni archivos .sql.
+# Nunca sube config.php, la carpeta dev/ ni archivos .sql. Archivos de uploads/ solo con DEPLOY_UPLOADS=1 (y solo si no existen).
 set -euo pipefail
 
 HOST="50.62.222.52"
@@ -38,7 +38,11 @@ archivos=()
 for f in "$@"; do
     rel="${f#$RAIZ/}"
     case "$rel" in
-        config.php|*/config.php|dev/*|*uploads/*|*.sql) echo "  ✗ omitido (protegido): $rel"; continue ;;
+        config.php|*/config.php|dev/*|*.sql) echo "  ✗ omitido (protegido): $rel"; continue ;;
+        *uploads/*)
+            # Comprobantes nuevos: solo con DEPLOY_UPLOADS=1 y nunca reemplaza uno que ya exista en el servidor
+            if [ "${DEPLOY_UPLOADS:-}" != "1" ]; then echo "  ✗ omitido (protegido): $rel"; continue; fi
+            if "${CURL[@]}" --head "ftp://$NOMBRE_TLS${REMOTO%/}/$rel" >/dev/null 2>&1; then echo "  ✗ ya existe en el servidor, no se reemplaza: $rel"; continue; fi ;;
     esac
     [ -f "$RAIZ/$rel" ] || { echo "  ✗ no existe: $rel"; exit 1; }
     archivos+=("$rel")
