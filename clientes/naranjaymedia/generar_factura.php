@@ -292,7 +292,7 @@ require_once '../../includes/templates/header.php';
                     <div class="fv-card-header"><i class="bi bi-person-fill text-primary"></i>Cliente y Contrato</div>
                     <div class="fv-card-body">
                         <div class="row g-3">
-                            <div class="col-md-6">
+                            <div class="col-12">
                                 <label class="fv-form-label">Cliente (Receptor) <span
                                         class="text-danger">*</span></label>
                                 <select name="receptor_id" id="receptor_id" class="form-select" required data-buscar>
@@ -304,12 +304,12 @@ require_once '../../includes/templates/header.php';
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-md-6" id="bloqueContrato"
+                            <div class="col-12" id="bloqueContrato"
                                 style="<?= empty($contratos_iniciales) ? 'display:none' : '' ?>">
                                 <label class="fv-form-label">Contrato asociado <span
                                         class="badge bg-light text-secondary border ms-1 fw-normal"
                                         style="text-transform:none;letter-spacing:0">Opcional</span></label>
-                                <select name="contrato_id" id="contrato_id" class="form-select">
+                                <select name="contrato_id" id="contrato_id" class="form-select" data-buscar>
                                     <option value="">— Sin contrato (factura directa) —</option>
                                     <?php foreach ($contratos_iniciales as $ct): ?>
                                         <option value="<?= $ct['id'] ?>" data-monto="<?= $ct['monto'] ?>"
@@ -319,8 +319,7 @@ require_once '../../includes/templates/header.php';
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <small class="text-muted"><i class="bi bi-info-circle fa-xs me-1"></i>Asociar facilita
-                                    el seguimiento mensual desde Contratos.</small>
+                                <div class="form-text">Selecciona el contrato al que corresponde o «Sin contrato». Asociarla facilita el seguimiento mensual desde Contratos.</div>
                             </div>
                         </div>
                     </div>

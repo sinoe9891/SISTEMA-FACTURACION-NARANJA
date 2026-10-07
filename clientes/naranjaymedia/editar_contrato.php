@@ -566,6 +566,12 @@ require_once '../../includes/templates/header.php';
                 style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.3);font-weight:600">
                 <i class="bi bi-arrow-left me-1"></i>Volver
             </a>
+            <?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?>
+                <button type="button" class="btn btn-sm" onclick="eliminarContratos([<?= (int)$contrato['id'] ?>], { despues: 'contratos' })"
+                    style="background:#dc2626;color:#fff;border:1px solid rgba(255,255,255,.3);font-weight:600" title="Eliminar el contrato (las facturas quedan sin contrato o pasan a otro)">
+                    <i class="bi bi-trash me-1"></i>Eliminar
+                </button>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -1405,4 +1411,5 @@ require_once '../../includes/templates/header.php';
     if (PLAN_INIT.length) planIniciar();
 </script>
 <?php endif; ?>
+<script src="../../clientes/js/contratos-eliminar.js?v=<?= @filemtime(__DIR__ . '/../js/contratos-eliminar.js') ?>"></script>
 <?php require_once '../../includes/templates/footer.php'; ?>

@@ -5,6 +5,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/templates/header.php';
 
+$ctEsAdmin = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);   // casillas para eliminar contratos
 $cliente_id = (int)(USUARIO_ROL === 'superadmin'
     ? ($_SESSION['cliente_seleccionado'] ?? 0)
     : CLIENTE_ID);
@@ -1072,6 +1073,9 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
             <option value="50">50/pág</option>
         </select>
         <span class="ct-result-badge" id="ctBadge"><?= $total_contratos ?> contratos</span>
+        <?php if ($ctEsAdmin): ?>
+            <button type="button" class="btn btn-sm btn-outline-danger" id="ctEliminarSel" disabled><i class="bi bi-trash me-1"></i>Eliminar seleccionados <span id="ctSelN"></span></button>
+        <?php endif; ?>
     </div>
 
     <div class="ct-card">
@@ -1082,6 +1086,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
             <table class="ct-table" id="ctTable">
                 <thead>
                     <tr>
+                        <?php if ($ctEsAdmin): ?><th style="width:1%;cursor:default"><input type="checkbox" class="form-check-input" id="ctSelTodos" title="Marcar los de esta página"></th><?php endif; ?>
                         <th data-col="0"><i class="bi bi-person me-1"></i>Cliente<i
                                 class="bi bi-arrow-up sort-icon"></i></th>
                         <th data-col="1"><i class="bi bi-box me-1"></i>Servicio<i class="bi bi-arrow-up sort-icon"></i>
@@ -1112,6 +1117,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                         $searchStr  = mb_strtolower('#' . $c['id'] . ' ' . $c['receptor_nombre'] . ' ' . implode(' ', $rotEmpresas[(int)$c['id']] ?? []) . ' ' . $c['nombre_contrato'] . ' ' . $c['producto_nombre'] . ' ' . $c['estado']);
                     ?>
                         <tr class="<?= $rowCls ?>" data-search="<?= htmlspecialchars($searchStr) ?>">
+                            <?php if ($ctEsAdmin): ?><td><input type="checkbox" class="form-check-input ct-sel" value="<?= (int)$c['id'] ?>" aria-label="Seleccionar contrato #<?= (int)$c['id'] ?>"></td><?php endif; ?>
                             <td><?= $celdaCliente($c, true) ?></td>
                             <td>
                                 <div class="ct-clamp" data-col="servicio" title="<?= htmlspecialchars($c['producto_nombre']) ?>"><?= htmlspecialchars($c['producto_nombre']) ?></div>
@@ -1228,6 +1234,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 </div>
 
 <script>
+    const CT_OFF = <?= $ctEsAdmin ? 1 : 0 ?>;
     /* ── Table engine ── */
     (() => {
         let query = '',
@@ -1253,7 +1260,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
         }
 
         function colTxt(r, i) {
-            const td = r.querySelectorAll('td')[i];
+            const td = r.querySelectorAll('td')[i + CT_OFF];   // CT_OFF: columna de casillas (administradores)
             return td ? (td.dataset.original || td.getAttribute('data-sort-val') || td.textContent).trim()
                 .toLowerCase() : '';
         }
@@ -1370,6 +1377,20 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
         render();
     })();
 
+    /* ── Eliminar contratos seleccionados ── */
+    (() => {
+        const $btn = document.getElementById('ctEliminarSel');
+        if (!$btn) return;
+        const marcados = () => [...document.querySelectorAll('.ct-sel:checked')].map(i => +i.value);
+        const actualizar = () => { const n = marcados().length; $btn.disabled = !n; document.getElementById('ctSelN').textContent = n ? '(' + n + ')' : ''; };
+        document.getElementById('ctBody').addEventListener('change', e => { if (e.target.classList.contains('ct-sel')) actualizar(); });
+        document.getElementById('ctSelTodos').addEventListener('change', e => {
+            document.querySelectorAll('#ctBody tr').forEach(tr => { if (tr.style.display !== 'none') tr.querySelector('.ct-sel').checked = e.target.checked; });
+            actualizar();
+        });
+        $btn.addEventListener('click', () => eliminarContratos(marcados()));
+    })();
+
     /* ── Cancelar contrato ── */
     document.querySelectorAll('.btn-cancelar').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1408,4 +1429,5 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
     });
 </script>
 
+<script src="../../clientes/js/contratos-eliminar.js?v=<?= @filemtime(__DIR__ . '/../js/contratos-eliminar.js') ?>"></script>
 <?php require_once '../../includes/templates/footer.php'; ?>
