@@ -11,7 +11,7 @@ try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception("Método no permitido.");
     // Nómina y gastos registra movimientos, transferencias y cheques; las cuentas y las anulaciones son de administradores
     $accionPedida = $_POST['accion'] ?? '';
-    $soloAdmin = ['cuenta_guardar', 'cuenta_estado', 'predeterminar', 'anular_movimiento', 'cheque_anular'];
+    $soloAdmin = ['cuenta_guardar', 'cuenta_estado', 'predeterminar', 'anular_movimiento', 'cheque_anular', 'tasa_clave'];
     if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true) && (USUARIO_ROL !== 'nomina' || in_array($accionPedida, $soloAdmin, true)))
         throw new Exception("Solo un administrador puede " . (in_array($accionPedida, $soloAdmin, true) ? 'administrar las cuentas o anular operaciones' : 'registrar operaciones bancarias') . ".");
     if (!bancosDisponible($pdo)) throw new Exception("El módulo de bancos no está instalado (falta sql/migraciones/2026-10-03_bancos.sql).");
@@ -74,6 +74,18 @@ try {
             if (!$col) throw new Exception("Falta la migración sql/migraciones/2026-10-03_cuenta_predeterminada.sql.");
             $pdo->prepare("UPDATE cuentas_bancarias SET predeterminada = (id = ?) WHERE cliente_id = ?")->execute([$cuenta['id'], $cid]);
             $mensaje = "Cuenta {$cuenta['banco']} {$cuenta['numero']} predeterminada.";
+            break;
+
+        case 'tasa_actualizar':
+            require_once '../../../includes/tasa_cambio.php';
+            $t = tasaActualizar($pdo, $cid);
+            $mensaje = $t['fuente'] === 'BCH' ? "Tasa del BCH: compra L {$t['compra']} · venta L {$t['venta']}." : "Tasa de referencia: L {$t['referencia']} por dólar." . (isset($t['aviso']) ? ' ' . $t['aviso'] : '');
+            break;
+
+        case 'tasa_clave':
+            require_once '../../../includes/tasa_cambio.php';
+            tasaGuardarClaveBch($pdo, $cid, (string)($_POST['clave'] ?? ''));
+            $mensaje = trim((string)($_POST['clave'] ?? '')) === '' ? 'Clave del BCH quitada: se usará la tasa de referencia.' : 'Clave del BCH guardada.';
             break;
 
         case 'movimiento':

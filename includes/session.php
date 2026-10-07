@@ -130,6 +130,7 @@ const ROL_NOMINA_ARCHIVOS = [
     'gasto_guardar', 'gasto_actualizar', 'gasto_marcar_pagado', 'gasto_eliminar',
     'categoria_gasto_guardar', 'categoria_gasto_actualizar', 'categoria_gasto_eliminar',
     'tarjeta_guardar', 'tarjeta_actualizar', 'tarjeta_eliminar', 'banco_accion',
+    'colaborador_salario',
 ];
 if (USUARIO_ROL === 'nomina' && !in_array(basename($_SERVER['SCRIPT_NAME'] ?? '', '.php'), ROL_NOMINA_ARCHIVOS, true)) {
     $__esAccion = str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/includes/') || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET';

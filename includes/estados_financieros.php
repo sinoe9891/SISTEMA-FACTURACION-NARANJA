@@ -4,6 +4,7 @@
  * Solo lectura: se calcula con lo que ya registra el sistema (facturas, cobros, gastos, bancos,
  * préstamos a colaboradores y anticipos de contratos). Toda la empresa (todos los establecimientos).
  */
+require_once __DIR__ . '/activos.php';
 
 /** Tabla existe (los módulos opcionales pueden no estar instalados). */
 function efHay(PDO $pdo, string $tabla): bool
@@ -39,10 +40,16 @@ function efResultados(PDO $pdo, int $cid, string $desde, string $hasta): array
 
     $st = $pdo->prepare("SELECT COALESCE(cg.nombre, 'Otros gastos') nombre, COALESCE(SUM(g.monto),0) total, COUNT(*) n
                          FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id = g.categoria_id
-                         WHERE g.cliente_id = ? AND g.estado <> 'anulado' AND g.fecha BETWEEN ? AND ?
+                         WHERE g.cliente_id = ? AND g.estado <> 'anulado' AND g.fecha BETWEEN ? AND ?" . gastoEsGastoSql($pdo, 'g') . "
                          GROUP BY COALESCE(cg.nombre, 'Otros gastos') ORDER BY total DESC");
     $st->execute([$cid, $desde, $hasta]);
     $gastos = $st->fetchAll(PDO::FETCH_ASSOC);
+    // Depreciación de activos fijos del período (gasto que no sale del banco)
+    $dep = activosDepreciacionPeriodo($pdo, $cid, $desde, $hasta);
+    if ($dep > 0) {
+        $gastos[] = ['nombre' => 'Depreciación de activos fijos', 'total' => $dep, 'n' => 0];
+        usort($gastos, fn($a, $b) => (float)$b['total'] <=> (float)$a['total']);
+    }
     $totalGastos = array_sum(array_column($gastos, 'total'));
 
     $rec = efRecibos($pdo, $cid, $desde, $hasta);
@@ -51,7 +58,7 @@ function efResultados(PDO $pdo, int $cid, string $desde, string $hasta): array
     return [
         'ventas' => $ventas, 'ventas_facturas' => $v['subtotal'], 'gravado' => $v['gravado'], 'exento' => $v['exento'], 'isv' => $v['isv'], 'facturas' => (int)$v['n'],
         'recibos' => $rec['total'], 'n_recibos' => $rec['n'],
-        'gastos' => $gastos, 'total_gastos' => (float)$totalGastos,
+        'gastos' => $gastos, 'total_gastos' => (float)$totalGastos, 'depreciacion' => $dep,
         'utilidad' => round($ventas - $totalGastos, 2),
     ];
 }
@@ -59,6 +66,9 @@ function efResultados(PDO $pdo, int $cid, string $desde, string $hasta): array
 /** Tasa L/US$ más reciente registrada en bancos (0 si no hay). */
 function efTasaReciente(PDO $pdo, int $cid): float
 {
+    // Primero la tasa del día (BCH compra o referencia); si no hay, la última usada en Bancos
+    require_once __DIR__ . '/tasa_cambio.php';
+    if (($t = tasaValoracion($pdo)) > 0) return $t;
     if (!efHay($pdo, 'movimientos_bancarios')) return 0.0;
     $st = $pdo->prepare("SELECT tasa_cambio FROM movimientos_bancarios WHERE cliente_id = ? AND tasa_cambio IS NOT NULL AND tasa_cambio > 0 ORDER BY fecha DESC, id DESC LIMIT 1");
     $st->execute([$cid]);
@@ -122,8 +132,16 @@ function efBalance(PDO $pdo, int $cid, string $corte, float $tasa): array
         if ($prest > 0) $activo['Cuentas por cobrar'][] = ['nombre' => 'Préstamos y adelantos a colaboradores', 'monto' => $prest];
     }
 
-    // Pasivo: gastos registrados y aún no pagados
-    $st = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id = ? AND estado = 'pendiente' AND fecha <= ?");
+    // Anticipos a proveedores (pagados, aún sin su factura): dinero a favor
+    $antProv = anticiposProveedorSaldo($pdo, $cid, $corte);
+    if ($antProv > 0) $activo['Cuentas por cobrar'][] = ['nombre' => 'Anticipos a proveedores', 'monto' => $antProv];
+
+    // Activos fijos a su valor en libros (costo − depreciación acumulada)
+    $af = activosBalance($pdo, $cid, $corte);
+    if ($af) $activo['Activos fijos'] = array_map(fn($a) => ['nombre' => $a['nombre'] . ' (costo L ' . number_format($a['costo'], 2) . ' − depreciación L ' . number_format($a['acumulada'], 2) . ')', 'monto' => $a['neto']], $af);
+
+    // Pasivo: gastos registrados y aún no pagados (las cuotas de préstamos ya están en «Préstamos por pagar»)
+    $st = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id = ? AND estado = 'pendiente' AND fecha <= ?" . (activosDisponible($pdo) ? " AND naturaleza <> 'capital'" : ''));
     $st->execute([$cid, $corte]);
     $pasivo['Cuentas por pagar'] = [['nombre' => 'Proveedores y gastos pendientes de pago', 'monto' => round((float)$st->fetchColumn(), 2)]];
 
@@ -139,6 +157,9 @@ function efBalance(PDO $pdo, int $cid, string $corte, float $tasa): array
     $st = $pdo->prepare("SELECT COALESCE(SUM(isv_15 + isv_18),0) FROM facturas WHERE cliente_id = ? AND estado = 'emitida' AND estado_declarada = 0 AND DATE(fecha_emision) <= ?");
     $st->execute([$cid, $corte]);
     $pasivo['Impuestos por pagar'] = [['nombre' => 'ISV cobrado en facturas no declaradas', 'monto' => round((float)$st->fetchColumn(), 2)]];
+
+    // Préstamos recibidos: capital pendiente al corte
+    foreach (prestamosBalance($pdo, $cid, $corte) as $p) if ($p['saldo'] > 0) $pasivo['Préstamos por pagar'][] = ['nombre' => $p['nombre'], 'monto' => $p['saldo']];
 
     // Anticipos de clientes que aún no se aplican a una factura
     if (efHay($pdo, 'contratos_anticipos')) {

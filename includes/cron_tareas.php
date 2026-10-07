@@ -6,6 +6,23 @@
  */
 require_once __DIR__ . '/correo_pagos.php';
 require_once __DIR__ . '/cobros.php';
+require_once __DIR__ . '/tasa_cambio.php';
+
+/** Tasa del dólar del día (una vez al día, desde las 9 a. m., cuando el BCH ya publicó). */
+function cronTasaCambio(PDO $pdo, callable $log): void
+{
+    if (!tasaDisponible($pdo) || (int)date('G') < 9) return;
+    $hoy = $pdo->query("SELECT fuente FROM tasas_cambio WHERE fecha = CURDATE()")->fetchColumn();
+    if ($hoy === 'BCH') return;
+    $cid = (int)($pdo->query("SELECT cliente_id FROM configuracion_api WHERE bch_clave_cifrada IS NOT NULL LIMIT 1")->fetchColumn() ?: 0);
+    if ($hoy && !$cid) return;   // ya hay referencia de hoy y no hay clave del BCH
+    try {
+        $t = tasaActualizar($pdo, $cid);
+        $log("Tasa del dólar: " . ($t['fuente'] === 'BCH' ? "compra {$t['compra']} · venta {$t['venta']} (BCH)" : "referencia {$t['referencia']}") . (isset($t['aviso']) ? " · {$t['aviso']}" : ''));
+    } catch (Throwable $e) {
+        $log("Tasa del dólar: " . $e->getMessage());
+    }
+}
 
 /**
  * Avisos de pago pendientes, desde la hora configurada, sin repetir los ya enviados.

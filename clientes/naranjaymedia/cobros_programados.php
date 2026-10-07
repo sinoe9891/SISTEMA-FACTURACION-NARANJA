@@ -26,6 +26,7 @@ $preTipo = isset(COBRO_TIPOS[$_GET['tipo'] ?? '']) ? $_GET['tipo'] : '';
 // &recibos=1,2 → envío de esos recibos · &plan=5,6 → recordatorio de esos pagos del plan
 $preRecibos = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['recibos'] ?? '')))));
 $prePlan = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['plan'] ?? '')))));
+$preAnticipos = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['anticipos'] ?? '')))));
 $extras = $instalado && cobrosExtrasDisponible($pdo);
 
 $cobros = [];
@@ -262,7 +263,7 @@ require_once '../../includes/templates/header.php';
     document.getElementById('btnNuevoCobro')?.addEventListener('click', abrir);
     document.getElementById('btnCerrarNuevo')?.addEventListener('click', () => card.style.display = 'none');
 
-    let pre = <?= json_encode(['ids' => $preFacturas, 'contrato' => $preContrato, 'recibos' => $preRecibos, 'plan' => $prePlan]) ?>;   // preselección del acceso directo (solo la primera carga)
+    let pre = <?= json_encode(['ids' => $preFacturas, 'contrato' => $preContrato, 'recibos' => $preRecibos, 'plan' => $prePlan, 'anticipos' => $preAnticipos]) ?>;   // preselección del acceso directo (solo la primera carga)
     const $tipo = document.getElementById('cTipo'), $rec = document.getElementById('cRecibos'), $plan = document.getElementById('cPlan');
     // Qué lista usa cada tipo: facturas (saldo/envío), recibos o pagos del plan
     const bloque = () => ({ envio_recibo: 'recibos', recordatorio_pago: 'plan' }[$tipo.value] || 'facturas');
@@ -314,8 +315,8 @@ require_once '../../includes/templates/header.php';
                 : '<tr><td colspan="6" class="text-center text-muted py-3">Este cliente no tiene facturas en los últimos 24 meses.</td></tr>';
             const SEM = { vencido: ['#fee2e2', '#991b1b'], facturado: ['#dbeafe', '#1e40af'] };
             if ($rec) $rec.innerHTML = (d.recibos || []).length ? d.recibos.map(r => `<tr>
-                <td><input class="form-check-input" type="checkbox" name="recibo_ids[]" value="${r.id}" ${pre.recibos.includes(+r.id) ? 'checked' : ''}></td>
-                <td class="font-monospace small"><a href="recibo_pdf?id=${r.id}" target="_blank">${String(r.numero_recibo).padStart(5, '0')}</a></td>
+                <td><input class="form-check-input" type="checkbox" name="${r.anticipo ? 'anticipo_ids[]' : 'recibo_ids[]'}" value="${r.id}" data-ant="${r.anticipo ? 1 : 0}" ${(r.anticipo ? pre.anticipos : pre.recibos).includes(+r.id) ? 'checked' : ''}></td>
+                <td class="font-monospace small"><a href="recibo_pdf?${r.anticipo ? 'anticipo' : 'id'}=${r.id}" target="_blank">${r.anticipo ? r.numero_recibo : String(r.numero_recibo).padStart(5, '0')}</a>${r.anticipo ? '<div class="text-muted" style="font-size:.7rem">Anticipo</div>' : ''}</td>
                 <td class="small text-nowrap">${r.fecha.split('-').reverse().join('/')}</td><td class="small">${esc(r.concepto)}</td><td class="app-num">${L(r.monto)}</td></tr>`).join('')
                 : '<tr><td colspan="5" class="text-center text-muted py-3">Este cliente no tiene recibos.</td></tr>';
             if ($plan) $plan.innerHTML = (d.plan || []).length ? d.plan.map(l => {
@@ -327,7 +328,7 @@ require_once '../../includes/templates/header.php';
                 <td class="small"><a href="facturas_contrato?contrato_id=${l.contrato_id}" target="_blank">#${l.contrato_id}</a></td>
                 <td class="app-num">${L(l.total)}</td><td><span class="badge rounded-pill" style="background:${bg};color:${fg}">${txt}</span></td></tr>`;
             }).join('') : '<tr><td colspan="6" class="text-center text-muted py-3">Este cliente no tiene pagos pendientes en un plan de pagos.</td></tr>';
-            pre = { ids: [], contrato: 0, recibos: [], plan: [] };
+            pre = { ids: [], contrato: 0, recibos: [], plan: [], anticipos: [] };
             resumen();
             llenarCc();
             if (seleccionadas().length) generar();
@@ -342,7 +343,7 @@ require_once '../../includes/templates/header.php';
             if (!ids.length) return Swal.fire('Falta seleccionar', bloque() === 'recibos' ? 'Marca al menos un recibo.' : 'Marca al menos un pago del plan.', 'info');
             const fd = new FormData();
             fd.append('accion', 'generar_mensaje'); fd.append('receptor_id', $cli.value); fd.append('tipo', $tipo.value);
-            ids.forEach(i => fd.append('ids[]', i));
+            [...tablaActiva().querySelectorAll('input[type=checkbox]:checked')].forEach(i => fd.append(i.dataset.ant === '1' ? 'anticipo_ids[]' : 'ids[]', i.value));
             const r = await fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer).catch(err => (Swal.fire('Error', err.message, 'error'), null));
             if (!r) return;
             document.getElementById('cAsunto').value = r.asunto || '';
@@ -401,11 +402,12 @@ require_once '../../includes/templates/header.php';
     }));
 
     // ── Vista previa del correo (redacción y edición) ──
-    async function previa({ para, cc, asunto, html, receptor, ids, recibos }) {
+    async function previa({ para, cc, asunto, html, receptor, ids, recibos, anticipos }) {
         const fd = new FormData();
         fd.append('accion', 'previsualizar'); fd.append('receptor_id', receptor || ''); fd.append('mensaje_html', html); fd.append('asunto', asunto);
         (ids || []).forEach(i => fd.append('factura_ids[]', i));
         (recibos || []).forEach(i => fd.append('recibo_ids[]', i));
+        (anticipos || []).forEach(i => fd.append('anticipo_ids[]', i));
         try {
             const d = await fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer);
             const fila = (k, v) => `<dt class="col-sm-2 text-muted fw-normal">${k}</dt><dd class="col-sm-10 mb-1">${v || '<span class="text-muted">—</span>'}</dd>`;
@@ -417,7 +419,9 @@ require_once '../../includes/templates/header.php';
     }
     document.getElementById('btnPrevia')?.addEventListener('click', () => previa({
         para: document.getElementById('cPara').value, cc: document.getElementById('cCc').value, asunto: document.getElementById('cAsunto').value,
-        html: getMensaje('cMensaje'), receptor: $cli.value, ids: bloque() === 'facturas' ? seleccionadas() : [], recibos: bloque() === 'recibos' ? seleccionadas() : [],
+        html: getMensaje('cMensaje'), receptor: $cli.value, ids: bloque() === 'facturas' ? seleccionadas() : [],
+        recibos: bloque() === 'recibos' ? [...$rec.querySelectorAll('input[data-ant="0"]:checked')].map(i => i.value) : [],
+        anticipos: bloque() === 'recibos' ? [...$rec.querySelectorAll('input[data-ant="1"]:checked')].map(i => i.value) : [],
     }));
     let editando = null;   // cobro abierto en «Editar» (para la vista previa)
     document.getElementById('ePrevia')?.addEventListener('click', () => previa({
@@ -438,7 +442,7 @@ require_once '../../includes/templates/header.php';
                 + fila('Asunto', esc((+c.prueba ? '[PRUEBA] ' : '') + c.asunto)) + fila('Estado', esc(estadosTxt[c.estado] || c.estado) + (c.error ? `<div class="text-danger">${esc(c.error)}</div>` : ''))
                 + fila('Programado', fmt(c.programado_para)) + fila('Enviado', fmt(c.enviado_en)) + fila('Creado', fmt(c.creado_en));
             document.getElementById('vAdjuntos').innerHTML = d.adjuntos.length ? d.adjuntos.map(a => a.existe
-                ? `<a class="btn btn-sm btn-outline-secondary me-1 mb-1" target="_blank" href="cobro_accion.php?pdf=${c.id}&${a.recibo_id ? 'recibo=' + a.recibo_id : 'factura=' + a.factura_id}"><i class="bi bi-file-earmark-pdf text-danger"></i> ${esc(a.etiqueta)}</a>`
+                ? `<a class="btn btn-sm btn-outline-secondary me-1 mb-1" target="_blank" href="cobro_accion.php?pdf=${c.id}&${a.recibo_id ? 'recibo=' + a.recibo_id : (a.anticipo_id ? 'anticipo=' + a.anticipo_id : 'factura=' + a.factura_id)}"><i class="bi bi-file-earmark-pdf text-danger"></i> ${esc(a.etiqueta)}</a>`
                 : `<span class="badge text-bg-light border me-1">${esc(a.etiqueta)} (no disponible)</span>`).join('') : '<span class="text-muted small">Sin adjuntos.</span>';
             document.getElementById('vEnvios').innerHTML = d.envios.length ? '<ul class="list-unstyled small mb-0">' + d.envios.map(e =>
                 `<li class="mb-1"><i class="bi ${e.estado === 'enviado' ? 'bi-check-circle text-success' : 'bi-x-circle text-danger'}"></i> ${fmt(e.creado_en)} → ${esc(e.destinatario)}${e.error ? `<div class="text-danger">${esc(e.error)}</div>` : ''}</li>`).join('') + '</ul>'

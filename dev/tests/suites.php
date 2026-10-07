@@ -2216,3 +2216,146 @@ suite('Barrido de todas las páginas por rol', function () {
     $pdo->exec("DELETE FROM usuario_establecimientos WHERE usuario_id = $uid");
     $pdo->exec("DELETE FROM usuarios WHERE id = $uid");
 });
+
+suite('Activos fijos, préstamos recibidos, anticipos a proveedores y salidas de nómina', function () {
+    global $pdo;
+    require_once __DIR__ . '/../../includes/activos.php';
+    require_once __DIR__ . '/../../includes/estados_financieros.php';
+    $f = fn($sql) => $pdo->query($sql)->fetchColumn();
+    $c = login('qa.admin@local.test');
+    // Activo: L 36,000 a 36 meses → L 1,000 al mes desde el mes siguiente a la compra
+    $r = $c->post('includes/activo_accion.php', ['accion' => 'activo_guardar', 'nombre' => 'QA Laptops', 'categoria' => 'equipo_computo', 'fecha_compra' => '2025-12-10', 'costo' => 36000, 'valor_residual' => 0, 'vida_util_meses' => 36, 'origen' => 'mixto']);
+    $aid = (int)($r['json']['id'] ?? 0);
+    $a = $pdo->query("SELECT * FROM activos_fijos WHERE id = $aid")->fetch(PDO::FETCH_ASSOC);
+    check('registra el activo', $aid > 0, $r['body']);
+    check('depreciación: nada en el mes de compra, L 1,000 desde enero', activoDepreciacion($a, '2025-12-01', '2025-12-31') == 0 && activoDepreciacion($a, '2026-01-01', '2026-01-31') == 1000
+        && activoDepreciacion($a, '2026-01-01', '2026-12-31') == 12000);
+    check('acumulada al 31/10/2026: 10 meses = L 10,000', activoAcumulada($a, '2026-10-31') == 10000);
+    check('al terminar la vida útil cuadra el costo exacto', activoDepreciacion($a, '2025-01-01', '2030-12-31') == 36000);
+    $er = efResultados($pdo, 2, '2026-01-01', '2026-01-31');
+    check('el Estado de resultados incluye la depreciación del mes', in_array('Depreciación de activos fijos', array_column($er['gastos'], 'nombre'), true) && $er['depreciacion'] >= 1000);
+    $b = efBalance($pdo, 2, '2026-10-31', 0);
+    check('el Balance muestra el activo a valor en libros', in_array(26000.0, array_map('floatval', array_column($b['activo']['Activos fijos'] ?? [], 'monto')), true), json_encode($b['activo']['Activos fijos'] ?? []));
+    check('Activo = Pasivo + Patrimonio con activos', abs($b['total_activo'] - $b['total_pasivo'] - $b['total_patrimonio']) < 0.01);
+
+    // Préstamo sin intereses con cuotas programadas: el capital no resta en resultados y baja la deuda al pagarse
+    $r = $c->post('includes/activo_accion.php', ['accion' => 'prestamo_guardar', 'acreedor' => 'QA Fundación', 'fecha' => '2025-12-10', 'monto' => 2200, 'num_cuotas' => 11, 'tasa_anual' => 0,
+        'activo_id' => $aid, 'generar_cuotas' => 1, 'fecha_primera_cuota' => '2026-01-05']);
+    $pid = (int)($r['json']['id'] ?? 0);
+    check('registra el préstamo y programa 11 cuotas de capital', $pid && (int)$f("SELECT COUNT(*) FROM gastos WHERE prestamo_id = $pid AND naturaleza = 'capital' AND estado = 'pendiente'") === 11
+        && (float)$f("SELECT SUM(monto) FROM gastos WHERE prestamo_id = $pid") == 2200, $r['body']);
+    $g1 = (int)$f("SELECT id FROM gastos WHERE prestamo_id = $pid ORDER BY fecha LIMIT 1");
+    $antesER = efResultados($pdo, 2, '2026-01-01', '2026-01-31')['total_gastos'];
+    $c->post('includes/gasto_marcar_pagado.php', ['gasto_id' => $g1, 'fecha' => '2026-01-05', 'metodo_pago' => 'transferencia']);
+    $despuesER = efResultados($pdo, 2, '2026-01-01', '2026-01-31')['total_gastos'];
+    check('pagar una cuota de capital no cambia el Estado de resultados', abs($antesER - $despuesER) < 0.01);
+    $saldo = array_values(array_filter(prestamosBalance($pdo, 2, '2026-10-31'), fn($p) => $p['id'] === $pid))[0]['saldo'] ?? -1;
+    check('la deuda baja con la cuota pagada (2,200 − 200 = 2,000)', abs($saldo - 2000) < 0.01, (string)$saldo);
+    $b = efBalance($pdo, 2, '2026-10-31', 0);
+    check('el Balance muestra el préstamo por pagar y no duplica sus cuotas pendientes', in_array('QA Fundación', array_map(fn($x) => explode(' · ', $x['nombre'])[0], $b['pasivo']['Préstamos por pagar'] ?? []), true), json_encode($b['pasivo']));
+    $pg = $c->get('activos');
+    check('la página Activos y préstamos carga', sinErroresPhp($pg['body']) && str_contains($pg['body'], 'QA Laptops') && str_contains($pg['body'], 'QA Fundación'), errorPhp($pg['body']));
+
+    // Préstamo que liga una serie de gastos ya registrada (como THRIIVE)
+    $pdo->exec("INSERT INTO gastos (cliente_id, descripcion, monto, fecha, frecuencia, tipo, metodo_pago, estado, usuario_id) VALUES (2, 'QA cuota serie', 100, '2026-02-05', 'mensual', 'fijo', 'transferencia', 'pagado', 1)");
+    $s1 = (int)$pdo->lastInsertId();
+    $pdo->exec("UPDATE gastos SET gasto_grupo_id = $s1 WHERE id = $s1");
+    $pdo->exec("INSERT INTO gastos (cliente_id, descripcion, monto, fecha, frecuencia, tipo, metodo_pago, estado, gasto_grupo_id, dia_pago, usuario_id) VALUES (2, 'QA cuota serie', 100, '2026-03-05', 'mensual', 'fijo', 'transferencia', 'pendiente', $s1, 5, 1)");
+    $s2 = (int)$pdo->lastInsertId();
+    $r = $c->post('includes/activo_accion.php', ['accion' => 'prestamo_guardar', 'acreedor' => 'QA Serie', 'fecha' => '2026-01-10', 'monto' => 300, 'num_cuotas' => 3, 'gasto_grupo_id' => $s1]);
+    $pid2 = (int)($r['json']['id'] ?? 0);
+    check('ligar una serie: sus cuotas pasan a ser abonos a capital', (int)$f("SELECT COUNT(*) FROM gastos WHERE prestamo_id = $pid2 AND naturaleza = 'capital'") === 2, $r['body']);
+    $c->post('includes/gasto_marcar_pagado.php', ['gasto_id' => $s2, 'fecha' => '2026-03-05', 'metodo_pago' => 'transferencia']);
+    check('la siguiente cuota programada conserva su naturaleza de capital', $f("SELECT naturaleza FROM gastos WHERE gasto_grupo_id = $s1 AND fecha = '2026-04-05'") === 'capital');
+    $r = $c->post('includes/activo_accion.php', ['accion' => 'prestamo_anular', 'id' => $pid2]);
+    check('anular el préstamo devuelve sus cuotas a gastos normales', ($r['json']['success'] ?? false) && !$f("SELECT COUNT(*) FROM gastos WHERE prestamo_id = $pid2"), $r['body']);
+
+    // Anticipo a proveedor: dinero a favor, no gasto hasta que llega la factura
+    $cat = (int)$f("SELECT id FROM categorias_gastos WHERE cliente_id = 2 LIMIT 1");
+    $r = $c->post('includes/gasto_guardar.php', ['descripcion' => 'QA anticipo proveedor', 'monto' => 777, 'fecha' => '2026-10-02', 'categoria_id' => $cat, 'frecuencia' => 'unico', 'tipo' => 'variable', 'metodo_pago' => 'transferencia', 'estado' => 'pagado', 'naturaleza' => 'anticipo', 'proveedor' => 'QA Prov']);
+    $gant = (int)($r['json']['gasto_id'] ?? 0);
+    check('un anticipo a proveedor queda a favor y no resta en resultados', $f("SELECT naturaleza FROM gastos WHERE id = $gant") === 'anticipo' && anticiposProveedorSaldo($pdo, 2, '2026-10-31') >= 777, $r['body']);
+
+    // «Sale de la cuenta» en préstamos a colaboradores y pagos de nómina
+    $pdo->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, moneda, saldo_inicial, fecha_saldo_inicial, activa, predeterminada) VALUES (2, 'QA Banco Nom', 'ahorro', 'QA0000077', 'HNL', 0, '2026-01-01', 1, 0)");
+    $cta = (int)$pdo->lastInsertId();
+    $col = (int)$f("SELECT id FROM colaboradores WHERE cliente_id = 2 AND activo = 1 LIMIT 1");
+    $r = $c->post('includes/prestamo_guardar.php', ['colaborador_id' => $col, 'tipo' => 'adelanto', 'monto_total' => 500, 'descripcion' => 'QA adelanto banco', 'fecha' => date('Y-m-d'), 'cuenta_id' => $cta]);
+    $prc = (int)($r['json']['prestamo_id'] ?? 0);
+    check('un adelanto a colaborador sale del banco', $prc && (float)$f("SELECT monto FROM movimientos_bancarios WHERE id = (SELECT movimiento_id FROM colaborador_prestamos WHERE id = $prc) AND sentido = 'salida'") == 500, $r['body']);
+    $c->post('includes/prestamo_eliminar.php', ['prestamo_id' => $prc]);
+    check('eliminar el adelanto anula su salida del banco', (int)$f("SELECT anulado FROM movimientos_bancarios WHERE cuenta_id = $cta AND tipo = 'prestamo_colaborador'") === 1);
+
+    $colQ = $pdo->query("SELECT id, tipo_pago FROM colaboradores WHERE cliente_id = 2 AND activo = 1 AND salario_base > 0 LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $r = $c->post('includes/colaborador_pago_guardar.php', ['colaborador_id' => $colQ['id'], 'fecha' => '2030-01-15', 'metodo_pago' => 'transferencia', 'quincena' => 1, 'cuenta_id' => $cta, 'notas' => 'QA nómina banco']);
+    $gn = (int)($r['json']['gasto_id'] ?? 0);
+    check('el pago de nómina con «Sale de la cuenta» queda como salida en Bancos, ligado a su gasto', $gn && (float)$f("SELECT monto FROM movimientos_bancarios WHERE gasto_id = $gn AND sentido = 'salida' AND cuenta_id = $cta AND anulado = 0") == (float)$f("SELECT monto FROM gastos WHERE id = $gn"), $r['body']);
+    if ($gn) { $pdo->exec("DELETE FROM movimientos_bancarios WHERE gasto_id = $gn"); $pdo->exec("DELETE FROM gastos WHERE id = $gn OR notas = 'Aplicado junto con nómina gasto #$gn'"); }
+
+    // limpieza
+    $pdo->exec("DELETE FROM gastos WHERE prestamo_id IN ($pid, $pid2) OR id IN ($s1, $s2, $gant) OR gasto_grupo_id = $s1 OR descripcion LIKE 'QA cuota serie%'");
+    $pdo->exec("DELETE FROM prestamos_recibidos WHERE id IN ($pid, $pid2)");
+    $pdo->exec("DELETE FROM activos_fijos WHERE id = $aid");
+    $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id = $cta");
+    $pdo->exec("DELETE FROM cuentas_bancarias WHERE id = $cta");
+});
+
+suite('Recibo de anticipo en PDF y por correo', function () {
+    global $pdo;
+    $f = fn($sql) => $pdo->query($sql)->fetchColumn();
+    $dir = '/private/tmp/claude-501/-Applications-XAMPP-xamppfiles-htdocs-proyectos-NARANJA-sistemafacturacion/ee82cda1-ff6c-4bf7-8e00-1c9a72466389/scratchpad/correos';
+    $c = login('qa.admin@local.test');
+    $c->post('includes/correo_accion.php', ['accion' => 'guardar', 'perfil' => 'facturacion', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna',
+        'usuario' => 'qa', 'clave' => 'clave-de-prueba', 'remitente_email' => 'facturacion@ejemplo.test', 'responder_a' => 'gerencia@ejemplo.test', 'activo' => 1]);
+    $ctr = (int)$f("SELECT id FROM contratos WHERE cliente_id = 2 AND tipo_contrato = 'estandar' AND estado = 'activo' ORDER BY id LIMIT 1");
+    $rid = (int)$f("SELECT receptor_id FROM contratos WHERE id = $ctr");
+    $r = $c->post('includes/anticipo_accion.php', ['accion' => 'registrar', 'contrato_id' => $ctr, 'fecha' => date('Y-m-d'), 'monto' => 1150, 'metodo' => 'transferencia', 'concepto' => 'QA anticipo etapa']);
+    $aid = (int)($r['json']['id'] ?? 0);
+    check('el pago anticipado devuelve su id para el recibo', $aid > 0, $r['body']);
+    $p = $c->get('recibo_pdf', ['anticipo' => $aid]);
+    check('el recibo de anticipo se genera en PDF', str_starts_with($p['body'], '%PDF'), substr($p['body'], 0, 80));
+    $g = $c->get('cobro_accion.php', ['facturas' => $rid]);
+    check('Cobros por correo lista el recibo de anticipo del cliente', in_array($aid, array_map('intval', array_column(array_filter($g['json']['recibos'] ?? [], fn($x) => !empty($x['anticipo'])), 'id')), true), substr($g['body'], 0, 200));
+    $m = $c->post('cobro_accion.php', ['accion' => 'generar_mensaje', 'receptor_id' => $rid, 'tipo' => 'envio_recibo', 'anticipo_ids[0]' => $aid]);
+    check('el mensaje nombra el recibo de anticipo', str_contains($m['json']['mensaje_html'] ?? '', 'Recibo de anticipo'), $m['body']);
+    $antes = count(glob("$dir/*.eml") ?: []);
+    $r = $c->post('cobro_accion.php', ['accion' => 'crear', 'modo' => 'prueba', 'para_prueba' => 'yo@ejemplo.test', 'receptor_id' => $rid, 'tipo' => 'envio_recibo',
+        'asunto' => 'Recibo', 'mensaje_html' => $m['json']['mensaje_html'] ?? 'Hola', 'anticipo_ids[0]' => $aid]);
+    $ult = glob("$dir/*.eml") ?: []; sort($ult);
+    check('envía el recibo de anticipo con su PDF adjunto', ($r['json']['success'] ?? false) && count($ult) === $antes + 1 && str_contains(file_get_contents(end($ult)), 'recibo_anticipo_'), $r['body']);
+    $cob = (int)($r['json']['id'] ?? 0);
+    $r2 = $c->post('cobro_accion.php', ['accion' => 'crear', 'modo' => 'programar', 'programado_para' => date('Y-m-d\TH:i', strtotime('+2 days')), 'para' => 'cliente@ejemplo.test', 'receptor_id' => $rid, 'tipo' => 'envio_recibo',
+        'asunto' => 'Recibo', 'mensaje_html' => 'Hola', 'anticipo_ids[0]' => $aid]);
+    check('el recibo de anticipo también se puede programar', ($r2['json']['success'] ?? false) && $f("SELECT estado FROM cobros_programados WHERE id = " . (int)($r2['json']['id'] ?? 0)) === 'programado', $r2['body']);
+    $fc = $c->get('facturas_contrato', ['contrato_id' => $ctr]);
+    check('la ficha ofrece el PDF y el envío del recibo de anticipo', str_contains($fc['body'], 'recibo_pdf?anticipo=' . $aid) && str_contains($fc['body'], 'anticipos=' . $aid) && sinErroresPhp($fc['body']), errorPhp($fc['body']));
+    foreach ([$cob, (int)($r2['json']['id'] ?? 0)] as $x) if ($x) { $c->post('cobro_accion.php', ['accion' => 'cancelar', 'id' => $x]); $c->post('cobro_accion.php', ['accion' => 'eliminar', 'id' => $x]); }
+    $pdo->exec("DELETE FROM contratos_anticipos WHERE id = $aid");
+});
+
+suite('Historial de sueldo (aumentos) y nóminas vencidas', function () {
+    global $pdo;
+    $f = fn($sql) => $pdo->query($sql)->fetchColumn();
+    $c = login('qa.admin@local.test');
+    $col = $pdo->query("SELECT * FROM colaboradores WHERE cliente_id = 2 AND activo = 1 AND salario_base > 0 ORDER BY id LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $id = (int)$col['id'];
+    $orig = (float)$col['salario_base'];
+    $pdo->exec("DELETE FROM colaborador_salarios WHERE colaborador_id = $id");
+    $r = $c->post('includes/colaborador_salario.php', ['accion' => 'guardar', 'colaborador_id' => $id, 'desde' => '2020-01-01', 'salario_base' => 4000, 'motivo' => 'QA inicial']);
+    $r2 = $c->post('includes/colaborador_salario.php', ['accion' => 'guardar', 'colaborador_id' => $id, 'desde' => date('Y-m-01', strtotime('-1 month')), 'salario_base' => 9999, 'motivo' => 'QA aumento']);
+    check('registra ajustes y el sueldo actual pasa a ser el vigente', ($r['json']['success'] ?? false) && ($r2['json']['success'] ?? false) && (float)$f("SELECT salario_base FROM colaboradores WHERE id = $id") == 9999, $r['body'] . $r2['body']);
+    $h = (int)$f("SELECT id FROM colaborador_salarios WHERE colaborador_id = $id AND motivo = 'QA aumento'");
+    $r = $c->post('includes/colaborador_salario.php', ['accion' => 'guardar', 'id' => $h, 'colaborador_id' => $id, 'desde' => date('Y-m-01', strtotime('-1 month')), 'salario_base' => 8888, 'motivo' => 'QA aumento editado']);
+    check('edita un ajuste', ($r['json']['success'] ?? false) && (float)$f("SELECT salario_base FROM colaboradores WHERE id = $id") == 8888, $r['body']);
+    require_once __DIR__ . '/../../includes/salarios.php';
+    $hist = salariosHistorial($pdo, 2, $id);
+    check('el sueldo vigente depende de la fecha', salarioVigente($hist, $col, '2021-06-01') == 4000 && salarioVigente($hist, $col, date('Y-m-d')) == 8888);
+    $p = $c->get('colaborador_ver', ['id' => $id]);
+    check('la ficha muestra el historial con editar y quitar', sinErroresPhp($p['body']) && str_contains($p['body'], 'id="historialSueldo"') && str_contains($p['body'], 'btn-editar-sueldo') && str_contains($p['body'], 'QA aumento editado'), errorPhp($p['body']));
+    $l = $c->get('colaboradores');
+    check('Colaboradores calcula las nóminas con el sueldo de cada época', sinErroresPhp($l['body']), errorPhp($l['body']));
+    $r = $c->post('includes/colaborador_salario.php', ['accion' => 'eliminar', 'id' => $h]);
+    check('quitar un ajuste vuelve al sueldo anterior', ($r['json']['success'] ?? false) && (float)$f("SELECT salario_base FROM colaboradores WHERE id = $id") == 4000, $r['body']);
+    $pdo->exec("DELETE FROM colaborador_salarios WHERE colaborador_id = $id");
+    $pdo->exec("UPDATE colaboradores SET salario_base = $orig WHERE id = $id");
+});

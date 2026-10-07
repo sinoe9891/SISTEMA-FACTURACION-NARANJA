@@ -160,6 +160,10 @@ try {
         $ids_creados = [$id1];
     }
 
+    // Anticipo a proveedor: dinero a favor hasta que llegue su factura (no resta en resultados)
+    if (($_POST['naturaleza'] ?? '') === 'anticipo' && $pdo->query("SHOW COLUMNS FROM gastos LIKE 'naturaleza'")->fetchColumn())
+        $pdo->prepare("UPDATE gastos SET naturaleza = 'anticipo' WHERE id IN (" . implode(',', array_map('intval', $ids_creados)) . ") AND cliente_id = ?")->execute([$cid]);
+
     $pdo->commit();
 
     $msg = count($ids_creados) > 1

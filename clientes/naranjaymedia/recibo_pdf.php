@@ -1,5 +1,5 @@
 <?php
-// Recibo de cobro en PDF (contratos sin factura): ?id=<recibo_id>[&descargar=1]
+// Recibo de cobro en PDF: ?id=<recibo_id> (contratos sin factura) o ?anticipo=<id> (pago anticipado) [&descargar=1]
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/recibo_pdf.php';
@@ -7,11 +7,17 @@ require_once '../../includes/recibo_pdf.php';
 try {
     if (in_array(USUARIO_ROL, ['nomina'], true)) throw new Exception("No autorizado.");
     $cid = (int)cliente_actual();
-    $id = (int)($_GET['id'] ?? 0);
-    $r = reciboDatos($pdo, $cid, $id);
-    $pdf = reciboPdf($pdo, $cid, $id);
+    if (isset($_GET['anticipo'])) {   // recibo de un pago anticipado (?anticipo=<id>)
+        $id = (int)$_GET['anticipo'];
+        $pdf = anticipoPdf($pdo, $cid, $id);
+        $archivo = anticipoArchivo(anticipoDatos($pdo, $cid, $id));
+    } else {
+        $id = (int)($_GET['id'] ?? 0);
+        $pdf = reciboPdf($pdo, $cid, $id);
+        $archivo = reciboArchivo(reciboDatos($pdo, $cid, $id));
+    }
     header('Content-Type: application/pdf');
-    header('Content-Disposition: ' . (!empty($_GET['descargar']) ? 'attachment' : 'inline') . '; filename="' . reciboArchivo($r) . '"');
+    header('Content-Disposition: ' . (!empty($_GET['descargar']) ? 'attachment' : 'inline') . '; filename="' . $archivo . '"');
     header('Content-Length: ' . strlen($pdf));
     echo $pdf;
 } catch (Throwable $e) {

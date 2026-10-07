@@ -224,16 +224,7 @@ try {
             WHERE id = ? AND colaborador_id = ?
         ")->execute([$bono['id'], $colab_id]);
 
-        $stmtExtra->execute([
-            $cid,
-            $cat_id,
-            'Bono: ' . $bono['descripcion'] . ' — ' . $nombreCompleto,
-            (float)$bono['monto_total'],
-            $fecha,
-            $metodo,
-            'Aplicado junto con nómina gasto #' . $gasto_id,
-            USUARIO_ID,
-        ]);
+        // El bono ya va sumado en el pago de nómina (lo que se transfiere); no se registra otro gasto (antes se contaba dos veces)
     }
 
     foreach ($viaticos_aplicar as $viat) {
@@ -244,16 +235,19 @@ try {
             WHERE id = ? AND colaborador_id = ?
         ")->execute([$viat['id'], $colab_id]);
 
-        $stmtExtra->execute([
-            $cid,
-            $cat_id,
-            'Viático: ' . $viat['descripcion'] . ' — ' . $nombreCompleto,
-            (float)$viat['monto_total'],
-            $fecha,
-            $metodo,
-            'Aplicado junto con nómina gasto #' . $gasto_id,
-            USUARIO_ID,
-        ]);
+        // El viático ya va sumado en el pago de nómina; no se registra otro gasto (antes se contaba dos veces)
+    }
+
+    // «Sale de la cuenta»: cada pago (nómina, bonos y viáticos) queda como salida en Bancos, ligado a su gasto
+    $cuentaPago = filter_input(INPUT_POST, 'cuenta_id', FILTER_VALIDATE_INT) ?: null;
+    if ($cuentaPago) {
+        require_once __DIR__ . '/../../../includes/bancos.php';
+        $stG = $pdo->prepare("SELECT id, descripcion, monto FROM gastos WHERE cliente_id = ? AND (id = ? OR notas = ?)");
+        $stG->execute([$cid, $gasto_id, 'Aplicado junto con nómina gasto #' . $gasto_id]);
+        foreach ($stG->fetchAll(PDO::FETCH_ASSOC) as $gp) {
+            if ((float)$gp['monto'] <= 0) continue;
+            bancoSalidaPago($pdo, $cid, $cuentaPago, $fecha, (float)$gp['monto'], 'Pago: ' . $gp['descripcion'], null, (int)USUARIO_ID, (int)$gp['id']);
+        }
     }
 
     $pdo->commit();

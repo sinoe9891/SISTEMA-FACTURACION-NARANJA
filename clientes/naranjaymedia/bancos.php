@@ -10,6 +10,9 @@ $puedeMover = $puedeEditar || USUARIO_ROL === 'nomina';                         
 $instalado = bancosDisponible($pdo);
 $cuentas = $instalado && $cid ? bancoCuentas($pdo, $cid) : [];
 $activas = array_values(array_filter($cuentas, fn($c) => (int)$c['activa']));
+require_once '../../includes/tasa_cambio.php';
+$tasa = tasaUltima($pdo);
+$tasaHoy = $tasa && $tasa['fecha'] === date('Y-m-d');
 // Categorías de gastos (para registrar una salida también como gasto)
 $catsGasto = [];
 if ($puedeMover && $cid) {
@@ -62,9 +65,16 @@ require_once '../../includes/templates/header.php';
 
     <div class="row g-3 mb-3">
         <div class="col-6 col-lg-3"><div class="app-card app-kpi"><div class="app-kpi-label">Saldo en lempiras</div><div class="app-kpi-value"><?= bancoMoneda($totales['HNL'], 'HNL') ?></div></div></div>
-        <div class="col-6 col-lg-3"><div class="app-card app-kpi"><div class="app-kpi-label">Saldo en dólares</div><div class="app-kpi-value"><?= bancoMoneda($totales['USD'], 'USD') ?></div></div></div>
+        <div class="col-6 col-lg-3"><div class="app-card app-kpi"><div class="app-kpi-label">Saldo en dólares</div><div class="app-kpi-value"><?= bancoMoneda($totales['USD'], 'USD') ?></div>
+            <?php if ($tasa && $totales['USD'] > 0): ?><div class="small text-muted">≈ <?= bancoMoneda($totales['USD'] * (float)($tasa['compra'] ?: $tasa['referencia']), 'HNL') ?></div><?php endif; ?></div></div>
         <div class="col-6 col-lg-3"><div class="app-card app-kpi"><div class="app-kpi-label">Cheques por cobrar (L)</div><div class="app-kpi-value text-warning"><?= bancoMoneda($comprometido['HNL'], 'HNL') ?></div></div></div>
-        <div class="col-6 col-lg-3"><div class="app-card app-kpi"><div class="app-kpi-label">Cuentas activas</div><div class="app-kpi-value"><?= count($activas) ?></div></div></div>
+        <div class="col-6 col-lg-3"><div class="app-card app-kpi"><div class="app-kpi-label d-flex justify-content-between align-items-center">Dólar <?= $tasa ? ($tasa['fuente'] === 'BCH' ? '(BCH)' : '(referencia)') : '' ?>
+                <span><?php if ($puedeMover): ?><button type="button" class="btn btn-link btn-sm p-0" id="btnTasa" title="Actualizar la tasa en línea"><i class="bi bi-arrow-clockwise"></i></button><?php endif; ?>
+                <?php if ($puedeEditar): ?><button type="button" class="btn btn-link btn-sm p-0 ms-1" id="btnTasaClave" title="Clave de la Web-API del Banco Central de Honduras"><i class="bi bi-key"></i></button><?php endif; ?></span></div>
+            <div class="app-kpi-value" style="font-size:1rem"><?php if (!$tasa): ?><span class="text-muted">Sin tasa</span>
+                <?php elseif ($tasa['fuente'] === 'BCH'): ?>Compra L <?= number_format((float)$tasa['compra'], 4) ?><br>Venta L <?= number_format((float)$tasa['venta'], 4) ?>
+                <?php else: ?>L <?= number_format((float)$tasa['referencia'], 4) ?><?php endif; ?></div>
+            <?php if ($tasa): ?><div class="small <?= $tasaHoy ? 'text-muted' : 'text-warning' ?>"><?= $tasaHoy ? 'Hoy' : 'Del ' . date('d/m/Y', strtotime($tasa['fecha'])) ?></div><?php endif; ?></div></div>
     </div>
 
     <?php if (!$cuentas): ?>
@@ -249,6 +259,13 @@ require_once '../../includes/templates/header.php';
     document.querySelectorAll('.btn-predeterminar').forEach(b => b.addEventListener('click', () => B.accion({ accion: 'predeterminar', id: b.dataset.id })));
     document.querySelectorAll('[data-abrir]').forEach(b => b.addEventListener('click', () => B.modal(b.dataset.abrir).show()));
     B.formulario(fCuenta);
+    // Tasa del dólar en línea (BCH con clave; si no, referencia pública)
+    document.getElementById('btnTasa')?.addEventListener('click', () => { Swal.fire({ title: 'Consultando la tasa…', allowOutsideClick: false, didOpen: () => Swal.showLoading() }); B.accion({ accion: 'tasa_actualizar' }).catch(() => {}); });
+    document.getElementById('btnTasaClave')?.addEventListener('click', () => {
+        Swal.fire({ title: 'Clave de la Web-API del BCH', html: '<div class="text-start small">Regístrate gratis en <a href="https://bchapi-am.developer.azure-api.net" target="_blank" rel="noopener">bchapi-am.developer.azure-api.net</a>, suscríbete a la API y pega aquí tu clave de suscripción. Con ella el sistema trae cada día la tasa de <strong>compra y venta</strong> del Banco Central. Sin clave usa una tasa de referencia del mercado.</div>',
+            input: 'password', inputPlaceholder: 'Clave de suscripción (vacío = quitarla)', showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar' })
+            .then(r => { if (r.isConfirmed) B.accion({ accion: 'tasa_clave', clave: r.value || '' }).catch(() => {}); });
+    });
     B.formulario(document.getElementById('formMovimiento'));
     B.formulario(document.getElementById('formTransferencia'));
 

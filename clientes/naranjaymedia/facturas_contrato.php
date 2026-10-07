@@ -1048,7 +1048,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 <td class="small"><?= htmlspecialchars($a['referencia'] ?? '') ?: '—' ?></td>
                                 <td class="text-end fw-semibold text-nowrap">L <?= number_format((float)$a['monto'], 2) ?></td>
                                 <td class="text-center small"><?= $a['factura_id'] ? '<a href="ver_factura?id=' . (int)$a['factura_id'] . '" target="_blank" class="font-monospace">' . htmlspecialchars($a['correlativo']) . '</a>' : ((int)$a['anulado'] ? '' : '<span class="badge" style="background:#fef3c7;color:#92400e">Sin factura</span>') ?></td>
-                                <td class="text-end"><?php if (!(int)$a['anulado'] && !$a['factura_id'] && in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?><button class="btn btn-link btn-sm p-0 text-danger btn-anular-anticipo" data-id="<?= (int)$a['id'] ?>" title="Anular"><i class="bi bi-x-circle"></i></button><?php endif; ?></td>
+                                <td class="text-end text-nowrap"><?php if (!(int)$a['anulado']): ?><a href="recibo_pdf?anticipo=<?= (int)$a['id'] ?>" target="_blank" class="btn btn-link btn-sm p-0 me-2 text-secondary" title="Recibo de anticipo en PDF"><i class="bi bi-file-earmark-pdf"></i></a><?php if ($puedeCorreo): ?><a href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&anticipos=<?= (int)$a['id'] ?>" class="btn btn-link btn-sm p-0 me-2 text-secondary" title="Enviar el recibo por correo (ahora o programado)"><i class="bi bi-send"></i></a><?php endif; ?><?php endif; ?><?php if (!(int)$a['anulado'] && !$a['factura_id'] && in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?><button class="btn btn-link btn-sm p-0 text-danger btn-anular-anticipo" data-id="<?= (int)$a['id'] ?>" title="Anular"><i class="bi bi-x-circle"></i></button><?php endif; ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -1786,6 +1786,16 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
 <script>
 (function () {
     const URL_ANT = 'includes/anticipo_accion.php';
+    // Después de registrar un pago anticipado: el cliente recibe un recibo (no factura), en PDF o por correo
+    window.ofrecerRecibo = (id, msg) => Swal.fire({
+        icon: 'success', title: msg, text: 'Se generó el recibo de anticipo para el cliente.',
+        showConfirmButton: <?= $puedeCorreo ? 'true' : 'false' ?>, confirmButtonText: '<i class="bi bi-send me-1"></i>Enviar por correo',
+        showDenyButton: true, denyButtonText: '<i class="bi bi-file-earmark-pdf me-1"></i>Ver recibo', denyButtonColor: '#475569',
+        showCancelButton: true, cancelButtonText: 'Listo',
+    }).then(r => {
+        if (r.isConfirmed) location.href = 'cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&anticipos=' + id;
+        else { if (r.isDenied) window.open('recibo_pdf?anticipo=' + id, '_blank'); location.reload(); }
+    });
     const enviar = fd => fetch(URL_ANT, { method: 'POST', body: fd }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.error || 'No se pudo guardar.'); return d; });
     const form = document.getElementById('formAnticipo');
     const modal = new bootstrap.Modal(document.getElementById('modalAnticipo'));
@@ -1794,7 +1804,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
         e.preventDefault();
         if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
         const b = form.querySelector('[type=submit]'); b.disabled = true;
-        enviar(new FormData(form)).then(d => { modal.hide(); Swal.fire({ icon: 'success', title: d.message }).then(() => location.reload()); })
+        enviar(new FormData(form)).then(d => { modal.hide(); ofrecerRecibo(d.id, d.message); })
             .catch(err => Swal.fire('Error', err.message, 'error')).finally(() => b.disabled = false);
     });
     document.querySelectorAll('.btn-anular-anticipo').forEach(b => b.addEventListener('click', () => {
@@ -1874,7 +1884,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                 monto: document.getElementById('pcMonto')?.value, cuenta_id: document.getElementById('pcCuenta')?.value,
                 referencia: document.getElementById('pcRef')?.value, notas: document.getElementById('pcNotas')?.value,
             }).catch(e => Swal.showValidationMessage(e.message)),
-        }).then(r => { if (r.isConfirmed && r.value) listo(r.value); });
+        }).then(r => { if (r.isConfirmed && r.value) (r.value.anticipo_id && window.ofrecerRecibo ? window.ofrecerRecibo(r.value.anticipo_id, r.value.message) : listo(r.value)); });
     }));
 
     // Vincular con un cobro ya registrado (factura del contrato, recibo o pago anticipado)

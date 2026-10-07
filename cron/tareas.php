@@ -18,3 +18,4 @@ if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) exit("Ya hay una ejecución en c
 $log = fn(string $m) => print('[' . date('Y-m-d H:i') . "] $m\n");
 cronAvisosPago($pdo, $log);
 cobrosPendientesEnviar($pdo, $log);
+cronTasaCambio($pdo, $log);

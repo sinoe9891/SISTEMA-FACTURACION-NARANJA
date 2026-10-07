@@ -60,7 +60,7 @@ try {
             $msg = 'Recibo emitido y pago registrado.';
             break;
         case 'cobrar_anticipo':
-            planRegistrarAnticipo($pdo, $cid, $uid, $id, $_POST);
+            $extraResp = ['anticipo_id' => planRegistrarAnticipo($pdo, $cid, $uid, $id, $_POST)];
             $msg = 'Pago registrado como pago anticipado (se aplica a la factura cuando la emitas).';
             break;
         case 'vincular':
@@ -75,7 +75,7 @@ try {
             throw new Exception("Acción no válida.");
     }
     $pdo->commit();
-    echo json_encode(['success' => true, 'message' => $msg], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['success' => true, 'message' => $msg] + ($extraResp ?? []), JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
     http_response_code(400);

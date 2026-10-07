@@ -2,6 +2,7 @@
 $titulo = 'Estado de Resultados';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
+require_once '../../includes/activos.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/templates/header.php';
 
@@ -187,10 +188,13 @@ $stmtEgr = $pdo->prepare("
     FROM gastos
     WHERE cliente_id = ?
       AND estado != 'anulado'
-      AND fecha BETWEEN ? AND ?
+      AND fecha BETWEEN ? AND ?" . gastoEsGastoSql($pdo) . "
 ");
 $stmtEgr->execute([$cliente_id, $fecha_ini, $fecha_fin]);
 $egr = $stmtEgr->fetch(PDO::FETCH_ASSOC);
+// Depreciación de activos fijos: gasto del período que no sale del banco
+$depPeriodo = activosDepreciacionPeriodo($pdo, (int)$cliente_id, $fecha_ini, $fecha_fin);
+$egr['total_gastos'] = (float)$egr['total_gastos'] + $depPeriodo;
 
 // Gastos mes a mes
 $stmtEgrMes = $pdo->prepare("
@@ -205,14 +209,23 @@ $stmtEgrMes = $pdo->prepare("
     FROM gastos
     WHERE cliente_id = ?
       AND estado != 'anulado'
-      AND YEAR(fecha) = ?
+      AND YEAR(fecha) = ?" . gastoEsGastoSql($pdo) . "
     GROUP BY MONTH(fecha)
     ORDER BY mes_num
 ");
 $stmtEgrMes->execute([$cliente_id, $anio_filtro]);
 $egr_por_mes_raw = $stmtEgrMes->fetchAll(PDO::FETCH_ASSOC);
 $egr_por_mes = [];
+$egr_dep_mes = [];
 foreach ($egr_por_mes_raw as $r) $egr_por_mes[(int)$r['mes_num']] = $r;
+for ($m = 1; $m <= 12; $m++) {
+    $dm = activosDepreciacionPeriodo($pdo, (int)$cliente_id, sprintf('%04d-%02d-01', $anio_filtro, $m), date('Y-m-t', strtotime(sprintf('%04d-%02d-01', $anio_filtro, $m))));
+    if ($dm <= 0) continue;
+    $egr_por_mes[$m] ??= ['mes_num' => $m, 'total' => 0, 'fijos' => 0, 'variables' => 0, 'extraordinarios' => 0, 'unicos' => 0, 'anuales' => 0];
+    $egr_por_mes[$m]['total'] += $dm;
+    $egr_por_mes[$m]['fijos'] += $dm;
+    $egr_dep_mes[$m] = $dm;
+}
 
 // Gastos por categoría del período
 $stmtEgrCat = $pdo->prepare("
@@ -223,7 +236,7 @@ $stmtEgrCat = $pdo->prepare("
     LEFT JOIN gastos g ON g.categoria_id = cg.id
         AND g.cliente_id = cg.cliente_id
         AND g.estado != 'anulado'
-        AND g.fecha BETWEEN ? AND ?
+        AND g.fecha BETWEEN ? AND ?" . gastoEsGastoSql($pdo, 'g') . "
     WHERE cg.cliente_id = ? AND cg.activa = 1
     GROUP BY cg.id
     HAVING total > 0
@@ -231,6 +244,10 @@ $stmtEgrCat = $pdo->prepare("
 ");
 $stmtEgrCat->execute([$fecha_ini, $fecha_fin, $cliente_id]);
 $egr_categorias = $stmtEgrCat->fetchAll(PDO::FETCH_ASSOC);
+if ($depPeriodo > 0) {
+    $egr_categorias[] = ['nombre' => 'Depreciación de activos fijos', 'color' => '#64748b', 'icono' => 'bi-pc-display', 'total' => $depPeriodo, 'qty' => 0];
+    usort($egr_categorias, fn($a, $b) => (float)$b['total'] <=> (float)$a['total']);
+}
 
 // Gastos pendientes de pago del período: los ya vencidos (por pagar) y los de fecha futura (programados, p. ej. la cuota del próximo mes)
 $stmtPend = $pdo->prepare("
@@ -254,7 +271,7 @@ $stmtEgrCatMes = $pdo->prepare("
     FROM gastos g
     INNER JOIN categorias_gastos cg ON cg.id = g.categoria_id
     WHERE g.cliente_id = ? AND g.estado != 'anulado'
-      AND YEAR(g.fecha) = ?
+      AND YEAR(g.fecha) = ?" . gastoEsGastoSql($pdo, 'g') . "
     GROUP BY cg.id, MONTH(g.fecha)
     ORDER BY cg.id, mes_num
 ");
@@ -268,6 +285,10 @@ foreach ($egr_cat_mes_raw as $r) {
     $cid = (int)$r['id'];
     $egr_cat_info[$cid] = ['nombre' => $r['nombre'], 'color' => $r['color'], 'icono' => $r['icono']];
     $egr_cat_matrix[$cid][(int)$r['mes_num']] = (float)$r['total'];
+}
+if (!empty($egr_dep_mes)) {   // fila de depreciación en el desglose mes a mes
+    $egr_cat_info[0] = ['nombre' => 'Depreciación de activos fijos', 'color' => '#64748b', 'icono' => 'bi-pc-display'];
+    $egr_cat_matrix[0] = $egr_dep_mes;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -294,9 +315,9 @@ try {
 } catch (PDOException $e) {
 }
 
-$stmtEgrAnt = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id=? AND estado!='anulado' AND MONTH(fecha)=? AND YEAR(fecha)=?");
+$stmtEgrAnt = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id=? AND estado!='anulado' AND MONTH(fecha)=? AND YEAR(fecha)=?" . gastoEsGastoSql($pdo));
 $stmtEgrAnt->execute([$cliente_id, (int)$dtAnt->format('n'), (int)$dtAnt->format('Y')]);
-$egr_ant = (float)$stmtEgrAnt->fetchColumn();
+$egr_ant = (float)$stmtEgrAnt->fetchColumn() + activosDepreciacionPeriodo($pdo, (int)$cliente_id, $dtAnt->format('Y-m-01'), $dtAnt->format('Y-m-t'));
 
 // Preparar datos para Chart.js (12 meses)
 $chart_labels   = [];

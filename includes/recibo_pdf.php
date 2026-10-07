@@ -31,6 +31,44 @@ function reciboArchivo(array $r): string
 function reciboPdf(PDO $pdo, int $cid, int $reciboId): string
 {
     $r = reciboDatos($pdo, $cid, $reciboId);
+    return reciboRender($pdo, $cid, $r + ['titulo' => 'RECIBO', 'num' => str_pad((string)$r['numero_recibo'], 5, '0', STR_PAD_LEFT),
+        'pie' => 'Este recibo no es una factura y no incluye ISV.']);
+}
+
+/** Recibo de un pago anticipado (cliente que paga antes de facturar): no es factura; la factura se emite después. */
+function anticipoDatos(PDO $pdo, int $cid, int $anticipoId): array
+{
+    $st = $pdo->prepare("
+        SELECT a.*, a.monto, a.fecha AS fecha_emision, a.concepto, a.metodo AS metodo_pago, a.referencia AS notas,
+               cf.nombre AS cliente, cf.rtn AS cliente_rtn, c.nombre_contrato, c.id AS contrato, c.receptor_id
+        FROM contratos_anticipos a
+        JOIN contratos c ON c.id = a.contrato_id AND c.cliente_id = a.cliente_id
+        JOIN clientes_factura cf ON cf.id = c.receptor_id AND cf.cliente_id = c.cliente_id
+        WHERE a.id = ? AND a.cliente_id = ?");
+    $st->execute([$anticipoId, $cid]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$r) throw new Exception("Pago anticipado no encontrado.");
+    $r['estado'] = (int)$r['anulado'] ? 'anulado' : 'emitido';
+    $r['periodo_mes'] = null;
+    $r['notas'] = $r['referencia'] ? 'Referencia: ' . $r['referencia'] : '';
+    return $r;
+}
+
+function anticipoArchivo(array $a): string
+{
+    return 'recibo_anticipo_' . str_pad((string)$a['id'], 5, '0', STR_PAD_LEFT) . '.pdf';
+}
+
+function anticipoPdf(PDO $pdo, int $cid, int $anticipoId): string
+{
+    $r = anticipoDatos($pdo, $cid, $anticipoId);
+    return reciboRender($pdo, $cid, $r + ['titulo' => 'RECIBO DE ANTICIPO', 'num' => 'A-' . str_pad((string)$r['id'], 5, '0', STR_PAD_LEFT),
+        'pie' => 'Pago anticipado: no es una factura. La factura se emitirá al cierre y este pago se aplicará como abono.']);
+}
+
+/** Arma el PDF de un recibo con los datos ya resueltos (titulo, num, pie, cliente, monto, concepto…). */
+function reciboRender(PDO $pdo, int $cid, array $r): string
+{
     $emp = $pdo->prepare("SELECT nombre, alias, rtn, direccion, telefono, email, logo_url FROM clientes_saas WHERE id = ?");
     $emp->execute([$cid]);
     $emp = $emp->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -50,7 +88,7 @@ function reciboPdf(PDO $pdo, int $cid, int $reciboId): string
     $fecha = (int)substr($r['fecha_emision'], 8, 2) . ' de ' . $MES[(int)substr($r['fecha_emision'], 5, 2)] . ' de ' . substr($r['fecha_emision'], 0, 4);
     $periodo = $r['periodo_mes'] ? ucfirst($MES[(int)$r['periodo_mes']]) . ' ' . (int)$r['periodo_anio'] : '';
     $metodos = ['transferencia' => 'Transferencia bancaria', 'efectivo' => 'Efectivo', 'cheque' => 'Cheque', 'tarjeta' => 'Tarjeta', 'otro' => 'Otro'];
-    $num = str_pad((string)$r['numero_recibo'], 5, '0', STR_PAD_LEFT);
+    $num = $r['num'];
     $empresa = $emp['nombre'] ?? '';
     $fila = fn($k, $v) => $v === '' ? '' : '<tr><td class="k">' . $k . '</td><td>' . $v . '</td></tr>';
 
@@ -81,7 +119,7 @@ function reciboPdf(PDO $pdo, int $cid, int $reciboId): string
                 . (!empty($emp['rtn']) ? '<br>RTN: ' . $e($emp['rtn']) : '')
                 . (!empty($emp['direccion']) ? '<br>' . $e($emp['direccion']) : '')
                 . (!empty($emp['telefono']) || !empty($emp['email']) ? '<br>' . $e(trim(($emp['telefono'] ?? '') . ' · ' . ($emp['email'] ?? ''), ' ·')) : '') . '</div></td>
-        <td class="tit"><h1>RECIBO</h1><div class="n">N.º ' . $num . '</div><div style="margin-top:6px">' . $e($fecha) . '</div></td>
+        <td class="tit"><h1>' . $e($r['titulo']) . '</h1><div class="n">N.º ' . $num . '</div><div style="margin-top:6px">' . $e($fecha) . '</div></td>
     </tr></table>
 
     <div class="monto"><div>Recibimos de <strong>' . $e($r['cliente']) . '</strong>' . ($r['cliente_rtn'] ? ' (RTN ' . $e($r['cliente_rtn']) . ')' : '') . ' la cantidad de:</div>
@@ -102,7 +140,7 @@ function reciboPdf(PDO $pdo, int $cid, int $reciboId): string
         <div class="linea">Recibido por' . ($firm['nombre'] ? '<br><strong>' . $e($firm['nombre']) . '</strong>' : '') . ($firm['cargo'] ? '<br>' . $e($firm['cargo']) : '') . '<br>' . $e($empresa) . '</div>
     </div>
 
-    <div class="pie">Este recibo no es una factura y no incluye ISV. Recibo N.º ' . $num . ' · ' . $e($empresa) . '</div>
+    <div class="pie">' . $e($r['pie']) . ' Recibo N.º ' . $num . ' · ' . $e($empresa) . '</div>
     </body></html>';
 
     $opt = new \Dompdf\Options();

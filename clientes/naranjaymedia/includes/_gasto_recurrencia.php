@@ -73,6 +73,11 @@ function programarSiguienteGastoRecurrente(PDO $pdo, array $gasto, int $cid, int
         $gasto['proveedor'],
         $usuario_id,
     ]);
+    // La siguiente cuota conserva su naturaleza (p. ej. abono a capital de un préstamo) y su préstamo
+    if (!empty($gasto['naturaleza']) && $gasto['naturaleza'] !== 'gasto') {
+        $pdo->prepare("UPDATE gastos SET naturaleza = ?, prestamo_id = ?, activo_id = ? WHERE id = ?")
+            ->execute([$gasto['naturaleza'], $gasto['prestamo_id'] ?? null, $gasto['activo_id'] ?? null, (int)$pdo->lastInsertId()]);
+    }
 
     return $fechaSig;
 }

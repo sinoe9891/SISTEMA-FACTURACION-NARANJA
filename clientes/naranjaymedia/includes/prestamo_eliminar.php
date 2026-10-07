@@ -17,6 +17,14 @@ try {
     $pr = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$pr) throw new Exception("Préstamo no encontrado.");
 
+    // Si salió de una cuenta bancaria, ese movimiento se anula (el registro estaba mal)
+    try {
+        $mv = $pdo->prepare("SELECT movimiento_id FROM colaborador_prestamos WHERE id = ?");
+        $mv->execute([$prestamo_id]);
+        if ($movId = (int)$mv->fetchColumn()) $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ? AND cliente_id = ? AND conciliado = 0")->execute([$movId, $cid]);
+    } catch (PDOException $e) {
+        // sin la columna movimiento_id (migración 2026-10-08)
+    }
     // Eliminar cuotas primero (FK)
     $pdo->prepare("DELETE FROM colaborador_prestamo_cuotas WHERE prestamo_id = ?")->execute([$prestamo_id]);
     // Eliminar préstamo

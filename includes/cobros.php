@@ -31,11 +31,12 @@ const COBRO_PLANTILLAS_EXTRA = [
  * Asunto y mensaje (HTML) de un recordatorio del plan o de un envío de recibos, con la plantilla de la empresa
  * (o la de COBRO_PLANTILLAS_EXTRA). Mismo saludo y cuentas de pago que los cobros de facturas.
  */
-function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $ids): array
+function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $ids, array $antIds = []): array
 {
     if (!isset(COBRO_PLANTILLAS_EXTRA[$tipo])) throw new Exception("Tipo de mensaje inválido.");
     $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
-    if (!$ids) throw new Exception($tipo === 'envio_recibo' ? "Selecciona al menos un recibo." : "Selecciona al menos un pago del plan.");
+    $antIds = $tipo === 'envio_recibo' ? array_values(array_unique(array_filter(array_map('intval', $antIds)))) : [];
+    if (!$ids && !$antIds) throw new Exception($tipo === 'envio_recibo' ? "Selecciona al menos un recibo." : "Selecciona al menos un pago del plan.");
     $st = $pdo->prepare("SELECT nombre FROM clientes_factura WHERE id = ? AND cliente_id = ?");
     $st->execute([$rid, $cid]);
     $cliente = $st->fetchColumn();
@@ -44,19 +45,34 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
     $b = fn($v) => '<strong>' . $h($v) . '</strong>';
     $MES = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
     $fecha = fn($f) => (int)substr($f, 8, 2) . ' de ' . $MES[(int)substr($f, 5, 2)] . ' de ' . substr($f, 0, 4);
-    $in = implode(',', array_fill(0, count($ids), '?'));
+    $in = implode(',', array_fill(0, max(1, count($ids)), '?'));
     $total = 0.0;
     $lineas = [];
     if ($tipo === 'envio_recibo') {
-        $st = $pdo->prepare("SELECT numero_recibo, fecha_emision, monto, concepto FROM contratos_recibos WHERE id IN ($in) AND cliente_id = ? AND receptor_id = ? AND estado = 'emitido' ORDER BY numero_recibo");
-        $st->execute([...$ids, $cid, $rid]);
-        $filas = $st->fetchAll(PDO::FETCH_ASSOC);
-        if (count($filas) !== count($ids)) throw new Exception("Algún recibo no pertenece a este cliente.");
+        $filas = [];
+        if ($ids) {
+            $st = $pdo->prepare("SELECT numero_recibo, fecha_emision, monto, concepto FROM contratos_recibos WHERE id IN ($in) AND cliente_id = ? AND receptor_id = ? AND estado = 'emitido' ORDER BY numero_recibo");
+            $st->execute([...$ids, $cid, $rid]);
+            $filas = $st->fetchAll(PDO::FETCH_ASSOC);
+            if (count($filas) !== count($ids)) throw new Exception("Algún recibo no pertenece a este cliente.");
+        }
         foreach ($filas as $r) {
             $total += (float)$r['monto'];
             $lineas[] = '- Recibo N.° ' . $b(str_pad((string)$r['numero_recibo'], 5, '0', STR_PAD_LEFT)) . ' del ' . $h($fecha($r['fecha_emision'])) . ': ' . $b('L ' . number_format((float)$r['monto'], 2)) . ' · ' . $h($r['concepto']);
         }
-        $detalle = (count($filas) === 1 ? 'el recibo de su pago:' : 'los recibos de sus pagos:') . "\n\n" . implode("\n", $lineas);
+        if ($antIds) {
+            $inA = implode(',', array_fill(0, count($antIds), '?'));
+            $st = $pdo->prepare("SELECT a.id, a.fecha, a.monto, a.concepto FROM contratos_anticipos a JOIN contratos c ON c.id = a.contrato_id AND c.cliente_id = a.cliente_id
+                                 WHERE a.id IN ($inA) AND a.cliente_id = ? AND c.receptor_id = ? AND a.anulado = 0 ORDER BY a.fecha");
+            $st->execute([...$antIds, $cid, $rid]);
+            $fa = $st->fetchAll(PDO::FETCH_ASSOC);
+            if (count($fa) !== count($antIds)) throw new Exception("Algún pago anticipado no pertenece a este cliente.");
+            foreach ($fa as $a) {
+                $total += (float)$a['monto'];
+                $lineas[] = '- Recibo de anticipo N.° ' . $b('A-' . str_pad((string)$a['id'], 5, '0', STR_PAD_LEFT)) . ' del ' . $h($fecha($a['fecha'])) . ': ' . $b('L ' . number_format((float)$a['monto'], 2)) . ($a['concepto'] ? ' · ' . $h($a['concepto']) : '');
+            }
+        }
+        $detalle = (count($lineas) === 1 ? 'el recibo de su pago:' : 'los recibos de sus pagos:') . "\n\n" . implode("\n", $lineas);
     } else {
         require_once __DIR__ . '/contrato_plan.php';
         $st = $pdo->prepare("SELECT p.id, p.contrato_id FROM contratos_plan p JOIN contratos c ON c.id = p.contrato_id AND c.cliente_id = p.cliente_id WHERE p.id IN ($in) AND p.cliente_id = ? AND c.receptor_id = ?");
@@ -112,6 +128,15 @@ function cobrosExtrasDisponible(PDO $pdo): bool
     return $ok;
 }
 
+function cobroAnticiposDisponible(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) {
+        try { $ok = (bool)$pdo->query("SHOW TABLES LIKE 'cobros_programados_anticipos'")->fetchColumn(); } catch (Throwable $e) { $ok = false; }
+    }
+    return $ok;
+}
+
 /** Adjuntos de un cobro: facturas y recibos en PDF, con su etiqueta («factura 000-…», «recibo 00012»). */
 function cobroAdjuntos(PDO $pdo, int $cid, int $cobroId): array
 {
@@ -122,6 +147,12 @@ function cobroAdjuntos(PDO $pdo, int $cid, int $cobroId): array
         $st = $pdo->prepare("SELECT NULL AS factura_id, x.recibo_id, x.archivo, LPAD(r.numero_recibo, 5, '0') AS correlativo, CONCAT('recibo ', LPAD(r.numero_recibo, 5, '0')) AS etiqueta
                              FROM cobros_programados_recibos x JOIN contratos_recibos r ON r.id = x.recibo_id AND r.cliente_id = ? WHERE x.cobro_id = ? ORDER BY r.numero_recibo");
         $st->execute([$cid, $cobroId]);
+        $out = array_merge($out, $st->fetchAll(PDO::FETCH_ASSOC));
+    }
+    if (cobroAnticiposDisponible($pdo)) {
+        $st = $pdo->prepare("SELECT NULL AS factura_id, NULL AS recibo_id, x.anticipo_id, x.archivo, CONCAT('A-', LPAD(x.anticipo_id, 5, '0')) AS correlativo, CONCAT('recibo de anticipo A-', LPAD(x.anticipo_id, 5, '0')) AS etiqueta
+                             FROM cobros_programados_anticipos x WHERE x.cobro_id = ? ORDER BY x.anticipo_id");
+        $st->execute([$cobroId]);
         $out = array_merge($out, $st->fetchAll(PDO::FETCH_ASSOC));
     }
     return array_map(fn($a) => $a + ['existe' => is_file(cobroDir($cid, $cobroId) . $a['archivo'])], $out);
@@ -180,12 +211,19 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
     $lista = fn($k) => array_values(array_unique(array_filter(array_map('intval', (array)($d[$k] ?? [])))));
     $ids = $tipo === 'envio_recibo' || $tipo === 'recordatorio_pago' ? [] : $lista('factura_ids');
     $recIds = $tipo === 'envio_recibo' ? $lista('recibo_ids') : [];
+    $antIds = $tipo === 'envio_recibo' && cobroAnticiposDisponible($pdo) ? $lista('anticipo_ids') : [];
     $planIds = $tipo === 'recordatorio_pago' ? $lista('plan_ids') : [];
     if (($recIds || $planIds) && !cobrosExtrasDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-07_cobros_plan_recibos.sql.");
-    if ($tipo === 'envio_recibo' && !$recIds) throw new Exception("Selecciona al menos un recibo.");
+    if ($tipo === 'envio_recibo' && !$recIds && !$antIds) throw new Exception("Selecciona al menos un recibo.");
     if ($tipo === 'recordatorio_pago' && !$planIds) throw new Exception("Selecciona al menos un pago del plan.");
     if (in_array($tipo, ['saldo_pendiente', 'envio_factura'], true) && !$ids) throw new Exception("Selecciona al menos una factura.");
-    if (count($ids) + count($recIds) > 30) throw new Exception("Máximo 30 documentos por cobro.");
+    if (count($ids) + count($recIds) + count($antIds) > 30) throw new Exception("Máximo 30 documentos por cobro.");
+    if ($antIds) {
+        $in = implode(',', array_fill(0, count($antIds), '?'));
+        $st = $pdo->prepare("SELECT COUNT(*) FROM contratos_anticipos a JOIN contratos c ON c.id = a.contrato_id AND c.cliente_id = a.cliente_id WHERE a.id IN ($in) AND a.cliente_id = ? AND c.receptor_id = ? AND a.anulado = 0");
+        $st->execute([...$antIds, $cid, $rid]);
+        if ((int)$st->fetchColumn() !== count($antIds)) throw new Exception("Algún pago anticipado no es de este cliente o está anulado.");
+    }
     if (count($planIds) > 60) throw new Exception("Máximo 60 pagos por recordatorio.");
     $facturas = $recibos = [];
     if ($ids) {
@@ -254,6 +292,17 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
             $archivo = 'recibo_' . str_pad((string)$num, 5, '0', STR_PAD_LEFT) . '.pdf';
             file_put_contents($dir . $archivo, $pdf);
             $insR->execute([$id, $recId, $archivo]);
+        }
+    }
+    // Recibos de pagos anticipados
+    if ($antIds) {
+        require_once __DIR__ . '/recibo_pdf.php';
+        $insA = $pdo->prepare("INSERT INTO cobros_programados_anticipos (cobro_id, anticipo_id, archivo) VALUES (?, ?, ?)");
+        foreach ($antIds as $aid) {
+            $pdf = anticipoPdf($pdo, $cid, $aid);
+            $archivo = anticipoArchivo(['id' => $aid]);
+            file_put_contents($dir . $archivo, $pdf);
+            $insA->execute([$id, $aid, $archivo]);
         }
     }
     // Pagos del plan que se recuerdan (para mostrar en el plan que ya se avisó)
@@ -409,6 +458,15 @@ function cobroDuplicar(PDO $pdo, int $cid, int $uid, int $id, string $para, stri
         }
         $pdo->prepare("INSERT INTO cobros_programados_plan (cobro_id, plan_id) SELECT ?, plan_id FROM cobros_programados_plan WHERE cobro_id = ?")->execute([$nuevo, $id]);
     }
+    if (cobroAnticiposDisponible($pdo)) {
+        $st = $pdo->prepare("SELECT anticipo_id, archivo FROM cobros_programados_anticipos WHERE cobro_id = ?");
+        $st->execute([$id]);
+        $insA = $pdo->prepare("INSERT INTO cobros_programados_anticipos (cobro_id, anticipo_id, archivo) VALUES (?, ?, ?)");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $a) {
+            if (!copy(cobroDir($cid, $id) . $a['archivo'], $dir . $a['archivo'])) throw new Exception("Falta el PDF del {$a['archivo']}.");
+            $insA->execute([$nuevo, $a['anticipo_id'], $a['archivo']]);
+        }
+    }
     return $nuevo;
 }
 
@@ -423,6 +481,7 @@ function cobroEliminar(PDO $pdo, int $cid, int $id): void
         $pdo->prepare("DELETE FROM cobros_programados_recibos WHERE cobro_id = ?")->execute([$id]);
         $pdo->prepare("DELETE FROM cobros_programados_plan WHERE cobro_id = ?")->execute([$id]);
     }
+    if (cobroAnticiposDisponible($pdo)) $pdo->prepare("DELETE FROM cobros_programados_anticipos WHERE cobro_id = ?")->execute([$id]);
     $pdo->prepare("DELETE FROM cobros_programados WHERE id = ? AND cliente_id = ?")->execute([$id, $cid]);
     $dir = cobroDir($cid, $id);
     foreach (glob($dir . '*.pdf') ?: [] as $f) @unlink($f);

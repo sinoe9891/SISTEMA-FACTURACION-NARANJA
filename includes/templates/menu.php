@@ -57,6 +57,7 @@ $menuLateral = [
 		['bancos', 'bi-bank', 'Bancos', ['banco_cuenta']],
 		['cheques', 'bi-journal-check', 'Cheques', []],
 		['tarjetas', 'bi-credit-card', 'Tarjetas', []],
+		['activos', 'bi-pc-display', 'Activos y préstamos', []],
 	],
 	'Reportes' => [
 		['financiero', 'bi-graph-up', 'Estado de resultados', []],
@@ -101,7 +102,10 @@ $menuLateral = [
 ];
 
 // Rol Nómina y gastos: Personal, Pagos y gastos y Bancos (session.php bloquea el resto)
-if (USUARIO_ROL === 'nomina') $menuLateral = ['Personal' => $menuLateral['Personal'], 'Pagos y gastos' => $menuLateral['Pagos y gastos'], 'Bancos' => $menuLateral['Bancos']];
+if (USUARIO_ROL === 'nomina') {
+	$menuLateral = ['Personal' => $menuLateral['Personal'], 'Pagos y gastos' => $menuLateral['Pagos y gastos'], 'Bancos' => $menuLateral['Bancos']];
+	foreach ($menuLateral as $__s => $__items) $menuLateral[$__s] = array_values(array_filter($__items, fn($it) => in_array($it[0], ROL_NOMINA_ARCHIVOS, true)));
+}
 
 // Permisos por rol (Configuración → Permisos por rol): se ocultan las opciones desactivadas para este rol
 // y, si se abre una de sus páginas directamente, se redirige a la primera opción permitida. «Inicio» siempre se ve.

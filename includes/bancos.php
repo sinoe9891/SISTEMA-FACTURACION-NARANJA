@@ -122,6 +122,21 @@ function bancoDepositoCobro(PDO $pdo, int $cid, int $cuentaId, string $fecha, fl
     ]);
 }
 
+/**
+ * Salida del banco por un pago (nómina, préstamo o adelanto a colaborador…). Igual que en los cobros:
+ * si es anterior al saldo inicial de la cuenta, ese dinero ya salió antes de ese saldo y no se registra.
+ */
+function bancoSalidaPago(PDO $pdo, int $cid, int $cuentaId, string $fecha, float $monto, string $descripcion, ?string $referencia, int $usuario, ?int $gastoId = null, string $tipo = 'pago_gasto'): ?int
+{
+    $cuenta = bancoCuenta($pdo, $cid, $cuentaId, true);
+    if ($cuenta['moneda'] !== 'HNL') throw new Exception("Elige una cuenta en lempiras.");
+    if (!empty($cuenta['fecha_saldo_inicial']) && $fecha < $cuenta['fecha_saldo_inicial']) return null;
+    return bancoInsertarMovimiento($pdo, $cid, $cuentaId, [
+        'fecha' => $fecha, 'sentido' => 'salida', 'tipo' => $tipo, 'monto' => $monto,
+        'descripcion' => mb_substr($descripcion, 0, 255), 'referencia' => $referencia, 'gasto_id' => $gastoId, 'usuario_id' => $usuario,
+    ]);
+}
+
 /** Movimiento manual: depósito, retiro, comisión, interés o ajuste. */
 function bancoMovimientoManual(PDO $pdo, int $cid, int $usuario, array $d): int
 {

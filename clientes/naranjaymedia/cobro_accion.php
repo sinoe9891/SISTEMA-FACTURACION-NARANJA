@@ -52,6 +52,9 @@ try {
         if (isset($_GET['recibo'])) {
             $st = $pdo->prepare("SELECT archivo FROM cobros_programados_recibos WHERE cobro_id = ? AND recibo_id = ?");
             $st->execute([$cobro['id'], (int)$_GET['recibo']]);
+        } elseif (isset($_GET['anticipo'])) {
+            $st = $pdo->prepare("SELECT archivo FROM cobros_programados_anticipos WHERE cobro_id = ? AND anticipo_id = ?");
+            $st->execute([$cobro['id'], (int)$_GET['anticipo']]);
         } else {
             $st = $pdo->prepare("SELECT archivo FROM cobros_programados_facturas WHERE cobro_id = ? AND factura_id = ?");
             $st->execute([$cobro['id'], (int)($_GET['factura'] ?? 0)]);
@@ -100,6 +103,14 @@ try {
                                  WHERE r.cliente_id = ? AND r.receptor_id = ? AND r.estado = 'emitido' AND r.fecha_emision >= DATE_SUB(CURDATE(), INTERVAL 24 MONTH) ORDER BY r.fecha_emision DESC, r.id DESC");
             $st->execute([$cid, $rid]);
             $recibos = $st->fetchAll(PDO::FETCH_ASSOC);
+            // Pagos anticipados (recibo de anticipo) de los contratos del cliente
+            if (cobroAnticiposDisponible($pdo)) {
+                $st = $pdo->prepare("SELECT a.id, CONCAT('A-', LPAD(a.id, 5, '0')) AS numero_recibo, a.fecha, a.monto, COALESCE(a.concepto, 'Pago anticipado') AS concepto, a.contrato_id, 1 AS anticipo
+                                     FROM contratos_anticipos a JOIN contratos c ON c.id = a.contrato_id AND c.cliente_id = a.cliente_id
+                                     WHERE a.cliente_id = ? AND c.receptor_id = ? AND a.anulado = 0 ORDER BY a.fecha DESC");
+                $st->execute([$cid, $rid]);
+                $recibos = array_merge($recibos, $st->fetchAll(PDO::FETCH_ASSOC));
+            }
             $st = $pdo->prepare("SELECT id, nombre_contrato FROM contratos WHERE cliente_id = ? AND receptor_id = ? AND estado IN ('activo','vencido')");
             $st->execute([$cid, $rid]);
             foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $ct) {
@@ -167,7 +178,7 @@ try {
             break;
 
         case 'generar_mensaje':
-            echo json_encode(['success' => true] + cobroMensajeGenerar($pdo, $cid, (int)($_POST['receptor_id'] ?? 0), (string)($_POST['tipo'] ?? ''), (array)($_POST['ids'] ?? [])), JSON_UNESCAPED_UNICODE);
+            echo json_encode(['success' => true] + cobroMensajeGenerar($pdo, $cid, (int)($_POST['receptor_id'] ?? 0), (string)($_POST['tipo'] ?? ''), (array)($_POST['ids'] ?? []), (array)($_POST['anticipo_ids'] ?? [])), JSON_UNESCAPED_UNICODE);
             break;
 
         case 'previsualizar':
@@ -179,6 +190,7 @@ try {
                 $st->execute([$cid, $rid, ...$ids]);
                 $nums = $st->fetchAll(PDO::FETCH_COLUMN);
             }
+            foreach (array_filter(array_map('intval', (array)($_POST['anticipo_ids'] ?? []))) as $aid) $nums[] = 'recibo de anticipo A-' . str_pad((string)$aid, 5, '0', STR_PAD_LEFT);
             $rids = array_values(array_filter(array_map('intval', (array)($_POST['recibo_ids'] ?? []))));
             if ($rids) {
                 $st = $pdo->prepare("SELECT CONCAT('recibo ', LPAD(numero_recibo, 5, '0')) FROM contratos_recibos WHERE cliente_id = ? AND receptor_id = ? AND id IN (" . implode(',', array_fill(0, count($rids), '?')) . ") ORDER BY numero_recibo");

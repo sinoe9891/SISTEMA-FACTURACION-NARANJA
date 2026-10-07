@@ -100,6 +100,17 @@ try {
     ]);
     $prestamo_id = (int)$pdo->lastInsertId();
 
+    // «Sale de la cuenta»: el préstamo o adelanto sale del banco (queda como cuenta por cobrar al colaborador)
+    $cuentaSalida = filter_input(INPUT_POST, 'cuenta_id', FILTER_VALIDATE_INT) ?: null;
+    if ($cuentaSalida && in_array($tipo, ['prestamo', 'adelanto'], true)) {
+        require_once __DIR__ . '/../../../includes/bancos.php';
+        $stN = $pdo->prepare("SELECT CONCAT(nombre, ' ', apellido) FROM colaboradores WHERE id = ?");
+        $stN->execute([$colaborador_id]);
+        $movId = bancoSalidaPago($pdo, $cliente_id, $cuentaSalida, $fecha, $monto_total, ($tipo === 'prestamo' ? 'Préstamo a ' : 'Adelanto a ') . $stN->fetchColumn() . ' · ' . $descripcion, null, (int)USUARIO_ID, null, 'prestamo_colaborador');
+        if ($pdo->query("SHOW COLUMNS FROM colaborador_prestamos LIKE 'cuenta_id'")->fetchColumn())
+            $pdo->prepare("UPDATE colaborador_prestamos SET cuenta_id = ?, movimiento_id = ? WHERE id = ?")->execute([$cuentaSalida, $movId, $prestamo_id]);
+    }
+
     // ── Generar cuotas (solo préstamo, adelanto, multa) ───────────────────────
     if ($num_cuotas > 0) {
         $stmtCuota = $pdo->prepare("

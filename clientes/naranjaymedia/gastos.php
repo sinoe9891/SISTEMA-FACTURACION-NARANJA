@@ -950,6 +950,10 @@ $total  = count($gastos);
                                     <span class="badge bg-light text-secondary border"
                                         style="font-size:9px"><?= ucfirst($g['frecuencia']) ?></span>
                                 <?php endif; ?>
+                                <?php $natG = $g['naturaleza'] ?? 'gasto'; if ($natG !== 'gasto'): ?>
+                                    <span class="badge border" style="font-size:9px;background:#eef2ff;color:#3730a3" title="<?= $natG === 'anticipo' ? 'Dinero a favor: cuando llegue la factura del proveedor, edítalo y cambia la naturaleza a «Gasto del período».' : 'No resta en el Estado de resultados.' ?>">
+                                        <?= ['capital' => 'Abono a capital (no es gasto)', 'activo' => 'Compra de activo (se deprecia)', 'anticipo' => 'Anticipo a proveedor'][$natG] ?? $natG ?></span>
+                                <?php endif; ?>
                             </td>
                             <td><span class="tipo-badge <?= $tCls ?>"><?= $tLbl ?></span></td>
                             <td data-col="cat" style="font-size:.83rem;"><?php if (!empty($g['cat_nombre'])): ?><span
@@ -1053,6 +1057,13 @@ $total  = count($gastos);
                                 <option value="extraordinario">⭐ Extraordinario</option>
                                 <option value="viaticos">✈️ Viáticos</option>
                             </select>
+                        </div>
+                        <div class="col-md-6"><label class="mf-label">Naturaleza</label>
+                            <select name="naturaleza" id="g_nat" class="mf-select">
+                                <option value="gasto">Gasto del período</option>
+                                <option value="anticipo">Anticipo a proveedor (a favor hasta recibir su factura)</option>
+                            </select>
+                            <small class="text-muted d-none" id="g_nat_info" style="font-size:.72rem"></small>
                         </div>
                         <div class="col-md-6" id="grpFrecuencia"><label class="mf-label">Frecuencia</label>
                             <select name="frecuencia" id="g_frec" class="mf-select">
@@ -1536,6 +1547,8 @@ $total  = count($gastos);
         document.getElementById('formGasto').reset();
         document.getElementById('g_id').value = '';
         document.getElementById('g_fecha').value = new Date().toISOString().slice(0, 10);
+        document.getElementById('g_nat').disabled = false;
+        document.getElementById('g_nat_info').classList.add('d-none');
         gsLimpiarComp();
         // Reset comprobante actual section
         document.getElementById('gsCompActual').style.display = 'none';
@@ -1560,6 +1573,13 @@ $total  = count($gastos);
             document.getElementById('g_id').value = g.id;
             document.getElementById('g_desc').value = g.descripcion || '';
             document.getElementById('g_tipo').value = g.tipo || 'variable';
+            // Naturaleza: abonos a capital y compras de activos vienen de Activos y préstamos (no se cambian aquí)
+            const nat = g.naturaleza || 'gasto', natSel = document.getElementById('g_nat'), natInfo = document.getElementById('g_nat_info');
+            const fija = nat === 'capital' || nat === 'activo';
+            natSel.value = fija ? 'gasto' : nat;
+            natSel.disabled = fija;
+            natInfo.classList.toggle('d-none', !fija);
+            natInfo.textContent = fija ? (nat === 'capital' ? 'Abono a capital de un préstamo: no resta en resultados.' : 'Compra de un activo fijo: se reconoce con la depreciación.') : '';
             document.getElementById('g_tipo').dispatchEvent(new Event('change'));
             document.getElementById('g_frec').value = g.frecuencia || 'unico';
             document.getElementById('g_frec').dispatchEvent(new Event('change'));

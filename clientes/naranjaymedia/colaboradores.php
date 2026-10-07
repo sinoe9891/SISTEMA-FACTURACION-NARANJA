@@ -6,6 +6,9 @@ require_once '../../includes/correo.php';
 $__cfgCorreo = correoDisponible($pdo) ? correoConfig($pdo, cliente_actual()) : null;
 $correoActivo = $__cfgCorreo && (int)$__cfgCorreo['activo'];
 require_once '../../includes/functions.php';
+require_once '../../includes/bancos.php';
+// Cuentas en lempiras de donde sale el dinero (pagos, préstamos y adelantos); la predeterminada va seleccionada
+$cuentasPago = bancosDisponible($pdo) ? array_values(array_filter(bancoCuentas($pdo, (int)cliente_actual(), true), fn($c) => $c['moneda'] === 'HNL')) : [];
 require_once '../../includes/templates/header.php';
 
 $cliente_id = (int)(USUARIO_ROL === 'superadmin'
@@ -101,6 +104,9 @@ foreach ($stmtAllPagos->fetchAll(PDO::FETCH_ASSOC) as $pg) {
 
 $meses_abr = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 $hoy_dt    = new DateTime('today');
+// Historial de sueldos: cada período se calcula con el sueldo que regía entonces (aumentos y ajustes)
+require_once '../../includes/salarios.php';
+$historialSueldos = salariosHistorial($pdo, (int)$cliente_id);
 $vencidos  = [];
 $proximos  = [];
 
@@ -110,8 +116,7 @@ foreach ($colabs_activos as $col) {
     // Fecha de baja: no se le debe nada después de esa fecha
     $baja    = !empty($col['fecha_baja']) ? new DateTime($col['fecha_baja']) : null;
     if (!(int)$col['activo'] && !$baja) continue;
-    if ((float)$col['salario_base'] <= 0) continue;   // sin salario asignado: no hay nómina pendiente
-    $n_calc  = calcNeto((float)$col['salario_base'], (int)$col['aplica_ihss'], (int)$col['aplica_rap'], $col['tipo_pago']);
+    if ((float)$col['salario_base'] <= 0 && empty($historialSueldos[(int)$col['id']])) continue;   // sin salario asignado: no hay nómina pendiente
 
     $checks = $col['tipo_pago'] === 'quincenal'
         ? [
@@ -142,6 +147,9 @@ foreach ($colabs_activos as $col) {
             $desc = 'Sueldo ' . $nc . $info['suffix'];
             $key  = $desc . '|' . $anio . '|' . $mes . '|' . $q;
             if (isset($pagos_reg[$key])) continue;
+            $sueldoPer = salarioVigente($historialSueldos, $col, $iniPer->format('Y-m-d'));
+            if ($sueldoPer <= 0) continue;
+            $n_calc = calcNeto($sueldoPer, (int)$col['aplica_ihss'], (int)$col['aplica_rap'], $col['tipo_pago']);
 
             $diff   = (int)$hoy_dt->diff($fp)->days;
             $es_fut = ($fp >= $hoy_dt); // Hoy mismo = próximo, no vencido
@@ -1496,6 +1504,16 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                                 <option value="otro">🔷 Otro</option>
                             </select>
                         </div>
+                        <?php if ($cuentasPago): ?>
+                        <div class="col-md-6">
+                            <label class="mf-label">Sale de la cuenta</label>
+                            <select name="cuenta_id" class="mf-select">
+                                <option value="">— No registrar en banco —</option>
+                                <?php foreach ($cuentasPago as $cb): ?><option value="<?= (int)$cb['id'] ?>"<?= bancoSel($cb) ?>><?= htmlspecialchars($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?>
+                            </select>
+                            <small class="text-muted" style="font-size:.72rem">El pago (y sus bonos o viáticos) queda como salida en Bancos.</small>
+                        </div>
+                        <?php endif; ?>
                         <div class="col-12">
                             <label class="mf-label">Notas <span class="text-muted fw-normal"
                                     style="text-transform:none;letter-spacing:0">(opcional)</span></label>

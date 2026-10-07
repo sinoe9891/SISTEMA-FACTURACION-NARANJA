@@ -7,6 +7,9 @@ require_once '../../includes/correo.php';
 $__cfgCorreo = correoDisponible($pdo) ? correoConfig($pdo, cliente_actual()) : null;
 $correoActivo = $__cfgCorreo && (int)$__cfgCorreo['activo'];
 require_once '../../includes/functions.php';
+require_once '../../includes/bancos.php';
+// Cuentas en lempiras de donde sale el dinero (pagos, préstamos y adelantos); la predeterminada va seleccionada
+$cuentasPago = bancosDisponible($pdo) ? array_values(array_filter(bancoCuentas($pdo, (int)cliente_actual(), true), fn($c) => $c['moneda'] === 'HNL')) : [];
 require_once '../../includes/templates/header.php';
 
 $cliente_id = (int)(USUARIO_ROL === 'superadmin'
@@ -1806,6 +1809,60 @@ $tipos_btn_p = [
             </div>
     </div>
 
+    <!-- ── Historial de sueldo (aumentos y ajustes) ───────────────────────── -->
+    <?php require_once '../../includes/salarios.php';
+    if (salariosDisponible($pdo)):
+        $histSueldo = salariosHistorial($pdo, (int)$cliente_id, (int)$col['id'])[(int)$col['id']] ?? []; ?>
+    <div class="cv-card mb-3" id="historialSueldo">
+        <div class="cv-card-hdr">
+            <span class="cv-card-hdr-title"><i class="bi bi-graph-up-arrow text-primary"></i>Historial de sueldo</span>
+            <?php if (puedeNomina()): ?><button type="button" class="btn btn-sm btn-outline-primary" id="btnAjusteSueldo"><i class="bi bi-plus-lg me-1"></i>Registrar ajuste</button><?php endif; ?>
+        </div>
+        <div class="p-3">
+            <?php if (!$histSueldo): ?>
+                <div class="small text-muted">Sin ajustes registrados: rige el sueldo actual (L <?= number_format((float)$col['salario_base'], 2) ?>) desde el ingreso. Registra aquí los aumentos para que las nóminas de meses anteriores se calculen con el sueldo de cada época.</div>
+            <?php else: ?>
+                <div class="table-responsive"><table class="table table-sm mb-0 align-middle">
+                    <thead><tr><th>Desde</th><th class="text-end">Sueldo mensual</th><th class="text-end">Cambio</th><th>Motivo</th><?php if (puedeNomina()): ?><th></th><?php endif; ?></tr></thead>
+                    <tbody>
+                        <?php $prev = null; foreach ($histSueldo as $h): $dif = $prev === null ? null : (float)$h['salario_base'] - $prev; ?>
+                            <tr<?= $h['desde'] > date('Y-m-d') ? ' class="text-muted"' : '' ?>>
+                                <td class="text-nowrap"><?= date('d/m/Y', strtotime($h['desde'])) ?><?= $h['desde'] > date('Y-m-d') ? ' <span class="badge bg-light text-secondary border">Programado</span>' : '' ?></td>
+                                <td class="text-end fw-semibold">L <?= number_format((float)$h['salario_base'], 2) ?></td>
+                                <td class="text-end small <?= $dif > 0 ? 'text-success' : ($dif < 0 ? 'text-danger' : 'text-muted') ?>"><?= $dif === null ? 'Inicial' : ($dif == 0 ? '—' : ($dif > 0 ? '+' : '−') . ' L ' . number_format(abs($dif), 2)) ?></td>
+                                <td class="small"><?= htmlspecialchars($h['motivo'] ?? '') ?></td>
+                                <?php if (puedeNomina()): ?><td class="text-end text-nowrap"><button type="button" class="btn btn-link btn-sm p-0 me-2 btn-editar-sueldo" data-h='<?= json_encode($h, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>' title="Editar"><i class="bi bi-pencil"></i></button><button type="button" class="btn btn-link btn-sm p-0 text-danger btn-quitar-sueldo" data-id="<?= (int)$h['id'] ?>" title="Quitar"><i class="bi bi-x-lg"></i></button></td><?php endif; ?>
+                            </tr>
+                        <?php $prev = (float)$h['salario_base']; endforeach; ?>
+                    </tbody>
+                </table></div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php if (puedeNomina()): ?>
+    <script>
+    (function () {
+        const URL_S = 'includes/colaborador_salario.php', COL = <?= (int)$col['id'] ?>;
+        const enviar = d => { const fd = new FormData(); Object.entries(d).forEach(([k, v]) => fd.append(k, v)); return fetch(URL_S, { method: 'POST', body: fd }).then(r => r.json()).then(x => { if (!x.success) throw new Error(x.error); return x; }); };
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const formulario = h => Swal.fire({ title: h ? 'Editar ajuste de sueldo' : 'Ajuste de sueldo', html: `<div class="text-start">
+                <label class="form-label small">Rige desde</label><input type="date" id="sjDesde" class="form-control mb-2" value="${h ? h.desde : new Date().toLocaleDateString('sv-SE')}">
+                <label class="form-label small">Sueldo mensual (L)</label><input type="number" step="0.01" min="0" id="sjMonto" class="form-control mb-2" value="${h ? h.salario_base : <?= (float)$col['salario_base'] ?>}">
+                <label class="form-label small">Motivo</label><input id="sjMotivo" class="form-control" maxlength="255" placeholder="Ej.: Aumento por desempeño" value="${esc(h ? h.motivo : '')}"></div>`,
+                showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', focusConfirm: false,
+                preConfirm: () => enviar(Object.assign({ accion: 'guardar', colaborador_id: COL, desde: document.getElementById('sjDesde').value, salario_base: document.getElementById('sjMonto').value, motivo: document.getElementById('sjMotivo').value }, h ? { id: h.id } : {})).catch(e => Swal.showValidationMessage(e.message)) })
+                .then(r => { if (r.isConfirmed && r.value) Swal.fire({ icon: 'success', title: r.value.message, timer: 1500, showConfirmButton: false }).then(() => location.reload()); });
+        document.getElementById('btnAjusteSueldo')?.addEventListener('click', () => formulario(null));
+        document.querySelectorAll('.btn-editar-sueldo').forEach(b => b.addEventListener('click', () => formulario(JSON.parse(b.dataset.h))));
+        document.querySelectorAll('.btn-quitar-sueldo').forEach(b => b.addEventListener('click', () => {
+            Swal.fire({ title: '¿Quitar este ajuste?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar' })
+                .then(r => { if (r.isConfirmed) enviar({ accion: 'eliminar', id: b.dataset.id }).then(() => location.reload()).catch(e => Swal.fire('No se pudo', e.message, 'error')); });
+        }));
+    })();
+    </script>
+    <?php endif; ?>
+    <?php endif; ?>
+
     <!-- ── Historial (pestañas) a todo lo ancho ─────────────────────────── -->
     <div>
 
@@ -2627,6 +2684,16 @@ $tipos_btn_p = [
                                 <option value="otro">🔷 Otro</option>
                             </select>
                         </div>
+                        <?php if ($cuentasPago): ?>
+                        <div class="col-md-6">
+                            <label class="mf-label">Sale de la cuenta</label>
+                            <select name="cuenta_id" class="mf-select">
+                                <option value="">— No registrar en banco —</option>
+                                <?php foreach ($cuentasPago as $cb): ?><option value="<?= (int)$cb['id'] ?>"<?= bancoSel($cb) ?>><?= htmlspecialchars($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?>
+                            </select>
+                            <small class="text-muted" style="font-size:.72rem">El pago (y sus bonos o viáticos) queda como salida en Bancos.</small>
+                        </div>
+                        <?php endif; ?>
                         <div class="col-12">
                             <label class="mf-label">Notas <span class="text-muted fw-normal"
                                     style="text-transform:none;letter-spacing:0">(opcional)</span></label>
@@ -2876,6 +2943,16 @@ $tipos_btn_p = [
                                 <option value="quincenal">🔄 Quincenal</option>
                             </select>
                         </div>
+                        <?php if ($cuentasPago): ?>
+                        <div class="col-md-6" id="grp_cuenta_salida">
+                            <label class="mf-label">Sale de la cuenta</label>
+                            <select name="cuenta_id" class="mf-select">
+                                <option value="">— No registrar en banco —</option>
+                                <?php foreach ($cuentasPago as $cb): ?><option value="<?= (int)$cb['id'] ?>"<?= bancoSel($cb) ?>><?= htmlspecialchars($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?>
+                            </select>
+                            <small class="text-muted" style="font-size:.72rem">Préstamos y adelantos: el dinero sale de esta cuenta y queda como cuenta por cobrar al colaborador.</small>
+                        </div>
+                        <?php endif; ?>
                         <div class="col-12" id="grp_preview_cuota">
                             <div class="p-2 rounded-2 border" style="background:#eff6ff;font-size:.82rem"><i
                                     class="bi bi-calculator me-1 text-primary"></i>Cuota aproximada: <strong
@@ -3399,6 +3476,8 @@ $tipos_btn_p = [
         document.getElementById('grp_fecha_primera_cuota').style.display = ['prestamo', 'adelanto', 'multa'].includes(t) ?
             '' : 'none';
         document.getElementById('grp_auto').style.display = ['bono', 'viatico'].includes(t) ? 'none' : '';
+        const grpCta = document.getElementById('grp_cuenta_salida');   // solo préstamos y adelantos salen del banco al registrarlos
+        if (grpCta) grpCta.style.display = ['prestamo', 'adelanto'].includes(t) ? '' : 'none';
         document.getElementById('info_viatico').classList.toggle('d-none', t !== 'viatico');
         document.getElementById('info_bono').classList.toggle('d-none', t !== 'bono');
         if (t !== 'prestamo') document.getElementById('prest_cuotas').value = 1;
