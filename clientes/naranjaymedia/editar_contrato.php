@@ -3,6 +3,7 @@ $titulo = 'Editar Contrato';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/contrato_plan.php';
 
 $cliente_id = (int)(USUARIO_ROL === 'superadmin'
     ? ($_SESSION['cliente_seleccionado'] ?? 0)
@@ -24,6 +25,14 @@ if (!$contrato) {
 }
 
 $tipo_actual = $contrato['tipo_contrato'] ?? 'estandar';
+
+// Plan de pagos y pagos anticipados (opcionales: no todos los contratos los usan)
+$hayPlan = planDisponible($pdo);
+$planLineas = $hayPlan ? planLineas($pdo, $cliente_id, $id) : [];
+$planRes = planResumen($planLineas);
+$antVig = anticiposDisponible($pdo) ? array_filter(anticiposContrato($pdo, $cliente_id, $id), fn($a) => !(int)$a['anulado']) : [];
+$antSinAplicar = round(array_sum(array_map(fn($a) => $a['factura_id'] ? 0 : (float)$a['monto'], $antVig)), 2);
+$isvApartar = $tipo_actual === 'sin_factura' ? 0.0 : planIsvPorApartar($pdo, $cliente_id, $id);
 
 // ── Servicios actuales ────────────────────────────────────────────────────────
 $stmtSvcs = $pdo->prepare("
@@ -882,6 +891,41 @@ require_once '../../includes/templates/header.php';
             </div>
         </div>
 
+        <!-- ── SECCIÓN 6b: Plan de pagos (opcional) ──────────────────── -->
+        <?php if ($hayPlan): ?>
+        <div class="ec-card">
+            <div class="ec-card-hdr">
+                <span class="ec-card-title">
+                    <i class="bi bi-calendar2-check text-success"></i>
+                    Plan de pagos <small class="text-muted fw-normal" style="font-size:.78rem">(opcional: anticipo, cuotas, anualidades o etapas)</small>
+                </span>
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="ppActivar" <?= $planLineas ? 'checked' : '' ?>>
+                    <label class="form-check-label small" for="ppActivar">Usar plan</label>
+                </div>
+            </div>
+            <div class="ec-card-body">
+                <?php if ($planLineas || $antVig): ?>
+                    <div class="d-flex flex-wrap gap-2 small mb-3">
+                        <?php if ($planLineas): ?>
+                            <span class="badge rounded-pill" style="background:#f1f5f9;color:#0f172a">Total acordado L <?= number_format($planRes['total'], 2) ?></span>
+                            <span class="badge rounded-pill" style="background:#dcfce7;color:#166534">Cobrado L <?= number_format($planRes['cobrado'], 2) ?> · <?= $planRes['n_pagadas'] ?> de <?= $planRes['n'] ?></span>
+                            <?php if ($planRes['vencido'] > 0): ?><span class="badge rounded-pill" style="background:#fee2e2;color:#991b1b">Vencido L <?= number_format($planRes['vencido'], 2) ?></span><?php endif; ?>
+                            <span class="badge rounded-pill" style="background:#fef9c3;color:#854d0e">Falta L <?= number_format($planRes['pendiente'] + $planRes['facturado'], 2) ?></span>
+                        <?php endif; ?>
+                        <?php if ($antSinAplicar > 0): ?><span class="badge rounded-pill" style="background:#e0f2fe;color:#075985">Pagos anticipados sin factura L <?= number_format($antSinAplicar, 2) ?></span><?php endif; ?>
+                        <?php if ($isvApartar > 0): ?><span class="badge rounded-pill" style="background:#ede9fe;color:#5b21b6">ISV por apartar L <?= number_format($isvApartar, 2) ?></span><?php endif; ?>
+                    </div>
+                <?php endif; ?>
+                <div id="ppCuerpo" class="<?= $planLineas ? '' : 'd-none' ?>">
+                    <div id="ppEditor"></div>
+                </div>
+                <div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Aquí se define el calendario acordado. Los cobros (recibos, pagos anticipados y abonos a facturas) se registran en la
+                    <a href="facturas_contrato?contrato_id=<?= (int)$id ?>#planPagos">ficha del contrato</a>. Las líneas ya cobradas no se pueden quitar ni cambiar de monto.</div>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <!-- ── SECCIÓN 7: Notas ────────────────────────────────────────── -->
         <div class="ec-card">
             <div class="ec-card-hdr">
@@ -1262,15 +1306,30 @@ require_once '../../includes/templates/header.php';
                 method: 'POST',
                 body: new FormData(this)
             })
-            .then(r => r.json()).then(d => {
+            .then(r => r.json()).then(async d => {
                 if (d.success) {
+                    // Plan de pagos: se guarda si se usa; si se apagó y había plan, se quita (las líneas cobradas lo impiden)
+                    const usar = document.getElementById('ppActivar')?.checked;
+                    let avisoPlan = '', errPlan = false;
+                    if (document.getElementById('ppActivar') && (usar || PLAN_INIT.length)) {
+                        const fd = new FormData();
+                        fd.append('accion', 'guardar');
+                        fd.append('contrato_id', '<?= (int)$id ?>');
+                        fd.append('con_isv', usar && planEd && planEd.conIsv() ? '1' : '');
+                        fd.append('lineas', JSON.stringify(usar && planEd ? planEd.lineas() : []));
+                        try {
+                            const rp = await (await fetch('includes/contrato_plan_accion.php', { method: 'POST', body: fd })).json();
+                            errPlan = !rp.success;
+                            avisoPlan = rp.success ? ' ' + rp.message : ' Pero el plan de pagos no se guardó: ' + (rp.error || '');
+                        } catch (e) { errPlan = true; avisoPlan = ' Pero el plan de pagos no se guardó (error de conexión).'; }
+                    }
                     Swal.fire({
-                            icon: 'success',
+                            icon: errPlan ? 'warning' : 'success',
                             title: '¡Cambios guardados!',
-                            text: 'El contrato fue actualizado.',
-                            confirmButtonText: 'Ver contratos'
+                            text: 'El contrato fue actualizado.' + avisoPlan,
+                            confirmButtonText: 'Ver el contrato'
                         })
-                        .then(() => window.location.href = 'contratos');
+                        .then(() => window.location.href = 'facturas_contrato?contrato_id=<?= (int)$id ?>');
                 } else {
                     Swal.fire({
                         icon: 'error',
@@ -1315,4 +1374,35 @@ require_once '../../includes/templates/header.php';
     });
 </script>
 
+<?php if ($hayPlan): ?>
+<script src="../../clientes/js/plan-pagos.js?v=<?= @filemtime(__DIR__ . '/../js/plan-pagos.js') ?>"></script>
+<script>
+    // Plan de pagos del contrato (opcional)
+    const CONTRATO_ID = <?= (int)$id ?>;
+    const PLAN_INIT = <?= json_encode(array_map(fn($l) => ['id' => (int)$l['id'], 'tipo' => $l['tipo'], 'concepto' => $l['concepto'], 'fecha' => $l['fecha'], 'monto' => (float)$l['monto'], 'isv' => (float)$l['isv'], 'vinculado' => $l['vinculado'], 'cobro' => $l['cobro']], $planLineas), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+    let planEd = null;
+    const planIniciar = () => {
+        const prev = planEd ? planEd.lineas().map(l => Object.assign({}, PLAN_INIT.find(p => p.id === l.id) || {}, l)) : PLAN_INIT;
+        let total = 0;
+        document.querySelectorAll('.inp-monto').forEach(i => total += parseFloat(i.value) || 0);
+        const dia = String(Math.min(28, parseInt(document.querySelector('[name="dia_pago"]').value, 10) || 1)).padStart(2, '0');
+        planEd = PlanPagos('#ppEditor', {
+            conFactura: tipoActual !== 'sin_factura', lineas: prev,
+            concepto: (document.getElementById('concepto_recibo')?.value || document.querySelector('[name="nombre_contrato"]')?.value || '').trim().slice(0, 200),
+            fecha: (document.querySelector('[name="fecha_inicio"]').value || new Date().toLocaleDateString('sv-SE')).slice(0, 8) + dia,
+            cuota: total || <?= (float)$contrato['monto'] ?>,
+        });
+    };
+    document.getElementById('ppActivar').addEventListener('change', async e => {
+        if (!e.target.checked && planEd && planEd.lineas().length) {
+            const r = await Swal.fire({ title: '¿Dejar de usar el plan de pagos?', text: 'Al guardar se quitan sus pagos pendientes. Los ya cobrados no se pueden quitar.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sí, quitar', cancelButtonText: 'Cancelar' });
+            if (!r.isConfirmed) { e.target.checked = true; return; }
+        }
+        document.getElementById('ppCuerpo').classList.toggle('d-none', !e.target.checked);
+        if (e.target.checked && !planEd) planIniciar();
+    });
+    document.querySelectorAll('.tipo-card').forEach(card => card.addEventListener('click', () => { if (planEd) planIniciar(); }));
+    if (PLAN_INIT.length) planIniciar();
+</script>
+<?php endif; ?>
 <?php require_once '../../includes/templates/footer.php'; ?>

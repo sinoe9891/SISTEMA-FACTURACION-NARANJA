@@ -1996,6 +1996,12 @@ suite('Plan de pagos del contrato y recibos en los reportes', function () {
     check('el balance separa el ISV de los anticipos como impuesto por pagar', in_array('ISV incluido en pagos anticipados (por apartar)', array_column($bal['pasivo']['Impuestos por pagar'] ?? [], 'nombre'), true), json_encode($bal['pasivo']));
     $p = $c->get('facturas_contrato', ['contrato_id' => $facCtr]);
     check('la ficha muestra el ISV por apartar', sinErroresPhp($p['body']) && str_contains($p['body'], 'ISV por apartar'), errorPhp($p['body']));
+    $ed = $c->get('editar_contrato', ['id' => $facCtr]);
+    check('Editar contrato muestra el plan (encendido) con lo cobrado y el ISV por apartar', sinErroresPhp($ed['body']) && str_contains($ed['body'], 'id="ppActivar" checked')
+        && str_contains($ed['body'], 'ISV por apartar') && str_contains($ed['body'], 'plan-pagos.js'), errorPhp($ed['body']));
+    $sinPlan = (int)$f("SELECT c.id FROM contratos c WHERE c.cliente_id = 2 AND NOT EXISTS (SELECT 1 FROM contratos_plan p WHERE p.contrato_id = c.id) ORDER BY c.id LIMIT 1");
+    $ed = $c->get('editar_contrato', ['id' => $sinPlan]);
+    check('un contrato sin plan lo trae apagado (es opcional)', sinErroresPhp($ed['body']) && str_contains($ed['body'], 'id="ppActivar" >') && str_contains($ed['body'], 'id="ppCuerpo" class="d-none"'), errorPhp($ed['body']));
     $pr = $c->get('proyeccion');
     check('la proyección carga con planes de pago', $pr['code'] === 200 && sinErroresPhp($pr['body']), errorPhp($pr['body']));
     $g = $c->get('includes/contrato_plan_accion.php', ['contrato_id' => $facCtr]);
