@@ -50,6 +50,12 @@ require_once '../../includes/templates/header.php';
 /** @var float    $trim_isv_anio */
 /** @var array    $comp_trim_datasets_js */
 /** @var array    $comp_sem_datasets_js */
+// Valores por defecto de las gráficas de reportes: sin datos (o sin acceso a esa pestaña) quedan vacías en vez de dar avisos de PHP
+foreach (['trimestres_labels', 'trimestres_subtotal', 'trimestres_isv', 'trimestres_total', 'trimestres_tabla', 'semestres_labels', 'semestres_subtotal', 'semestres_isv',
+          'semestres_total', 'semestres_tabla', 'anuales_labels', 'anuales_subtotal', 'anuales_isv', 'anuales_total', 'comp_trim_by', 'comp_sem_by', 'anios_disponibles'] as $__v) $$__v ??= [];
+$colores_comp_bg  ??= ['rgba(30,64,175,.65)', 'rgba(5,150,105,.65)', 'rgba(245,158,11,.65)', 'rgba(239,68,68,.65)'];
+$colores_comp_brd ??= ['rgb(30,64,175)', 'rgb(5,150,105)', 'rgb(245,158,11)', 'rgb(239,68,68)'];
+unset($__v);
 ?>
 
 

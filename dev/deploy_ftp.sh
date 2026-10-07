@@ -48,6 +48,14 @@ for f in "$@"; do
     archivos+=("$rel")
 done
 [ ${#archivos[@]} -gt 0 ] || { echo "Nada que subir."; exit 1; }
+# Primero las librerías (includes/, js, css) y después las páginas: una página nueva nunca llega antes que el archivo que requiere
+ordenados=()
+for patron in '^includes/' '/includes/' '\.(js|css)$' '.'; do
+    for rel in "${archivos[@]}"; do
+        if [[ " ${ordenados[*]-} " != *" $rel "* ]] && [[ "$rel" =~ $patron ]]; then ordenados+=("$rel"); fi
+    done
+done
+archivos=("${ordenados[@]}")
 
 echo "Se subirán ${#archivos[@]} archivo(s) a $HOST:$REMOTO :"
 printf '  • %s\n' "${archivos[@]}"
