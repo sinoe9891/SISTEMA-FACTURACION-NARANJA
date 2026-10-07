@@ -4,6 +4,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/intentos.php';
 require_once '../../includes/inventario.php';
+require_once '../../includes/factura_contrato.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 	die("Método no permitido.");
@@ -139,6 +140,17 @@ if ($cambiar_receptor) {
 try {
 	$pdo->beginTransaction();
 
+    // Campo ausente: conservar asociación (compatibilidad con formularios anteriores).
+    $contratoId = $factura['contrato_id'] ? (int)$factura['contrato_id'] : null;
+    if (array_key_exists('contrato_id', $_POST)) {
+        $valorContrato = trim((string)$_POST['contrato_id']);
+        if ($valorContrato !== '' && (!ctype_digit($valorContrato) || (int)$valorContrato < 1)) throw new Exception('Contrato inválido.');
+        $contratoId = $valorContrato === '' ? null : (int)$valorContrato;
+    }
+    $cambioContrato = (int)$contratoId !== (int)$factura['contrato_id'];
+    if ($cambioContrato && !$es_admin) throw new Exception('Solo un administrador puede cambiar el contrato asociado.');
+    if ($cambioContrato || $cambiar_receptor) facturaValidarCambioContrato($pdo, $factura, $contratoId, $cambiar_receptor ? (int)$receptor_id : (int)$factura['receptor_id']);
+
 	// Inventario: devolver lo que descontaban los productos anteriores (se vuelve a descontar al final)
 	invRevertirFactura($pdo, $cliente_factura, (int)$factura_id, (int)$usuario_id, 'Factura editada');
 
@@ -230,7 +242,8 @@ try {
         estado               = ?,
         estado_declarada     = ?,
         pagada               = ?,
-        enviada_receptor     = ?
+        enviada_receptor     = ?,
+        contrato_id          = ?
     WHERE id = ?
 ");
 	$valoresUpdate = [];
@@ -257,6 +270,7 @@ try {
 		$estado_declarada,
 		$pagada,
 		$enviada_receptor,
+        $contratoId,
 		$factura_id
 	);
 	$stmt->execute($valoresUpdate);
@@ -294,6 +308,12 @@ try {
 	], JSON_UNESCAPED_UNICODE) : null;
 
 
+
+    if ($cambioContrato) {
+        $detalleContrato = $detalles ? json_decode($detalles, true) : [];
+        $detalleContrato['contrato'] = ['anterior'=>$factura['contrato_id'], 'nuevo'=>$contratoId];
+        $detalles = json_encode($detalleContrato, JSON_UNESCAPED_UNICODE);
+    }
 
 	// Registrar en bitácora
 	$stmt = $pdo->prepare("

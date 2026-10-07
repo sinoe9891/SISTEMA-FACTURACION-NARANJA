@@ -2,6 +2,7 @@
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/factura_contrato.php';
 
 if (!isset($_GET['id']) || !ctype_digit($_GET['id'])) die("ID inválido");
 $factura_id = (int)$_GET['id'];
@@ -40,12 +41,12 @@ $stmtClientes = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cli
 $stmtClientes->execute([$cliente_id]);
 $clientes = $stmtClientes->fetchAll();
 
-$contratoVinculado = null;
-if (!empty($factura['contrato_id'])) {
-	$stmtContrato = $pdo->prepare("SELECT c.id, cf.nombre AS receptor_nombre FROM contratos c LEFT JOIN clientes_factura cf ON cf.id = c.receptor_id WHERE c.id = ?");
-	$stmtContrato->execute([$factura['contrato_id']]);
-	$contratoVinculado = $stmtContrato->fetch(PDO::FETCH_ASSOC);
+$contratosEdicion = facturaContratosDisponibles($pdo, $cliente_id);
+// Mantener visible una asociación histórica aunque ya no sea elegible para nuevas facturas.
+if (!empty($factura['contrato_id']) && !array_filter($contratosEdicion, fn($c) => $c['id']==(int)$factura['contrato_id'] && in_array((int)$factura['receptor_id'], $c['receptores'], true))) {
+    $contratosEdicion[] = ['id'=>(int)$factura['contrato_id'], 'nombre'=>'Asociación actual (revisar contrato)', 'estado'=>'histórico', 'receptores'=>[(int)$factura['receptor_id']]];
 }
+
 
 $stmtProductos = $pdo->prepare("SELECT p.id, p.nombre, p.precio AS precio_base, p.tipo_isv,
     (SELECT precio_especial FROM precios_especiales WHERE producto_id=p.id AND cliente_id=? LIMIT 1) AS precio_especial
@@ -308,6 +309,20 @@ require_once '../../includes/templates/header.php';
 						<?php endif; ?>
 					</div>
 				</div>
+
+                <div class="fe-card">
+                    <div class="fe-card-header"><i class="bi bi-file-earmark-text text-primary"></i>Contrato asociado <span class="text-muted small ms-1">(opcional)</span></div>
+                    <div class="fe-card-body">
+                        <label for="contratoSelect" class="fe-form-label">Vincular esta factura a un contrato</label>
+                        <select name="contrato_id" id="contratoSelect" class="form-select" data-buscar <?= $es_admin ? '' : 'disabled' ?>>
+                            <option value="">— Sin contrato (factura directa) —</option>
+                            <?php foreach ($contratosEdicion as $ct): if (!in_array((int)$factura['receptor_id'], $ct['receptores'], true)) continue; ?>
+                            <option value="<?= $ct['id'] ?>" <?= (int)$factura['contrato_id'] === $ct['id'] ? 'selected' : '' ?>><?= htmlspecialchars('#'.$ct['id'].' · '.$ct['nombre'].' · '.$ct['estado']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div class="form-text" id="contratoAyuda">Selecciona el contrato al que corresponde o «Sin contrato». La asociación se guarda al guardar la factura y no cambia sus productos ni importes.</div>
+                    </div>
+                </div>
 
 				<!-- Fecha y condición -->
 				<div class="fe-card">
@@ -733,7 +748,11 @@ require_once '../../includes/templates/header.php';
 					method: 'POST',
 					body: new FormData(form)
 				})
-				.then(r => r.text()).then(resp => {
+                .then(async r => {
+                    if (r.redirected && new URL(r.url).pathname.endsWith('/lista_facturas') && new URL(r.url).searchParams.get('success') === '1') return '';
+                    const texto = new DOMParser().parseFromString(await r.text(), 'text/html').body.textContent.trim();
+                    throw new Error(texto || 'No se pudo guardar la factura.');
+                }).then(resp => {
 					const errores = ['Usuario o contraseña incorrecta', 'Solo un admin o superadmin',
 						'Todos los campos de autorización son obligatorios',
 						'Factura no encontrada', 'Acceso no autorizado', 'Error al guardar cambios'
@@ -787,15 +806,25 @@ require_once '../../includes/templates/header.php';
 			}).catch(err => console.error('Error cargando productos por receptor:', err));
 	});
 
+    const contratosFactura = <?= json_encode($contratosEdicion, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
+    function actualizarContratosFactura(receptor) {
+        const sel = document.getElementById('contratoSelect'), previo = sel.value;
+        sel.replaceChildren(new Option('— Sin contrato (factura directa) —', ''));
+        contratosFactura.filter(c => c.receptores.includes(Number(receptor))).forEach(c => {
+            sel.add(new Option(`#${c.id} · ${c.nombre} · ${c.estado}`, c.id));
+        });
+        if ([...sel.options].some(o => o.value === previo)) sel.value = previo;
+        sel.dispatchEvent(new Event('change', {bubbles:true}));
+        document.getElementById('contratoAyuda').textContent = previo && sel.value !== previo
+            ? 'El contrato anterior no corresponde al nuevo cliente. Selecciona otro contrato o guarda como factura directa.'
+            : 'La asociación se guarda con la factura; no cambia productos ni importes.';
+    }
+
 	/* ── Confirmación al cambiar el receptor (solo superadmin) ────────────────── */
 	(() => {
 		const $receptor = document.getElementById('receptorSelect');
 		if (!$receptor || $receptor.disabled) return;
 
-		const contratoInfo = <?= json_encode($contratoVinculado ? [
-									'id' => $contratoVinculado['id'],
-									'receptor_nombre' => $contratoVinculado['receptor_nombre']
-								] : null) ?>;
 
 		let valorConfirmado = $receptor.dataset.original;
 
@@ -812,9 +841,7 @@ require_once '../../includes/templates/header.php';
 			<?php if ($facturaDeclarada): ?>
 				advertencias += `<p style="text-align:left;margin-top:.6rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.6rem .8rem;color:#991b1b;"><strong>Esta factura ya fue declarada ante SAR.</strong> Estás forzando el cambio de receptor como superadmin sobre un documento ya declarado — esto puede generar una inconsistencia legal con lo reportado.</p>`;
 			<?php endif; ?>
-			if (contratoInfo) {
-				advertencias += `<p style="text-align:left;margin-top:.6rem;"><strong>Esta factura está vinculada al contrato #${contratoInfo.id}</strong>, asociado a "${contratoInfo.receptor_nombre ?? 'receptor original'}". Cambiar el receptor aquí <u>no actualiza el contrato</u> y puede descuadrar sus reportes/totales.</p>`;
-			}
+
 
 			Swal.fire({
 				title: `¿Cambiar receptor a "${nuevoNombre}"?`,
@@ -828,6 +855,7 @@ require_once '../../includes/templates/header.php';
 			}).then(result => {
 				if (result.isConfirmed) {
 					valorConfirmado = nuevoValor;
+                    actualizarContratosFactura(nuevoValor);
 				} else {
 					this.value = valorConfirmado;
 				}

@@ -2361,3 +2361,4 @@ suite('Historial de sueldo (aumentos) y nóminas vencidas', function () {
 });
 
 require __DIR__ . '/cobros_lista_adjuntos.php';
+require __DIR__ . '/factura_contrato_edicion.php';
