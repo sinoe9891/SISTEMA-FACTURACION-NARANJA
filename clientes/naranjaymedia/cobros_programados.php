@@ -51,6 +51,28 @@ if (isset($_GET['ajax'])) {
 require_once '../../includes/templates/header.php';
 ?>
 
+<style>
+    /* El formulario debe ser el contenedor flex del modal para que solo el cuerpo se desplace. */
+    #mEditar .modal-dialog, #mPrevia .modal-dialog {
+        height: calc(100vh - 1.5rem);
+        height: calc(100dvh - 1.5rem);
+        margin-top: .75rem;
+        margin-bottom: .75rem;
+    }
+    #mEditar .modal-body, #mPrevia .modal-body { min-height: 0; overflow-y: auto; }
+    #mEditar .modal-header, #mEditar .modal-footer { flex-shrink: 0; }
+    #mEditar .tox-tinymce { height: clamp(180px, 32vh, 360px) !important; }
+    #mEditar .modal-footer { gap: .4rem; }
+    #eDocs label { max-width: 100%; overflow-wrap: anywhere; }
+    #pDatos dd { overflow-wrap: anywhere; }
+    #pDatos .badge { white-space: normal; text-align: left; }
+    #pHtml { height: clamp(220px, 55vh, 600px); }
+    @media (max-width: 575.98px) {
+        #mEditar .modal-dialog, #mPrevia .modal-dialog { height: 100vh; height: 100dvh; margin: 0; }
+        #mEditar .modal-footer .btn { flex: 1 1 auto; margin: 0 !important; }
+    }
+</style>
+
 <div class="app-page-header">
     <div>
         <h1 class="app-page-title"><i class="bi bi-send-check me-2"></i>Cobros por correo</h1>
@@ -184,11 +206,11 @@ require_once '../../includes/templates/header.php';
     <div class="app-pager mb-3" id="cbPie" aria-live="polite"></div>
 
     <!-- Vista previa del correo (no envía nada) -->
-    <div class="modal fade" id="mPrevia" tabindex="-1" style="z-index:1065"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal fade" id="mPrevia" tabindex="-1" style="z-index:1065"><div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title"><i class="bi bi-window me-1"></i> Vista previa del correo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <dl class="row small mb-2" id="pDatos"></dl>
-            <iframe id="pHtml" sandbox="" title="Vista previa" style="width:100%;height:600px;border:1px solid var(--bs-border-color);border-radius:8px;background:#f1f5f9"></iframe>
+            <iframe id="pHtml" sandbox="" title="Vista previa" style="width:100%;border:1px solid var(--bs-border-color);border-radius:8px;background:#f1f5f9"></iframe>
             <div class="form-text">Así le llega al cliente (con el logo y pie de la cuenta Facturación). Los PDF de las facturas van adjuntos.</div>
         </div>
     </div></div></div>
@@ -212,8 +234,8 @@ require_once '../../includes/templates/header.php';
     </div></div></div>
 
     <!-- Editar cobro -->
-    <div class="modal fade" id="mEditar" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
-        <form id="fEditar">
+    <div class="modal fade" id="mEditar" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-sm-down">
+        <form id="fEditar" class="modal-content">
             <div class="modal-header"><h5 class="modal-title"><i class="bi bi-pencil me-1"></i> Editar cobro <span id="eNum"></span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
             <div class="modal-body">
                 <input type="hidden" name="accion" value="editar"><input type="hidden" name="id" id="eId">
@@ -222,19 +244,19 @@ require_once '../../includes/templates/header.php';
                     <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="eCc"></div>
                     <div class="col-md-8"><label class="form-label">Asunto *</label><input class="form-control" name="asunto" id="eAsunto" maxlength="255" required></div>
                     <div class="col-md-4"><label class="form-label">Envío (hora de Honduras)</label><input class="form-control" type="datetime-local" name="programado_para" id="eFecha" required></div>
-                    <div class="col-12"><label class="form-label">Mensaje *</label><textarea id="eMensaje" class="form-control" rows="10"></textarea>
-                        <div class="form-text">Las facturas y recibos adjuntos se conservan. Puedes agregar o quitar documentos de la empresa abajo.</div></div>
-                </div>
-            </div>
-            <div class="px-3 pb-3">
+            <div class="col-12 border-top border-bottom py-2 my-2">
                 <input type="hidden" name="actualizar_documentos" value="1">
                 <label class="form-label"><i class="bi bi-paperclip"></i> Documentos de la empresa a adjuntar</label>
                 <div id="eDocs" class="d-flex flex-wrap gap-2"></div>
                 <div class="form-text">Marca la constancia de pago a cuenta u otros documentos y guarda los cambios para incluirlos en este correo programado. El correo mencionará los documentos seleccionados automáticamente (excepto en envío de recibos); revísalo en Vista previa. <a href="configuracion_documentos" target="_blank">Administrar documentos</a></div>
             </div>
+                    <div class="col-12"><label class="form-label">Mensaje *</label><textarea id="eMensaje" class="form-control" rows="10"></textarea>
+                        <div class="form-text">Las facturas y recibos adjuntos se conservan. Puedes agregar o quitar documentos de la empresa en la sección de adjuntos.</div></div>
+                </div>
+            </div>
             <div class="modal-footer"><button type="button" class="btn btn-outline-dark me-auto" id="ePrevia"><i class="bi bi-window me-1"></i> Vista previa</button><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button><button class="btn btn-primary" type="submit"><i class="bi bi-floppy me-1"></i> Guardar cambios</button></div>
         </form>
-    </div></div></div>
+    </div></div>
 <?php endif; ?>
 
 <!-- Editor de texto del mensaje (TinyMCE, licencia GPL, servido desde jsDelivr) -->
