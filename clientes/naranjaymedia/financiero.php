@@ -194,15 +194,19 @@ $stmtEgrCat = $pdo->prepare("
 $stmtEgrCat->execute([$fecha_ini, $fecha_fin, $cliente_id]);
 $egr_categorias = $stmtEgrCat->fetchAll(PDO::FETCH_ASSOC);
 
-// Gastos pendientes de pago
+// Gastos pendientes de pago del período: los ya vencidos (por pagar) y los de fecha futura (programados, p. ej. la cuota del próximo mes)
 $stmtPend = $pdo->prepare("
-    SELECT COUNT(*) AS qty, COALESCE(SUM(monto), 0) AS monto
+    SELECT id, descripcion, monto, fecha
     FROM gastos
     WHERE cliente_id = ? AND estado = 'pendiente'
       AND fecha BETWEEN ? AND ?
+    ORDER BY fecha
 ");
 $stmtPend->execute([$cliente_id, $fecha_ini, $fecha_fin]);
-$pendientes = $stmtPend->fetch(PDO::FETCH_ASSOC);
+$pendLista = $stmtPend->fetchAll(PDO::FETCH_ASSOC);
+$pendVencidos = array_values(array_filter($pendLista, fn($g) => $g['fecha'] <= date('Y-m-d')));
+$pendProximos = array_values(array_filter($pendLista, fn($g) => $g['fecha'] > date('Y-m-d')));
+$pendientes = ['qty' => count($pendLista), 'monto' => array_sum(array_column($pendLista, 'monto'))];
 
 // ── Egresos por categoría mes a mes (para tabla desglose) ────────────────────
 $stmtEgrCatMes = $pdo->prepare("
@@ -738,16 +742,23 @@ for ($m = 1; $m <= 12; $m++) {
         </form>
     </div>
 
-    <!-- Alerta pendientes -->
-    <?php if ((int)$pendientes['qty'] > 0): ?>
+    <!-- Alerta pendientes: separa lo que ya debió pagarse de lo programado a futuro -->
+    <?php if ($pendLista):
+        $pendFecha = fn($f) => (int)substr($f, 8, 2) . ' ' . ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][(int)substr($f, 5, 2)];
+        $pendTexto = fn($l) => implode(' · ', array_map(fn($g) => htmlspecialchars(trim(preg_replace('/\s+/', ' ', $g['descripcion']))) . ' (' . $pendFecha($g['fecha']) . ', L ' . number_format((float)$g['monto'], 2) . ')', array_slice($l, 0, 3))) . (count($l) > 3 ? ' y ' . (count($l) - 3) . ' más' : '');
+        $hayVencidos = (bool)$pendVencidos; ?>
         <div class="alert d-flex align-items-center gap-3 mb-4 shadow-sm"
-            style="background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:var(--radius)">
-            <i class="bi bi-exclamation-triangle-fill" style="font-size:1.3rem;flex-shrink:0;color:#d97706"></i>
+            style="background:<?= $hayVencidos ? '#fffbeb' : '#eff6ff' ?>;border:1px solid <?= $hayVencidos ? '#fde68a' : '#bfdbfe' ?>;color:<?= $hayVencidos ? '#78350f' : '#1e3a8a' ?>;border-radius:var(--radius)">
+            <i class="bi <?= $hayVencidos ? 'bi-exclamation-triangle-fill' : 'bi-calendar-event' ?>" style="font-size:1.3rem;flex-shrink:0;color:<?= $hayVencidos ? '#d97706' : '#2563eb' ?>"></i>
             <div>
-                <strong><?= (int)$pendientes['qty'] ?> gasto(s) pendiente(s)</strong> por
-                <strong>L <?= number_format((float)$pendientes['monto'], 2) ?></strong> — ya incluidos en egresos.
-                <a href="gastos?mes=<?= $mes_filtro ?>&anio=<?= $anio_filtro ?>" class="ms-2 fw-semibold"
-                    style="color:#92400e">Ver →</a>
+                <?php if ($pendVencidos): ?>
+                    <div><strong><?= count($pendVencidos) ?> gasto(s) por pagar</strong> por <strong>L <?= number_format(array_sum(array_column($pendVencidos, 'monto')), 2) ?></strong>: <?= $pendTexto($pendVencidos) ?></div>
+                <?php endif; ?>
+                <?php if ($pendProximos): ?>
+                    <div><strong><?= count($pendProximos) ?> pago(s) programado(s)</strong> por <strong>L <?= number_format(array_sum(array_column($pendProximos, 'monto')), 2) ?></strong> con fecha futura: <?= $pendTexto($pendProximos) ?></div>
+                <?php endif; ?>
+                <div class="small" style="opacity:.8">Ya incluidos en los egresos del período. Al marcarlos como pagados desaparecen de este aviso.
+                    <a href="gastos?mes=<?= $mes_filtro ?>&anio=<?= $anio_filtro ?>" class="ms-1 fw-semibold" style="color:inherit">Ver →</a></div>
             </div>
         </div>
     <?php endif; ?>
