@@ -5,6 +5,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/cuentas.php';
 require_once '../../includes/anticipos.php';
+require_once '../../includes/contrato_plan.php';
 require_once '../../includes/templates/header.php';
 
 $cliente_id  = (int)(USUARIO_ROL === 'superadmin'
@@ -114,6 +115,24 @@ foreach ($facturas as $f) {
     $pa = (int)($f['periodo_anio_ef'] ?? (int)substr($f['fecha_emision'], 0, 4));
     $mesesConFactura[$pa . '-' . $pm] = true;
 }
+// Contrato «sin factura»: se cobra con recibo; los meses cobrados son los que tienen recibo
+$esRecibo = $tipo_ct === 'sin_factura';
+$recibos = [];
+$totalRecibos = 0.0;
+if ($esRecibo) {
+    $stR = $pdo->prepare("SELECT * FROM contratos_recibos WHERE contrato_id = ? AND cliente_id = ? AND estado = 'emitido' ORDER BY fecha_emision DESC, id DESC");
+    $stR->execute([$contrato_id, $cliente_id]);
+    $recibos = $stR->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($recibos as $r) {
+        $mesesConFactura[(int)($r['periodo_anio'] ?: substr($r['fecha_emision'], 0, 4)) . '-' . (int)($r['periodo_mes'] ?: substr($r['fecha_emision'], 5, 2))] = true;
+        $totalRecibos += (float)$r['monto'];
+    }
+}
+// Plan de pagos acordado (anticipo, cuotas, etapas). Si existe, manda sobre el calendario por meses.
+$hayPlan = planDisponible($pdo);
+$plan = $hayPlan ? planLineas($pdo, $cliente_id, $contrato_id) : [];
+$planRes = planResumen($plan);
+$puedePlan = in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true);
 // El mes actual nunca es "atrasado" — puede que aún no haya vencido el día de cobro
 $keyActual       = date('Y') . '-' . (int)date('n');
 $mesesSinFactura = array_filter($mesesEsperados, fn($m) => !isset($mesesConFactura[$m]) && $m !== $keyActual);
@@ -135,6 +154,7 @@ $antSinAplicar = round(array_sum(array_map(fn($a) => $a['factura_id'] ? 0 : (flo
 $recibidoTotal = round($antSinAplicar + $totalCobrado, 2);
 $pctRecibido = $valorConIsv > 0 ? min(100, round($recibidoTotal / $valorConIsv * 100)) : 0;
 $facturasConSaldo = array_values(array_filter($facturas, fn($f) => $f['saldo'] > 0.004));
+$isvApartar = $esRecibo ? 0.0 : planIsvPorApartar($pdo, $cliente_id, $contrato_id);
 
 $meses_es = [
     '',
@@ -614,20 +634,24 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
     <!-- Hero -->
     <div class="fc-hero">
         <div>
-            <h4 class="fc-hero-title"><i class="bi bi-receipt me-2"></i>Facturas del Contrato</h4>
+            <h4 class="fc-hero-title"><i class="bi bi-receipt me-2"></i><?= $esRecibo ? 'Contrato con recibo' : 'Facturas del Contrato' ?></h4>
             <p class="fc-hero-sub">
                 <?= htmlspecialchars($contrato['nombre_contrato']) ?> &nbsp;·&nbsp;
                 <?= htmlspecialchars($contrato['receptor_nombre']) ?>
             </p>
         </div>
         <div class="d-flex align-items-center gap-2 flex-wrap">
-            <?php if (!$noIniciado && $contrato['estado'] === 'activo'): ?>
+            <?php if ($esRecibo && $contrato['estado'] === 'activo'): ?>
+                <a href="generar_recibo?contrato_id=<?= $contrato['id'] ?>" class="btn-facturar">
+                    <i class="bi bi-receipt-cutoff"></i> Nuevo recibo
+                </a>
+            <?php elseif (!$noIniciado && $contrato['estado'] === 'activo'): ?>
                 <a href="generar_factura?receptor_id=<?= $contrato['receptor_id'] ?>&producto_id=<?= $contrato['producto_id'] ?>&monto=<?= $contrato['monto'] ?>&contrato_id=<?= $contrato['id'] ?>"
                     class="btn-facturar">
                     <i class="bi bi-file-earmark-plus"></i> Nueva Factura
                 </a>
             <?php endif; ?>
-            <?php if ($puedeCorreo): ?>
+            <?php if ($puedeCorreo && !$esRecibo): ?>
                 <a href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&contrato_id=<?= (int)$contrato['id'] ?>" class="btn btn-sm"
                     style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.3);font-weight:600"
                     title="Enviar o programar por correo el cobro de las facturas con saldo de este contrato">
@@ -643,6 +667,22 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
 
     <!-- KPIs -->
     <div class="fc-kpis">
+        <?php if ($esRecibo): ?>
+        <div class="fc-kpi">
+            <div class="fc-kpi-icon ki-teal"><i class="bi bi-receipt-cutoff"></i></div>
+            <div>
+                <div class="fc-kpi-val"><?= count($recibos) ?></div>
+                <div class="fc-kpi-lbl">Recibos</div>
+            </div>
+        </div>
+        <div class="fc-kpi">
+            <div class="fc-kpi-icon ki-green"><i class="bi bi-wallet2"></i></div>
+            <div>
+                <div class="fc-kpi-val" style="font-size:.88rem;color:#059669">L <?= number_format($totalRecibos, 2) ?></div>
+                <div class="fc-kpi-lbl">Cobrado (sin ISV)</div>
+            </div>
+        </div>
+        <?php else: ?>
         <div class="fc-kpi">
             <div class="fc-kpi-icon ki-teal"><i class="bi bi-file-earmark-text-fill"></i></div>
             <div>
@@ -685,6 +725,16 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                 <div class="fc-kpi-lbl">Saldo por cobrar</div>
             </div>
         </div>
+        <?php endif; ?>
+        <?php if ($plan): ?>
+        <div class="fc-kpi" style="border-color:<?= $planRes['vencido'] > 0 ? '#fecaca' : '#a7f3d0' ?>">
+            <div class="fc-kpi-icon <?= $planRes['vencido'] > 0 ? 'ki-red' : 'ki-blue' ?>"><i class="bi bi-calendar2-check"></i></div>
+            <div>
+                <div class="fc-kpi-val" style="font-size:.88rem">L <?= number_format($planRes['pendiente'] + $planRes['facturado'], 2) ?></div>
+                <div class="fc-kpi-lbl">Falta por cobrar del plan</div>
+            </div>
+        </div>
+        <?php endif; ?>
         <?php if ($esProyecto): ?>
         <div class="fc-kpi" style="border-color:#a7f3d0">
             <div class="fc-kpi-icon ki-green"><i class="bi bi-piggy-bank"></i></div>
@@ -700,7 +750,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                 <div class="fc-kpi-lbl">Falta por recibir</div>
             </div>
         </div>
-        <?php else: ?>
+        <?php elseif (!$plan): ?>
         <div class="fc-kpi" style="border-color:<?= $mesesPend > 0 ? '#fecaca' : '#a7f3d0' ?>">
             <div class="fc-kpi-icon <?= $mesesPend > 0 ? 'ki-red' : 'ki-green' ?>"><i class="bi bi-calendar-check"></i>
             </div>
@@ -807,7 +857,15 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                         <div class="mt-3 small" style="white-space:pre-line;background:var(--surface-2);border-radius:8px;padding:.6rem .8rem"><strong>Notas:</strong> <?= htmlspecialchars($contrato['notas']) ?></div>
                     <?php endif; ?>
                     <!-- Barra progreso -->
-                    <?php if ($esProyecto): ?>
+                    <?php if ($plan): $pctPlan = $planRes['total'] > 0 ? min(100, round($planRes['cobrado'] / $planRes['total'] * 100)) : 0; ?>
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small class="text-muted fw-semibold">Cobrado del plan de pagos</small>
+                            <small class="fw-bold text-success">L <?= number_format($planRes['cobrado'], 2) ?> de L <?= number_format($planRes['total'], 2) ?> (<?= $pctPlan ?>%)</small>
+                        </div>
+                        <div class="prog-wrap"><div class="prog-fill prog-green" style="width:<?= $pctPlan ?>%"></div></div>
+                    </div>
+                    <?php elseif ($esProyecto): ?>
                     <div class="mt-3">
                         <div class="d-flex justify-content-between mb-1">
                             <small class="text-muted fw-semibold">Pagos recibidos</small>
@@ -835,13 +893,90 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
         </div>
     </div>
 
+    <!-- Plan de pagos acordado -->
+    <?php if ($hayPlan): ?>
+        <?php
+        $MESC = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+        $fCorta = fn($f) => (int)substr($f, 8, 2) . ' ' . $MESC[(int)substr($f, 5, 2)] . ' ' . substr($f, 0, 4);
+        // Semáforo: verde pagado, azul facturado por cobrar, rojo vencido, naranja ≤ 3 días, amarillo ≤ 10 días, gris más adelante
+        $semaforo = function (array $l) use ($fCorta) {
+            if ($l['estado'] === 'pagado') return ['#dcfce7', '#166534', 'bi-check-circle-fill', 'Pagado' . ($l['fecha_pago'] ? ' ' . $fCorta($l['fecha_pago']) : '')];
+            if ($l['estado'] === 'facturado') return ['#dbeafe', '#1e40af', 'bi-receipt', 'Facturado, por cobrar'];
+            $d = (int)$l['dias'];
+            if ($d > 0) return ['#fee2e2', '#991b1b', 'bi-exclamation-octagon-fill', 'Vencido hace ' . $d . ' día' . ($d > 1 ? 's' : '')];
+            if ($d === 0) return ['#ffedd5', '#9a3412', 'bi-alarm-fill', 'Vence hoy'];
+            if ($d >= -3) return ['#ffedd5', '#9a3412', 'bi-alarm', 'Vence en ' . -$d . ' día' . ($d < -1 ? 's' : '')];
+            if ($d >= -10) return ['#fef9c3', '#854d0e', 'bi-hourglass-split', 'En ' . -$d . ' días'];
+            return ['#f1f5f9', '#475569', 'bi-calendar3', 'En ' . -$d . ' días'];
+        };
+        ?>
+        <div class="fc-card" id="planPagos">
+            <div class="fc-card-hdr">
+                <span class="fc-card-title"><i class="bi bi-calendar2-check text-success"></i> Plan de pagos
+                    <?php if ($plan): ?><small class="text-muted fw-normal"><?= $planRes['n_pagadas'] ?> de <?= $planRes['n'] ?> pagados</small><?php endif; ?></span>
+                <?php if ($puedePlan): ?>
+                    <button class="btn btn-sm btn-outline-primary" id="btnEditarPlan"><i class="bi bi-<?= $plan ? 'pencil' : 'plus-lg' ?> me-1"></i><?= $plan ? 'Editar plan' : 'Crear plan de pagos' ?></button>
+                <?php endif; ?>
+            </div>
+            <?php if (!$plan): ?>
+                <div class="fc-card-body text-muted small">
+                    Aún no hay plan. Créalo para tener el calendario completo del contrato: anticipo, cuotas mensuales o anuales, o etapas, con el total y lo que falta por cobrar.
+                </div>
+            <?php else: ?>
+                <div class="px-3 pt-3 d-flex flex-wrap gap-2 small">
+                    <span class="badge rounded-pill" style="background:#f1f5f9;color:#0f172a">Total acordado <strong>L <?= number_format($planRes['total'], 2) ?></strong><?= $planRes['isv'] > 0 ? ' (ISV L ' . number_format($planRes['isv'], 2) . ')' : ' · sin ISV' ?></span>
+                    <span class="badge rounded-pill" style="background:#dcfce7;color:#166534">Cobrado L <?= number_format($planRes['cobrado'], 2) ?></span>
+                    <?php if ($planRes['facturado'] > 0): ?><span class="badge rounded-pill" style="background:#dbeafe;color:#1e40af">Facturado por cobrar L <?= number_format($planRes['facturado'], 2) ?></span><?php endif; ?>
+                    <?php if ($planRes['vencido'] > 0): ?><span class="badge rounded-pill" style="background:#fee2e2;color:#991b1b">Vencido L <?= number_format($planRes['vencido'], 2) ?></span><?php endif; ?>
+                    <span class="badge rounded-pill" style="background:#fef9c3;color:#854d0e">Por cobrar L <?= number_format($planRes['pendiente'] - $planRes['vencido'], 2) ?></span>
+                    <?php if ($isvApartar > 0): ?><span class="badge rounded-pill" style="background:#ede9fe;color:#5b21b6" title="ISV incluido en pagos anticipados sin factura: se declara al emitir la factura">ISV por apartar L <?= number_format($isvApartar, 2) ?></span><?php endif; ?>
+                </div>
+                <div class="table-responsive">
+                    <table class="fc-table">
+                        <thead><tr><th>#</th><th>Fecha de pago</th><th>Concepto</th><th class="text-end">Monto</th><?php if ($planRes['isv'] > 0): ?><th class="text-end">ISV</th><?php endif; ?><th class="text-end">Total</th><th>Estado</th><th class="text-end"></th></tr></thead>
+                        <tbody>
+                            <?php foreach ($plan as $i => $l): [$bg, $fg, $ico, $txt] = $semaforo($l); ?>
+                                <tr>
+                                    <td class="text-muted"><?= $i + 1 ?></td>
+                                    <td class="text-nowrap fw-semibold"><?= $fCorta($l['fecha']) ?></td>
+                                    <td><?= htmlspecialchars($l['concepto']) ?><?= $l['tipo'] !== 'cuota' && stripos($l['concepto'], PLAN_TIPOS[$l['tipo']]) !== 0 ? ' <span class="badge" style="background:#f1f5f9;color:#475569">' . PLAN_TIPOS[$l['tipo']] . '</span>' : '' ?>
+                                        <?php if ($l['cobro']): ?><div class="small text-muted"><?= htmlspecialchars($l['cobro']) ?></div><?php endif; ?></td>
+                                    <td class="text-end text-nowrap">L <?= number_format((float)$l['monto'], 2) ?></td>
+                                    <?php if ($planRes['isv'] > 0): ?><td class="text-end text-nowrap text-muted">L <?= number_format((float)$l['isv'], 2) ?></td><?php endif; ?>
+                                    <td class="text-end text-nowrap fw-bold">L <?= number_format((float)$l['total'], 2) ?></td>
+                                    <td class="text-nowrap"><span class="badge" style="background:<?= $bg ?>;color:<?= $fg ?>"><i class="bi <?= $ico ?> me-1"></i><?= $txt ?></span></td>
+                                    <td class="text-end text-nowrap">
+                                        <?php if ($puedePlan && !$l['vinculado']): ?>
+                                            <div class="btn-group">
+                                                <button class="btn btn-sm btn-outline-primary btn-plan-cobrar" data-id="<?= (int)$l['id'] ?>" data-concepto="<?= htmlspecialchars($l['concepto']) ?>" data-total="<?= (float)$l['total'] ?>">
+                                                    <i class="bi bi-cash-coin me-1"></i>Registrar cobro</button>
+                                                <button class="btn btn-sm btn-outline-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-label="Más opciones"></button>
+                                                <ul class="dropdown-menu dropdown-menu-end">
+                                                    <?php if (!$esRecibo): ?><li><a class="dropdown-item" href="generar_factura?receptor_id=<?= (int)$contrato['receptor_id'] ?>&producto_id=<?= (int)$contrato['producto_id'] ?>&monto=<?= (float)$l['monto'] ?>&contrato_id=<?= (int)$contrato['id'] ?>"><i class="bi bi-file-earmark-plus me-2"></i>Emitir su factura</a></li><?php endif; ?>
+                                                    <li><button class="dropdown-item btn-plan-vincular" data-id="<?= (int)$l['id'] ?>" data-concepto="<?= htmlspecialchars($l['concepto']) ?>"><i class="bi bi-link-45deg me-2"></i>Vincular <?= $esRecibo ? 'un recibo' : 'una factura o pago' ?> ya registrado</button></li>
+                                                </ul>
+                                            </div>
+                                        <?php elseif ($puedePlan && $l['vinculado']): ?>
+                                            <button class="btn btn-sm btn-link text-muted p-0 btn-plan-desvincular" data-id="<?= (int)$l['id'] ?>" title="Quitar el vínculo con el cobro"><i class="bi bi-link-45deg"></i> Desvincular</button>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                        <tfoot><tr><td colspan="3" class="text-end text-muted">Total del contrato</td><td class="text-end">L <?= number_format($planRes['monto'], 2) ?></td><?php if ($planRes['isv'] > 0): ?><td class="text-end">L <?= number_format($planRes['isv'], 2) ?></td><?php endif; ?><td class="text-end fw-bold">L <?= number_format($planRes['total'], 2) ?></td><td colspan="2"></td></tr></tfoot>
+                    </table>
+                </div>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+
     <!-- Alerta meses sin factura -->
-    <?php if (!empty($mesesSinFactura) && !$noIniciado): ?>
+    <?php if (!empty($mesesSinFactura) && !$noIniciado && !$plan): ?>
         <div class="alert d-flex align-items-start gap-3 mb-4"
             style="background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;border-radius:12px;padding:1rem 1.25rem">
             <i class="bi bi-clock-history" style="font-size:1.2rem;flex-shrink:0;color:#ea580c;margin-top:1px"></i>
             <div>
-                <strong><?= $mesesPend ?> período(s) sin cobrar:</strong>
+                <strong><?= $mesesPend ?> mes(es) sin <?= $esRecibo ? 'recibo' : 'factura' ?>:</strong>
                 <div class="mt-2 d-flex flex-wrap gap-1">
                     <?php foreach ($mesesSinFactura as $ms):
                         [$a, $m] = explode('-', $ms);
@@ -873,7 +1008,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
     <?php endif; ?>
 
     <!-- Pagos anticipados (recibidos antes de emitir la factura) -->
-    <?php if ($hayAnticipos && ($esProyecto || $anticipos)): ?>
+    <?php if ($hayAnticipos && !$esRecibo && ($esProyecto || $anticipos)): ?>
         <div class="fc-card">
             <div class="fc-card-hdr">
                 <span class="fc-card-title"><i class="bi bi-piggy-bank text-success"></i> Pagos anticipados <small class="text-muted fw-normal">(recibidos sin factura)</small></span>
@@ -906,7 +1041,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
             <?php if ($antSinAplicar > 0): ?>
                 <div class="px-3 py-2 small d-flex flex-wrap align-items-center gap-2" style="background:#fffbeb;border-top:1px solid #fde68a">
                     <i class="bi bi-info-circle text-warning"></i>
-                    <span>L <?= number_format($antSinAplicar, 2) ?> recibidos aún sin factura. Cuando emitas la factura de este contrato, aplícalos como abonos:</span>
+                    <span>L <?= number_format($antSinAplicar, 2) ?> recibidos aún sin factura<?= $isvApartar > 0 ? ' — <strong>aparta L ' . number_format($isvApartar, 2) . ' de ISV</strong> (se declara al emitir la factura)' : '' ?>. Cuando emitas la factura de este contrato, aplícalos como abonos:</span>
                     <?php if ($facturasConSaldo && $puedeCobrar): ?>
                         <select id="antFactura" class="form-select form-select-sm" style="width:auto">
                             <?php foreach ($facturasConSaldo as $fs): ?><option value="<?= (int)$fs['id'] ?>"><?= htmlspecialchars($fs['correlativo']) ?> · saldo L <?= number_format($fs['saldo'], 2) ?></option><?php endforeach; ?>
@@ -920,7 +1055,44 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
         </div>
     <?php endif; ?>
 
+    <!-- Historial de recibos (contrato sin factura) -->
+    <?php if ($esRecibo): ?>
+    <div class="fc-card">
+        <div class="fc-card-hdr">
+            <span class="fc-card-title"><i class="bi bi-receipt-cutoff text-success"></i> Recibos emitidos</span>
+            <span style="background:var(--brand-lt);color:var(--brand);border-radius:20px;padding:.15rem .65rem;font-size:.78rem;font-weight:700">
+                <?= count($recibos) ?> recibo<?= count($recibos) !== 1 ? 's' : '' ?></span>
+        </div>
+        <?php if (!$recibos): ?>
+            <div class="fc-card-body text-center py-4 text-muted">
+                Aún no hay recibos de este contrato.
+                <?php if ($contrato['estado'] === 'activo'): ?><div class="mt-2"><a href="generar_recibo?contrato_id=<?= (int)$contrato['id'] ?>" class="btn-facturar"><i class="bi bi-receipt-cutoff"></i> Emitir el primer recibo</a></div><?php endif; ?>
+            </div>
+        <?php else: ?>
+            <div style="overflow-x:auto">
+                <table class="fc-table">
+                    <thead><tr><th>Recibo</th><th>Fecha</th><th class="text-center">Período</th><th>Concepto</th><th>Método</th><th class="text-end">Monto</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($recibos as $r): ?>
+                            <tr>
+                                <td class="fw-bold font-monospace"><?= str_pad((string)$r['numero_recibo'], 5, '0', STR_PAD_LEFT) ?></td>
+                                <td><?= date('d/m/Y', strtotime($r['fecha_emision'])) ?></td>
+                                <td class="text-center"><?= $r['periodo_mes'] ? '<span class="badge" style="background:#dbeafe;color:#1e40af">' . $meses_es[(int)$r['periodo_mes']] . ' ' . (int)$r['periodo_anio'] . '</span>' : '—' ?></td>
+                                <td class="small"><?= htmlspecialchars($r['concepto'] ?? '') ?></td>
+                                <td class="small"><?= htmlspecialchars(ucfirst($r['metodo_pago'])) ?></td>
+                                <td class="text-end fw-bold" style="color:var(--brand)">L <?= number_format((float)$r['monto'], 2) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                    <tfoot><tr><td colspan="5" class="text-end text-muted">Total cobrado con recibo (sin ISV):</td><td class="text-end" style="color:var(--brand)">L <?= number_format($totalRecibos, 2) ?></td></tr></tfoot>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
     <!-- Historial de facturas -->
+    <?php if (!$esRecibo || $facturas): ?>
     <div class="fc-card">
         <div class="fc-card-hdr">
             <span class="fc-card-title"><i class="bi bi-receipt text-success"></i> Historial de Facturas</span>
@@ -1055,8 +1227,10 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
         <?php endif; ?>
     </div>
 
-    <!-- Calendario de cobros -->
-    <?php if (!empty($mesesEsperados)): ?>
+    <?php endif; ?>
+
+    <!-- Calendario de cobros (si hay plan de pagos, el plan lo reemplaza) -->
+    <?php if (!empty($mesesEsperados) && !$plan): ?>
         <div class="fc-card">
             <div class="fc-card-hdr">
                 <span class="fc-card-title"><i class="bi bi-calendar2-week text-secondary"></i> Calendario de Cobros</span>
@@ -1616,6 +1790,91 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
             .then(r => { if (!r.isConfirmed) return; const fd = new FormData(); fd.append('accion', 'aplicar'); fd.append('contrato_id', '<?= (int)$contrato_id ?>'); fd.append('factura_id', sel.value);
                 enviar(fd).then(d => Swal.fire({ icon: 'success', title: d.message }).then(() => location.reload())).catch(err => Swal.fire('Error', err.message, 'error')); });
     });
+})();
+</script>
+<?php endif; ?>
+<?php if ($hayPlan && $puedePlan):
+    $cuentasPlan = bancosDisponible($pdo) ? array_values(array_filter(bancoCuentas($pdo, $cliente_id, true), fn($c) => $c['moneda'] === 'HNL')) : []; ?>
+<div class="modal fade" id="modalPlan" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-lg-down">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-calendar2-check me-1"></i> Plan de pagos · <?= htmlspecialchars($contrato['nombre_contrato']) ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+            <div class="modal-body"><div id="planEditor"><div class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm"></span> Cargando…</div></div></div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-primary btn-sm" id="btnGuardarPlan"><i class="bi bi-floppy me-1"></i>Guardar plan</button></div>
+        </div>
+    </div>
+</div>
+<script src="../../clientes/js/plan-pagos.js?v=<?= @filemtime(__DIR__ . '/../js/plan-pagos.js') ?>"></script>
+<script>
+(function () {
+    const URL_PLAN = 'includes/contrato_plan_accion.php', CONTRATO = <?= (int)$contrato_id ?>, ES_RECIBO = <?= $esRecibo ? 'true' : 'false' ?>;
+    const CUENTAS = <?= json_encode(array_map(fn($c) => ['id' => (int)$c['id'], 'txt' => $c['banco'] . ' ' . $c['numero'], 'pred' => !empty($c['predeterminada'])], $cuentasPlan), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const L = v => 'L ' + Number(v).toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const post = datos => { const fd = new FormData(); Object.entries(datos).forEach(([k, v]) => fd.append(k, v ?? '')); return fetch(URL_PLAN, { method: 'POST', body: fd }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.error || 'No se pudo guardar.'); return d; }); };
+    const listo = d => Swal.fire({ icon: 'success', title: d.message, timer: 1800, showConfirmButton: false }).then(() => location.reload());
+    const metodos = '<option value="transferencia">Transferencia</option><option value="efectivo">Efectivo</option><option value="cheque">Cheque</option><option value="tarjeta">Tarjeta</option><option value="otro">Otro</option>';
+    let info = null;
+    const cargar = () => fetch(URL_PLAN + '?contrato_id=' + CONTRATO).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.error); return info = d; });
+
+    // Crear / editar el plan
+    const modal = new bootstrap.Modal(document.getElementById('modalPlan'));
+    let editor = null;
+    document.getElementById('btnEditarPlan')?.addEventListener('click', () => {
+        modal.show();
+        cargar().then(d => {
+            editor = PlanPagos('#planEditor', { conFactura: d.con_factura, lineas: d.lineas, concepto: <?= json_encode($contrato['concepto_recibo'] ?: $contrato['nombre_contrato']) ?>,
+                fecha: <?= json_encode(date('Y-m-') . str_pad((string)min(28, max(1, (int)$contrato['dia_pago'])), 2, '0', STR_PAD_LEFT)) ?>, cuota: <?= (float)$contrato['monto'] ?> });
+        }).catch(e => { modal.hide(); Swal.fire('Error', e.message, 'error'); });
+    });
+    document.getElementById('btnGuardarPlan').addEventListener('click', () => {
+        if (!editor) return;
+        const b = document.getElementById('btnGuardarPlan'); b.disabled = true;
+        post({ accion: 'guardar', contrato_id: CONTRATO, con_isv: editor.conIsv() ? '1' : '', lineas: JSON.stringify(editor.lineas()) })
+            .then(d => { modal.hide(); listo(d); }).catch(e => Swal.fire('No se pudo guardar', e.message, 'error')).finally(() => b.disabled = false);
+    });
+
+    // Registrar el cobro de una línea: con recibo (sin factura) o como pago anticipado (con factura)
+    document.querySelectorAll('.btn-plan-cobrar').forEach(b => b.addEventListener('click', () => {
+        const hoy = new Date().toLocaleDateString('sv-SE');
+        Swal.fire({
+            title: ES_RECIBO ? 'Cobrar con recibo' : 'Registrar cobro',
+            html: `<div class="text-start">
+                <div class="mb-2"><strong>${esc(b.dataset.concepto)}</strong> · ${L(b.dataset.total)}</div>
+                ${ES_RECIBO ? '<div class="alert alert-info small py-2">Se emite el recibo con este monto y la línea queda pagada.</div>'
+                            : '<div class="alert alert-info small py-2">Se registra como <strong>pago anticipado</strong> (recibido antes de facturar). Cuando emitas la factura lo aplicas como abono. Si ya tienes la factura, usa «Vincular».</div>'}
+                <label class="form-label small">Fecha de pago</label><input type="date" id="pcFecha" class="form-control form-control-sm" value="${hoy}">
+                ${ES_RECIBO ? '' : `<label class="form-label small mt-2">Monto recibido</label><input type="number" step="0.01" id="pcMonto" class="form-control form-control-sm" value="${Number(b.dataset.total).toFixed(2)}">`}
+                <label class="form-label small mt-2">Método</label><select id="pcMetodo" class="form-select form-select-sm">${metodos}</select>
+                ${!ES_RECIBO && CUENTAS.length ? `<label class="form-label small mt-2">Depositado en</label><select id="pcCuenta" class="form-select form-select-sm"><option value="">— No registrar en banco —</option>${CUENTAS.map(c => `<option value="${c.id}"${c.pred ? ' selected' : ''}>${esc(c.txt)}</option>`).join('')}</select>` : ''}
+                ${ES_RECIBO ? '<label class="form-label small mt-2">Notas</label><input id="pcNotas" class="form-control form-control-sm" maxlength="255">' : '<label class="form-label small mt-2">Referencia</label><input id="pcRef" class="form-control form-control-sm" maxlength="100">'}
+            </div>`,
+            showCancelButton: true, confirmButtonText: ES_RECIBO ? 'Emitir recibo' : 'Registrar cobro', cancelButtonText: 'Cancelar', focusConfirm: false,
+            preConfirm: () => post({
+                accion: ES_RECIBO ? 'cobrar_recibo' : 'cobrar_anticipo', id: b.dataset.id,
+                fecha: document.getElementById('pcFecha').value, metodo: document.getElementById('pcMetodo').value,
+                monto: document.getElementById('pcMonto')?.value, cuenta_id: document.getElementById('pcCuenta')?.value,
+                referencia: document.getElementById('pcRef')?.value, notas: document.getElementById('pcNotas')?.value,
+            }).catch(e => Swal.showValidationMessage(e.message)),
+        }).then(r => { if (r.isConfirmed && r.value) listo(r.value); });
+    }));
+
+    // Vincular con un cobro ya registrado (factura del contrato, recibo o pago anticipado)
+    document.querySelectorAll('.btn-plan-vincular').forEach(b => b.addEventListener('click', () => {
+        cargar().then(d => {
+            const ops = Object.entries(d.libres).flatMap(([tipo, lista]) => lista.map(x => `<option value="${tipo}:${x.id}">${esc(x.txt)}</option>`));
+            if (!ops.length) return Swal.fire('Nada que vincular', ES_RECIBO ? 'No hay recibos de este contrato sin vincular.' : 'No hay facturas ni pagos anticipados de este contrato sin vincular.', 'info');
+            Swal.fire({
+                title: 'Vincular cobro', html: `<div class="text-start"><div class="mb-2">${esc(b.dataset.concepto)}</div><select id="pvRef" class="form-select form-select-sm">${ops.join('')}</select></div>`,
+                showCancelButton: true, confirmButtonText: 'Vincular', cancelButtonText: 'Cancelar',
+                preConfirm: () => { const [tipo, ref] = document.getElementById('pvRef').value.split(':'); return post({ accion: 'vincular', id: b.dataset.id, tipo, ref_id: ref }).catch(e => Swal.showValidationMessage(e.message)); },
+            }).then(r => { if (r.isConfirmed && r.value) listo(r.value); });
+        }).catch(e => Swal.fire('Error', e.message, 'error'));
+    }));
+    document.querySelectorAll('.btn-plan-desvincular').forEach(b => b.addEventListener('click', () => {
+        Swal.fire({ title: '¿Quitar el vínculo?', text: 'La línea vuelve a quedar pendiente. El recibo, la factura o el pago anticipado no se borran.', icon: 'question', showCancelButton: true, confirmButtonText: 'Desvincular', cancelButtonText: 'Cancelar' })
+            .then(r => { if (r.isConfirmed) post({ accion: 'desvincular', id: b.dataset.id }).then(listo).catch(e => Swal.fire('Error', e.message, 'error')); });
+    }));
 })();
 </script>
 <?php endif; ?>

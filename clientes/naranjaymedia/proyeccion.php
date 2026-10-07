@@ -3,6 +3,7 @@ $titulo = 'Proyección de Flujo de Caja';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/contrato_plan.php';
 require_once '../../includes/templates/header.php';
 
 $cliente_id = (int)(USUARIO_ROL === 'superadmin'
@@ -154,13 +155,30 @@ if ($idsRotativos) {
     foreach ($stRot->fetchAll(PDO::FETCH_ASSOC) as $t) $turnosRotativos[$t['contrato_id']][] = $t;
 }
 
+// Contratos con plan de pagos: se proyectan con las fechas y montos del plan (lo no cobrado);
+// lo vencido sin cobrar se espera en el mes actual.
+$tipoContrato = array_column($contratos, 'tipo_contrato', 'id');
+$conPlan = array_flip(planContratosConPlan($pdo, $cliente_id));
+$planPorMes = [];
+foreach (planPendientesPorMes($pdo, $cliente_id) as $k => $porContrato) {
+    [$ka, $km] = array_map('intval', explode('-', $k));
+    if ($ka * 12 + $km < $hoy_año * 12 + $hoy_mes) $k = $hoy_año . '-' . $hoy_mes;
+    foreach ($porContrato as $ctId => $monto) {
+        if (!isset($tipoContrato[$ctId])) continue;   // solo contratos activos
+        $planPorMes[$k][$tipoContrato[$ctId] === 'sin_factura' ? 'recibo' : 'estandar'] = ($planPorMes[$k][$tipoContrato[$ctId] === 'sin_factura' ? 'recibo' : 'estandar'] ?? 0) + $monto;
+    }
+}
+
 $proyeccion = [];
 for ($offset = 0; $offset < 12; $offset++) {
     $mes  = (($hoy_mes - 1 + $offset) % 12) + 1;
     $anio = $hoy_año + intdiv($hoy_mes - 1 + $offset, 12);
     $ing_estandar = $ing_periodico = $ing_recibo = 0;
 
+    $ing_estandar += $planPorMes["$anio-$mes"]['estandar'] ?? 0;
+    $ing_recibo += $planPorMes["$anio-$mes"]['recibo'] ?? 0;
     foreach ($contratos as $ct) {
+        if (isset($conPlan[(int)$ct['id']])) continue;   // ya proyectado con su plan
         $fi = new DateTime($ct['fecha_inicio']);
         $ff = $ct['fecha_fin'] ? new DateTime($ct['fecha_fin']) : null;
         if ($fi > new DateTime("$anio-$mes-28")) continue;
@@ -202,6 +220,12 @@ for ($offset = 0; $offset < 12; $offset++) {
         $stR = $pdo->prepare("SELECT COALESCE(SUM(subtotal),0) FROM facturas WHERE cliente_id=? AND estado='emitida' AND YEAR(fecha_emision)=? AND MONTH(fecha_emision)=?");
         $stR->execute([$cliente_id, $anio, $mes]);
         $ing_real = (float)$stR->fetchColumn();
+        try {   // + recibos de contratos sin factura
+            $stRc = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM contratos_recibos WHERE cliente_id=? AND estado='emitido' AND YEAR(fecha_emision)=? AND MONTH(fecha_emision)=?");
+            $stRc->execute([$cliente_id, $anio, $mes]);
+            $ing_real += (float)$stRc->fetchColumn();
+        } catch (PDOException $e) {
+        }
         $stE = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id=? AND estado!='anulado' AND YEAR(fecha)=? AND MONTH(fecha)=?");
         $stE->execute([$cliente_id, $anio, $mes]);
         $egr_real = (float)$stE->fetchColumn();

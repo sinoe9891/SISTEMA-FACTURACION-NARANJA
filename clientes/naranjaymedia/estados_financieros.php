@@ -96,8 +96,9 @@ require_once '../../includes/templates/header.php';
         <?php if ($tab === 'resultados'): ?>
             <tr class="app-estado-sec"><td colspan="3">Ingresos</td></tr>
             <tr><td class="app-estado-i1">Ventas gravadas</td><td><?= $L($r['gravado']) ?></td><td></td></tr>
-            <tr><td class="app-estado-i1">Ventas exentas y exoneradas</td><td class="app-estado-sub-l"><?= $L($r['ventas'] - $r['gravado']) ?></td><td></td></tr>
-            <tr class="app-estado-tot"><td>Total de ingresos <span class="app-estado-nota">(<?= $r['facturas'] ?> factura<?= $r['facturas'] === 1 ? '' : 's' ?>, sin ISV)</span></td><td></td><td><?= $L($r['ventas']) ?></td></tr>
+            <tr><td class="app-estado-i1">Ventas exentas y exoneradas</td><td class="<?= $r['n_recibos'] ? '' : 'app-estado-sub-l' ?>"><?= $L($r['ventas_facturas'] - $r['gravado']) ?></td><td></td></tr>
+            <?php if ($r['n_recibos']): ?><tr><td class="app-estado-i1">Ingresos con recibo <span class="app-estado-nota">(contratos sin factura)</span></td><td class="app-estado-sub-l"><?= $L($r['recibos']) ?></td><td></td></tr><?php endif; ?>
+            <tr class="app-estado-tot"><td>Total de ingresos <span class="app-estado-nota">(<?= $r['facturas'] ?> factura<?= $r['facturas'] === 1 ? '' : 's' ?><?= $r['n_recibos'] ? ', ' . $r['n_recibos'] . ' recibo' . ($r['n_recibos'] === 1 ? '' : 's') : '' ?>, sin ISV)</span></td><td></td><td><?= $L($r['ventas']) ?></td></tr>
 
             <tr class="app-estado-sec"><td colspan="3">Gastos de operación</td></tr>
             <?php foreach ($r['gastos'] as $i => $g): ?>

@@ -1519,7 +1519,8 @@ suite('Estados financieros clásicos', function () {
     $r = $c->get('estados_financieros', ['desde' => '2026-01-01', 'hasta' => '2026-06-30']);
     check('el estado de resultados carga', $r['code'] === 200 && str_contains($r['body'], 'Utilidad del período') || str_contains($r['body'], 'Pérdida del período'), errorPhp($r['body']));
     check('sin avisos de PHP', sinErroresPhp($r['body']), errorPhp($r['body']));
-    $ventas = (float)$pdo->query("SELECT COALESCE(SUM(subtotal),0) FROM facturas WHERE cliente_id = 2 AND estado = 'emitida' AND DATE(fecha_emision) BETWEEN '2026-01-01' AND '2026-06-30'")->fetchColumn();
+    $ventas = (float)$pdo->query("SELECT COALESCE(SUM(subtotal),0) FROM facturas WHERE cliente_id = 2 AND estado = 'emitida' AND DATE(fecha_emision) BETWEEN '2026-01-01' AND '2026-06-30'")->fetchColumn()
+            + (float)$pdo->query("SELECT COALESCE(SUM(monto),0) FROM contratos_recibos WHERE cliente_id = 2 AND estado = 'emitido' AND fecha_emision BETWEEN '2026-01-01' AND '2026-06-30'")->fetchColumn();   // + recibos (sin factura)
     $gastos = (float)$pdo->query("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id = 2 AND estado <> 'anulado' AND fecha BETWEEN '2026-01-01' AND '2026-06-30'")->fetchColumn();
     check('ingresos, gastos y utilidad coinciden con la BD', str_contains($r['body'], number_format($ventas, 2)) && str_contains($r['body'], number_format($gastos, 2))
         && str_contains($r['body'], number_format(abs($ventas - $gastos), 2)));
@@ -1925,4 +1926,85 @@ suite('Superadmin: servicios del contrato y clientes de la empresa seleccionada'
     $a = login('qa.admin@local.test');
     $r = $a->get('../../includes/api/productos_por_receptor.php', ['receptor_id' => $rec]);
     check('el admin sigue recibiendo los servicios', $r['code'] === 200 && is_array($r['json']), $r['body']);
+});
+
+suite('Plan de pagos del contrato y recibos en los reportes', function () {
+    global $pdo;
+    $c = login('qa.admin@local.test');
+    $f = fn($sql) => $pdo->query($sql)->fetchColumn();
+    $recCtr = (int)$f("SELECT id FROM contratos WHERE cliente_id = 2 AND tipo_contrato = 'sin_factura' ORDER BY id LIMIT 1");
+    $facCtr = (int)$f("SELECT id FROM contratos WHERE cliente_id = 2 AND tipo_contrato = 'estandar' AND estado = 'activo' ORDER BY id LIMIT 1");
+    $pdo->exec("DELETE FROM contratos_plan WHERE contrato_id IN ($recCtr, $facCtr)");
+
+    // Contrato con recibo (como CAE): anticipo + 6 cuotas, sin ISV aunque se pida
+    $lineas = [['tipo' => 'anticipo', 'concepto' => 'Anticipo 20%', 'fecha' => date('Y-m-d', strtotime('-2 days')), 'monto' => 17000]];
+    for ($i = 0; $i < 6; $i++) $lineas[] = ['tipo' => 'cuota', 'concepto' => 'Cuota ' . ($i + 1), 'fecha' => date('Y-m-05', strtotime("first day of +$i month")), 'monto' => 25500];
+    $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'guardar', 'contrato_id' => $recCtr, 'con_isv' => '1', 'lineas' => json_encode($lineas)]);
+    check('guarda el plan de un contrato con recibo', ($r['json']['success'] ?? false), $r['body']);
+    check('con recibo no lleva ISV y el total es 170,000', (float)$f("SELECT SUM(total) FROM contratos_plan WHERE contrato_id = $recCtr") == 170000 && !(float)$f("SELECT SUM(isv) FROM contratos_plan WHERE contrato_id = $recCtr"));
+    $g = $c->get('includes/contrato_plan_accion.php', ['contrato_id' => $recCtr]);
+    check('el anticipo con fecha pasada sale vencido', ($g['json']['lineas'][0]['estado'] ?? '') === 'vencido' && ($g['json']['lineas'][0]['concepto'] ?? '') === 'Anticipo 20%', substr($g['body'], 0, 300));
+    $lin = (int)$g['json']['lineas'][0]['id'];
+    $antes = (int)$f("SELECT COUNT(*) FROM contratos_recibos WHERE contrato_id = $recCtr");
+    $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'cobrar_recibo', 'id' => $lin, 'fecha' => date('Y-m-d'), 'metodo' => 'transferencia']);
+    $recId = (int)$f("SELECT recibo_id FROM contratos_plan WHERE id = $lin");
+    check('«Registrar cobro» emite el recibo y la línea queda pagada', ($r['json']['success'] ?? false) && $recId && (int)$f("SELECT COUNT(*) FROM contratos_recibos WHERE contrato_id = $recCtr") === $antes + 1
+        && (float)$f("SELECT monto FROM contratos_recibos WHERE id = $recId") == 17000, $r['body']);
+    $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'cobrar_recibo', 'id' => $lin, 'fecha' => date('Y-m-d')]);
+    check('no cobra dos veces la misma línea', !($r['json']['success'] ?? true));
+    $lineas[1]['monto'] = 26000;
+    $g2 = $c->get('includes/contrato_plan_accion.php', ['contrato_id' => $recCtr]);
+    $conIds = array_map(fn($l, $o) => $o + ['id' => $l['id']], $g2['json']['lineas'], $lineas);
+    $mod = $conIds; $mod[0]['monto'] = 1;
+    $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'guardar', 'contrato_id' => $recCtr, 'lineas' => json_encode($mod)]);
+    check('no deja cambiar el monto de una línea ya cobrada', !($r['json']['success'] ?? true) && str_contains($r['json']['error'] ?? '', 'ya está cobrada'), $r['body']);
+    $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'guardar', 'contrato_id' => $recCtr, 'lineas' => json_encode(array_slice($conIds, 1))]);
+    check('no deja quitar una línea ya cobrada', !($r['json']['success'] ?? true), $r['body']);
+    $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'guardar', 'contrato_id' => $recCtr, 'lineas' => json_encode($conIds)]);
+    check('edita las líneas pendientes y conserva la cobrada', ($r['json']['success'] ?? false) && (int)$f("SELECT recibo_id FROM contratos_plan WHERE id = $lin") === $recId
+        && (float)$f("SELECT monto FROM contratos_plan WHERE contrato_id = $recCtr AND orden = 2") == 26000, $r['body']);
+    $p = $c->get('facturas_contrato', ['contrato_id' => $recCtr]);
+    $tieneFact = (int)$f("SELECT COUNT(*) FROM facturas WHERE contrato_id = $recCtr AND estado = 'emitida'");
+    check('la ficha del contrato con recibo muestra el plan y los recibos (facturas solo si las hay)', sinErroresPhp($p['body']) && str_contains($p['body'], 'id="planPagos"') && str_contains($p['body'], 'Recibos emitidos')
+        && str_contains($p['body'], 'Historial de Facturas') === (bool)$tieneFact && !str_contains($p['body'], 'Cobrar por correo'), errorPhp($p['body']));
+    $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'desvincular', 'id' => $lin]);
+    check('desvincular deja la línea pendiente sin borrar el recibo', ($r['json']['success'] ?? false) && !$f("SELECT recibo_id FROM contratos_plan WHERE id = $lin") && $f("SELECT COUNT(*) FROM contratos_recibos WHERE id = $recId"));
+    $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'vincular', 'id' => $lin, 'tipo' => 'recibo', 'ref_id' => $recId]);
+    check('vincula un recibo ya emitido', ($r['json']['success'] ?? false) && (int)$f("SELECT recibo_id FROM contratos_plan WHERE id = $lin") === $recId, $r['body']);
+
+    // Recibos en los reportes: el recibo nuevo suma al estado de resultados y a Financiero
+    require_once __DIR__ . '/../../includes/estados_financieros.php';
+    $er = efResultados($pdo, 2, date('Y-m-01'), date('Y-m-t'));
+    check('el estado de resultados cuenta los recibos como ingreso', $er['recibos'] >= 17000 && abs($er['ventas'] - ($er['ventas_facturas'] + $er['recibos'])) < 0.01, json_encode($er['recibos']));
+    $ef = $c->get('estados_financieros', ['tab' => 'resultados']);
+    check('el estado clásico muestra la línea de ingresos con recibo', sinErroresPhp($ef['body']) && str_contains($ef['body'], 'Ingresos con recibo'), errorPhp($ef['body']));
+    $fi = $c->get('financiero', ['vista' => 'mensual', 'mes' => (int)date('n'), 'anio' => (int)date('Y')]);
+    check('Financiero suma los recibos en los ingresos', sinErroresPhp($fi['body']) && str_contains($fi['body'], ' rec.'), errorPhp($fi['body']));
+
+    // Contrato con factura: el cobro antes de facturar es pago anticipado y su ISV se aparta
+    $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'guardar', 'contrato_id' => $facCtr, 'con_isv' => '1', 'lineas' => json_encode([
+        ['tipo' => 'etapa', 'concepto' => 'Etapa 1 (40%)', 'fecha' => date('Y-m-d'), 'monto' => 138400],
+        ['tipo' => 'etapa', 'concepto' => 'Etapa 2 (60%)', 'fecha' => date('Y-m-d', strtotime('+40 days')), 'monto' => 207600]])]);
+    check('el plan con factura calcula el ISV 15 %', ($r['json']['success'] ?? false) && (float)$f("SELECT SUM(isv) FROM contratos_plan WHERE contrato_id = $facCtr") == 51900, $r['body']);
+    $l1 = (int)$f("SELECT id FROM contratos_plan WHERE contrato_id = $facCtr ORDER BY orden LIMIT 1");
+    $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'cobrar_anticipo', 'id' => $l1, 'fecha' => date('Y-m-d'), 'monto' => 159160, 'metodo' => 'transferencia']);
+    $antId = (int)$f("SELECT anticipo_id FROM contratos_plan WHERE id = $l1");
+    check('cobrar antes de facturar registra un pago anticipado', ($r['json']['success'] ?? false) && $antId && (float)$f("SELECT monto FROM contratos_anticipos WHERE id = $antId") == 159160, $r['body']);
+    require_once __DIR__ . '/../../includes/contrato_plan.php';
+    check('ISV por apartar del anticipo: 20,760', abs(planIsvPorApartar($pdo, 2, $facCtr) - 20760) < 0.01, (string)planIsvPorApartar($pdo, 2, $facCtr));
+    $bal = efBalance($pdo, 2, date('Y-m-d'), 0);
+    check('el balance separa el ISV de los anticipos como impuesto por pagar', in_array('ISV incluido en pagos anticipados (por apartar)', array_column($bal['pasivo']['Impuestos por pagar'] ?? [], 'nombre'), true), json_encode($bal['pasivo']));
+    $p = $c->get('facturas_contrato', ['contrato_id' => $facCtr]);
+    check('la ficha muestra el ISV por apartar', sinErroresPhp($p['body']) && str_contains($p['body'], 'ISV por apartar'), errorPhp($p['body']));
+    $pr = $c->get('proyeccion');
+    check('la proyección carga con planes de pago', $pr['code'] === 200 && sinErroresPhp($pr['body']), errorPhp($pr['body']));
+    $g = $c->get('includes/contrato_plan_accion.php', ['contrato_id' => $facCtr]);
+    check('el resumen del plan cuadra (cobrado + pendiente = total)', abs($g['json']['resumen']['cobrado'] + $g['json']['resumen']['pendiente'] + $g['json']['resumen']['facturado'] - $g['json']['resumen']['total']) < 0.01, $g['body']);
+    $o = login('qa.ccic@local.test');
+    check('otra empresa no ve ni toca el plan', !($o->get('includes/contrato_plan_accion.php', ['contrato_id' => $facCtr])['json']['success'] ?? true)
+        && !($o->post('includes/contrato_plan_accion.php', ['accion' => 'desvincular', 'id' => $l1])['json']['success'] ?? true));
+    // limpieza
+    $pdo->exec("UPDATE contratos_anticipos SET anulado = 1, motivo_anulacion = 'QA' WHERE id = $antId");
+    $pdo->exec("DELETE FROM contratos_recibos WHERE id = $recId");
+    $pdo->exec("DELETE FROM contratos_plan WHERE contrato_id IN ($recCtr, $facCtr)");
 });

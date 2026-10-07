@@ -34,10 +34,14 @@ $mesTxt = fn($ym) => $MES[(int)substr($ym, 5, 2)] . ' ' . substr($ym, 0, 4);
 $fechaTxt = fn($f) => $DIA[(int)date('w', strtotime($f))] . ' ' . (int)substr($f, 8, 2) . ' ' . mb_strtolower(mb_substr($MES[(int)substr($f, 5, 2)], 0, 3));
 $cuando = fn($d) => $d > 0 ? "venció hace $d día" . ($d > 1 ? 's' : '') : ($d === 0 ? 'vence hoy' : ($d === -1 ? 'vence mañana' : 'en ' . -$d . ' días'));
 
-// Resumen en una frase: cuánto se debe, qué está vencido y cuál es el próximo pago
-$vencidos = array_filter($gastos, fn($g) => (int)$g['dias'] > 0);
-$proximo = null;
-foreach ($gastos as $g) if ((int)$g['dias'] <= 0) { $proximo = $g; break; }
+// Semáforo del estado: rojo vencido, naranja ≤ 3 días, amarillo ≤ 7, azul ≤ 30, gris más adelante
+$semaforo = function (int $d): array {
+    if ($d > 0) return ['#fee2e2', '#991b1b', 'bi-exclamation-octagon-fill'];
+    if ($d >= -3) return ['#ffedd5', '#9a3412', 'bi-alarm-fill'];
+    if ($d >= -7) return ['#fef9c3', '#854d0e', 'bi-alarm'];
+    if ($d >= -30) return ['#e0f2fe', '#075985', 'bi-calendar-week'];
+    return ['#f1f5f9', '#475569', 'bi-calendar3'];
+};
 
 require_once '../../includes/templates/header.php';
 ?>
@@ -45,26 +49,13 @@ require_once '../../includes/templates/header.php';
 <div class="app-page-header">
     <div>
         <h1 class="app-page-title">Cuentas por pagar</h1>
-        <p class="app-page-sub">Lo que la empresa debe pagar y cuándo: gastos registrados que aún no se han pagado.</p>
+        <p class="app-page-sub">Lo que la empresa debe pagar y cuándo. Incluye las cuotas que faltan de préstamos y pagos con fecha de fin.</p>
     </div>
     <a href="gastos" class="btn btn-sm btn-outline-secondary"><i class="bi bi-wallet2 me-1"></i> Todos los gastos</a>
 </div>
 
 <?php if (!$gastos): ?>
     <div class="alert alert-success d-flex align-items-center gap-2"><i class="bi bi-check-circle-fill fs-5"></i> <div><strong>Todo al día.</strong> No hay pagos pendientes.</div></div>
-<?php else: ?>
-    <div class="alert <?= $vencidos ? 'alert-danger' : 'alert-primary' ?> d-flex align-items-start gap-3" id="cpResumen">
-        <i class="bi <?= $vencidos ? 'bi-exclamation-octagon-fill' : 'bi-calendar-check' ?> fs-4"></i>
-        <div>
-            <div>Debes <strong><?= $L($total) ?></strong> en <?= count($gastos) ?> pago<?= count($gastos) > 1 ? 's' : '' ?>.
-                <?php if ($vencidos): ?><strong><?= count($vencidos) ?> vencido<?= count($vencidos) > 1 ? 's' : '' ?> por <?= $L($grupos['vencido']) ?></strong>.
-                <?php else: ?>Nada vencido.<?php endif; ?></div>
-            <?php if ($proximo): ?>
-                <div class="mt-1">Próximo pago: <strong><?= htmlspecialchars($proximo['descripcion']) ?></strong> · <?= htmlspecialchars($proximo['prov']) ?> ·
-                    <strong><?= $L($proximo['monto']) ?></strong> el <?= $fechaTxt($proximo['fecha']) ?> (<?= $cuando((int)$proximo['dias']) ?>).</div>
-            <?php endif; ?>
-        </div>
-    </div>
 <?php endif; ?>
 
 <?php $iconoGrupo = ['vencido' => ['bi-exclamation-octagon', 'red'], 'hoy_7' => ['bi-alarm', 'amber'], '8_30' => ['bi-calendar-week', 'teal'], 'mas_30' => ['bi-calendar3', 'gray']]; ?>
@@ -97,15 +88,19 @@ require_once '../../includes/templates/header.php';
         <table class="table app-table" id="tablaPagos">
             <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Descripción</th><th>Proveedor</th><th class="app-num">Monto</th><th>Estado</th><th class="text-end"></th></tr></thead>
             <tbody>
-                <?php foreach ($gastos as $g): $d = (int)$g['dias']; ?>
-                    <tr data-fila data-mes="<?= substr($g['fecha'], 0, 7) ?>" data-tramo="<?= $g['grupo'] ?>" data-prov="<?= htmlspecialchars($g['prov']) ?>" data-cat="<?= htmlspecialchars($g['categoria'] ?? '') ?>" data-monto="<?= (float)$g['monto'] ?>">
+                <?php foreach ($gastos as $g): $d = (int)$g['dias']; $fut = !empty($g['futura']); [$sbg, $sfg, $sico] = $semaforo($d); ?>
+                    <tr data-fila<?= $fut ? ' class="cp-futura"' : '' ?> data-mes="<?= substr($g['fecha'], 0, 7) ?>" data-tramo="<?= $g['grupo'] ?>" data-prov="<?= htmlspecialchars($g['prov']) ?>" data-cat="<?= htmlspecialchars($g['categoria'] ?? '') ?>" data-monto="<?= (float)$g['monto'] ?>">
                         <td class="app-n"></td>
                         <td class="text-nowrap"><strong><?= $fechaTxt($g['fecha']) ?></strong><div class="small text-muted"><?= date('d/m/Y', strtotime($g['fecha'])) ?></div></td>
-                        <td><a href="gasto_ver?id=<?= (int)$g['id'] ?>"><?= htmlspecialchars($g['descripcion']) ?></a><?= $g['frecuencia'] !== 'unico' ? ' <span class="app-badge app-badge-muted">' . htmlspecialchars(ucfirst($g['frecuencia'])) . '</span>' : '' ?><div class="small text-muted"><?= htmlspecialchars($g['categoria'] ?? '') ?></div></td>
+                        <td><?php if ($fut): ?><?= htmlspecialchars($g['descripcion']) ?><?php else: ?><a href="gasto_ver?id=<?= (int)$g['id'] ?>"><?= htmlspecialchars($g['descripcion']) ?></a><?php endif; ?>
+                            <?php if (!empty($g['cuotas'])): ?> <span class="app-badge app-badge-muted">Cuota <?= (int)$g['cuota'] ?> de <?= (int)$g['cuotas'] ?><?= $g['cuota'] == $g['cuotas'] ? ' · última' : '' ?></span>
+                            <?php elseif ($g['frecuencia'] !== 'unico'): ?> <span class="app-badge app-badge-muted"><?= htmlspecialchars(ucfirst($g['frecuencia'])) ?></span><?php endif; ?>
+                            <div class="small text-muted"><?= htmlspecialchars($g['categoria'] ?? '') ?><?= $fut ? ' · se registra al pagar la cuota anterior' : '' ?></div></td>
                         <td class="small"><?= htmlspecialchars($g['prov']) ?></td>
                         <td class="app-num fw-semibold"><?= number_format((float)$g['monto'], 2) ?></td>
-                        <td class="text-nowrap"><span class="app-badge app-badge-<?= $etq[$g['grupo']][1] ?>"><?= ucfirst($cuando($d)) ?></span></td>
-                        <td class="text-end"><button class="btn btn-sm btn-success btn-pagar" data-id="<?= (int)$g['id'] ?>" data-desc="<?= htmlspecialchars($g['descripcion']) ?>" data-monto="<?= number_format((float)$g['monto'], 2, '.', '') ?>"><i class="bi bi-check-lg"></i> Pagar</button></td>
+                        <td class="text-nowrap"><span class="badge rounded-pill" style="background:<?= $sbg ?>;color:<?= $sfg ?>;font-weight:600"><i class="bi <?= $sico ?> me-1"></i><?= ucfirst($cuando($d)) ?></span>
+                            <div class="small text-muted mt-1"><?= $fut ? 'Programado' : 'Pendiente de pago' ?></div></td>
+                        <td class="text-end"><?php if (!$fut): ?><button class="btn btn-sm btn-outline-primary btn-pagar text-nowrap" data-id="<?= (int)$g['id'] ?>" data-desc="<?= htmlspecialchars($g['descripcion']) ?>" data-monto="<?= number_format((float)$g['monto'], 2, '.', '') ?>" title="Marcar este gasto como pagado"><i class="bi bi-cash-coin"></i> Registrar pago</button><?php endif; ?></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>

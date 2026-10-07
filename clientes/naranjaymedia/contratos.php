@@ -80,6 +80,34 @@ foreach ($contratos as $c) {
 }
 $total_contratos = count($contratos);
 
+// Facturas de contrato aún sin pagar, con su fecha de cobro: el día de pago del contrato en el mes que cubre
+// la factura (nunca antes de emitirla). Solo es «vencida» cuando esa fecha ya pasó.
+$porCobrar = [];
+$stPC = $pdo->prepare("
+    SELECT f.contrato_id, f.total, DATE(f.fecha_emision) emision,
+           COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) pa, COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) pm, c.dia_pago
+    FROM facturas f JOIN contratos c ON c.id = f.contrato_id AND c.cliente_id = f.cliente_id
+    WHERE f.cliente_id = ? AND f.estado = 'emitida' AND f.pagada = 0 AND f.contrato_id IS NOT NULL
+");
+$stPC->execute([$cliente_id]);
+$hoyStr = date('Y-m-d');
+foreach ($stPC->fetchAll(PDO::FETCH_ASSOC) as $f) {
+    $ult = (int)date('t', mktime(0, 0, 0, (int)$f['pm'], 1, (int)$f['pa']));
+    $vence = sprintf('%04d-%02d-%02d', $f['pa'], $f['pm'], min(max(1, (int)$f['dia_pago']), $ult));
+    if ($vence < $f['emision']) $vence = $f['emision'];
+    $k = (int)$f['contrato_id'];
+    $porCobrar[$k] ??= ['venc_n' => 0, 'venc_total' => 0.0, 'venc_dias' => 0, 'pend_n' => 0, 'pend_total' => 0.0, 'proxima' => null];
+    if ($vence < $hoyStr) {
+        $porCobrar[$k]['venc_n']++;
+        $porCobrar[$k]['venc_total'] += (float)$f['total'];
+        $porCobrar[$k]['venc_dias'] = max($porCobrar[$k]['venc_dias'], (int)((strtotime($hoyStr) - strtotime($vence)) / 86400));
+    } else {
+        $porCobrar[$k]['pend_n']++;
+        $porCobrar[$k]['pend_total'] += (float)$f['total'];
+        if (!$porCobrar[$k]['proxima'] || $vence < $porCobrar[$k]['proxima']) $porCobrar[$k]['proxima'] = $vence;
+    }
+}
+
 // Contratos rotativos: un mismo cliente que factura a nombre de varias empresas
 $rotEmpresas = [];
 $stRot = $pdo->prepare("
@@ -122,8 +150,8 @@ $celdaCliente = function (array $c, bool $conDetalle) use ($rotEmpresas, $rotUlt
 // Cobertura: hasta qué mes está facturado (según el mes que cubre cada factura, no su fecha de emisión)
 // y cuánto debe. Sirve para clientes que facturan con meses de atraso.
 $mesesCorto = [1 => 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-$celdaCobertura = function (array $c) use ($mesesCorto): string {
-    if ($c['estado'] !== 'activo' && !(int)$c['impagas_n']) return '';
+$celdaCobertura = function (array $c) use ($mesesCorto, $porCobrar, $hoyStr): string {
+    if ($c['estado'] !== 'activo' && !(int)$c['impagas_n']) return '';   // (impagas_n: cualquier factura sin pagar)
     $h = '';
     if ($c['tipo_contrato'] === 'proyecto') {
         $h .= '<div class="ct-cob">Proyecto · valor total</div>';
@@ -141,9 +169,18 @@ $celdaCobertura = function (array $c) use ($mesesCorto): string {
             $h .= '<div class="ct-cob">' . $txt . '</div>';
         }
     }
-    if ((int)$c['impagas_n']) {
-        $h .= '<a class="ct-cob ct-cob-mal d-block" href="facturas_contrato?contrato_id=' . (int)$c['id'] . '" title="Facturas emitidas que aún no se han pagado">'
-            . (int)$c['impagas_n'] . ' sin pagar · L ' . number_format((float)$c['impagas_total'], 2) . '</a>';
+    // Cobro de lo ya facturado con semáforo: rojo vencida; naranja ≤ 3 días; amarillo ≤ 7; gris más adelante
+    $pc = $porCobrar[(int)$c['id']] ?? null;
+    $url = 'facturas_contrato?contrato_id=' . (int)$c['id'];
+    if ($pc && $pc['venc_n']) {
+        $h .= '<a class="ct-cob ct-sem ct-sem-rojo" href="' . $url . '" title="Facturas cuya fecha de cobro ya pasó">' . $pc['venc_n'] . ' vencida' . ($pc['venc_n'] > 1 ? 's' : '')
+            . ' · L ' . number_format($pc['venc_total'], 2) . ' (hace ' . $pc['venc_dias'] . ' d)</a>';
+    }
+    if ($pc && $pc['pend_n']) {
+        $d = (int)((strtotime($pc['proxima']) - strtotime($hoyStr)) / 86400);
+        $cls = $d <= 3 ? 'ct-sem-naranja' : ($d <= 7 ? 'ct-sem-amarillo' : 'ct-sem-gris');
+        $cuando = $d === 0 ? 'vence hoy' : 'vence ' . (int)substr($pc['proxima'], 8, 2) . ' ' . $mesesCorto[(int)substr($pc['proxima'], 5, 2)] . ' (' . $d . ' d)';
+        $h .= '<a class="ct-cob ct-sem ' . $cls . '" href="' . $url . '" title="Facturada, aún dentro del plazo de pago">Por cobrar L ' . number_format($pc['pend_total'], 2) . ' · ' . $cuando . '</a>';
     }
     return $h;
 };

@@ -1292,3 +1292,12 @@ button.app-stat:disabled { cursor: default; opacity: .6; transform: none; box-sh
 .app-stat-filtro.activo { border-color: var(--app-accent); box-shadow: 0 0 0 2px var(--app-accent-lt), var(--app-shadow); }
 /* Encabezado de mes dentro de una tabla agrupada */
 .app-table tr.cp-mes td { background: #f8fafc; font-size: .82rem; padding-top: .45rem; padding-bottom: .45rem; }
+/* Cuota futura de una serie con fecha de fin (aún no registrada): se ve más tenue */
+.app-table tr.cp-futura td { background: #fafbfc; color: var(--app-muted); }
+
+/* Semáforo de cobro/pago por días que faltan (Contratos): rojo vencido, naranja ≤ 3 días, amarillo ≤ 7, gris más adelante */
+.ct-sem { display: inline-block; border-radius: 6px; padding: 1px 6px; font-weight: 600; }
+.ct-sem-rojo { background: #fee2e2; color: #991b1b; }
+.ct-sem-naranja { background: #ffedd5; color: #9a3412; }
+.ct-sem-amarillo { background: #fef9c3; color: #854d0e; }
+.ct-sem-gris { background: #f1f5f9; color: #475569; }

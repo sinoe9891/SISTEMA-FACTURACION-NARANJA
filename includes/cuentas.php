@@ -156,11 +156,55 @@ function cxpPendientes(PDO $pdo, int $cid): array
 {
     $stmt = $pdo->prepare("
         SELECT g.id, g.descripcion, g.proveedor, g.monto, g.fecha, g.frecuencia, g.tipo, g.metodo_pago,
+               g.gasto_grupo_id, g.dia_pago, g.fecha_vencimiento, g.categoria_id,
                cg.nombre AS categoria, DATEDIFF(CURDATE(), g.fecha) AS dias
         FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id = g.categoria_id
         WHERE g.cliente_id = ? AND g.estado = 'pendiente'
         ORDER BY g.fecha
     ");
     $stmt->execute([$cid]);
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $gastos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return cxpConCuotasFuturas($pdo, $cid, $gastos);
+}
+
+/**
+ * Series con fecha de fin (p. ej. un préstamo de 11 cuotas): agrega las cuotas que faltan y que el sistema
+ * todavía no registró (la siguiente se crea al pagar la anterior), marcadas con 'futura' => true.
+ * A cada gasto de una serie le pone 'cuota' (número) y 'cuotas' (total de la serie).
+ */
+function cxpConCuotasFuturas(PDO $pdo, int $cid, array $gastos): array
+{
+    $grupos = array_unique(array_filter(array_map(fn($g) => (int)$g['gasto_grupo_id'], $gastos)));
+    if (!$grupos) return $gastos;
+    $st = $pdo->prepare("SELECT gasto_grupo_id g, fecha FROM gastos WHERE cliente_id = ? AND estado <> 'anulado' AND gasto_grupo_id IN (" . implode(',', $grupos) . ") ORDER BY fecha, id");
+    $st->execute([$cid]);
+    $fechas = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $fechas[(int)$r['g']][] = $r['fecha'];
+
+    $futuras = [];
+    $ultimo = [];   // último gasto pendiente de cada serie (de él salen las cuotas futuras)
+    foreach ($gastos as $g) if ($g['gasto_grupo_id'] && (!isset($ultimo[$g['gasto_grupo_id']]) || $g['fecha'] > $ultimo[$g['gasto_grupo_id']]['fecha'])) $ultimo[$g['gasto_grupo_id']] = $g;
+    foreach ($ultimo as $grupo => $g) {
+        if (!in_array($g['frecuencia'], ['mensual', 'anual'], true) || empty($g['fecha_vencimiento']) || str_starts_with((string)$g['descripcion'], 'Sueldo ')) continue;
+        $f = new DateTime($g['fecha']);
+        $dia = (int)($g['dia_pago'] ?: $f->format('j'));
+        for ($k = 0; $k < 120; $k++) {
+            $f->modify('first day of this month')->modify($g['frecuencia'] === 'anual' ? '+1 year' : '+1 month');
+            $f->setDate((int)$f->format('Y'), (int)$f->format('n'), min($dia, (int)$f->format('t')));
+            if ($f->format('Y-m-d') > $g['fecha_vencimiento']) break;
+            $fechas[$grupo][] = $f->format('Y-m-d');
+            $futuras[] = ['id' => 0, 'futura' => true, 'fecha' => $f->format('Y-m-d'), 'dias' => (int)floor((strtotime(date('Y-m-d')) - $f->getTimestamp()) / 86400)] + $g;
+        }
+    }
+    $todos = array_merge($gastos, $futuras);
+    foreach ($todos as &$g) {
+        if (!$g['gasto_grupo_id'] || empty($g['fecha_vencimiento'])) continue;   // series sin fin: no se numeran
+        $lista = $fechas[(int)$g['gasto_grupo_id']] ?? [];
+        sort($lista);
+        $g['cuota'] = array_search($g['fecha'], $lista, true) + 1;
+        $g['cuotas'] = count($lista);
+    }
+    unset($g);
+    usort($todos, fn($a, $b) => $a['fecha'] <=> $b['fecha']);
+    return $todos;
 }

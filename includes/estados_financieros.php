@@ -13,8 +13,21 @@ function efHay(PDO $pdo, string $tabla): bool
 }
 
 /**
+ * Ingresos cobrados con recibo (contratos «sin factura»): no llevan ISV, el monto completo es ingreso.
+ * Un recibo se emite al recibir el pago, así que su fecha es la del cobro.
+ */
+function efRecibos(PDO $pdo, int $cid, string $desde, string $hasta): array
+{
+    if (!efHay($pdo, 'contratos_recibos')) return ['total' => 0.0, 'n' => 0];
+    $st = $pdo->prepare("SELECT COALESCE(SUM(monto),0) total, COUNT(*) n FROM contratos_recibos WHERE cliente_id = ? AND estado = 'emitido' AND fecha_emision BETWEEN ? AND ?");
+    $st->execute([$cid, $desde, $hasta]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    return ['total' => (float)$r['total'], 'n' => (int)$r['n']];
+}
+
+/**
  * Estado de resultados del período [$desde, $hasta]:
- * ventas (subtotal de facturas emitidas, sin ISV) − gastos por categoría = utilidad del período.
+ * ventas (subtotal de facturas emitidas, sin ISV) + recibos (sin factura) − gastos por categoría = utilidad del período.
  */
 function efResultados(PDO $pdo, int $cid, string $desde, string $hasta): array
 {
@@ -32,10 +45,14 @@ function efResultados(PDO $pdo, int $cid, string $desde, string $hasta): array
     $gastos = $st->fetchAll(PDO::FETCH_ASSOC);
     $totalGastos = array_sum(array_column($gastos, 'total'));
 
+    $rec = efRecibos($pdo, $cid, $desde, $hasta);
+    $ventas = $v['subtotal'] + $rec['total'];
+
     return [
-        'ventas' => $v['subtotal'], 'gravado' => $v['gravado'], 'exento' => $v['exento'], 'isv' => $v['isv'], 'facturas' => (int)$v['n'],
+        'ventas' => $ventas, 'ventas_facturas' => $v['subtotal'], 'gravado' => $v['gravado'], 'exento' => $v['exento'], 'isv' => $v['isv'], 'facturas' => (int)$v['n'],
+        'recibos' => $rec['total'], 'n_recibos' => $rec['n'],
         'gastos' => $gastos, 'total_gastos' => (float)$totalGastos,
-        'utilidad' => round($v['subtotal'] - $totalGastos, 2),
+        'utilidad' => round($ventas - $totalGastos, 2),
     ];
 }
 
@@ -128,7 +145,11 @@ function efBalance(PDO $pdo, int $cid, string $corte, float $tasa): array
         $st = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM contratos_anticipos WHERE cliente_id = ? AND anulado = 0 AND factura_id IS NULL AND fecha <= ?");
         $st->execute([$cid, $corte]);
         $ant = round((float)$st->fetchColumn(), 2);
-        if ($ant > 0) $pasivo['Anticipos de clientes'] = [['nombre' => 'Pagos recibidos de proyectos aún sin facturar', 'monto' => $ant]];
+        // El ISV que viene dentro de esos pagos se declara al facturar: se aparta como impuesto por pagar
+        require_once __DIR__ . '/contrato_plan.php';
+        $isvAnt = planIsvPorApartar($pdo, $cid, 0, $corte);
+        if ($isvAnt > 0) $pasivo['Impuestos por pagar'][] = ['nombre' => 'ISV incluido en pagos anticipados (por apartar)', 'monto' => $isvAnt];
+        if ($ant > 0) $pasivo['Anticipos de clientes'] = [['nombre' => 'Pagos recibidos de proyectos aún sin facturar' . ($isvAnt > 0 ? ' (sin el ISV)' : ''), 'monto' => round($ant - $isvAnt, 2)]];
     }
 
     $suma = fn(array $grupos) => round(array_sum(array_map(fn($g) => array_sum(array_column($g, 'monto')), $grupos)), 2);

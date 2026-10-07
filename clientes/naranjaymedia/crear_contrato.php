@@ -840,6 +840,24 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                 </div>
             </div>
 
+            <!-- ── SECCIÓN 6b: Plan de pagos (opcional) ───────────────────── -->
+            <div class="cc-card">
+                <div class="cc-card-hdr">
+                    <span class="cc-card-title">
+                        <i class="bi bi-calendar2-check text-success"></i>
+                        Plan de pagos <small class="text-muted fw-normal" style="font-size:.78rem">(opcional: anticipo, cuotas, anualidades o etapas)</small>
+                    </span>
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="ppActivar">
+                        <label class="form-check-label small" for="ppActivar">Definir plan</label>
+                    </div>
+                </div>
+                <div class="cc-card-body d-none" id="ppCuerpo">
+                    <div id="ppEditor"></div>
+                    <div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Cada pago del plan queda con su fecha. En la ficha del contrato se marca como cobrado (con recibo, factura o pago anticipado) y se ve cuánto falta.</div>
+                </div>
+            </div>
+
             <!-- ── SECCIÓN 7: Notas ──────────────────────────────────────── -->
             <div class="cc-card">
                 <div class="cc-card-hdr">
@@ -1320,18 +1338,34 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Guardando…';
 
+        const conPlan = document.getElementById('ppActivar').checked && planEd && !planEd.vacio();
         fetch('includes/contrato_guardar.php', {
                 method: 'POST',
                 body: new FormData(this)
             })
-            .then(r => r.json()).then(data => {
+            .then(r => r.json()).then(async data => {
                 if (data.success) {
+                    // Plan de pagos: se guarda después, ya con el número de contrato
+                    let avisoPlan = '';
+                    if (conPlan) {
+                        const fd = new FormData();
+                        fd.append('accion', 'guardar');
+                        fd.append('contrato_id', data.contrato_id);
+                        fd.append('con_isv', planEd.conIsv() ? '1' : '');
+                        fd.append('lineas', JSON.stringify(planEd.lineas()));
+                        try {
+                            const rp = await (await fetch('includes/contrato_plan_accion.php', { method: 'POST', body: fd })).json();
+                            avisoPlan = rp.success ? ' ' + rp.message : ' El plan de pagos no se guardó: ' + (rp.error || '') + ' Puedes crearlo desde la ficha del contrato.';
+                        } catch (e) {
+                            avisoPlan = ' El plan de pagos no se guardó; puedes crearlo desde la ficha del contrato.';
+                        }
+                    }
                     Swal.fire({
-                        icon: 'success',
+                        icon: avisoPlan.includes('no se guardó') ? 'warning' : 'success',
                         title: '¡Contrato creado!',
-                        text: 'El contrato fue guardado correctamente.',
-                        confirmButtonText: 'Ver contratos'
-                    }).then(() => window.location.href = 'contratos');
+                        text: 'El contrato fue guardado correctamente.' + avisoPlan,
+                        confirmButtonText: conPlan ? 'Ver el contrato' : 'Ver contratos'
+                    }).then(() => window.location.href = conPlan ? 'facturas_contrato?contrato_id=' + data.contrato_id : 'contratos');
                 } else {
                     Swal.fire({
                         icon: 'error',
@@ -1351,9 +1385,38 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
             });
     });
 
+    /* ══ PLAN DE PAGOS ══════════════════════════════════════════════ */
+    let planEd = null;
+    const planSugerido = () => {
+        // Primera cuota: fecha de inicio con el día de cobro; cuota = total de servicios del contrato
+        const fi = document.querySelector('[name="fecha_inicio"]').value || new Date().toLocaleDateString('sv-SE');
+        const dia = String(Math.min(28, parseInt(document.querySelector('[name="dia_pago"]').value, 10) || 1)).padStart(2, '0');
+        let total = 0;
+        document.querySelectorAll('#contenedor-svc .inp-monto').forEach(i => total += parseFloat(i.value) || 0);
+        const concepto = (document.getElementById('concepto_recibo')?.value || '').trim()
+            || [...document.querySelectorAll('#contenedor-svc .sel-svc')].map(s => s.selectedOptions[0]?.value ? s.selectedOptions[0].text.split(' — ')[0] : '').filter(Boolean).join(', ')
+            || document.querySelector('[name="nombre_contrato"]')?.value || '';
+        let primera = fi.slice(0, 8) + dia;
+        if (primera < fi) {   // el día de cobro ya pasó en el mes de inicio: la primera cuota es el mes siguiente
+            const d = new Date(+fi.slice(0, 4), +fi.slice(5, 7), 1);
+            primera = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${dia}`;
+        }
+        return { fecha: primera, cuota: total || '', concepto: concepto.slice(0, 200) };
+    };
+    const planIniciar = () => {
+        const prev = planEd && !planEd.vacio() ? planEd.lineas() : [];
+        planEd = PlanPagos('#ppEditor', Object.assign({ conFactura: tipoActual !== 'sin_factura', lineas: prev }, planSugerido()));
+    };
+    document.getElementById('ppActivar').addEventListener('change', e => {
+        document.getElementById('ppCuerpo').classList.toggle('d-none', !e.target.checked);
+        if (e.target.checked && !planEd) planIniciar();
+    });
+    document.querySelectorAll('.tipo-card').forEach(card => card.addEventListener('click', () => { if (planEd) planIniciar(); }));
+
     // Init
     actualizarUI('estandar');
     actualizarPreviewCobros();
 </script>
 
+<script src="../../clientes/js/plan-pagos.js?v=<?= @filemtime(__DIR__ . '/../js/plan-pagos.js') ?>"></script>
 <?php require_once '../../includes/templates/footer.php'; ?>

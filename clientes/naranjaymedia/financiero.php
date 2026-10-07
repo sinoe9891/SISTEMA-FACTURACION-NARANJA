@@ -81,6 +81,32 @@ $ing_por_mes_raw = $stmtIngMes->fetchAll(PDO::FETCH_ASSOC);
 $ing_por_mes = [];
 foreach ($ing_por_mes_raw as $r) $ing_por_mes[(int)$r['mes_num']] = $r;
 
+// Recibos de contratos «sin factura»: también son ingreso (sin ISV). No tienen establecimiento: cuentan para la empresa.
+$ing['recibos'] = 0.0;
+$ing['qty_recibos'] = 0;
+$recibos_cli = [];
+try {
+    $st = $pdo->prepare("SELECT COALESCE(SUM(monto),0) total, COUNT(*) n FROM contratos_recibos WHERE cliente_id = ? AND estado = 'emitido' AND fecha_emision BETWEEN ? AND ?");
+    $st->execute([$cliente_id, $fecha_ini, $fecha_fin]);
+    $rr = $st->fetch(PDO::FETCH_ASSOC);
+    $ing['recibos'] = (float)$rr['total'];
+    $ing['qty_recibos'] = (int)$rr['n'];
+    $ing['subtotal'] = (float)$ing['subtotal'] + $ing['recibos'];
+    $st = $pdo->prepare("SELECT MONTH(fecha_emision) m, SUM(monto) total FROM contratos_recibos WHERE cliente_id = ? AND estado = 'emitido' AND YEAR(fecha_emision) = ? GROUP BY MONTH(fecha_emision)");
+    $st->execute([$cliente_id, $anio_filtro]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $rm) {
+        $ing_por_mes[(int)$rm['m']] ??= ['mes_num' => (int)$rm['m'], 'subtotal' => 0, 'isv' => 0, 'total_con_isv' => 0, 'qty' => 0];
+        $ing_por_mes[(int)$rm['m']]['subtotal'] += (float)$rm['total'];
+        $ing_por_mes[(int)$rm['m']]['total_con_isv'] += (float)$rm['total'];
+    }
+    $st = $pdo->prepare("SELECT cf.nombre AS cliente_nombre, COUNT(*) qty, SUM(r.monto) subtotal FROM contratos_recibos r JOIN clientes_factura cf ON cf.id = r.receptor_id
+                         WHERE r.cliente_id = ? AND r.estado = 'emitido' AND r.fecha_emision BETWEEN ? AND ? GROUP BY r.receptor_id");
+    $st->execute([$cliente_id, $fecha_ini, $fecha_fin]);
+    $recibos_cli = $st->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // módulo de recibos no instalado
+}
+
 // Top 5 clientes del período
 $stmtTopCli = $pdo->prepare("
     SELECT cf.nombre AS cliente_nombre,
@@ -98,6 +124,18 @@ $stmtTopCli = $pdo->prepare("
 ");
 $stmtTopCli->execute([$cliente_id, $establecimiento_id, $fecha_ini, $fecha_fin]);
 $top_clientes = $stmtTopCli->fetchAll(PDO::FETCH_ASSOC);
+// Suma los recibos (sin factura) al cliente y vuelve a ordenar el top 5
+if ($recibos_cli) {
+    $porCli = [];
+    foreach (array_merge($top_clientes, $recibos_cli) as $tc) {
+        $k = $tc['cliente_nombre'];
+        $porCli[$k] ??= ['cliente_nombre' => $k, 'qty' => 0, 'subtotal' => 0.0];
+        $porCli[$k]['qty'] += (int)$tc['qty'];
+        $porCli[$k]['subtotal'] += (float)$tc['subtotal'];
+    }
+    usort($porCli, fn($a, $b) => $b['subtotal'] <=> $a['subtotal']);
+    $top_clientes = array_slice($porCli, 0, 5);
+}
 
 // ── Contratos activos (ingreso proyectado recurrente) ─────────────────────────
 $stmtContratos = $pdo->prepare("
@@ -249,6 +287,12 @@ $dtAnt->modify('-1 month');
 $stmtIngAnt = $pdo->prepare("SELECT COALESCE(SUM(subtotal),0) FROM facturas WHERE cliente_id=? AND establecimiento_id=? AND estado='emitida' AND MONTH(fecha_emision)=? AND YEAR(fecha_emision)=?");
 $stmtIngAnt->execute([$cliente_id, $establecimiento_id, (int)$dtAnt->format('n'), (int)$dtAnt->format('Y')]);
 $ing_ant = (float)$stmtIngAnt->fetchColumn();
+try {
+    $st = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM contratos_recibos WHERE cliente_id=? AND estado='emitido' AND MONTH(fecha_emision)=? AND YEAR(fecha_emision)=?");
+    $st->execute([$cliente_id, (int)$dtAnt->format('n'), (int)$dtAnt->format('Y')]);
+    $ing_ant += (float)$st->fetchColumn();
+} catch (PDOException $e) {
+}
 
 $stmtEgrAnt = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id=? AND estado!='anulado' AND MONTH(fecha)=? AND YEAR(fecha)=?");
 $stmtEgrAnt->execute([$cliente_id, (int)$dtAnt->format('n'), (int)$dtAnt->format('Y')]);
@@ -771,7 +815,7 @@ for ($m = 1; $m <= 12; $m++) {
             <div style="min-width:0">
                 <div class="fin-kpi-val" style="color:#059669">L <?= number_format($ingresos_netos, 2) ?></div>
                 <div class="fin-kpi-lbl">Ingresos Netos</div>
-                <div class="fin-kpi-sub"><?= (int)$ing['qty_facturas'] ?> fact. · sin ISV
+                <div class="fin-kpi-sub"><?= (int)$ing['qty_facturas'] ?> fact.<?= $ing['qty_recibos'] ? ' + ' . $ing['qty_recibos'] . ' rec.' : '' ?> · sin ISV
                     <?php if ($vista === 'mensual' && $ing_ant > 0): $vi = round((($ingresos_netos - $ing_ant) / $ing_ant) * 100, 1); ?>
                         <span class="<?= $vi >= 0 ? 'delta-pos' : 'delta-neg' ?>">
                             <i class="bi bi-arrow-<?= $vi >= 0 ? 'up' : 'down' ?>"></i><?= abs($vi) ?>%
