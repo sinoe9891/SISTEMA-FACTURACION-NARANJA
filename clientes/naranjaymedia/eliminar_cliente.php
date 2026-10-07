@@ -24,10 +24,10 @@ try {
 	$stmt = $pdo->prepare("
 		SELECT u.rol, c.id AS cliente_id
 		FROM usuarios u
-		INNER JOIN clientes_saas c ON u.cliente_id = c.id
+		LEFT JOIN clientes_saas c ON c.id = ?   -- empresa activa (el superadmin no tiene empresa propia)
 		WHERE u.id = ?
 	");
-	$stmt->execute([$usuario_id]);
+	$stmt->execute([cliente_actual(), $usuario_id]);
 	$datos = $stmt->fetch();
 
 	if (!$datos || !in_array($datos['rol'], ['admin', 'superadmin'])) {

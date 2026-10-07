@@ -25,21 +25,13 @@ try {
         exit;
     }
 
-    $usuario_id = (int)($_SESSION['usuario_id'] ?? 0);
-    $stmt = $pdo->prepare("
-        SELECT c.id AS cliente_id
-        FROM usuarios u
-        INNER JOIN clientes_saas c ON u.cliente_id = c.id
-        WHERE u.id = ? LIMIT 1
-    ");
-    $stmt->execute([$usuario_id]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$row) {
+    // Empresa activa: la del usuario o, para el superadmin, la que seleccionó
+    $cliente_id = (int)cliente_actual();
+    if (!$cliente_id) {
         http_response_code(403);
         echo json_encode(['error' => 'Cliente no encontrado']);
         exit;
     }
-    $cliente_id = (int)$row['cliente_id'];
 
     if ($todos) {
         $stmtP = $pdo->prepare("

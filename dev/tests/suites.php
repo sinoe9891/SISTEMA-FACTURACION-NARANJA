@@ -1895,3 +1895,34 @@ suite('Sucursales: CRUD', function () {
     check('elimina un establecimiento sin uso', ($r['json']['success'] ?? false) && !(int)$pdo->query("SELECT COUNT(*) FROM establecimientos WHERE establecimiento_id = $est")->fetchColumn(), $r['body']);
     check('un admin no administra sucursales', (login('qa.admin@local.test')->post('includes/empresa_sucursales.php', ['accion' => 'eliminar_establecimiento', 'id' => $conFact])['json']['success'] ?? true) === false);
 });
+
+suite('Superadmin: servicios del contrato y clientes de la empresa seleccionada', function () {
+    global $pdo;
+    $s = login('qa.super@local.test', 1, 2);
+    $rec = (int)$pdo->query("SELECT receptor_id FROM contratos WHERE cliente_id = 2 AND receptor_id IS NOT NULL LIMIT 1")->fetchColumn();
+    $r = $s->get('../../includes/api/productos_por_receptor.php', ['receptor_id' => $rec]);
+    check('la API de servicios responde al superadmin (editar contrato)', $r['code'] === 200 && is_array($r['json']) && array_is_list($r['json']), $r['body']);
+    $r = $s->get('../../includes/api/productos_por_receptor.php', ['receptor_id' => 0, 'todos' => 1]);
+    check('la API de servicios (todos) responde al superadmin', $r['code'] === 200 && count($r['json'] ?? []) > 0, $r['body']);
+    $otro = (int)$pdo->query("SELECT id FROM clientes_factura WHERE cliente_id <> 2 LIMIT 1")->fetchColumn();
+    if ($otro) check('no da servicios de un cliente de otra empresa', $s->get('../../includes/api/productos_por_receptor.php', ['receptor_id' => $otro])['code'] === 403);
+    $cf = (int)$pdo->query("SELECT id FROM clientes_factura WHERE cliente_id = 2 LIMIT 1")->fetchColumn();
+    foreach (['clientes', 'crear_cliente', "editar_cliente?id=$cf"] as $p) {
+        $r = $s->get($p);
+        check("superadmin: $p abre sin errores", $r['code'] === 200 && sinErroresPhp($r['body']) && str_contains($r['body'], 'id="appSidebar"'), errorPhp($r['body']));
+    }
+    // Crear, editar y eliminar un cliente como superadmin: queda en la empresa seleccionada
+    $rtn = '0801' . random_int(1000000000, 9999999999);
+    $s->post('guardar_cliente.php', ['nombre' => 'QA Superadmin Cliente', 'rtn' => $rtn, 'direccion' => 'Tegucigalpa']);
+    $nuevo = $pdo->query("SELECT id, cliente_id FROM clientes_factura WHERE rtn = '$rtn'")->fetch(PDO::FETCH_ASSOC);
+    check('superadmin: crea un cliente en la empresa seleccionada', $nuevo && (int)$nuevo['cliente_id'] === 2, json_encode($nuevo));
+    if ($nuevo) {
+        $s->post('actualizar_cliente.php', ['id' => $nuevo['id'], 'nombre' => 'QA Superadmin Editado', 'rtn' => $rtn, 'direccion' => 'SPS']);
+        check('superadmin: edita el cliente', $pdo->query("SELECT nombre FROM clientes_factura WHERE id = {$nuevo['id']}")->fetchColumn() === 'QA Superadmin Editado');
+        $s->post('eliminar_cliente.php', ['id' => $nuevo['id']]);
+        check('superadmin: elimina el cliente', !$pdo->query("SELECT COUNT(*) FROM clientes_factura WHERE id = {$nuevo['id']}")->fetchColumn());
+    }
+    $a = login('qa.admin@local.test');
+    $r = $a->get('../../includes/api/productos_por_receptor.php', ['receptor_id' => $rec]);
+    check('el admin sigue recibiendo los servicios', $r['code'] === 200 && is_array($r['json']), $r['body']);
+});

@@ -1025,6 +1025,7 @@ require_once '../../includes/templates/header.php';
         fetch(`../../includes/api/productos_por_receptor.php?receptor_id=${receptorId}`)
             .then(r => r.json())
             .then(prods => {
+                if (!Array.isArray(prods)) throw new Error(prods.error || 'Respuesta inesperada');
                 productos = prods;
                 document.querySelectorAll('.sel-svc').forEach((sel, i) => {
                     poblarSelect(sel, prods, esInicial ? (SVCS_INIT[i] ?? null) : null);
@@ -1032,7 +1033,7 @@ require_once '../../includes/templates/header.php';
                 recalcTotal();
                 adjuntarEventosSvc();
             })
-            .catch(() => Swal.fire('Error', 'No se pudieron cargar los servicios.', 'error'));
+            .catch(e => Swal.fire('Error', 'No se pudieron cargar los servicios. ' + (e.message || ''), 'error'));
     }
 
     function cargarTodosProductos() {
