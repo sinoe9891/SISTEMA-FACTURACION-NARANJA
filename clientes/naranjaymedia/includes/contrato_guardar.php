@@ -151,7 +151,7 @@ try {
             fecha_inicio, fecha_fin, dia_pago,
             estado, tipo_contrato, frecuencia_meses,
             mes_inicio_ciclo, concepto_recibo, notas
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'activo', ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stIns->execute([
         $cliente_id,
@@ -162,6 +162,7 @@ try {
         $fecha_inicio,
         $fecha_fin,
         $dia_pago,
+        !empty($_POST['borrador']) ? 'borrador' : 'activo',   // borrador: no se factura ni cobra, no cuenta en reportes
         $tipo_contrato,
         $frecuencia_meses,
         $mes_inicio_ciclo,

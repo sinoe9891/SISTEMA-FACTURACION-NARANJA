@@ -50,7 +50,7 @@ try {
     if (!$fecha_inicio)    throw new Exception("La fecha de inicio es obligatoria.");
     if ($dia_pago < 1 || $dia_pago > 31) throw new Exception("Día de pago inválido.");
     if ($fecha_fin && $fecha_fin < $fecha_inicio) throw new Exception("La fecha fin no puede ser anterior al inicio.");
-    if (!in_array($estado, ['activo', 'pausado', 'cancelado', 'vencido'])) throw new Exception("Estado inválido.");
+    if (!in_array($estado, ['activo', 'pausado', 'cancelado', 'vencido', 'borrador'])) throw new Exception("Estado inválido.");
 
     // Verificar propiedad
     $stmtV = $pdo->prepare("SELECT id FROM contratos WHERE id=? AND cliente_id=?");

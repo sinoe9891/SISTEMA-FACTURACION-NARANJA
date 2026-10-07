@@ -557,7 +557,7 @@ require_once '../../includes/templates/header.php';
         <div class="d-flex align-items-center gap-2">
             <?php
             $epCls = ['activo' => 'ep-activo', 'pausado' => 'ep-pausado', 'cancelado' => 'ep-cancelado', 'vencido' => 'ep-vencido'];
-            $epIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'vencido' => '⌛'];
+            $epIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'vencido' => '⌛', 'borrador' => '📝'];
             ?>
             <span class="estado-pill <?= $epCls[$contrato['estado']] ?? 'ep-vencido' ?>">
                 <?= ($epIco[$contrato['estado']] ?? '') ?> <?= ucfirst($contrato['estado']) ?>
@@ -837,6 +837,7 @@ require_once '../../includes/templates/header.php';
                     <div class="col-md-3">
                         <label class="mf-label">Estado</label>
                         <select name="estado" class="mf-select">
+                            <option value="borrador" <?= $contrato['estado'] === 'borrador' ? 'selected' : '' ?>>📝 Borrador (no se factura ni cobra)</option>
                             <option value="activo" <?= $contrato['estado'] === 'activo'   ? 'selected' : '' ?>>✅ Activo
                             </option>
                             <option value="pausado" <?= $contrato['estado'] === 'pausado'  ? 'selected' : '' ?>>⏸ Pausado

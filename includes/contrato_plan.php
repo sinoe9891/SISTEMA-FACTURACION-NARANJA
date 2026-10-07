@@ -252,7 +252,8 @@ function planPendientesPorMes(PDO $pdo, int $cid): array
 {
     $out = [];
     if (!planDisponible($pdo)) return $out;
-    $st = $pdo->prepare("SELECT DISTINCT contrato_id FROM contratos_plan WHERE cliente_id = ?");
+    // Los contratos en borrador no cuentan (no afectan la proyección)
+    $st = $pdo->prepare("SELECT DISTINCT p.contrato_id FROM contratos_plan p JOIN contratos c ON c.id = p.contrato_id AND c.cliente_id = p.cliente_id WHERE p.cliente_id = ? AND c.estado <> 'borrador'");
     $st->execute([$cid]);
     foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $contratoId) {
         foreach (planLineas($pdo, $cid, (int)$contratoId) as $l) {
@@ -268,7 +269,7 @@ function planPendientesPorMes(PDO $pdo, int $cid): array
 function planContratosConPlan(PDO $pdo, int $cid): array
 {
     if (!planDisponible($pdo)) return [];
-    $st = $pdo->prepare("SELECT DISTINCT contrato_id FROM contratos_plan WHERE cliente_id = ?");
+    $st = $pdo->prepare("SELECT DISTINCT p.contrato_id FROM contratos_plan p JOIN contratos c ON c.id = p.contrato_id AND c.cliente_id = p.cliente_id WHERE p.cliente_id = ? AND c.estado <> 'borrador'");
     $st->execute([$cid]);
     return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 }

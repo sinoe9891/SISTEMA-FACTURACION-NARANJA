@@ -205,8 +205,8 @@ if ($tipo_ct === 'rotativo') {
 
 $tipoCls  = ['estandar' => 'tp-estandar', 'periodico' => 'tp-periodico', 'rotativo' => 'tp-rotativo', 'sin_factura' => 'tp-sin_factura', 'proyecto' => 'tp-periodico'];
 $tipoLbl  = ['estandar' => 'Estándar', 'periodico' => 'Periódico', 'rotativo' => 'Rotativo', 'sin_factura' => 'Sin factura', 'proyecto' => 'Proyecto'];
-$estadoCls = ['activo' => 'ep-activo', 'pausado' => 'ep-pausado', 'cancelado' => 'ep-cancelado', 'vencido' => 'ep-vencido'];
-$estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'vencido' => '⌛'];
+$estadoCls = ['activo' => 'ep-activo', 'pausado' => 'ep-pausado', 'cancelado' => 'ep-cancelado', 'vencido' => 'ep-vencido', 'borrador' => 'ep-cancelado'];
+$estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'vencido' => '⌛', 'borrador' => '📝'];
 ?>
 
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
@@ -783,6 +783,13 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
         <?php endif; ?>
     </div>
 
+    <?php if ($contrato['estado'] === 'borrador'): ?>
+        <div class="alert d-flex align-items-center gap-2 mb-3" style="border:1px dashed #94a3b8;background:#f8fafc;color:#334155">
+            <i class="bi bi-pencil-square fs-5"></i>
+            <div><strong>Contrato en borrador.</strong> No se factura ni se cobra y no cuenta en reportes, proyección ni cuentas por cobrar.
+                Cuando esté listo, <a href="editar_contrato?id=<?= (int)$contrato['id'] ?>">ábrelo en Editar</a> y cambia el estado a «Activo».</div>
+        </div>
+    <?php endif; ?>
     <!-- Info del contrato -->
     <div class="fc-card">
         <div class="fc-card-hdr">

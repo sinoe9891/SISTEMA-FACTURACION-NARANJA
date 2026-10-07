@@ -47,6 +47,12 @@ try {
     $accion = $_POST['accion'] ?? '';
     $id = (int)($_POST['id'] ?? 0);
 
+    // Borrador: se puede armar el plan, pero no cobrar ni vincular
+    if ($accion !== 'guardar') {
+        $stE = $pdo->prepare("SELECT c.estado FROM contratos_plan p JOIN contratos c ON c.id = p.contrato_id WHERE p.id = ? AND p.cliente_id = ?");
+        $stE->execute([$id, $cid]);
+        if ($stE->fetchColumn() === 'borrador') throw new Exception("Este contrato está en borrador: actívalo en Editar contrato para facturar o cobrar.");
+    }
     $pdo->beginTransaction();
     switch ($accion) {
         case 'guardar':

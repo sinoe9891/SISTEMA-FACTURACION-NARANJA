@@ -154,6 +154,21 @@ $stUlt->execute([$cliente_id]);
 $rotUltima = array_column($stUlt->fetchAll(PDO::FETCH_ASSOC), 'nombre', 'contrato_id');
 
 // Celda "Cliente": número de contrato, cliente y, si es rotativo, las empresas a las que se factura
+/**
+ * Semáforo del contrato (vigencia): [clave, texto, palabras para el buscador]. Verde solo para lo pagado,
+ * así que «Activo» va en azul; el color sube a amarillo, naranja y rojo según se acerca el fin.
+ */
+$ctSemaforo = function (array $c): array {
+    $d = $c['dias_restantes'] !== null ? (int)$c['dias_restantes'] : null;
+    if ($c['estado'] === 'borrador') return ['borrador', 'Borrador', 'borrador'];
+    if ($c['estado'] === 'cancelado') return ['cancelado', 'Cancelado', 'cancelado'];
+    if ($c['estado'] === 'pausado') return ['pausado', 'Pausado', 'pausado'];
+    if ($c['estado'] === 'vencido' || ($d !== null && $d < 0)) return ['vencido', 'Vencido', 'vencido'];
+    if ((int)($c['no_iniciado'] ?? 0)) return ['inicia', 'Inicia el ' . date('d/m/Y', strtotime($c['fecha_inicio'])), 'no iniciado inicia'];
+    if ($d !== null && $d <= 7) return ['vence-pronto', $d === 0 ? 'Vence hoy' : 'Vence en ' . $d . ' d', 'vence pronto por vencer'];
+    if ($d !== null && $d <= 30) return ['por-vencer', 'Vence en ' . $d . ' d', 'por vencer'];
+    return ['activo', 'Activo', 'activo'];
+};
 $celdaCliente = function (array $c, bool $conDetalle) use ($rotEmpresas, $rotUltima): string {
     $h = '<span class="ct-num">#' . (int)$c['id'] . '</span>';
     $empresas = $rotEmpresas[(int)$c['id']] ?? [];
@@ -481,6 +496,8 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
         padding: 1rem 1.5rem;
         border-bottom: 1px solid var(--border);
         display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
         align-items: center;
         justify-content: space-between;
         background: var(--surface-2);
@@ -589,18 +606,42 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
         vertical-align: middle;
     }
 
-    .ct-table tbody tr.row-critico td {
-        background: #fef2f2;
-    }
-
-    .ct-table tbody tr.row-proximo td {
-        background: #fffbeb;
-    }
-
-    .ct-table tbody tr.row-vencido td {
-        background: #f8fafc;
-        opacity: .75;
-    }
+    /* Semáforo de contratos: franja a la izquierda + pastilla de estado (leyenda arriba de la tabla) */
+    .ct-table tbody tr[class*="sem-"] td:first-child { box-shadow: inset 4px 0 0 var(--sem, transparent); }
+    .sem-activo { --sem: #3b82f6; }
+    .sem-inicia { --sem: #06b6d4; }
+    .sem-por-vencer { --sem: #eab308; }
+    .sem-vence-pronto { --sem: #f97316; }
+    .sem-vencido { --sem: #dc2626; }
+    .sem-pausado { --sem: #8b5cf6; }
+    .sem-cancelado { --sem: #94a3b8; }
+    .sem-borrador { --sem: #64748b; }
+    .ct-table tbody tr.sem-borrador td { background: repeating-linear-gradient(135deg, #fff, #fff 10px, #f8fafc 10px, #f8fafc 20px); }
+    .sem-pill.sem-borrador { background: #fff; color: #475569; border: 1px dashed #94a3b8 !important; }
+    .ct-table tbody tr.sem-por-vencer td { background: #fefce8; }
+    .ct-table tbody tr.sem-vence-pronto td { background: #fff7ed; }
+    .ct-table tbody tr.sem-vencido td { background: #fef2f2; }
+    .ct-table tbody tr.sem-cancelado td { background: #f8fafc; color: #94a3b8; }
+    .ct-table tbody tr.sem-cancelado td .ct-clamp, .ct-table tbody tr.sem-vencido td .ct-clamp { opacity: .8; }
+    .sem-pill { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .6rem; border-radius: 20px; font-size: .73rem; font-weight: 600; white-space: nowrap; }
+    .sem-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--sem); }
+    .sem-pill.sem-activo { background: #eff6ff; color: #1d4ed8; }
+    .sem-pill.sem-inicia { background: #ecfeff; color: #0e7490; }
+    .sem-pill.sem-por-vencer { background: #fef9c3; color: #854d0e; }
+    .sem-pill.sem-vence-pronto { background: #ffedd5; color: #9a3412; }
+    .sem-pill.sem-vencido { background: #fee2e2; color: #991b1b; }
+    .sem-pill.sem-pausado { background: #f3e8ff; color: #6b21a8; }
+    .sem-pill.sem-cancelado { background: #f1f5f9; color: #64748b; }
+    .ct-leyenda { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .75rem; }
+    .ct-leyenda .sem-pill { cursor: pointer; border: 1px solid transparent; }
+    .ct-leyenda .sem-pill.on { border-color: currentColor; }
+    /* Días para el cobro */
+    .dias-pill { display: inline-block; padding: .15rem .5rem; border-radius: 20px; font-size: .72rem; font-weight: 700; }
+    .dias-atraso { background: #dc2626; color: #fff; }
+    .dias-3 { background: #f97316; color: #fff; }
+    .dias-5 { background: #facc15; color: #713f12; }
+    .dias-resto { background: #e2e8f0; color: #475569; }
+    .dias-inicia { background: #cffafe; color: #0e7490; }
 
     /* Badges */
     .st-pill {
@@ -647,6 +688,13 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
         background: var(--success-bg);
         color: var(--success);
         border: 1px solid #a7f3d0;
+    }
+
+    /* Facturado = por cobrar (azul); verde solo para «Al día» (pagado) */
+    .fact-fac {
+        background: #eff6ff;
+        color: #1d4ed8;
+        border: 1px solid #bfdbfe;
     }
 
     .fact-no {
@@ -923,46 +971,60 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
         </a>
     </div>
 
-    <!-- Stats -->
+    <!-- Stats: lo urgente primero, con los colores del semáforo -->
+    <?php
+    $kAtr = ['n' => 0, 'monto' => 0.0];        // contratos con facturas o pagos del plan cuya fecha de cobro ya pasó
+    $kCinco = ['n' => 0, 'monto' => 0.0];      // activos que se cobran en 5 días o menos
+    $kTermina = 0;                             // activos que terminan en 30 días o menos
+    foreach ($contratos as $c) {
+        $pc = $porCobrar[(int)$c['id']] ?? null;
+        $venc = (float)($pc['venc_total'] ?? 0) + (float)($c['plan']['venc_total'] ?? 0);
+        if ($venc > 0) { $kAtr['n']++; $kAtr['monto'] += $venc; }
+        if ($c['estado'] !== 'activo') continue;
+        $dp = isset($c['dias_para_pago']) ? (int)$c['dias_para_pago'] : null;
+        if ($dp !== null && $dp >= 0 && $dp <= 5 && !(int)($c['no_iniciado'] ?? 0)) { $kCinco['n']++; $kCinco['monto'] += (float)($c['monto_proximo'] ?? $c['monto']); }
+        if ($c['dias_restantes'] !== null && (int)$c['dias_restantes'] >= 0 && (int)$c['dias_restantes'] <= 30) $kTermina++;
+    }
+    ?>
     <div class="ct-stats">
-        <div class="ct-stat">
-            <div class="ct-stat-icon teal"><i class="bi bi-file-earmark-text-fill"></i></div>
+        <div class="ct-stat" style="border-left:4px solid #3b82f6">
+            <div class="ct-stat-icon blue"><i class="bi bi-file-earmark-text-fill"></i></div>
             <div>
                 <div class="ct-stat-val"><?= (int)($kpi['activos'] ?? 0) ?></div>
-                <div class="ct-stat-lbl">Activos</div>
+                <div class="ct-stat-lbl">Contratos activos</div>
+                <div style="font-size:.7rem;color:#1d4ed8;">MRR L <?= number_format((float)($kpi['monto_activo'] ?? 0), 0) ?></div>
             </div>
         </div>
-        <div class="ct-stat">
-            <div class="ct-stat-icon amber"><i class="bi bi-exclamation-triangle-fill"></i></div>
+        <div class="ct-stat" style="border-left:4px solid <?= $kAtr['n'] ? '#dc2626' : '#e2e8f0' ?>">
+            <div class="ct-stat-icon <?= $kAtr['n'] ? 'red' : 'blue' ?>"><i class="bi bi-alarm-fill"></i></div>
             <div>
-                <div class="ct-stat-val"><?= (int)($kpi['proximos_vencer'] ?? 0) ?></div>
-                <div class="ct-stat-lbl">Por vencer 30d</div>
+                <div class="ct-stat-val" style="<?= $kAtr['n'] ? 'color:#dc2626' : '' ?>"><?= $kAtr['n'] ?></div>
+                <div class="ct-stat-lbl">Cobros atrasados</div>
+                <?php if ($kAtr['n']): ?><div style="font-size:.7rem;color:#dc2626;">L <?= number_format($kAtr['monto'], 2) ?> sin cobrar</div><?php endif; ?>
             </div>
         </div>
-        <div class="ct-stat">
-            <div class="ct-stat-icon red"><i class="bi bi-x-circle-fill"></i></div>
+        <div class="ct-stat" style="border-left:4px solid <?= $kCinco['n'] ? '#f97316' : '#e2e8f0' ?>">
+            <div class="ct-stat-icon amber" style="<?= $kCinco['n'] ? 'background:#ffedd5;color:#c2410c' : '' ?>"><i class="bi bi-calendar-event-fill"></i></div>
             <div>
-                <div class="ct-stat-val"><?= (int)($kpi['vencidos'] ?? 0) ?></div>
-                <div class="ct-stat-lbl">Vencidos</div>
+                <div class="ct-stat-val" style="<?= $kCinco['n'] ? 'color:#c2410c' : '' ?>"><?= $kCinco['n'] ?></div>
+                <div class="ct-stat-lbl">Se cobran en 5 días</div>
+                <?php if ($kCinco['n']): ?><div style="font-size:.7rem;color:#c2410c;">L <?= number_format($kCinco['monto'], 2) ?></div><?php endif; ?>
             </div>
         </div>
-        <div class="ct-stat">
-            <div class="ct-stat-icon green"><i class="bi bi-cash-coin"></i></div>
+        <div class="ct-stat" style="border-left:4px solid <?= $pendientes_mes ? '#eab308' : '#e2e8f0' ?>">
+            <div class="ct-stat-icon amber"><i class="bi bi-<?= $pendientes_mes > 0 ? 'clock-fill' : 'check-circle-fill' ?>"></i></div>
             <div>
-                <div class="ct-stat-val" style="font-size:1.05rem;">L
-                    <?= number_format((float)($kpi['monto_activo'] ?? 0), 0) ?></div>
-                <div class="ct-stat-lbl">MRR</div>
-            </div>
-        </div>
-        <div class="ct-stat" style="<?= $pendientes_mes > 0 ? 'border-color:#fde68a;' : '' ?>">
-            <div class="ct-stat-icon <?= $pendientes_mes > 0 ? 'amber' : 'green' ?>"><i
-                    class="bi bi-<?= $pendientes_mes > 0 ? 'clock-fill' : 'check-circle-fill' ?>"></i></div>
-            <div>
-                <div class="ct-stat-val" style="color:<?= $pendientes_mes > 0 ? '#d97706' : '#059669' ?>;">
-                    <?= $pendientes_mes ?></div>
+                <div class="ct-stat-val" style="<?= $pendientes_mes ? 'color:#a16207' : '' ?>"><?= $pendientes_mes ?></div>
                 <div class="ct-stat-lbl">Sin facturar este mes</div>
-                <?php if ($pendientes_mes > 0): ?><div style="font-size:.7rem;color:#d97706;">L
-                        <?= number_format($monto_pendiente, 2) ?></div><?php endif; ?>
+                <?php if ($pendientes_mes > 0): ?><div style="font-size:.7rem;color:#a16207;">L <?= number_format($monto_pendiente, 2) ?></div><?php endif; ?>
+            </div>
+        </div>
+        <div class="ct-stat" style="border-left:4px solid <?= $kTermina ? '#eab308' : '#e2e8f0' ?>">
+            <div class="ct-stat-icon amber"><i class="bi bi-hourglass-split"></i></div>
+            <div>
+                <div class="ct-stat-val"><?= $kTermina ?></div>
+                <div class="ct-stat-lbl">Terminan en 30 días</div>
+                <div style="font-size:.7rem;color:#64748b;"><?= (int)($kpi['vencidos'] ?? 0) ?> ya vencidos</div>
             </div>
         </div>
     </div>
@@ -1003,26 +1065,24 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                             $dias       = (int)$p['dias_para_pago'];
                             $facturado  = (int)$p['facturado_este_mes'] > 0;
                             $noIniciado = (int)$p['no_iniciado'];
+                            // Semáforo de días para el cobro: rojo atrasado u hoy, naranja ≤3, amarillo ≤5, gris el resto
                             if ($noIniciado) {
-                                $dCls = 'bg-secondary text-white';
+                                $dCls = 'dias-inicia';
                                 $dTxt = "En {$dias}d";
                             } elseif ($dias < 0) {
-                                $dCls = 'bg-danger text-white';
-                                $dTxt = 'Vencido ' . -$dias . 'd';
+                                $dCls = 'dias-atraso';
+                                $dTxt = 'Atrasado ' . -$dias . 'd';
                             } elseif ($dias === 0) {
-                                $dCls = 'bg-danger text-white';
+                                $dCls = 'dias-atraso';
                                 $dTxt = '¡Hoy!';
                             } elseif ($dias <= 3) {
-                                $dCls = 'bg-danger text-white';
+                                $dCls = 'dias-3';
                                 $dTxt = "{$dias}d";
-                            } elseif ($dias <= 7) {
-                                $dCls = 'bg-warning text-dark';
-                                $dTxt = "{$dias}d";
-                            } elseif ($dias <= 15) {
-                                $dCls = 'bg-info text-white';
+                            } elseif ($dias <= 5) {
+                                $dCls = 'dias-5';
                                 $dTxt = "{$dias}d";
                             } else {
-                                $dCls = 'bg-secondary text-white';
+                                $dCls = 'dias-resto';
                                 $dTxt = "{$dias}d";
                             }
                         ?>
@@ -1037,7 +1097,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                     <?php if ($noIniciado): ?><br><span class="badge bg-secondary small">Inicia
                                             <?= $p['fecha_inicio'] ?></span><?php endif; ?>
                                 </td>
-                                <td class="text-center"><span class="badge <?= $dCls ?>"><?= $dTxt ?></span></td>
+                                <td class="text-center"><span class="dias-pill <?= $dCls ?>"><?= $dTxt ?></span></td>
                                 <td class="text-center">
                                     <?php if ($noIniciado): ?>
                                         <span class="badge bg-secondary small">No iniciado</span>
@@ -1045,7 +1105,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                         <?= $p['plan']['venc_n'] ? '' : '<span class="fact-pill fact-si"><i class="bi bi-check-circle-fill"></i> Al día</span>' ?>
                                         <div class="small text-muted"><?= $p['plan']['pagados'] ?> de <?= $p['plan']['n'] ?> pagos del plan</div>
                                     <?php elseif ($facturado): ?>
-                                        <span class="fact-pill fact-si"><i class="bi bi-check-circle-fill"></i> Facturado</span>
+                                        <span class="fact-pill fact-fac"><i class="bi bi-receipt"></i> Facturado</span>
                                     <?php else: ?>
                                         <span class="fact-pill fact-no"><i class="bi bi-clock-fill"></i> Pendiente</span>
                                     <?php endif; ?>
@@ -1120,6 +1180,11 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
     <div class="ct-card">
         <div class="ct-card-header">
             <span class="ct-card-title"><i class="bi bi-table"></i> Todos los Contratos</span>
+            <div class="ct-leyenda" title="Clic para filtrar">
+                <?php foreach (['activo' => 'Activo', 'inicia' => 'No iniciado', 'por-vencer' => 'Por vencer (≤30 d)', 'vence-pronto' => 'Vence pronto (≤7 d)', 'vencido' => 'Vencido', 'pausado' => 'Pausado', 'cancelado' => 'Cancelado', 'borrador' => 'Borrador'] as $k => $t): ?>
+                    <span class="sem-pill sem-<?= $k ?>" data-filtro="<?= ['activo' => 'activo', 'inicia' => 'no iniciado', 'por-vencer' => 'por vencer', 'vence-pronto' => 'vence pronto', 'vencido' => 'vencido', 'pausado' => 'pausado', 'cancelado' => 'cancelado', 'borrador' => 'borrador'][$k] ?>"><?= $t ?></span>
+                <?php endforeach; ?>
+            </div>
         </div>
         <div class="ct-table-wrap">
             <table class="ct-table" id="ctTable">
@@ -1142,18 +1207,14 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                 </thead>
                 <tbody id="ctBody">
                     <?php foreach ($contratos as $c):
-                        $rowCls = match ($c['alerta'] ?? '') {
-                            'critico' => 'row-critico',
-                            'proximo' => 'row-proximo',
-                            'vencido' => 'row-vencido',
-                            default => ''
-                        };
+                        [$semK, $semTxt, $semBusca] = $ctSemaforo($c);
+                        $rowCls = 'sem-' . $semK;
                         $facturado  = (int)($c['facturado_este_mes'] ?? 0) > 0;
                         $noIniciado = (int)($c['no_iniciado'] ?? 0);
                         $nFact      = (int)($c['total_facturas_contrato'] ?? 0);
                         $stateCls   = ['activo' => 'st-activo', 'vencido' => 'st-vencido', 'cancelado' => 'st-cancelado', 'pausado' => 'st-pausado'];
                         $diasPago   = isset($c['dias_para_pago']) ? (int)$c['dias_para_pago'] : null;
-                        $searchStr  = mb_strtolower('#' . $c['id'] . ' ' . $c['receptor_nombre'] . ' ' . implode(' ', $rotEmpresas[(int)$c['id']] ?? []) . ' ' . $c['nombre_contrato'] . ' ' . $c['producto_nombre'] . ' ' . $c['estado']);
+                        $searchStr  = mb_strtolower('#' . $c['id'] . ' ' . $c['receptor_nombre'] . ' ' . implode(' ', $rotEmpresas[(int)$c['id']] ?? []) . ' ' . $c['nombre_contrato'] . ' ' . $c['producto_nombre'] . ' ' . $c['estado'] . ' ' . $semBusca);
                     ?>
                         <tr class="<?= $rowCls ?>" data-search="<?= htmlspecialchars($searchStr) ?>">
                             <?php if ($ctEsAdmin): ?><td class="ct-col-sel"><input type="checkbox" class="form-check-input ct-sel" value="<?= (int)$c['id'] ?>" aria-label="Seleccionar contrato #<?= (int)$c['id'] ?>"></td><?php endif; ?>
@@ -1174,7 +1235,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                     <?= $c['plan']['venc_n'] ? '' : '<span class="fact-pill fact-si"><i class="bi bi-check-circle-fill"></i> Al día</span>' ?>
                                     <div class="small text-muted"><?= $c['plan']['pagados'] ?> de <?= $c['plan']['n'] ?> pagos del plan</div>
                                 <?php elseif ($facturado): ?>
-                                    <span class="fact-pill fact-si"><i class="bi bi-check-circle-fill"></i> Facturado</span>
+                                    <span class="fact-pill fact-fac"><i class="bi bi-receipt"></i> Facturado</span>
                                 <?php else: ?>
                                     <span class="fact-pill fact-no"><i class="bi bi-clock-fill"></i> Pendiente</span>
                                 <?php endif; ?>
@@ -1215,9 +1276,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                     <?php endif; ?>
                                 <?php else: ?><span class="badge bg-info text-white">Indefinido</span><?php endif; ?>
                             </td>
-                            <td><span
-                                    class="st-pill <?= $stateCls[$c['estado']] ?? 'st-cancelado' ?>"><?= ucfirst($c['estado']) ?></span>
-                            </td>
+                            <td><span class="sem-pill sem-<?= $semK ?>"><?= htmlspecialchars($semTxt) ?></span></td>
                             <td>
                                 <div class="ct-actions">
                                     <a href="facturas_contrato?contrato_id=<?= $c['id'] ?>" class="btn-fa btn-fa-receipt"
@@ -1415,6 +1474,15 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
         updIcons();
         render();
     })();
+
+    /* ── Leyenda del semáforo: clic filtra la tabla (otro clic quita el filtro) ── */
+    document.querySelectorAll('.ct-leyenda [data-filtro]').forEach(p => p.addEventListener('click', () => {
+        const s = document.getElementById('ctSearch'), on = p.classList.contains('on');
+        document.querySelectorAll('.ct-leyenda .on').forEach(x => x.classList.remove('on'));
+        if (!on) p.classList.add('on');
+        s.value = on ? '' : p.dataset.filtro;
+        s.dispatchEvent(new Event('input'));
+    }));
 
     /* ── Eliminar contratos seleccionados ── */
     (() => {

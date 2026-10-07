@@ -11,6 +11,9 @@ function reciboRegistrar(PDO $pdo, int $cid, int $usuario, int $contratoId, arra
     $st->execute([$contratoId, $cid]);
     $c = $st->fetch(PDO::FETCH_ASSOC);
     if (!$c) throw new Exception("Contrato no encontrado.");
+    $st = $pdo->prepare("SELECT estado FROM contratos WHERE id = ?");
+    $st->execute([$contratoId]);
+    if ($st->fetchColumn() === 'borrador') throw new Exception("Este contrato está en borrador: actívalo en Editar contrato para facturar o cobrar.");
 
     $monto = round((float)($d['monto'] ?? 0), 2);
     $fecha = trim((string)($d['fecha_emision'] ?? ''));

@@ -42,6 +42,7 @@ function anticipoContratoValido(PDO $pdo, int $cid, int $contratoId): array
     $st->execute([$contratoId, $cid]);
     $c = $st->fetch(PDO::FETCH_ASSOC);
     if (!$c) throw new Exception("Contrato no encontrado.");
+    if ($c['estado'] === 'borrador') throw new Exception("Este contrato está en borrador: actívalo en Editar contrato para facturar o cobrar.");
     return $c;
 }
 

@@ -876,6 +876,10 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
             <!-- ── Botones ───────────────────────────────────────────────── -->
             <div class="d-flex gap-3 justify-content-end align-items-center">
                 <a href="contratos" class="btn btn-outline-secondary px-4">Cancelar</a>
+                <input type="hidden" name="borrador" id="inpBorrador" value="">
+                <button type="submit" class="btn btn-outline-secondary px-4" id="btnBorrador" title="Se guarda sin afectar nada: no se factura ni cobra y no cuenta en reportes hasta que lo actives">
+                    <i class="bi bi-pencil-square me-1"></i> Guardar como borrador
+                </button>
                 <button type="submit" class="btn-save" id="btnGuardar">
                     <i class="bi bi-floppy-fill"></i> Guardar Contrato
                 </button>
@@ -1339,6 +1343,8 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Guardando…';
 
         const conPlan = document.getElementById('ppActivar').checked && planEd && !planEd.vacio();
+        const esBorrador = e.submitter?.id === 'btnBorrador';
+        document.getElementById('inpBorrador').value = esBorrador ? '1' : '';
         fetch('includes/contrato_guardar.php', {
                 method: 'POST',
                 body: new FormData(this)
@@ -1362,8 +1368,8 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                     }
                     Swal.fire({
                         icon: avisoPlan.includes('no se guardó') ? 'warning' : 'success',
-                        title: '¡Contrato creado!',
-                        text: 'El contrato fue guardado correctamente.' + avisoPlan,
+                        title: esBorrador ? 'Borrador guardado' : '¡Contrato creado!',
+                        text: (esBorrador ? 'Quedó como borrador: no se factura ni cobra hasta que lo actives en Editar contrato.' : 'El contrato fue guardado correctamente.') + avisoPlan,
                         confirmButtonText: conPlan ? 'Ver el contrato' : 'Ver contratos'
                     }).then(() => window.location.href = conPlan ? 'facturas_contrato?contrato_id=' + data.contrato_id : 'contratos');
                 } else {
