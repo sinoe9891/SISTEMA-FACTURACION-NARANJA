@@ -1301,7 +1301,7 @@ suite('Cobros por correo programados', function () {
     $ult = glob("$dir/*.eml"); sort($ult); $eml = file_get_contents(end($ult));
     check('al enviarse, sus facturas quedan como «Enviada al cliente»', !(int)$pdo->query("SELECT COUNT(*) FROM facturas f JOIN cobros_programados_facturas x ON x.factura_id = f.id WHERE x.cobro_id = $idProg AND f.enviada_receptor = 0")->fetchColumn());
     $lf = $c->get('lista_facturas');
-    check('el historial de facturas muestra el ícono de enviada por correo', str_contains($lf['body'], 'bi-envelope-check text-success') && sinErroresPhp($lf['body']), errorPhp($lf['body']));
+    check('el historial de facturas muestra la etiqueta de enviada por correo', str_contains($lf['body'], 'app-envio app-envio-enviado') && sinErroresPhp($lf['body']), errorPhp($lf['body']));
     check('va al cliente, con CC y desde Facturación', count($ult) === $antes + 1 && str_contains($eml, 'To: <cliente@ejemplo.test>') && str_contains($eml, 'Cc: <copia@ejemplo.test>') && str_contains($eml, 'facturacion@ejemplo.test'));
     $correr();
     check('no lo vuelve a enviar', count(glob("$dir/*.eml") ?: []) === $antes + 1);

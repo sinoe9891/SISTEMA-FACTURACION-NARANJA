@@ -1277,3 +1277,11 @@ body.app-body .page-btn.disabled {
 		padding: 0;
 	}
 }
+
+/* Estado del envío por correo de una factura (Historial de facturas): línea pequeña bajo el correlativo, sobre + texto */
+.app-envio { display: block; margin-top: 4px; font-size: .7rem; font-weight: 600; white-space: nowrap; text-decoration: none; }
+.app-envio:hover { text-decoration: underline; }
+.app-envio .bi + .bi { margin-left: .1rem; }
+.app-envio-programado { color: #1d4ed8; }
+.app-envio-enviado { color: #15803d; }
+.app-envio-error { color: #b91c1c; }

@@ -1112,6 +1112,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		<?php endif; ?>
 	</div>
 
+	<!-- Resumen (se reemplaza al filtrar sin recargar) -->
+	<div id="fhZonaResumen">
 	<!-- Stats strip -->
 	<div class="fh-stats">
 		<div class="fh-stat">
@@ -1225,6 +1227,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		</div>
 	</div>
 
+	</div>
+
 	<!-- Filter card -->
 	<?php if (count($cais) >= 1): ?>
 		<div class="fh-filter-card">
@@ -1236,7 +1240,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 						<select name="cai_id" class="fh-select" <?= (count($cais) === 1) ? 'disabled' : '' ?>>
 							<option value="">— Todos los CAI —</option>
 							<?php foreach ($cais as $cai): ?>
-								<option value="<?= $cai['id'] ?>" <?= ($caix == $cai['id']) ? 'selected' : '' ?>>
+								<option value="<?= $cai['id'] ?>" data-desde="<?= htmlspecialchars((string)$cai['fecha_recepcion']) ?>" data-activo="<?= (int)$cai['activo'] ?>" data-hasta="<?= htmlspecialchars((string)$cai['fecha_limite']) ?>" <?= ($caix == $cai['id']) ? 'selected' : '' ?>>
 									<?= htmlspecialchars($cai['cai']) ?><?= $cai['activo'] ? ' ✅' : ' ⛔ Vencido' ?> |
 									<?= $cai['rango_inicio'] ?>–<?= $cai['rango_fin'] ?>
 								</option>
@@ -1248,21 +1252,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					</div>
 					<div>
 						<label class="fh-label">Año o mes</label>
-						<?php
-						$fhMeses = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-						$fhSel = '';
-						if ($fecha_desde && $fecha_hasta) {
-							if (substr($fecha_desde, 5) === '01-01' && substr($fecha_hasta, 5) === '12-31' && substr($fecha_desde, 0, 4) === substr($fecha_hasta, 0, 4)) $fhSel = substr($fecha_desde, 0, 4);
-							elseif (substr($fecha_desde, 8) === '01' && $fecha_hasta === date('Y-m-t', strtotime($fecha_desde))) $fhSel = substr($fecha_desde, 0, 7);
-						}
-						?>
-						<select class="fh-select" id="fhPeriodo">
-							<option value="">— Rango libre —</option>
-							<optgroup label="Año completo"><?php for ($y = (int)date('Y'); $y >= (int)date('Y') - 2; $y--): ?>
-								<option value="<?= $y ?>" <?= $fhSel === (string)$y ? 'selected' : '' ?>>Todo <?= $y ?></option><?php endfor; ?></optgroup>
-							<optgroup label="Mes"><?php for ($i = 0; $i < 24; $i++): $t = strtotime(date('Y-m-01') . " -$i month"); $v = date('Y-m', $t); ?>
-								<option value="<?= $v ?>" <?= $fhSel === $v ? 'selected' : '' ?>><?= $fhMeses[(int)date('n', $t)] . ' ' . date('Y', $t) ?></option><?php endfor; ?></optgroup>
-						</select>
+						<select class="fh-select" id="fhPeriodo"><option value="">— Rango libre —</option></select>
 					</div>
 					<div>
 						<label class="fh-label">Desde</label>
@@ -1281,25 +1271,100 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 				</div>
 			</form>
 			<script>
-				// Filtros automáticos: al cambiar el período, el CAI o las fechas se aplica sin pulsar «Filtrar»
+				// Filtros automáticos y sin recargar: al cambiar el CAI, el período o las fechas se piden los datos y se
+				// reemplazan el resumen y la tabla. «Año o mes» solo ofrece los meses de la vigencia del CAI elegido.
 				(() => {
 					const f = document.getElementById('fhFilterForm');
 					const desde = f.querySelector('[name=fecha_desde]'), hasta = f.querySelector('[name=fecha_hasta]');
-					const enviar = () => { f.querySelector('.btn-filter').innerHTML = '<span class="spinner-border spinner-border-sm"></span> Filtrando…'; f.submit(); };
-					document.getElementById('fhPeriodo').addEventListener('change', e => {
-						const v = e.target.value;
+					const selCai = f.querySelector('select[name=cai_id]'), selPer = document.getElementById('fhPeriodo');
+					const btn = f.querySelector('.btn-filter'), btnHtml = btn.innerHTML;
+					const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+					const pad = n => String(n).padStart(2, '0');
+					const finMes = (y, m) => `${y}-${pad(m)}-${pad(new Date(y, m, 0).getDate())}`;
+					const hoy = new Date(), mesHoy = hoy.getFullYear() * 12 + hoy.getMonth();
+					const llenarPeriodos = () => {
+						// Vigencia: la del CAI elegido; con «Todos los CAI», de la recepción más antigua al vencimiento más reciente
+						const ops = selCai.value ? [selCai.selectedOptions[0]] : [...selCai.options].filter(o => o.value);
+						const ini = ops.map(o => o.dataset.desde).filter(Boolean).sort()[0];
+						const fin = ops.map(o => o.dataset.hasta).filter(Boolean).sort().pop();
+						let html = '<option value="">— Rango libre —</option>';
+						if (ini && fin) {
+							const a = +ini.slice(0, 4) * 12 + (+ini.slice(5, 7) - 1);
+							const b = Math.min(+fin.slice(0, 4) * 12 + (+fin.slice(5, 7) - 1), Math.max(mesHoy, a));   // no ofrecer meses futuros
+							let anios = '', meses = '';
+							for (let y = Math.floor(b / 12); y >= Math.floor(a / 12); y--) anios += `<option value="${y}">Todo ${y}</option>`;
+							for (let k = b; k >= a; k--) meses += `<option value="${Math.floor(k / 12)}-${pad(k % 12 + 1)}">${MESES[k % 12]} ${Math.floor(k / 12)}</option>`;
+							html += `<optgroup label="Año completo">${anios}</optgroup><optgroup label="Mes">${meses}</optgroup>`;
+						}
+						selPer.innerHTML = html;
+						marcarPeriodo();
+					};
+					const marcarPeriodo = () => {
+						const d = desde.value, h = hasta.value;
+						let v = '';
+						if (d && h && d.slice(5) === '01-01' && h.slice(5) === '12-31' && d.slice(0, 4) === h.slice(0, 4)) v = d.slice(0, 4);
+						else if (d && h && d.slice(8) === '01' && h === finMes(+d.slice(0, 4), +d.slice(5, 7))) v = d.slice(0, 7);
+						selPer.value = [...selPer.options].some(o => o.value === v) ? v : '';
+					};
+					let pedido = 0;
+					const aplicar = async () => {
+						const qs = new URLSearchParams();
+						for (const [k, v] of new FormData(f)) if (k !== '_csrf' && v !== '') qs.set(k, v);
+						if (selCai && !selCai.disabled && !selCai.value) qs.set('cai_id', '');   // «Todos los CAI» explícito
+						const url = location.pathname + (qs.toString() ? '?' + qs : '');
+						const yo = ++pedido;
+						btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Filtrando…';
+						try {
+							const r = await fetch(url, { credentials: 'same-origin' });
+							if (!r.ok) throw new Error('HTTP ' + r.status);
+							const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+							if (yo !== pedido) return;   // llegó otra búsqueda más nueva
+							const zonas = ['fhZonaResumen', 'fhZonaTabla'].map(id => [document.getElementById(id), doc.getElementById(id)]);
+							if (zonas.some(([act, nva]) => !act || !nva)) throw new Error('Respuesta incompleta');
+							zonas.forEach(([act, nva]) => act.replaceWith(nva));
+							fhInitTabla();
+							history.replaceState(null, '', url);
+						} catch (e) {
+							if (yo === pedido) location.href = url;   // si algo falla, carga normal
+						} finally {
+							if (yo === pedido) btn.innerHTML = btnHtml;
+						}
+					};
+					f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
+					f.querySelector('.btn-clear-filter')?.addEventListener('click', e => {
+						e.preventDefault();
+						desde.value = hasta.value = '';
+						if (selCai && !selCai.disabled) {
+							const activo = [...selCai.options].find(o => o.dataset.activo === '1');
+							selCai.value = activo ? activo.value : '';
+						}
+						llenarPeriodos();
+						aplicar();
+					});
+					selPer.addEventListener('change', () => {
+						const v = selPer.value;
 						if (!v) return;
 						if (/^\d{4}$/.test(v)) { desde.value = v + '-01-01'; hasta.value = v + '-12-31'; }
-						else { const [y, m] = v.split('-').map(Number); desde.value = v + '-01'; hasta.value = v + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0'); }
-						enviar();
+						else { desde.value = v + '-01'; hasta.value = finMes(+v.slice(0, 4), +v.slice(5, 7)); }
+						aplicar();
 					});
-					f.querySelector('select[name=cai_id]')?.addEventListener('change', enviar);
-					[desde, hasta].forEach(i => i.addEventListener('change', () => { document.getElementById('fhPeriodo').value = ''; if (i.value.length === 10) enviar(); }));
+					selCai?.addEventListener('change', () => {
+						llenarPeriodos();
+						// Si las fechas quedan fuera de la vigencia del nuevo CAI, se quita el filtro de fechas
+						const o = selCai.value ? selCai.selectedOptions[0] : null;
+						if (o && o.dataset.desde && ((hasta.value && hasta.value < o.dataset.desde.slice(0, 10)) || (desde.value && desde.value > o.dataset.hasta.slice(0, 10)))) desde.value = hasta.value = '';
+						marcarPeriodo();
+						aplicar();
+					});
+					[desde, hasta].forEach(i => i.addEventListener('change', () => { marcarPeriodo(); if (!i.value || i.value.length === 10) aplicar(); }));
+					llenarPeriodos();
 				})();
 			</script>
 		</div>
 	<?php endif; ?>
 
+	<!-- Alerta + tabla (se reemplazan al filtrar sin recargar) -->
+	<div id="fhZonaTabla">
 	<!-- Alerta facturas no declaradas -->
 	<?php if ($no_declaradas_count > 0 && $mostrar_alerta_isv): ?>
 		<?php
@@ -1443,10 +1508,18 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 									data-factura-id="<?= $f['id'] ?>" data-receptor-id="<?= (int)$f['receptor_id'] ?>" data-estado="<?= htmlspecialchars($f['estado']) ?>"></td>
 							<td><span class="corr-mono" data-col="corr"><?= htmlspecialchars($f['correlativo']) ?></span>
 								<?php if ($ev = $enviosCorreo[$f['id']] ?? null):
-									$evTxt = in_array($ev['estado'], ['programado', 'enviando'], true) ? ['bi-clock-history text-primary', 'Envío por correo programado para el ' . date('d/m/Y g:i a', strtotime($ev['programado_para']))]
-										: ($ev['estado'] === 'enviado' ? ['bi-envelope-check text-success', 'Enviada por correo el ' . date('d/m/Y g:i a', strtotime($ev['enviado_en'] ?: $ev['programado_para']))]
-										: ['bi-exclamation-triangle text-danger', 'El envío por correo falló: revísalo en Cobros por correo']); ?>
-									<a href="cobros_programados" class="ms-1 text-decoration-none" title="<?= htmlspecialchars($evTxt[1]) ?>" aria-label="<?= htmlspecialchars($evTxt[1]) ?>"><i class="bi <?= $evTxt[0] ?>"></i></a>
+									$mesCorto = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+									$evFecha = fn($t) => (int)date('j', $t) . ' ' . $mesCorto[(int)date('n', $t)];
+									if (in_array($ev['estado'], ['programado', 'enviando'], true)) {
+										$t = strtotime($ev['programado_para']);
+										$evTxt = ['programado', 'bi-envelope', 'bi-clock', 'Programado ' . $evFecha($t), 'Envío por correo programado para el ' . date('d/m/Y g:i a', $t)];
+									} elseif ($ev['estado'] === 'enviado') {
+										$t = strtotime($ev['enviado_en'] ?: $ev['programado_para']);
+										$evTxt = ['enviado', 'bi-envelope-check', '', 'Enviada ' . $evFecha($t), 'Enviada por correo el ' . date('d/m/Y g:i a', $t)];
+									} else {
+										$evTxt = ['error', 'bi-envelope-exclamation', '', 'Error de envío', 'El envío por correo falló: revísalo en Cobros por correo'];
+									} ?>
+									<a href="cobros_programados" class="app-envio app-envio-<?= $evTxt[0] ?>" title="<?= htmlspecialchars($evTxt[4]) ?>"><i class="bi <?= $evTxt[1] ?>"></i><?php if ($evTxt[2]): ?><i class="bi <?= $evTxt[2] ?>"></i><?php endif; ?> <?= $evTxt[3] ?></a>
 								<?php endif; ?>
 							</td>
 							<td data-col="fecha"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
@@ -1525,10 +1598,12 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			<div class="fh-page-btns" id="fhPageBtns"></div>
 		</div>
 	</div>
+	</div>
 </div>
 
 <script>
-	(() => {
+	// Tabla: búsqueda, orden, paginación y selección. Se vuelve a iniciar cada vez que los filtros reemplazan la tabla.
+	function fhInitTabla() {
 		let query = '',
 			page = 1,
 			perPage = 10,
@@ -1732,7 +1807,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		updIcons();
 		updateBulkState();
 		render();
-	})();
+	}
+	fhInitTabla();
 
 	function bulkRedactarMensaje(facturaIds) {
 		Swal.fire({
