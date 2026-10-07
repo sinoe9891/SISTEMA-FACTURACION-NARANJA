@@ -162,6 +162,13 @@ function boucherPagina(array $ctx, array $d): string
     $metodoTxt = ['transferencia' => 'Transferencia', 'efectivo' => 'Efectivo', 'cheque' => 'Cheque', 'tarjeta' => 'Tarjeta'][$d['metodo']] ?? ucfirst($d['metodo']);
     $verbo = ['transferencia' => 'esta transferencia', 'cheque' => 'este cheque', 'tarjeta' => 'este cargo a tarjeta', 'efectivo' => 'este pago en efectivo'][$d['metodo']] ?? 'este pago';
     $c = $d['colaborador'];
+    // Que todo quepa en UNA hoja: la captura se achica según lo que ocupa el resto (desglose, observaciones,
+    // concepto largo). Base 300 px; cada renglón extra le quita su alto. Mínimo 140 px.
+    $extra = 26 * (count($d['descuentos']) + count($d['extras']) + (($d['descuentos'] || $d['extras']) ? 1 : 0))
+           + ($d['observaciones'] ? 14 * (1 + intdiv(mb_strlen($d['observaciones']), 110)) : 0)
+           + 14 * intdiv(mb_strlen($d['concepto']), 75)
+           + ($d['categoria'] ? 0 : -12);
+    $altoCaptura = max(140, min(300, 300 - $extra));
     ob_start(); ?>
     <div class="pagina">
         <table class="enc"><tr>
@@ -194,7 +201,7 @@ function boucherPagina(array $ctx, array $d): string
         </table>
 
         <div class="comp">
-            <?php if ($d['comprobante']): ?><img src="<?= $d['comprobante'] ?>" alt="Comprobante">
+            <?php if ($d['comprobante']): ?><img src="<?= $d['comprobante'] ?>" alt="Comprobante" style="max-height: <?= $altoCaptura ?>px">
             <?php elseif ($d['comprobante_pdf']): ?><div class="comp-vacio">El comprobante de este pago es un PDF: se archiva por separado.</div>
             <?php else: ?><div class="comp-vacio">Sin captura del comprobante.</div><?php endif; ?>
         </div>
@@ -241,10 +248,10 @@ function boucherDocumento(array $paginas): string
         .enc-tit { text-align: center; } .titulo { font-size: 24px; font-weight: bold; letter-spacing: 6px; color: #0f172a; }
         .sub { font-size: 10px; color: #e4550d; letter-spacing: 3px; margin-top: 2px; font-weight: bold; }
         .enc-num { width: 28%; text-align: right; } .num-lbl { font-size: 9px; color: #64748b; } .num { font-size: 16px; font-weight: bold; color: #0f172a; }
-        .franja { height: 4px; background: #e4550d; margin: 10px 0 12px; border-radius: 2px; }
+        .franja { height: 4px; background: #e4550d; margin: 8px 0 10px; border-radius: 2px; }
         .datos td { width: 25%; padding: 7px 8px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 10.5px; font-weight: bold; }
         .datos span, .recibe span { display: block; font-size: 8px; font-weight: normal; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
-        .paguese { margin: 12px 0 10px; padding: 9px 10px; border-left: 4px solid #e4550d; background: #fff7ed; }
+        .paguese { margin: 10px 0 8px; padding: 7px 10px; border-left: 4px solid #e4550d; background: #fff7ed; }
         .paguese span { display: block; font-size: 9px; color: #9a3412; text-transform: uppercase; letter-spacing: 1px; }
         .paguese strong { font-size: 14px; color: #0f172a; }
         .monto td { padding: 7px 8px; border-bottom: 1px solid #e2e8f0; } .monto .lbl { width: 20%; color: #64748b; font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
@@ -255,14 +262,14 @@ function boucherDocumento(array $paginas): string
         .det td { padding: 4px 8px; font-size: 9.5px; } .det-t { color: #334155; } .det-n { float: right; font-weight: bold; }
         .det.menos .det-n, .det.menos .lbl { color: #b91c1c; } .det.mas .det-n, .det.mas .lbl { color: #047857; }
         .obs { font-size: 8.5px; color: #64748b; }
-        .comp { margin: 12px 0 6px; text-align: center; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; }
+        .comp { margin: 8px 0 4px; text-align: center; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; }
         .comp img { max-width: 100%; max-height: 300px; } .comp-vacio { color: #94a3b8; padding: 26px 0; }
         .firmas-int { margin-top: 8px; } .firmas-int td { width: 33%; text-align: center; padding: 0 12px; vertical-align: top; }
         .fi-caja { height: 58px; margin-bottom: -12px; } .fi-caja img { max-height: 56px; max-width: 170px; }
         .quien { min-height: 12px; font-size: 9.5px; color: #1e293b; font-weight: bold; margin-top: 2px; } .cargo { font-size: 8.5px; color: #64748b; }
         .linea { border-top: 1px solid #64748b; padding-top: 3px; color: #64748b; font-size: 8.5px; text-transform: uppercase; letter-spacing: 1px; }
-        .recibe-tit { margin-top: 14px; font-size: 9px; font-weight: bold; color: #0f172a; text-transform: uppercase; letter-spacing: 2px; border-bottom: 2px solid #0f172a; padding-bottom: 3px; }
-        .recibe td { vertical-align: bottom; padding-top: 8px; } .r-datos { width: 50%; } .r-datos div { margin-bottom: 7px; font-size: 10.5px; }
+        .recibe-tit { margin-top: 10px; font-size: 9px; font-weight: bold; color: #0f172a; text-transform: uppercase; letter-spacing: 2px; border-bottom: 2px solid #0f172a; padding-bottom: 3px; }
+        .recibe td { vertical-align: bottom; padding-top: 6px; } .r-datos { width: 50%; } .r-datos div { margin-bottom: 5px; font-size: 10.5px; }
         /* Firma 50% más grande y montada un poco sobre la línea (como firmada a mano) */
         .r-firma { text-align: center; } .firma-caja { height: 108px; margin-bottom: -18px; } .firma-caja img { max-height: 105px; max-width: 320px; }
         .sin { color: #b91c1c; text-transform: none; letter-spacing: 0; }
