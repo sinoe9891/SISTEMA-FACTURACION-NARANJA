@@ -70,6 +70,28 @@ $stmtLista = $pdo->prepare("
 $stmtLista->execute([$cliente_id]);
 $contratos = $stmtLista->fetchAll(PDO::FETCH_ASSOC);
 
+// Contratos con plan de pagos: el próximo cobro y lo vencido salen del plan, no del día de pago mensual
+require_once '../../includes/contrato_plan.php';
+$conPlan = array_flip(planContratosConPlan($pdo, (int)$cliente_id));
+foreach ($contratos as &$c) {
+    if (!isset($conPlan[(int)$c['id']])) continue;
+    $pl = ['venc_n' => 0, 'venc_total' => 0.0, 'venc_dias' => 0, 'prox' => null, 'n' => 0, 'pagados' => 0];
+    foreach (planLineas($pdo, (int)$cliente_id, (int)$c['id']) as $l) {
+        $pl['n']++;
+        if ($l['estado'] === 'pagado') { $pl['pagados']++; continue; }
+        if ($l['estado'] === 'facturado') continue;   // ya es factura: la cuenta la columna de cobro
+        if ($l['estado'] === 'vencido') { $pl['venc_n']++; $pl['venc_total'] += (float)$l['total']; $pl['venc_dias'] = max($pl['venc_dias'], (int)$l['dias']); }
+        if (!$pl['prox']) $pl['prox'] = $l;   // el primero sin cobrar (puede estar vencido)
+    }
+    $c['plan'] = $pl;
+    if ($pl['prox']) {
+        $c['proxima_fecha_pago'] = $pl['prox']['fecha'];
+        $c['dias_para_pago'] = -(int)$pl['prox']['dias'];
+        $c['monto_proximo'] = (float)$pl['prox']['total'];
+    }
+}
+unset($c);
+
 $pendientes_mes = 0;
 $monto_pendiente = 0;
 foreach ($contratos as $c) {
@@ -168,6 +190,11 @@ $celdaCobertura = function (array $c) use ($mesesCorto, $porCobrar, $hoyStr): st
         } else {
             $h .= '<div class="ct-cob">' . $txt . '</div>';
         }
+    }
+    // Pagos del plan vencidos sin cobrar (con o sin factura de por medio)
+    if (!empty($c['plan']['venc_n'])) {
+        $h .= '<a class="ct-cob ct-sem ct-sem-rojo d-block" href="facturas_contrato?contrato_id=' . (int)$c['id'] . '#planPagos" title="Pagos del plan de pagos cuya fecha ya pasó y no se han cobrado">'
+            . $c['plan']['venc_n'] . ' pago' . ($c['plan']['venc_n'] > 1 ? 's' : '') . ' del plan vencido' . ($c['plan']['venc_n'] > 1 ? 's' : '') . ' · L ' . number_format($c['plan']['venc_total'], 2) . ' (hace ' . $c['plan']['venc_dias'] . ' d)</a>';
     }
     // Cobro de lo ya facturado con semáforo: rojo vencida; naranja ≤ 3 días; amarillo ≤ 7; gris más adelante
     $pc = $porCobrar[(int)$c['id']] ?? null;
@@ -929,7 +956,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 
     <!-- Próximos cobros (top 10 activos) -->
     <?php
-    $proximos = array_filter($contratos, fn($c) => $c['estado'] === 'activo' && $c['tipo_contrato'] !== 'proyecto');
+    $proximos = array_filter($contratos, fn($c) => $c['estado'] === 'activo' && ($c['tipo_contrato'] !== 'proyecto' || !empty($c['plan']['prox'])));
     usort($proximos, fn($a, $b) => (int)$a['dias_para_pago'] - (int)$b['dias_para_pago']);
     $proximos = array_slice($proximos, 0, 10);
     ?>
@@ -961,6 +988,9 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                             if ($noIniciado) {
                                 $dCls = 'bg-secondary text-white';
                                 $dTxt = "En {$dias}d";
+                            } elseif ($dias < 0) {
+                                $dCls = 'bg-danger text-white';
+                                $dTxt = 'Vencido ' . -$dias . 'd';
                             } elseif ($dias === 0) {
                                 $dCls = 'bg-danger text-white';
                                 $dTxt = '¡Hoy!';
@@ -981,10 +1011,10 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                             <tr <?= $facturado ? 'class="table-success"' : '' ?>>
                                 <td><?= $celdaCliente($p, false) ?></td>
                                 <td class="small text-muted"><div class="ct-clamp" title="<?= htmlspecialchars($p['producto_nombre']) ?>"><?= htmlspecialchars($p['producto_nombre']) ?></div></td>
-                                <td class="text-end fw-bold">L <?= number_format((float)$p['monto'], 2) ?></td>
+                                <td class="text-end fw-bold">L <?= number_format((float)($p['monto_proximo'] ?? $p['monto']), 2) ?></td>
                                 <td class="text-center">
                                     <div class="fw-semibold small"><?= htmlspecialchars($p['proxima_fecha_pago']) ?></div>
-                                    <small class="text-muted">Día <?= (int)$p['dia_pago'] ?> c/mes</small>
+                                    <small class="text-muted"><?= isset($p['plan']) ? 'Plan de pagos' : 'Día ' . (int)$p['dia_pago'] . ' c/mes' ?></small>
                                     <?php if ($noIniciado): ?><br><span class="badge bg-secondary small">Inicia
                                             <?= $p['fecha_inicio'] ?></span><?php endif; ?>
                                 </td>
@@ -992,6 +1022,9 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                 <td class="text-center">
                                     <?php if ($noIniciado): ?>
                                         <span class="badge bg-secondary small">No iniciado</span>
+                                    <?php elseif (isset($p['plan'])): ?>
+                                        <?= $p['plan']['venc_n'] ? '' : '<span class="fact-pill fact-si"><i class="bi bi-check-circle-fill"></i> Al día</span>' ?>
+                                        <div class="small text-muted"><?= $p['plan']['pagados'] ?> de <?= $p['plan']['n'] ?> pagos del plan</div>
                                     <?php elseif ($facturado): ?>
                                         <span class="fact-pill fact-si"><i class="bi bi-check-circle-fill"></i> Facturado</span>
                                     <?php else: ?>
@@ -1088,10 +1121,13 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                             <td data-sort-val="<?= $c['monto'] ?>"><strong>L
                                     <?= number_format((float)$c['monto'], 2) ?></strong></td>
                             <td class="text-center">
-                                <?php if ($c['estado'] !== 'activo' || $c['tipo_contrato'] === 'proyecto'): ?>
+                                <?php if ($c['estado'] !== 'activo' || ($c['tipo_contrato'] === 'proyecto' && !isset($c['plan']))): ?>
                                     <span class="text-muted">—</span>
                                 <?php elseif ($noIniciado): ?>
                                     <span class="badge bg-secondary small">No iniciado</span>
+                                <?php elseif (isset($c['plan'])): ?>
+                                    <?= $c['plan']['venc_n'] ? '' : '<span class="fact-pill fact-si"><i class="bi bi-check-circle-fill"></i> Al día</span>' ?>
+                                    <div class="small text-muted"><?= $c['plan']['pagados'] ?> de <?= $c['plan']['n'] ?> pagos del plan</div>
                                 <?php elseif ($facturado): ?>
                                     <span class="fact-pill fact-si"><i class="bi bi-check-circle-fill"></i> Facturado</span>
                                 <?php else: ?>
@@ -1100,12 +1136,15 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                 <?= $celdaCobertura($c) ?>
                             </td>
                             <td>
-                                <?php if ($c['estado'] === 'activo' && $diasPago !== null && $c['tipo_contrato'] !== 'proyecto'): ?>
+                                <?php if ($c['estado'] === 'activo' && $diasPago !== null && ($c['tipo_contrato'] !== 'proyecto' || !empty($c['plan']['prox']))): ?>
                                     <div class="fw-semibold small"><?= htmlspecialchars($c['proxima_fecha_pago']) ?></div>
                                     <?php if ($noIniciado): ?>
                                         <small class="text-muted">Primer cobro</small>
                                     <?php else:
-                                        if ($diasPago === 0) {
+                                        if ($diasPago < 0) {
+                                            $t = 'Vencido hace ' . -$diasPago . 'd';
+                                            $cls = 'text-danger fw-bold';
+                                        } elseif ($diasPago === 0) {
                                             $t = '¡Hoy!';
                                             $cls = 'text-danger fw-bold';
                                         } elseif ($diasPago <= 3) {

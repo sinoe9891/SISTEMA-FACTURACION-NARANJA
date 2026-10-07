@@ -2105,3 +2105,21 @@ suite('Recibos con banco, PDF, recordatorios del plan y envío de recibos por co
     $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id = $cta");
     $pdo->exec("DELETE FROM cuentas_bancarias WHERE id = $cta");
 });
+
+suite('Pagos del plan vencidos en Contratos y Cuentas por cobrar', function () {
+    global $pdo;
+    $c = login('qa.admin@local.test');
+    $ctr = (int)$pdo->query("SELECT id FROM contratos WHERE cliente_id = 2 AND estado = 'activo' AND tipo_contrato = 'estandar' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $pdo->exec("DELETE FROM contratos_plan WHERE contrato_id = $ctr");
+    $c->post('includes/contrato_plan_accion.php', ['accion' => 'guardar', 'contrato_id' => $ctr, 'lineas' => json_encode([
+        ['tipo' => 'anticipo', 'concepto' => 'QA anticipo vencido', 'fecha' => date('Y-m-d', strtotime('-4 days')), 'monto' => 1234],
+        ['tipo' => 'cuota', 'concepto' => 'QA cuota próxima', 'fecha' => date('Y-m-d', strtotime('+6 days')), 'monto' => 2000]])]);
+    $r = $c->get('contratos');
+    check('Contratos marca en rojo los pagos del plan vencidos y el próximo cobro sale del plan', sinErroresPhp($r['body']) && str_contains($r['body'], '1 pago del plan vencido · L 1,234.00')
+        && str_contains($r['body'], 'Vencido hace 4d') && str_contains($r['body'], 'Plan de pagos'), errorPhp($r['body']));
+    $r = $c->get('cuentas_cobrar');
+    check('Cuentas por cobrar lista los pagos del plan (vencidos y próximos 30 días)', sinErroresPhp($r['body']) && str_contains($r['body'], 'id="planCobrar"') && str_contains($r['body'], 'QA anticipo vencido')
+        && str_contains($r['body'], 'QA cuota próxima') && str_contains($r['body'], 'Planes de pago vencidos'), errorPhp($r['body']));
+    check('el botón de cobrar ya no es verde', !str_contains($r['body'], 'btn-success btn-cobrar'));
+    $pdo->exec("DELETE FROM contratos_plan WHERE contrato_id = $ctr");
+});

@@ -3,6 +3,7 @@ $titulo = 'Cuentas por cobrar';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/cuentas.php';
+require_once '../../includes/contrato_plan.php';
 
 $cid = cliente_actual();
 $instalado = cxcDisponible($pdo);
@@ -32,13 +33,31 @@ $colorTramo = ['0-30' => 'success', '31-60' => 'warning', '61-90' => 'warning', 
 $mesCorto = [1 => 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 $periodo = fn($m, $a) => $mesCorto[(int)$m] . ' ' . $a;
 
+// Pagos de planes de pago sin cobrar: vencidos y los que vencen en los próximos 30 días.
+// Son de contratos con recibo (sin factura) o pagos aún no facturados; lo ya facturado está en «Facturas pendientes».
+$planCobrar = [];
+if ($cid && planDisponible($pdo)) {
+    $stPc = $pdo->prepare("SELECT c.id, c.receptor_id, c.nombre_contrato, c.tipo_contrato, cf.nombre AS receptor FROM contratos c JOIN clientes_factura cf ON cf.id = c.receptor_id AND cf.cliente_id = c.cliente_id
+                           WHERE c.cliente_id = ? AND c.estado IN ('activo','vencido') AND c.id IN (SELECT contrato_id FROM contratos_plan WHERE cliente_id = ?)");
+    $stPc->execute([$cid, $cid]);
+    foreach ($stPc->fetchAll(PDO::FETCH_ASSOC) as $ct) {
+        foreach (planLineas($pdo, (int)$cid, (int)$ct['id']) as $l) {
+            if (!in_array($l['estado'], ['vencido', 'pendiente'], true) || $l['dias'] < -30) continue;
+            $planCobrar[] = $l + ['receptor' => $ct['receptor'], 'receptor_id' => (int)$ct['receptor_id'], 'contrato' => $ct['nombre_contrato'], 'con_recibo' => $ct['tipo_contrato'] === 'sin_factura'];
+        }
+    }
+    usort($planCobrar, fn($a, $b) => $a['fecha'] <=> $b['fecha']);
+}
+$planVencido = array_sum(array_map(fn($l) => $l['estado'] === 'vencido' ? (float)$l['total'] : 0, $planCobrar));
+$planProximo = array_sum(array_map(fn($l) => $l['estado'] === 'pendiente' ? (float)$l['total'] : 0, $planCobrar));
+
 require_once '../../includes/templates/header.php';
 ?>
 
 <div class="app-page-header">
     <div>
         <h1 class="app-page-title">Cuentas por cobrar</h1>
-        <p class="app-page-sub">Facturas emitidas con saldo pendiente, por antigüedad desde la fecha de emisión.</p>
+        <p class="app-page-sub">Facturas emitidas con saldo pendiente, por antigüedad desde la fecha de emisión, y pagos de los planes de pago (también los de contratos con recibo).</p>
     </div>
 </div>
 
@@ -49,6 +68,10 @@ require_once '../../includes/templates/header.php';
     <div class="app-stats">
         <div class="app-stat"><div class="app-stat-icon"><i class="bi bi-cash-stack"></i></div>
             <div><div class="app-stat-val"><?= $L($total) ?></div><div class="app-stat-lbl" title="<?= count($facturas) ?> factura(s) de <?= count($porCliente) ?> cliente(s)">Por cobrar · <?= count($facturas) ?> facturas</div></div></div>
+        <?php if ($planCobrar): ?>
+            <a class="app-stat text-decoration-none" href="#planCobrar"><div class="app-stat-icon <?= $planVencido > 0 ? 'red' : 'amber' ?>"><i class="bi bi-calendar2-check"></i></div>
+                <div><div class="app-stat-val <?= $planVencido > 0 ? 'text-danger' : '' ?>"><?= $L($planVencido ?: $planProximo) ?></div><div class="app-stat-lbl"><?= $planVencido > 0 ? 'Planes de pago vencidos' : 'Planes: próximos 30 días' ?></div></div></a>
+        <?php endif; ?>
         <?php foreach ($tramos as $t => $v): ?>
             <div class="app-stat"><div class="app-stat-icon <?= $v > 0 ? $iconoTramo[$t][1] : 'gray' ?>"><i class="bi <?= $iconoTramo[$t][0] ?>"></i></div>
                 <div><div class="app-stat-val <?= $v > 0 ? 'text-' . $colorTramo[$t] : 'text-muted' ?>"><?= $L($v) ?></div><div class="app-stat-lbl"><?= $t ?> días</div></div></div>
@@ -78,6 +101,39 @@ require_once '../../includes/templates/header.php';
         </div>
     </div>
 
+    <?php if ($planCobrar): ?>
+    <div class="app-card mb-3" id="planCobrar">
+        <div class="app-card-header flex-wrap gap-2"><span><i class="bi bi-calendar2-check me-1"></i> Pagos de planes de pago</span>
+            <span class="d-flex flex-wrap gap-2 small">
+                <?php if ($planVencido > 0): ?><span class="badge rounded-pill" style="background:#fee2e2;color:#991b1b">Vencido <?= $L($planVencido) ?></span><?php endif; ?>
+                <?php if ($planProximo > 0): ?><span class="badge rounded-pill" style="background:#fef9c3;color:#854d0e">Próximos 30 días <?= $L($planProximo) ?></span><?php endif; ?>
+            </span></div>
+        <div class="px-3 pt-2 small text-muted">Pagos acordados que aún no se cobran ni se facturan (por ejemplo, contratos con recibo). No se suman a las facturas de arriba ni al Balance hasta que se facture o se emita el recibo.</div>
+        <div class="table-responsive">
+            <table data-paginar class="table app-table">
+                <thead><tr><th class="app-n">#</th><th>Fecha de pago</th><th>Cliente</th><th>Concepto</th><th class="app-num">Total</th><th>Estado</th><th class="text-end"></th></tr></thead>
+                <tbody>
+                    <?php $nPl = 0; foreach ($planCobrar as $l): $d = -(int)$l['dias'];
+                        [$sbg, $sfg, $stx] = $d < 0 ? ['#fee2e2', '#991b1b', 'Vencido hace ' . -$d . ' día' . ($d < -1 ? 's' : '')] : ($d === 0 ? ['#ffedd5', '#9a3412', 'Vence hoy'] : ($d <= 3 ? ['#ffedd5', '#9a3412', 'En ' . $d . ' día' . ($d > 1 ? 's' : '')] : ($d <= 7 ? ['#fef9c3', '#854d0e', 'En ' . $d . ' días'] : ['#f1f5f9', '#475569', 'En ' . $d . ' días']))); ?>
+                        <tr>
+                            <td class="app-n"><?= ++$nPl ?></td>
+                            <td class="text-nowrap"><?= date('d/m/Y', strtotime($l['fecha'])) ?></td>
+                            <td><a href="estado_cuenta?receptor_id=<?= $l['receptor_id'] ?>"><?= htmlspecialchars($l['receptor']) ?></a><div class="small text-muted">Contrato #<?= (int)$l['contrato_id'] ?><?= $l['con_recibo'] ? ' · con recibo' : '' ?></div></td>
+                            <td class="small"><?= htmlspecialchars($l['concepto']) ?></td>
+                            <td class="app-num fw-semibold"><?= number_format((float)$l['total'], 2) ?></td>
+                            <td class="text-nowrap"><span class="badge rounded-pill" style="background:<?= $sbg ?>;color:<?= $sfg ?>"><?= $stx ?></span></td>
+                            <td class="text-end text-nowrap">
+                                <?php if ($puedeCorreo): ?><a class="btn btn-sm btn-outline-secondary" href="cobros_programados?receptor_id=<?= $l['receptor_id'] ?>&tipo=recordatorio_pago&plan=<?= (int)$l['id'] ?>" title="Enviar un recordatorio de pago por correo"><i class="bi bi-send"></i></a><?php endif; ?>
+                                <?php if ($puedeCobrar): ?><a class="btn btn-sm btn-outline-primary" href="facturas_contrato?contrato_id=<?= (int)$l['contrato_id'] ?>#planPagos" title="Registrar el cobro en la ficha del contrato"><i class="bi bi-cash-coin"></i> Registrar cobro</a><?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="app-card">
         <div class="app-card-header flex-wrap">
             <span><i class="bi bi-receipt me-1"></i> Facturas pendientes</span>
@@ -105,8 +161,8 @@ require_once '../../includes/templates/header.php';
                                 <button class="btn btn-sm btn-outline-secondary btn-abonos" data-id="<?= (int)$f['id'] ?>" title="Ver abonos"><i class="bi bi-clock-history"></i></button>
                                 <?php if ($puedeCorreo): ?><a class="btn btn-sm btn-outline-primary" href="cobros_programados?receptor_id=<?= (int)$f['receptor_id'] ?>&facturas=<?= (int)$f['id'] ?>" title="Cobrar esta factura por correo"><i class="bi bi-send"></i></a><?php endif; ?>
                                 <?php if ($puedeCobrar): ?>
-                                    <button class="btn btn-sm btn-success btn-cobrar" data-id="<?= (int)$f['id'] ?>" data-saldo="<?= number_format((float)$f['saldo'], 2, '.', '') ?>"
-                                        data-corr="<?= htmlspecialchars($f['correlativo']) ?>" data-fecha="<?= substr($f['fecha_emision'], 0, 10) ?>"><i class="bi bi-cash-coin"></i> Cobrar</button>
+                                    <button class="btn btn-sm btn-outline-primary btn-cobrar" data-id="<?= (int)$f['id'] ?>" data-saldo="<?= number_format((float)$f['saldo'], 2, '.', '') ?>"
+                                        data-corr="<?= htmlspecialchars($f['correlativo']) ?>" data-fecha="<?= substr($f['fecha_emision'], 0, 10) ?>"><i class="bi bi-cash-coin"></i> Registrar cobro</button>
                                 <?php endif; ?>
                             </td>
                         </tr>
