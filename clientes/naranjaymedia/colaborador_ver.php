@@ -585,6 +585,7 @@ $tipos_btn_p = [
     }
 
     /* ── Fila de 3 tarjetas (datos, desglose, resumen) ─────────────────────── */
+    .cv-hero-acciones { margin-left: auto; align-self: flex-start; }
     .cv-hero-firma { margin-left: auto; min-width: 250px; max-width: 320px; background: #fff; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; padding: .55rem .7rem; color: #1e293b; }
     .cv-hero-firma-lbl { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; }
     .cv-hero-firma-caja { height: 70px; display: flex; align-items: center; justify-content: center; border: 1px dashed #cbd5e1; border-radius: 6px; background: #fff; }
@@ -1573,6 +1574,11 @@ $tipos_btn_p = [
                     <i class="bi bi-calendar-check me-1"></i>Ingreso: <?= date('d/m/Y', strtotime($col['fecha_ingreso'])) ?>
                 </span>
                 <span class="cv-hero-pill"><i class="bi bi-circle-fill me-1" style="font-size:.55rem;color:<?= $col['activo'] ? '#22c55e' : '#94a3b8' ?>"></i><?= $col['activo'] ? 'Activo' : 'Inactivo' ?></span>
+                <?php if ($col['url_firma']): ?>
+                    <span class="cv-hero-pill" title="Sale en sus bouchers y recibos"><i class="bi bi-pen-fill me-1" style="color:#16a34a"></i>Firma registrada</span>
+                <?php else: ?>
+                    <span class="cv-hero-pill" style="background:#fffbeb;border-color:#fcd34d;color:#92400e" title="Súbela con «Editar» para que salga en sus bouchers"><i class="bi bi-pen me-1"></i>Sin firma</span>
+                <?php endif; ?>
                 <?php if ($total_deuda_activa > 0): ?>
                     <span class="cv-hero-pill" style="background:rgba(239,68,68,.2);border-color:rgba(239,68,68,.3)">
                         ⚠️ Deuda: L <?= number_format($total_deuda_activa, 2) ?>
@@ -1585,30 +1591,12 @@ $tipos_btn_p = [
                 <?php endif; ?>
             </div>
         </div>
-        <!-- Firma digital (sale en sus bouchers y recibos) y edición de datos -->
-        <div class="cv-hero-firma" id="firma">
-            <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
-                <span class="cv-hero-firma-lbl"><i class="bi bi-pen me-1"></i>Firma</span>
-                <span class="no-print d-flex gap-1">
-                    <?php if (puedeNomina()): ?>
-                        <label class="btn btn-sm btn-outline-primary py-0 mb-0" title="PNG o JPG, firma oscura sobre fondo blanco. Cualquier tamaño: se recorta sola."><i class="bi bi-upload"></i> <?= $col['url_firma'] ? 'Cambiar' : 'Subir' ?>
-                            <input type="file" id="firmaArchivo" accept="image/png,image/jpeg" hidden></label>
-                        <?php if ($col['url_firma']): ?><button type="button" class="btn btn-sm btn-outline-danger py-0" id="firmaQuitar" title="Quitar firma"><i class="bi bi-trash"></i></button><?php endif; ?>
-                    <?php endif; ?>
-                    <?php if ($col['activo']): ?>
-                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 btn-editar-colab" title="Editar datos del colaborador"
-                            data-col='<?= json_encode($col, JSON_HEX_APOS | JSON_HEX_QUOT) ?>'><i class="bi bi-pencil-fill"></i> Editar</button>
-                    <?php endif; ?>
-                </span>
+        <?php if ($col['activo']): ?>
+            <div class="cv-hero-acciones no-print">
+                <button type="button" class="btn btn-sm btn-outline-secondary btn-editar-colab" title="Editar datos y firma del colaborador"
+                    data-col='<?= json_encode($col, JSON_HEX_APOS | JSON_HEX_QUOT) ?>'><i class="bi bi-pencil-fill me-1"></i> Editar</button>
             </div>
-            <div class="cv-hero-firma-caja">
-                <?php if ($col['url_firma']): ?>
-                    <img src="includes/colaborador_firma.php?id=<?= (int)$col['id'] ?>&v=<?= substr(md5((string)$col['url_firma']), 0, 8) ?>" alt="Firma de <?= htmlspecialchars($nombreCompleto) ?>">
-                <?php else: ?>
-                    <span class="small text-muted">Sin firma: súbela para que salga en sus bouchers.</span>
-                <?php endif; ?>
-            </div>
-        </div>
+        <?php endif; ?>
         <div class="cv-tenure">
             <div class="cv-tenure-num"><?= $anios > 0 ? $anios : $mesesAnt ?></div>
             <div class="cv-tenure-lbl"><?= $anios > 0 ? ($anios === 1 ? 'año' : 'años') : 'mes(es)' ?></div>
@@ -2793,6 +2781,27 @@ $tipos_btn_p = [
                                 rows="2" maxlength="500"><?= htmlspecialchars($col['notas'] ?? '') ?></textarea></div>
                     </div>
                 </form>
+                <!-- Firma digital: se sube o quita al instante (no depende de «Guardar») -->
+                <div class="mt-3 pt-3 border-top" id="firma">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                        <label class="mf-label mb-0"><i class="bi bi-pen me-1"></i>Firma digital <span class="fw-normal text-muted">· sale en sus bouchers y recibos</span></label>
+                        <?php if (puedeNomina()): ?>
+                            <span class="d-flex gap-1">
+                                <label class="btn btn-sm btn-outline-primary mb-0" title="PNG o JPG, firma oscura sobre fondo blanco. Cualquier tamaño: se recorta sola."><i class="bi bi-upload me-1"></i><?= $col['url_firma'] ? 'Cambiar' : 'Subir' ?>
+                                    <input type="file" id="firmaArchivo" accept="image/png,image/jpeg" hidden></label>
+                                <?php if ($col['url_firma']): ?><button type="button" class="btn btn-sm btn-outline-danger" id="firmaQuitar" title="Quitar firma"><i class="bi bi-trash"></i></button><?php endif; ?>
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="d-flex align-items-center justify-content-center" style="height:90px;border:1px dashed #cbd5e1;border-radius:8px;background:#fff">
+                        <?php if ($col['url_firma']): ?>
+                            <img src="includes/colaborador_firma.php?id=<?= (int)$col['id'] ?>&v=<?= substr(md5((string)$col['url_firma']), 0, 8) ?>" alt="Firma de <?= htmlspecialchars($nombreCompleto) ?>" style="max-height:80px;max-width:95%">
+                        <?php else: ?>
+                            <span class="small text-muted">Sin firma. Sube una foto o imagen de la firma en tinta oscura sobre fondo blanco.</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="form-text">La firma se guarda al subirla; no hace falta pulsar «Guardar».</div>
+                </div>
             </div>
             <div class="modal-footer border-top">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -3856,7 +3865,7 @@ document.addEventListener('click', e => {
             if (!f) return;
             const fd = new FormData(); fd.append('accion', 'subir'); fd.append('firma', f);
             Swal.fire({ title: 'Guardando firma…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-            try { const d = await enviar(fd); await Swal.fire({ icon: 'success', title: 'Listo', text: d.message }); location.hash = 'firma'; location.reload(); }
+            try { const d = await enviar(fd); await Swal.fire({ icon: 'success', title: 'Listo', text: d.message }); location.reload(); }
             catch (err) { Swal.fire('No se pudo', err.message, 'error'); e.target.value = ''; }
         });
         document.getElementById('firmaQuitar')?.addEventListener('click', async () => {
