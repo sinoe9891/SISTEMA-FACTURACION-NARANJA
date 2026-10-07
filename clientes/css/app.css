@@ -1285,3 +1285,10 @@ body.app-body .page-btn.disabled {
 .app-envio-programado { color: #1d4ed8; }
 .app-envio-enviado { color: #15803d; }
 .app-envio-error { color: #b91c1c; }
+
+/* Indicador que funciona como filtro (Cuentas por pagar): clic = filtra; el activo queda marcado */
+button.app-stat { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+button.app-stat:disabled { cursor: default; opacity: .6; transform: none; box-shadow: var(--app-shadow); }
+.app-stat-filtro.activo { border-color: var(--app-accent); box-shadow: 0 0 0 2px var(--app-accent-lt), var(--app-shadow); }
+/* Encabezado de mes dentro de una tabla agrupada */
+.app-table tr.cp-mes td { background: #f8fafc; font-size: .82rem; padding-top: .45rem; padding-bottom: .45rem; }

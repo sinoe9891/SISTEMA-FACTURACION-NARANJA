@@ -718,7 +718,7 @@ suite('Cuentas por cobrar y por pagar', function () {
     db()->exec("INSERT INTO gastos (cliente_id, descripcion, monto, fecha, frecuencia, tipo, metodo_pago, estado, proveedor, usuario_id) VALUES (2, 'QA CxP vencido', 300, DATE_SUB(CURDATE(), INTERVAL 5 DAY), 'unico', 'variable', 'transferencia', 'pendiente', 'Proveedor QA', 1)");
     $gid = (int)db()->lastInsertId();
     $r = $c->get('cuentas_pagar');
-    check('el gasto vencido aparece en cuentas por pagar', str_contains($r['body'], 'QA CxP vencido') && str_contains($r['body'], 'Vencido hace 5 d'));
+    check('el gasto vencido aparece en cuentas por pagar', str_contains($r['body'], 'QA CxP vencido') && str_contains($r['body'], 'Venció hace 5 días'));
     $r = $c->post('includes/gasto_marcar_pagado.php', ['gasto_id' => $gid, 'fecha' => date('Y-m-d'), 'metodo_pago' => 'transferencia', 'cuenta_id' => $cta]);
     check('pagar desde una cuenta genera la salida del banco', ($r['json']['success'] ?? false) && (float)db()->query("SELECT monto FROM movimientos_bancarios WHERE gasto_id=$gid AND tipo='pago_gasto' AND anulado=0")->fetchColumn() == 300, $r['body']);
     $r = $c->post('includes/gasto_marcar_pagado.php', ['gasto_id' => $gid, 'fecha' => date('Y-m-d'), 'metodo_pago' => 'transferencia', 'cuenta_id' => $cta]);
