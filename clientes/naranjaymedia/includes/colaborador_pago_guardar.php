@@ -273,7 +273,7 @@ try {
         require_once __DIR__ . '/../../../includes/correo_pagos.php';
         try {
             $para = correoNotificarPago($pdo, $cid, (int)$gasto_id, (int)USUARIO_ID);
-            $correo = ['enviado' => true, 'mensaje' => "Aviso enviado a $para"];
+            $correo = ['enviado' => true, 'mensaje' => "Aviso enviado a: $para"];
         } catch (Throwable $e) {
             $correo = ['enviado' => false, 'mensaje' => 'No se envió el aviso por correo: ' . $e->getMessage()];
         }

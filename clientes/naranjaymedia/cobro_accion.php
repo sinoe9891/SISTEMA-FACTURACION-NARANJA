@@ -113,7 +113,7 @@ try {
                 } catch (Throwable $e) {
                     throw new Exception("Se guardó, pero no se pudo enviar: " . $e->getMessage());
                 }
-                echo json_encode(['success' => true, 'id' => $nuevo, 'message' => $modo === 'prueba' ? 'Prueba enviada a ' . trim((string)$datos['para']) . '.' : 'Cobro enviado.'], JSON_UNESCAPED_UNICODE);
+                echo json_encode(['success' => true, 'id' => $nuevo, 'message' => $modo === 'prueba' ? 'Prueba enviada a: ' . trim((string)$datos['para']) : 'Cobro enviado.'], JSON_UNESCAPED_UNICODE);
             }
             break;
 

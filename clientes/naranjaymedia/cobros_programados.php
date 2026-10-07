@@ -94,7 +94,7 @@ require_once '../../includes/templates/header.php';
                 <div class="col-12"><label class="form-label d-flex justify-content-between">4. Asunto y mensaje *
                     <a href="#" id="btnGenerar" class="small fw-normal"><i class="bi bi-magic"></i> Generar con la plantilla</a></label>
                     <input class="form-control mb-2" name="asunto" id="cAsunto" required>
-                    <div id="cMensaje" contenteditable="true" class="form-control" style="min-height:260px;max-height:420px;overflow:auto;white-space:normal"></div>
+                    <textarea id="cMensaje" class="form-control" rows="12"></textarea>
                     <div class="form-text">Plantillas en <a href="configuracion_mensajes">Mensajes y cuentas de pago</a>. Se agregan el logo, el pie con los correos de respuesta y los PDF.</div></div>
                 <div class="col-md-5"><label class="form-label">5. Fecha y hora de envío</label>
                     <input class="form-control" type="datetime-local" name="programado_para" value="<?= $manana ?>">
@@ -180,7 +180,7 @@ require_once '../../includes/templates/header.php';
                     <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="eCc"></div>
                     <div class="col-md-8"><label class="form-label">Asunto *</label><input class="form-control" name="asunto" id="eAsunto" maxlength="255" required></div>
                     <div class="col-md-4"><label class="form-label">Envío (hora de Honduras)</label><input class="form-control" type="datetime-local" name="programado_para" id="eFecha" required></div>
-                    <div class="col-12"><label class="form-label">Mensaje *</label><div id="eMensaje" contenteditable="true" class="form-control" style="min-height:240px;max-height:380px;overflow:auto"></div>
+                    <div class="col-12"><label class="form-label">Mensaje *</label><textarea id="eMensaje" class="form-control" rows="10"></textarea>
                         <div class="form-text">Los PDF adjuntos no cambian. Para otras facturas, cancela este cobro y crea uno nuevo.</div></div>
                 </div>
             </div>
@@ -189,6 +189,25 @@ require_once '../../includes/templates/header.php';
     </div></div></div>
 <?php endif; ?>
 
+<!-- Editor de texto del mensaje (TinyMCE, licencia GPL, servido desde jsDelivr) -->
+<script src="https://cdn.jsdelivr.net/npm/tinymce@7.6.0/tinymce.min.js" referrerpolicy="origin"></script>
+<script>
+    // Solo los formatos que conserva el correo (includes/cobros.php → cobroLimpiarHtml): negrita, cursiva, subrayado y listas.
+    tinymce.init({
+        selector: '#cMensaje, #eMensaje', license_key: 'gpl', menubar: false, branding: false, promotion: false, statusbar: false,
+        language: 'es', language_url: 'https://cdn.jsdelivr.net/npm/tinymce-i18n@24.10.21/langs7/es.js',
+        plugins: 'lists', toolbar: 'undo redo | bold italic underline | bullist numlist | removeformat',
+        formats: { underline: { inline: 'u' } }, valid_elements: 'p,br,strong/b,em/i,u,ul,ol,li,div,span',
+        height: 360, content_style: 'body { font-family: Segoe UI, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; }',
+    });
+    // Leer y escribir el mensaje (con o sin el editor ya cargado)
+    window.setMensaje = (id, html) => {
+        document.getElementById(id).value = html;                 // por si el editor aún no existe (lo toma al iniciar)
+        const ed = tinymce.get(id);
+        if (ed && ed.initialized) ed.setContent(html); else if (ed) ed.once('init', () => ed.setContent(html));
+    };
+    window.getMensaje = id => { const ed = tinymce.get(id); return ed ? ed.getContent() : document.getElementById(id).value; };
+</script>
 <script>
 (function () {
     const L = n => 'L ' + Number(n).toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -262,7 +281,7 @@ require_once '../../includes/templates/header.php';
         if (!r) return;
         document.getElementById('cAsunto').value = r.asunto || '';
         // mensaje_html ya trae <br> (nl2br): los saltos de línea que quedan son solo espacio en HTML; no se convierten otra vez
-        document.getElementById('cMensaje').innerHTML = (r.mensaje_html || '').replace(/\r?\n/g, '');
+        setMensaje('cMensaje', (r.mensaje_html || '').replace(/\r?\n/g, ''));
     }
     document.getElementById('btnGenerar')?.addEventListener('click', e => { e.preventDefault(); generar(); });
     document.getElementById('cTipo')?.addEventListener('change', () => seleccionadas().length && generar());
@@ -271,7 +290,7 @@ require_once '../../includes/templates/header.php';
         const modo = b.dataset.modo;
         const fd = new FormData(form);
         fd.append('modo', modo);
-        fd.append('mensaje_html', document.getElementById('cMensaje').innerHTML);
+        fd.append('mensaje_html', getMensaje('cMensaje'));
         if (modo === 'prueba') fd.append('para_prueba', document.getElementById('cParaPrueba').value);
         if (!fd.get('receptor_id') || !seleccionadas().length) return Swal.fire('Faltan datos', 'Elige el cliente y al menos una factura.', 'info');
         if (modo === 'ahora') {
@@ -334,14 +353,14 @@ require_once '../../includes/templates/header.php';
             document.getElementById('eCc').value = c.cc || '';
             document.getElementById('eAsunto').value = c.asunto;
             document.getElementById('eFecha').value = c.programado_para.slice(0, 16).replace(' ', 'T');
-            document.getElementById('eMensaje').innerHTML = c.mensaje_html.replace(/\r?\n/g, '');
+            setMensaje('eMensaje', c.mensaje_html.replace(/\r?\n/g, ''));
             bootstrap.Modal.getOrCreateInstance(document.getElementById('mEditar')).show();
         } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
     }));
     document.getElementById('fEditar')?.addEventListener('submit', e => {
         e.preventDefault();
         const fd = new FormData(e.target);
-        fd.append('mensaje_html', document.getElementById('eMensaje').innerHTML);
+        fd.append('mensaje_html', getMensaje('eMensaje'));
         accion(fd);
     });
 

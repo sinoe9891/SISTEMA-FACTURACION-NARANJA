@@ -32,13 +32,13 @@ try {
             $perfil = correoPerfil($_POST['perfil'] ?? 'nomina');
             correoEnviar($pdo, $cid, $para, 'Prueba de correo (' . CORREO_PERFILES[$perfil] . ') · Sistema de facturación', $html,
                 "Correo de prueba: la configuración SMTP funciona correctamente.\nEnviado el " . date('d/m/Y H:i'), [], 'prueba', null, $uid, $perfil);
-            echo json_encode(['success' => true, 'message' => "Correo de prueba enviado a $para."], JSON_UNESCAPED_UNICODE);
+            echo json_encode(['success' => true, 'message' => "Correo de prueba enviado a: $para"], JSON_UNESCAPED_UNICODE);
             break;
 
         case 'enviar_pago':
             if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador', 'nomina'], true)) throw new Exception("No tienes permiso para enviar avisos.");
             $para = correoNotificarPago($pdo, $cid, (int)($_POST['gasto_id'] ?? 0), $uid);
-            echo json_encode(['success' => true, 'message' => "Aviso de pago enviado a $para."], JSON_UNESCAPED_UNICODE);
+            echo json_encode(['success' => true, 'message' => "Aviso de pago enviado a: $para"], JSON_UNESCAPED_UNICODE);
             break;
 
         default:
