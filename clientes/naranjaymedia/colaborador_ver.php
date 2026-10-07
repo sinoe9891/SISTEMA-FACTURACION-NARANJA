@@ -584,6 +584,11 @@ $tipos_btn_p = [
         color: #065f46;
     }
 
+    /* ── Fila de 3 tarjetas (datos, desglose, resumen) ─────────────────────── */
+    .cv-top3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; align-items: stretch; margin-bottom: 1.25rem; }
+    .cv-top3 > .cv-card { margin-bottom: 0; height: 100%; }
+    @media(max-width:991px) { .cv-top3 { grid-template-columns: 1fr; } }
+
     /* ── Layout columns ────────────────────────────────────────────────────── */
     .cv-layout {
         display: grid;
@@ -1697,12 +1702,8 @@ $tipos_btn_p = [
         </div>
     <?php endif; ?>
 
-    <!-- ── Main layout ───────────────────────────────────────────────────── -->
-    <div class="cv-layout">
-
-        <!-- ── LEFT column ─────────────────────────────────────────────────── -->
-        <div>
-
+    <!-- ── Fila de 3 tarjetas del mismo ancho: datos, desglose salarial y resumen de pagos ── -->
+    <div class="cv-top3">
             <!-- Datos personales -->
             <div class="cv-card">
                 <div class="cv-card-hdr">
@@ -1784,140 +1785,6 @@ $tipos_btn_p = [
                 </div>
             </div>
 
-            <!-- Desglose salarial — MOVED BELOW -->
-
-            <!-- Filter -->
-            <div class="cv-card no-print">
-                <div class="cv-card-hdr">
-                    <span class="cv-card-hdr-title"><i class="bi bi-funnel text-muted"></i>Filtrar Período</span>
-                </div>
-                <div class="cv-card-body" style="padding:.85rem 1.1rem">
-                    <form method="GET" class="d-flex flex-column gap-2">
-                        <input type="hidden" name="id" value="<?= $id ?>">
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <label class="mf-label">Mes</label>
-                                <select name="mes" class="mf-select">
-                                    <?php for ($m = 1; $m <= 12; $m++): ?>
-                                        <option value="<?= $m ?>" <?= $m == $filtro_mes ? 'selected' : '' ?>>
-                                            <?= $meses_nombres[$m - 1] ?></option>
-                                    <?php endfor; ?>
-                                </select>
-                            </div>
-                            <div class="col-6">
-                                <label class="mf-label">Año</label>
-                                <select name="anio" class="mf-select">
-                                    <?php for ($a = date('Y'); $a >= date('Y') - 4; $a--): ?>
-                                        <option value="<?= $a ?>" <?= $a == $filtro_anio ? 'selected' : '' ?>><?= $a ?>
-                                        </option>
-                                    <?php endfor; ?>
-                                </select>
-                            </div>
-                            <?php if ($tipo_pago === 'quincenal'): ?>
-                                <div class="col-12">
-                                    <label class="mf-label">Quincena</label>
-                                    <select name="tipo" class="mf-select">
-                                        <option value="" <?= $filtro_tipo === '' ? 'selected' : '' ?>>Ambas</option>
-                                        <option value="1" <?= $filtro_tipo === '1' ? 'selected' : '' ?>>1ª Quincena</option>
-                                        <option value="2" <?= $filtro_tipo === '2' ? 'selected' : '' ?>>2ª Quincena</option>
-                                    </select>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                        <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary btn-sm flex-fill">
-                                <i class="bi bi-filter me-1"></i>Filtrar
-                            </button>
-                            <a href="?id=<?= $id ?>&todo=1" class="btn btn-outline-secondary btn-sm">
-                                <i class="bi bi-list me-1"></i>Todo
-                            </a>
-                            <a href="?id=<?= $id ?>" class="btn btn-outline-secondary btn-sm">Hoy</a>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Resumen período -->
-            <div class="cv-card">
-                <div class="cv-card-hdr">
-                    <span class="cv-card-hdr-title"><i class="bi bi-bar-chart text-secondary"></i>Resumen del
-                        Período</span>
-                    <small class="text-muted" style="font-size:.75rem">
-                        <?= $filtro_todo ? 'Todo' : ($filtro_mes ? $meses_nombres[$filtro_mes - 1] : '') . ($filtro_anio ? ' ' . $filtro_anio : '') ?>
-                    </small>
-                </div>
-                <div class="cv-card-body">
-                    <div class="period-grid">
-                        <div class="period-box pb-paid">
-                            <div class="period-box-val">L <?= number_format($total_pagado, 0) ?></div>
-                            <div class="period-box-lbl">Pagado (<?= $count_pagado ?>)</div>
-                        </div>
-                        <div class="period-box pb-pending">
-                            <div class="period-box-val">L <?= number_format($total_pend, 0) ?></div>
-                            <div class="period-box-lbl">Pendiente (<?= $count_pend ?>)</div>
-                        </div>
-                    </div>
-                    <div class="text-center p-2 rounded-2" style="background:#f0f9ff;border:1px solid #bae6fd">
-                        <div class="fw-bold" style="color:#1d4ed8;font-size:1.1rem">L
-                            <?= number_format($total_pagado + $total_pend, 2) ?></div>
-                        <div class="text-muted" style="font-size:.72rem">TOTAL <?= count($pagos) ?> registros</div>
-                    </div>
-                </div>
-            </div>
-            <div class="cv-card-body" style="padding:.75rem">
-                <?php $lbl = $div === 2 ? 'quincena' : 'mes'; ?>
-                <div class="salary-breakdown">
-                    <div class="sb-row">
-                        <span class="info-lbl">Salario bruto/mes</span>
-                        <span class="info-val">L <?= number_format($salario, 2) ?></span>
-                    </div>
-                    <div class="sb-row">
-                        <span class="info-lbl" style="color:#dc2626">− IHSS <?= $aplica_ihss ? '(3.5%)' : '' ?></span>
-                        <span class="info-val" style="color:#dc2626">
-                            <?= $aplica_ihss ? '-L ' . number_format($ihss_emp, 2) : '<span style="color:#94a3b8">No aplica</span>' ?>
-                        </span>
-                    </div>
-                    <div class="sb-row">
-                        <span class="info-lbl" style="color:#dc2626">− RAP <?= $aplica_rap ? '(1.5%)' : '' ?></span>
-                        <span class="info-val" style="color:#dc2626">
-                            <?= $aplica_rap ? '-L ' . number_format($rap_emp, 2) : '<span style="color:#94a3b8">No aplica</span>' ?>
-                        </span>
-                    </div>
-                    <div class="sb-row total">
-                        <span style="font-weight:800;color:#059669">= Neto/<?= $lbl ?></span>
-                        <span style="font-size:1rem;font-weight:800;color:#059669">L
-                            <?= number_format($neto_mes / $div, 2) ?></span>
-                    </div>
-                    <div class="sb-row patronal">
-                        <span class="info-lbl" style="color:#d97706">+ IHSS patronal (7%)</span>
-                        <span class="info-val" style="color:#d97706">
-                            <?= $aplica_ihss ? 'L ' . number_format($ihss_pat / $div, 2) : '<span style="color:#94a3b8">—</span>' ?>
-                        </span>
-                    </div>
-                    <div class="sb-row patronal">
-                        <span class="info-lbl" style="color:#d97706">+ RAP patronal (1.5%)</span>
-                        <span class="info-val" style="color:#d97706">
-                            <?= $aplica_rap ? 'L ' . number_format($rap_pat / $div, 2) : '<span style="color:#94a3b8">—</span>' ?>
-                        </span>
-                    </div>
-                    <div class="sb-row" style="background:#ede9fe">
-                        <span style="font-weight:800;color:#6d28d9;font-size:.78rem">= Costo empresa/<?= $lbl ?></span>
-                        <span style="font-weight:800;color:#6d28d9">L <?= number_format($costo_emp / $div, 2) ?></span>
-                    </div>
-                </div>
-                <div class="mt-2 p-2 rounded-2"
-                    style="background:#eff6ff;border:1px solid #bfdbfe;font-size:.78rem;color:#1e40af">
-                    <i class="bi bi-info-circle me-1"></i>
-                    <?php if ($tipo_pago === 'quincenal'): ?>
-                        Días de pago: <strong><?= (int)$col['dia_pago'] ?></strong> y
-                        <strong><?= (int)$col['dia_pago_2'] ?></strong> de cada mes
-                    <?php else: ?>
-                        Día de pago: <strong><?= (int)$col['dia_pago'] ?></strong> de cada mes
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-
         <!-- Desglose salarial -->
         <div class="cv-card">
             <div class="cv-card-hdr">
@@ -1965,9 +1832,35 @@ $tipos_btn_p = [
             </div>
         </div>
 
-    </div><!-- /left -->
+            <!-- Resumen período -->
+            <div class="cv-card">
+                <div class="cv-card-hdr">
+                    <span class="cv-card-hdr-title"><i class="bi bi-bar-chart text-secondary"></i>Resumen de pagos</span>
+                    <small class="text-muted" style="font-size:.75rem">
+                        <?= $filtro_todo ? 'Todo' : ($filtro_mes ? $meses_nombres[$filtro_mes - 1] : '') . ($filtro_anio ? ' ' . $filtro_anio : '') ?>
+                    </small>
+                </div>
+                <div class="cv-card-body">
+                    <div class="period-grid">
+                        <div class="period-box pb-paid">
+                            <div class="period-box-val">L <?= number_format($total_pagado, 0) ?></div>
+                            <div class="period-box-lbl">Pagado (<?= $count_pagado ?>)</div>
+                        </div>
+                        <div class="period-box pb-pending">
+                            <div class="period-box-val">L <?= number_format($total_pend, 0) ?></div>
+                            <div class="period-box-lbl">Pendiente (<?= $count_pend ?>)</div>
+                        </div>
+                    </div>
+                    <div class="text-center p-2 rounded-2" style="background:#f0f9ff;border:1px solid #bae6fd">
+                        <div class="fw-bold" style="color:#1d4ed8;font-size:1.1rem">L
+                            <?= number_format($total_pagado + $total_pend, 2) ?></div>
+                        <div class="text-muted" style="font-size:.72rem">TOTAL <?= count($pagos) ?> registros</div>
+                    </div>
+                </div>
+            </div>
+    </div>
 
-    <!-- ── RIGHT column ────────────────────────────────────────────────── -->
+    <!-- ── Historial (pestañas) a todo lo ancho ─────────────────────────── -->
     <div>
 
         <!-- Tabs -->
@@ -2609,8 +2502,7 @@ $tipos_btn_p = [
             </div>
         </div>
 
-    </div><!-- /right -->
-</div><!-- /layout -->
+    </div><!-- /historial -->
 </div>
 
 <!-- ══ MODAL: Registrar Pago de Nómina ════════════════════════════════ -->
