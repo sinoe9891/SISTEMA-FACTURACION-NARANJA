@@ -357,10 +357,19 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
 }
 
 /** Plantilla del correo de cobro: el mensaje redactado dentro del diseño de la empresa. */
-function cobroPlantilla(string $mensaje, array $empresa, array $cfg, array $facturas, bool $prueba): array
+function cobroPlantilla(string $mensaje, array $empresa, array $cfg, array $facturas, bool $prueba, array $documentos = [], string $tipo = ''): array
 {
     $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
-    $empresaNombre = $empresa['alias'] ?: ($empresa['nombre'] ?? 'La empresa');
+    $documentos = array_values(array_unique(array_filter(array_map('strval', $documentos))));
+    if ($documentos && in_array($tipo, [...COBRO_TIPOS_FACTURA, 'recordatorio_pago'], true)) {
+        $nombres = array_map(fn($nombre) => '<strong>' . $e($nombre) . '</strong>', $documentos);
+        $ultimo = array_pop($nombres);
+        $lista = $nombres ? implode(', ', $nombres) . ' y ' . $ultimo : $ultimo;
+        $parrafo = '<p>Para facilitar su gestión administrativa y tributaria, adjuntamos la documentación de respaldo: ' . $lista
+            . '. Quedamos a su disposición para cualquier consulta sobre esta documentación.</p>';
+        if (!str_contains($mensaje, $parrafo)) $mensaje .= $parrafo;
+    }
+    $empresaNombre = ($empresa['alias'] ?? '') ?: ($empresa['nombre'] ?? 'La empresa');
     $logoUrl = $cfg['logo_url'] ?? '';
     $enlace = $cfg['enlace_url'] ?? '';
     $logo = $logoUrl
@@ -383,7 +392,7 @@ function cobroPlantilla(string $mensaje, array $empresa, array $cfg, array $fact
         . 'La información es confidencial y está dirigida únicamente a su destinatario.'
         . ($enlace ? '<br><a href="' . $e($enlace) . '" target="_blank" style="color:#64748b">' . $e(preg_replace('#^https?://|/$#', '', $enlace)) . '</a>' : '')
         . '</td></tr></table></td></tr></table></body></html>';
-    return [$html, ($prueba ? "[PRUEBA]\n\n" : '') . cobroTextoPlano($mensaje) . "\n\n" . strip_tags(correoPieAutomatico($cfg, fn($t) => $t))];
+    return [$html, ($prueba ? "[PRUEBA]\n\n" : '') . cobroTextoPlano($mensaje) . "\n\n" . strip_tags(correoPieAutomatico($cfg, fn($t) => $t)), $mensaje];
 }
 
 /** Envía un cobro (programado o de prueba). Lanza Exception si falla. */
@@ -400,20 +409,23 @@ function cobroEnviar(PDO $pdo, int $cid, int $cobroId, ?int $uid = null): void
     $u->execute([$cobroId]);
     if (!$u->rowCount()) throw new Exception("El cobro se está enviando en este momento.");
 
+    // La edición puede haber terminado mientras esperábamos el bloqueo del UPDATE.
+    $c = cobroObtener($pdo, $cid, $cobroId);
     try {
-        $adjuntos = $nums = [];
+        $adjuntos = $nums = $documentos = [];
         foreach (cobroAdjuntos($pdo, $cid, $cobroId) as $a) {
             if (!$a['existe']) throw new Exception(!empty($a['documento_id']) ? "Falta el documento «{$a['etiqueta']}»." : "Falta el PDF de la {$a['etiqueta']}.");
             $adjuntos[] = ['ruta' => cobroDir($cid, $cobroId) . $a['archivo'], 'nombre' => !empty($a['documento_id']) ? $a['etiqueta'] . '.' . pathinfo($a['archivo'], PATHINFO_EXTENSION) : $a['archivo']];
             $nums[] = $a['etiqueta'];
+            if (!empty($a['documento_id'])) $documentos[] = $a['etiqueta'];
         }
         $emp = $pdo->prepare("SELECT nombre, alias FROM clientes_saas WHERE id = ?");
         $emp->execute([$cid]);
         $cfg = correoConfig($pdo, $cid, 'facturacion') ?? [];
-        [$html, $texto] = cobroPlantilla($c['mensaje_html'], $emp->fetch(PDO::FETCH_ASSOC) ?: [], $cfg, $nums, (bool)$c['prueba']);
+        [$html, $texto, $mensajeFinal] = cobroPlantilla($c['mensaje_html'], $emp->fetch(PDO::FETCH_ASSOC) ?: [], $cfg, $nums, (bool)$c['prueba'], $documentos, $c['tipo']);
         $asunto = ((int)$c['prueba'] ? '[PRUEBA] ' : '') . $c['asunto'];
         correoEnviar($pdo, $cid, $c['para'], $asunto, $html, $texto, $adjuntos, (int)$c['prueba'] ? 'cobro_prueba' : 'cobro', $cobroId, $uid, 'facturacion', (string)$c['cc']);
-        $pdo->prepare("UPDATE cobros_programados SET estado = 'enviado', enviado_en = NOW(), error = NULL WHERE id = ?")->execute([$cobroId]);
+        $pdo->prepare("UPDATE cobros_programados SET estado = 'enviado', enviado_en = NOW(), error = NULL, mensaje_html = ? WHERE id = ?")->execute([$mensajeFinal, $cobroId]);
         // Las facturas adjuntas quedan como «Enviada al cliente» (las pruebas no cuentan)
         if (!(int)$c['prueba'])
             $pdo->prepare("UPDATE facturas f JOIN cobros_programados_facturas x ON x.factura_id = f.id SET f.enviada_receptor = 1 WHERE x.cobro_id = ? AND f.cliente_id = ?")->execute([$cobroId, $cid]);
@@ -442,10 +454,16 @@ function cobroDetalle(PDO $pdo, int $cid, int $id): array
     $adjuntos = cobroAdjuntos($pdo, $cid, $id);
     $emp = $pdo->prepare("SELECT nombre, alias FROM clientes_saas WHERE id = ?");
     $emp->execute([$cid]);
-    [$html] = cobroPlantilla($c['mensaje_html'], $emp->fetch(PDO::FETCH_ASSOC) ?: [], correoConfig($pdo, $cid, 'facturacion') ?? [], array_column($adjuntos, 'etiqueta'), (bool)$c['prueba']);
+    [$html] = cobroPlantilla($c['mensaje_html'], $emp->fetch(PDO::FETCH_ASSOC) ?: [], correoConfig($pdo, $cid, 'facturacion') ?? [], array_column($adjuntos, 'etiqueta'), (bool)$c['prueba'], $c['estado'] === 'enviado' ? [] : array_column(array_filter($adjuntos, fn($a) => !empty($a['documento_id'])), 'etiqueta'), $c['tipo']);
     $st = $pdo->prepare("SELECT destinatario, asunto, estado, error, creado_en FROM correos_enviados WHERE cliente_id = ? AND tipo IN ('cobro','cobro_prueba') AND referencia_id = ? ORDER BY id");
     $st->execute([$cid, $id]);
-    return ['cobro' => $c, 'adjuntos' => $adjuntos, 'html' => $html, 'envios' => $st->fetchAll(PDO::FETCH_ASSOC)];
+    $envios = $st->fetchAll(PDO::FETCH_ASSOC);
+    require_once __DIR__ . '/documentos.php';
+    $documentos = array_map(function ($d) {
+        [$bg, $fg, $txt] = docSemaforo($d);
+        return ['id' => (int)$d['id'], 'nombre' => $d['nombre'], 'estado' => $d['estado'], 'txt' => $txt, 'bg' => $bg, 'fg' => $fg];
+    }, docsLista($pdo, $cid));
+    return ['cobro' => $c, 'adjuntos' => $adjuntos, 'html' => $html, 'envios' => $envios, 'documentos' => $documentos];
 }
 
 /** Edita un cobro que aún no se envía (destinatarios, asunto, mensaje y fecha). */
@@ -463,10 +481,49 @@ function cobroEditar(PDO $pdo, int $cid, int $id, array $d): void
     if (cobroTextoPlano($mensaje) === '') throw new Exception("Escribe el mensaje.");
     $dt = DateTime::createFromFormat('Y-m-d\TH:i', (string)($d['programado_para'] ?? ''));
     if (!$dt || $dt < new DateTime('-5 minutes')) throw new Exception("Elige una fecha y hora futura.");
-    $u = $pdo->prepare("UPDATE cobros_programados SET para = ?, cc = ?, asunto = ?, mensaje_html = ?, programado_para = ?, estado = 'programado', intentos = 0, error = NULL
-                        WHERE id = ? AND cliente_id = ? AND estado IN ('programado','error')");
-    $u->execute([$para, $cc ?: null, mb_substr($asunto, 0, 255), $mensaje, $dt->format('Y-m-d H:i:s'), $id, $cid]);
-    if (!$u->rowCount()) throw new Exception("El cobro cambió mientras lo editabas; recarga la página.");
+    $nuevos = $retirados = [];
+    $pdo->beginTransaction();
+    try {
+        $lock = $pdo->prepare("SELECT estado FROM cobros_programados WHERE id = ? AND cliente_id = ? FOR UPDATE");
+        $lock->execute([$id, $cid]);
+        if (!in_array($lock->fetchColumn(), ['programado', 'error'], true)) throw new Exception("El cobro cambió mientras lo editabas; recarga la lista.");
+        if (!empty($d['actualizar_documentos'])) {
+            require_once __DIR__ . '/documentos.php';
+            $docIds = array_values(array_unique(array_filter(array_map('intval', (array)($d['documento_ids'] ?? [])), fn($v) => $v > 0)));
+            if (count($docIds) > 30) throw new Exception("Máximo 30 documentos de empresa por cobro.");
+            if (!docsDisponible($pdo) && $docIds) throw new Exception("El módulo de documentos de empresa no está instalado.");
+            if (docsDisponible($pdo)) {
+                $st = $pdo->prepare("SELECT documento_id, archivo FROM cobros_programados_documentos WHERE cobro_id = ?");
+                $st->execute([$id]);
+                $actuales = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+                $dir = cobroDir($cid, $id);
+                $insertar = $pdo->prepare("INSERT INTO cobros_programados_documentos (cobro_id, documento_id, nombre, archivo) VALUES (?, ?, ?, ?)");
+                foreach ($docIds as $did) {
+                    if (isset($actuales[$did])) continue; // Conservar la copia ya adjunta, aunque el original haya cambiado.
+                    $doc = docObtener($pdo, $cid, $did);
+                    if (!is_file(docDir($cid) . $doc['archivo'])) throw new Exception("Falta el archivo de «{$doc['nombre']}».");
+                    if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) throw new Exception("No se pudo preparar la carpeta de adjuntos.");
+                    $archivo = 'doc_' . $did . '_' . bin2hex(random_bytes(8)) . '.' . pathinfo($doc['archivo'], PATHINFO_EXTENSION);
+                    $nuevos[] = $dir . $archivo;
+                    if (!copy(docDir($cid) . $doc['archivo'], $dir . $archivo)) throw new Exception("No se pudo adjuntar «{$doc['nombre']}».");
+                    $insertar->execute([$id, $did, $doc['nombre'], $archivo]);
+                }
+                foreach ($actuales as $did => $archivo) {
+                    if (in_array((int)$did, $docIds, true)) continue;
+                    $pdo->prepare("DELETE FROM cobros_programados_documentos WHERE cobro_id = ? AND documento_id = ?")->execute([$id, $did]);
+                    $retirados[] = $dir . $archivo;
+                }
+            }
+        }
+        $u = $pdo->prepare("UPDATE cobros_programados SET para = ?, cc = ?, asunto = ?, mensaje_html = ?, programado_para = ?, estado = 'programado', intentos = 0, error = NULL WHERE id = ? AND cliente_id = ?");
+        $u->execute([$para, $cc ?: null, mb_substr($asunto, 0, 255), $mensaje, $dt->format('Y-m-d H:i:s'), $id, $cid]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        foreach ($nuevos as $ruta) if (is_file($ruta)) @unlink($ruta);
+        throw $e;
+    }
+    foreach ($retirados as $ruta) if (is_file($ruta)) @unlink($ruta);
 }
 
 /** Copia un cobro (mismo mensaje y mismos PDF) para enviarlo otra vez. Devuelve el id del nuevo cobro. */
@@ -522,23 +579,49 @@ function cobroDuplicar(PDO $pdo, int $cid, int $uid, int $id, string $para, stri
     return $nuevo;
 }
 
-/** Borra un cobro de prueba, cancelado o con error (los cobros reales enviados se conservan como registro). */
+/** Los correos enviados se conservan; las pruebas y los pendientes se pueden eliminar. */
+function cobroPuedeEliminar(array $c): bool
+{
+    return $c['estado'] !== 'enviando' && ((int)$c['prueba'] || in_array($c['estado'], ['programado', 'cancelado', 'error'], true));
+}
+
 function cobroEliminar(PDO $pdo, int $cid, int $id): void
 {
-    $c = cobroObtener($pdo, $cid, $id);
-    if (!((int)$c['prueba'] && $c['estado'] !== 'enviando') && !in_array($c['estado'], ['cancelado', 'error'], true))
-        throw new Exception("Solo se eliminan cobros de prueba, cancelados o con error. Los cobros enviados quedan como registro; si uno programado ya no va, cancélalo primero.");
-    $pdo->prepare("DELETE FROM cobros_programados_facturas WHERE cobro_id = ?")->execute([$id]);
-    if (cobrosExtrasDisponible($pdo)) {
-        $pdo->prepare("DELETE FROM cobros_programados_recibos WHERE cobro_id = ?")->execute([$id]);
-        $pdo->prepare("DELETE FROM cobros_programados_plan WHERE cobro_id = ?")->execute([$id]);
+    cobrosEliminarLote($pdo, $cid, [$id]);
+}
+
+/** Validación y borrado atómicos: si algún registro cambió o pertenece a otra empresa, no se borra ninguno. */
+function cobrosEliminarLote(PDO $pdo, int $cid, array $ids): int
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn($id) => $id > 0)));
+    if (!$ids || count($ids) > 300) throw new Exception("Selecciona entre 1 y 300 correos para eliminar.");
+    sort($ids);
+    // Comprobar módulos antes de abrir la transacción.
+    $tablas = ['cobros_programados_facturas'];
+    if (cobrosExtrasDisponible($pdo)) array_push($tablas, 'cobros_programados_recibos', 'cobros_programados_plan');
+    if (cobroAnticiposDisponible($pdo)) $tablas[] = 'cobros_programados_anticipos';
+    if (cobroDocumentosDisponible($pdo)) $tablas[] = 'cobros_programados_documentos';
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $pdo->beginTransaction();
+    try {
+        $st = $pdo->prepare("SELECT id, estado, prueba FROM cobros_programados WHERE cliente_id = ? AND id IN ($ph) ORDER BY id FOR UPDATE");
+        $st->execute([$cid, ...$ids]);
+        $filas = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (count($filas) !== count($ids)) throw new Exception("Algún correo ya no existe o no pertenece a esta empresa. Actualiza la lista.");
+        foreach ($filas as $c) if (!cobroPuedeEliminar($c)) throw new Exception("El correo #{$c['id']} ya se envió o se está enviando. No se eliminó ningún correo.");
+        foreach ($tablas as $tabla) $pdo->prepare("DELETE FROM $tabla WHERE cobro_id IN ($ph)")->execute($ids);
+        $pdo->prepare("DELETE FROM cobros_programados WHERE cliente_id = ? AND id IN ($ph)")->execute([$cid, ...$ids]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
     }
-    if (cobroAnticiposDisponible($pdo)) $pdo->prepare("DELETE FROM cobros_programados_anticipos WHERE cobro_id = ?")->execute([$id]);
-    if (cobroDocumentosDisponible($pdo)) $pdo->prepare("DELETE FROM cobros_programados_documentos WHERE cobro_id = ?")->execute([$id]);
-    $pdo->prepare("DELETE FROM cobros_programados WHERE id = ? AND cliente_id = ?")->execute([$id, $cid]);
-    $dir = cobroDir($cid, $id);
-    foreach (glob($dir . '*') ?: [] as $f) if (is_file($f)) @unlink($f);
-    @rmdir($dir);
+    foreach ($ids as $id) {
+        $dir = cobroDir($cid, $id);
+        foreach (glob($dir . '*') ?: [] as $f) if (is_file($f)) @unlink($f);
+        @rmdir($dir);
+    }
+    return count($ids);
 }
 
 /** Cron: envía los cobros cuya fecha y hora ya llegaron. */

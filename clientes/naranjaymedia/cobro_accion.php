@@ -207,10 +207,22 @@ try {
                 $st->execute([$cid, $rid, ...$rids]);
                 $nums = array_merge($nums, $st->fetchAll(PDO::FETCH_COLUMN));
             }
-            foreach (array_filter(array_map('intval', (array)($_POST['documento_ids'] ?? []))) as $did) $nums[] = docObtener($pdo, $cid, $did)['nombre'];
+            $documentos = [];
+            $tipo = (string)($_POST['tipo'] ?? '');
+            $copias = [];
+            if (!empty($_POST['cobro_id'])) {
+                $existente = cobroObtener($pdo, $cid, (int)$_POST['cobro_id']);
+                $tipo = $existente['tipo'];
+                foreach (cobroAdjuntos($pdo, $cid, (int)$existente['id']) as $a) if (!empty($a['documento_id'])) $copias[(int)$a['documento_id']] = $a['etiqueta'];
+            }
+            foreach (array_unique(array_filter(array_map('intval', (array)($_POST['documento_ids'] ?? [])))) as $did) {
+                $nombre = $copias[$did] ?? docObtener($pdo, $cid, $did)['nombre'];
+                $nums[] = $nombre;
+                $documentos[] = $nombre;
+            }
             $emp = $pdo->prepare("SELECT nombre, alias FROM clientes_saas WHERE id = ?");
             $emp->execute([$cid]);
-            [$html] = cobroPlantilla(cobroLimpiarHtml((string)($_POST['mensaje_html'] ?? '')), $emp->fetch(PDO::FETCH_ASSOC) ?: [], correoConfig($pdo, $cid, 'facturacion') ?? [], $nums, false);
+            [$html] = cobroPlantilla(cobroLimpiarHtml((string)($_POST['mensaje_html'] ?? '')), $emp->fetch(PDO::FETCH_ASSOC) ?: [], correoConfig($pdo, $cid, 'facturacion') ?? [], $nums, false, $documentos, $tipo);
             echo json_encode(['success' => true, 'html' => $html, 'adjuntos' => $nums], JSON_UNESCAPED_UNICODE);
             break;
 
@@ -230,6 +242,11 @@ try {
                 throw new Exception("Se guardó la copia (#$nuevo), pero no se pudo enviar: " . $e->getMessage());
             }
             echo json_encode(['success' => true, 'id' => $nuevo, 'message' => ($prueba ? 'Prueba reenviada' : 'Cobro reenviado') . ' (#' . $nuevo . ').'], JSON_UNESCAPED_UNICODE);
+            break;
+
+        case 'eliminar_lote':
+            $cantidad = cobrosEliminarLote($pdo, $cid, (array)($_POST['ids'] ?? []));
+            echo json_encode(['success' => true, 'message' => $cantidad . ' correo(s) eliminado(s).'], JSON_UNESCAPED_UNICODE);
             break;
 
         case 'eliminar':

@@ -29,26 +29,24 @@ $prePlan = array_values(array_filter(array_map('intval', explode(',', (string)($
 $preAnticipos = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['anticipos'] ?? '')))));
 $extras = $instalado && cobrosExtrasDisponible($pdo);
 
-$cobros = [];
-if ($instalado) {
-    $st = $pdo->prepare("
-        SELECT c.*, cf.nombre AS cliente, u.nombre AS usuario,
-               (SELECT GROUP_CONCAT(f.correlativo ORDER BY f.correlativo SEPARATOR ', ') FROM cobros_programados_facturas x JOIN facturas f ON f.id = x.factura_id WHERE x.cobro_id = c.id) AS facturas" . ($extras ? ",
-               (SELECT GROUP_CONCAT(CONCAT('Recibo ', LPAD(r.numero_recibo, 5, '0')) ORDER BY r.numero_recibo SEPARATOR ', ') FROM cobros_programados_recibos x JOIN contratos_recibos r ON r.id = x.recibo_id WHERE x.cobro_id = c.id) AS recibos,
-               (SELECT COUNT(*) FROM cobros_programados_plan x WHERE x.cobro_id = c.id) AS pagos_plan" : "") . "
-        FROM cobros_programados c
-        JOIN clientes_factura cf ON cf.id = c.receptor_id
-        LEFT JOIN usuarios u ON u.id = c.usuario_id
-        WHERE c.cliente_id = ?
-        ORDER BY c.estado = 'programado' DESC, c.programado_para DESC LIMIT 200");
-    $st->execute([$cid]);
-    $cobros = $st->fetchAll(PDO::FETCH_ASSOC);
-}
+require_once '../../includes/cobros_listado.php';
+$listado = $instalado ? cobrosListado($pdo, $cid, $_GET) : ['cobros' => [], 'total' => 0, 'pagina' => 1, 'paginas' => 1, 'por_pagina' => 25];
+$cobros = $listado['cobros'];
 $miCorreo = $pdo->prepare("SELECT correo FROM usuarios WHERE id = ?");
 $miCorreo->execute([(int)USUARIO_ID]);
 $miCorreo = (string)$miCorreo->fetchColumn();
 $estados = ['programado' => ['Programado', 'info'], 'enviando' => ['Enviando', 'warning'], 'enviado' => ['Enviado', 'success'], 'error' => ['Error', 'danger'], 'cancelado' => ['Cancelado', 'muted']];
 $manana = (new DateTime('tomorrow 08:00'))->format('Y-m-d\TH:i');
+
+if (isset($_GET['ajax'])) {
+    ob_start();
+    require __DIR__ . '/includes/cobros_filas.php';
+    $listado['html'] = ob_get_clean();
+    unset($listado['cobros']);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['success' => true] + $listado, JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 require_once '../../includes/templates/header.php';
 ?>
@@ -131,7 +129,7 @@ require_once '../../includes/templates/header.php';
                 <?php endif; ?>
                 <div class="col-12" data-bloque-docs hidden>
                     <label class="form-label mb-1"><i class="bi bi-paperclip"></i> Documentos de la empresa a adjuntar <span class="small fw-normal text-muted">(<a href="configuracion_documentos" target="_blank">administrar</a>)</span></label>
-                    <div id="cDocs" class="d-flex flex-wrap gap-2"></div>
+                    <div id="cDocs" class="d-flex flex-wrap gap-2"></div><div class="form-text">El correo mencionará automáticamente los documentos seleccionados en un párrafo de respaldo administrativo y tributario (excepto en envío de recibos). Puedes revisarlo en Vista previa.</div>
                 </div>
                 <div class="col-md-6"><label class="form-label">3. Para *</label><input class="form-control" name="para" id="cPara" placeholder="correo@cliente.com (varios separados por coma)" required></div>
                 <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="cCc" placeholder="opcional"><div class="form-text" id="cCcInfo">Se llena con los correos de «Responder a» de la cuenta Facturación y los contactos del cliente marcados «Copiar en cobros». Puedes editarlo; varios separados por coma.</div></div>
@@ -158,44 +156,32 @@ require_once '../../includes/templates/header.php';
 
     <!-- Lista -->
     <div class="app-card">
-        <div class="app-card-header"><span><i class="bi bi-list-check me-1"></i> Cobros</span><span class="app-badge"><?= count($cobros) ?></span></div>
-        <div class="table-responsive">
-            <table data-paginar class="table app-table mb-0">
-                <thead><tr><th class="app-n">#</th><th>Cliente</th><th>Documentos</th><th>Para</th><th>Envío</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
-                <tbody>
-                    <?php if (!$cobros): ?><tr><td colspan="7" class="text-center text-muted py-4">Aún no hay cobros. Usa «Nuevo cobro».</td></tr><?php endif; ?>
-                    <?php foreach ($cobros as $c): [$etq, $col] = $estados[$c['estado']] ?? [$c['estado'], 'muted']; ?>
-                        <tr>
-                            <td class="app-n"><?= (int)$c['id'] ?></td>
-                            <td><a href="estado_cuenta?receptor_id=<?= (int)$c['receptor_id'] ?>"><?= htmlspecialchars($c['cliente']) ?></a>
-                                <div class="small text-muted"><?= htmlspecialchars(mb_strimwidth($c['asunto'], 0, 60, '…')) ?></div></td>
-                            <td class="small"><span class="font-monospace"><?= htmlspecialchars(trim(($c['facturas'] ?? '') . (($c['facturas'] ?? '') && ($c['recibos'] ?? '') ? ', ' : '') . ($c['recibos'] ?? ''))) ?></span>
-                                <?php if (!empty($c['pagos_plan'])): ?><div class="text-muted"><i class="bi bi-calendar2-check"></i> Recordatorio de <?= (int)$c['pagos_plan'] ?> pago<?= $c['pagos_plan'] > 1 ? 's' : '' ?> del plan</div><?php endif; ?></td>
-                            <td class="small"><?= htmlspecialchars($c['para']) ?><?= $c['cc'] ? '<div class="text-muted">CC: ' . htmlspecialchars($c['cc']) . '</div>' : '' ?></td>
-                            <td class="small text-nowrap"><?= date('d/m/Y g:i a', strtotime($c['programado_para'])) ?>
-                                <?= $c['enviado_en'] ? '<div class="text-success">Enviado ' . date('d/m g:i a', strtotime($c['enviado_en'])) . '</div>' : '' ?></td>
-                            <td><span class="app-badge app-badge-<?= $col ?>"><?= $etq ?></span><?= (int)$c['prueba'] ? ' <span class="app-badge app-badge-warning">Prueba</span>' : '' ?>
-                                <?= $c['error'] && $c['estado'] !== 'enviado' ? '<div class="small text-danger">' . htmlspecialchars(mb_strimwidth($c['error'], 0, 80, '…')) . '</div>' : '' ?></td>
-                            <td class="text-end text-nowrap">
-                                <button class="btn btn-sm btn-outline-secondary btn-ver" data-id="<?= (int)$c['id'] ?>" title="Ver lo que se envió: correo, PDF e intentos"><i class="bi bi-eye"></i></button>
-                                <?php if (in_array($c['estado'], ['programado', 'error'], true)): ?>
-                                    <button class="btn btn-sm btn-outline-primary btn-accion" data-accion="enviar_ya" data-id="<?= (int)$c['id'] ?>" title="Enviar ahora"><i class="bi bi-send"></i></button>
-                                    <button class="btn btn-sm btn-outline-secondary btn-editar" data-id="<?= (int)$c['id'] ?>" title="Editar destinatarios, mensaje y fecha"><i class="bi bi-pencil"></i></button>
-                                    <button class="btn btn-sm btn-outline-danger btn-accion" data-accion="cancelar" data-id="<?= (int)$c['id'] ?>" title="Cancelar"><i class="bi bi-x-lg"></i></button>
-                                <?php endif; ?>
-                                <?php if (in_array($c['estado'], ['enviado', 'cancelado', 'error'], true)): ?>
-                                    <button class="btn btn-sm btn-outline-success btn-reenviar" data-id="<?= (int)$c['id'] ?>" data-para="<?= htmlspecialchars($c['para']) ?>" data-cc="<?= htmlspecialchars((string)$c['cc']) ?>" data-prueba="<?= (int)$c['prueba'] ?>" title="Reenviar (mismo mensaje y mismos PDF)"><i class="bi bi-arrow-repeat"></i></button>
-                                <?php endif; ?>
-                                <?php if (((int)$c['prueba'] && $c['estado'] !== 'enviando') || in_array($c['estado'], ['cancelado', 'error'], true)): ?>
-                                    <button class="btn btn-sm btn-outline-danger btn-accion" data-accion="eliminar" data-id="<?= (int)$c['id'] ?>" title="Eliminar"><i class="bi bi-trash"></i></button>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
+        <div class="app-card-header"><span><i class="bi bi-list-check me-1"></i> Cobros</span><span class="app-badge" id="cbTotal"><?= $listado['total'] ?></span></div>
+        <div class="app-card-body border-bottom">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4"><label class="form-label" for="cbBuscar">Buscar</label><input type="search" class="form-control" id="cbBuscar" placeholder="Cliente, asunto, correo o factura…" value="<?= htmlspecialchars((string)($_GET['q'] ?? '')) ?>"></div>
+                <div class="col-md-4"><label class="form-label" for="cbCliente">Cliente</label><select class="form-select" id="cbCliente" data-buscar><option value="">Todos los clientes</option>
+                <?php foreach ($clientes as $cl): ?><option value="<?= (int)$cl['id'] ?>" <?= (int)($_GET['cliente'] ?? 0) === (int)$cl['id'] ? 'selected' : '' ?>><?= htmlspecialchars($cl['nombre']) ?></option><?php endforeach; ?>
+                </select></div>
+                <div class="col-md-2"><label class="form-label" for="cbEstado">Estado</label><select class="form-select" id="cbEstado"><option value="">Todos</option>
+                <?php foreach ($estados as $valor => [$etiqueta]): ?><option value="<?= $valor ?>" <?= ($_GET['estado'] ?? '') === $valor ? 'selected' : '' ?>><?= $etiqueta ?></option><?php endforeach; ?>
+                </select></div>
+                <div class="col-md-2"><label class="form-label" for="cbPorPagina">Por página</label><select class="form-select" id="cbPorPagina"><?php foreach ([10,25,50,100,200,300] as $n): ?><option value="<?= $n ?>" <?= $listado['por_pagina'] === $n ? 'selected' : '' ?>><?= $n ?></option><?php endforeach; ?></select></div>
+            </div>
+            <div class="d-flex gap-2 align-items-center flex-wrap mt-3"><button type="button" class="btn btn-outline-danger btn-sm" id="cbEliminar" disabled><i class="bi bi-trash me-1"></i>Eliminar seleccionados</button><span id="cbSeleccionInfo" class="small text-muted" aria-live="polite">0 seleccionados</span><button type="button" class="btn btn-link btn-sm ms-auto" id="cbLimpiar">Limpiar filtros</button></div>
+            <div id="cbError" class="text-danger small mt-2" role="alert"></div>
+        </div>
+        <div class="table-responsive" id="cbLista">
+            <table class="table app-table mb-0" id="cbTabla">
+                <thead><tr><th><input type="checkbox" class="form-check-input" id="cbTodos" aria-label="Seleccionar los correos eliminables de esta página"></th><th>#</th><th>Cliente</th><th>Documentos</th><th>Para</th><th>Envío</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
+                <tbody id="cbFilas">
+                    <?php require __DIR__ . '/includes/cobros_filas.php'; ?>
                 </tbody>
             </table>
         </div>
     </div>
+
+    <div class="app-pager mb-3" id="cbPie" aria-live="polite"></div>
 
     <!-- Vista previa del correo (no envía nada) -->
     <div class="modal fade" id="mPrevia" tabindex="-1" style="z-index:1065"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
@@ -237,8 +223,14 @@ require_once '../../includes/templates/header.php';
                     <div class="col-md-8"><label class="form-label">Asunto *</label><input class="form-control" name="asunto" id="eAsunto" maxlength="255" required></div>
                     <div class="col-md-4"><label class="form-label">Envío (hora de Honduras)</label><input class="form-control" type="datetime-local" name="programado_para" id="eFecha" required></div>
                     <div class="col-12"><label class="form-label">Mensaje *</label><textarea id="eMensaje" class="form-control" rows="10"></textarea>
-                        <div class="form-text">Los PDF adjuntos no cambian. Para otras facturas, cancela este cobro y crea uno nuevo.</div></div>
+                        <div class="form-text">Las facturas y recibos adjuntos se conservan. Puedes agregar o quitar documentos de la empresa abajo.</div></div>
                 </div>
+            </div>
+            <div class="px-3 pb-3">
+                <input type="hidden" name="actualizar_documentos" value="1">
+                <label class="form-label"><i class="bi bi-paperclip"></i> Documentos de la empresa a adjuntar</label>
+                <div id="eDocs" class="d-flex flex-wrap gap-2"></div>
+                <div class="form-text">Marca la constancia de pago a cuenta u otros documentos y guarda los cambios para incluirlos en este correo programado. El correo mencionará los documentos seleccionados automáticamente (excepto en envío de recibos); revísalo en Vista previa. <a href="configuracion_documentos" target="_blank">Administrar documentos</a></div>
             </div>
             <div class="modal-footer"><button type="button" class="btn btn-outline-dark me-auto" id="ePrevia"><i class="bi bi-window me-1"></i> Vista previa</button><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button><button class="btn btn-primary" type="submit"><i class="bi bi-floppy me-1"></i> Guardar cambios</button></div>
         </form>
@@ -272,6 +264,72 @@ require_once '../../includes/templates/header.php';
     const card = document.getElementById('cardNuevo'), form = document.getElementById('formCobro');
     const $cli = document.getElementById('cCliente'), $tb = document.getElementById('cFacturas');
     const leer = async r => { const t = await r.text(); let d; try { d = JSON.parse(t); } catch (e) { throw new Error('Respuesta inesperada del servidor (' + r.status + ').'); } if (!d.success) throw new Error(d.error); return d; };
+
+    // Filtros remotos y paginación: seleccionar todos afecta solamente a la página visible.
+    const $filas = document.getElementById('cbFilas'), $todos = document.getElementById('cbTodos'), $eliminar = document.getElementById('cbEliminar');
+    let paginaLista = <?= (int)$listado['pagina'] ?>, cargandoLista = false, peticionLista = 0, timerLista;
+    const checksLista = () => [...document.querySelectorAll('#cbFilas .cb-seleccion')];
+    function seleccionLista() {
+        const checks = checksLista(), n = checks.filter(c => c.checked).length;
+        if (!$todos) return;
+        $todos.checked = checks.length > 0 && n === checks.length;
+        $todos.indeterminate = n > 0 && n < checks.length;
+        $todos.disabled = cargandoLista || !checks.length;
+        $eliminar.disabled = cargandoLista || !n;
+        document.getElementById('cbSeleccionInfo').textContent = `${n} seleccionado(s) de esta página`;
+    }
+    function pintarPagina(d) {
+        paginaLista = d.pagina;
+        document.getElementById('cbTotal').textContent = d.total;
+        const ini = (d.pagina - 1) * d.por_pagina + 1, fin = Math.min(d.total, d.pagina * d.por_pagina);
+        const boton = (txt, p, disabled, activo = false) => `<button type="button" class="app-page-btn ${activo ? 'active' : ''}" data-pagina="${p}" ${disabled ? 'disabled' : ''}>${txt}</button>`;
+        let botones = boton('«', 1, d.pagina === 1) + boton('‹', d.pagina - 1, d.pagina === 1);
+        let desde = Math.max(1, d.pagina - 2), hasta = Math.min(d.paginas, desde + 4);
+        desde = Math.max(1, hasta - 4);
+        for (let p = desde; p <= hasta; p++) botones += boton(p, p, p === d.pagina, p === d.pagina);
+        botones += boton('›', d.pagina + 1, d.pagina === d.paginas) + boton('»', d.paginas, d.pagina === d.paginas);
+        document.getElementById('cbPie').innerHTML = `<span class="app-pager-info">${d.total ? `Mostrando ${ini}–${fin} de ${d.total} · Página ${d.pagina} de ${d.paginas}` : 'Sin resultados'}</span><div class="app-pager-btns">${botones}</div>`;
+    }
+    async function recargarLista(pagina = paginaLista) {
+        if (!$filas) return;
+        clearTimeout(timerLista);
+        const numero = ++peticionLista;
+        cargandoLista = true; seleccionLista();
+        document.getElementById('cbLista').setAttribute('aria-busy', 'true');
+        document.getElementById('cbError').textContent = '';
+        const params = new URLSearchParams({ ajax: '1', pagina, por_pagina: document.getElementById('cbPorPagina').value,
+            q: document.getElementById('cbBuscar').value, cliente: document.getElementById('cbCliente').value, estado: document.getElementById('cbEstado').value });
+        try {
+            const d = await fetch('cobros_programados.php?' + params).then(leer);
+            if (numero !== peticionLista) return;
+            $filas.innerHTML = d.html;
+            pintarPagina(d);
+        } catch (err) {
+            if (numero === peticionLista) document.getElementById('cbError').textContent = 'No se pudo actualizar la lista: ' + err.message;
+        } finally {
+            if (numero === peticionLista) { cargandoLista = false; document.getElementById('cbLista').setAttribute('aria-busy', 'false'); seleccionLista(); }
+        }
+    }
+    document.getElementById('cbBuscar')?.addEventListener('input', () => {
+        ++peticionLista; clearTimeout(timerLista);
+        cargandoLista = true; seleccionLista();
+        timerLista = setTimeout(() => recargarLista(1), 250);
+    });
+    ['cbCliente', 'cbEstado', 'cbPorPagina'].forEach(id => document.getElementById(id)?.addEventListener('change', () => recargarLista(1)));
+    document.getElementById('cbLimpiar')?.addEventListener('click', () => { ['cbCliente', 'cbEstado', 'cbBuscar'].forEach(id => document.getElementById(id).value = ''); recargarLista(1); });
+    document.getElementById('cbPie')?.addEventListener('click', e => { const b = e.target.closest('[data-pagina]'); if (b && !b.disabled) recargarLista(+b.dataset.pagina); });
+    $todos?.addEventListener('change', () => { checksLista().forEach(c => c.checked = $todos.checked); seleccionLista(); });
+    $filas?.addEventListener('change', seleccionLista);
+    $eliminar?.addEventListener('click', async () => {
+        const ids = checksLista().filter(c => c.checked).map(c => c.value);
+        if (!ids.length || cargandoLista) return;
+        const r = await Swal.fire({ title: `¿Eliminar ${ids.length} correo(s)?`, text: 'Se eliminarán los correos seleccionados y sus copias adjuntas. Los programados ya no se enviarán. Las facturas, recibos y documentos originales se conservan.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Eliminar seleccionados', cancelButtonText: 'Cancelar' });
+        if (!r.isConfirmed) return;
+        const fd = new FormData(); fd.append('accion', 'eliminar_lote'); ids.forEach(id => fd.append('ids[]', id));
+        $eliminar.disabled = true;
+        await accion(fd); seleccionLista();
+    });
+    if ($filas) { pintarPagina(<?= json_encode(array_diff_key($listado, ['cobros' => true])) ?>); seleccionLista(); }
 
     const abrir = () => { card.style.display = ''; card.scrollIntoView({ behavior: 'smooth' }); };
     document.getElementById('btnNuevoCobro')?.addEventListener('click', abrir);
@@ -440,25 +498,31 @@ require_once '../../includes/templates/header.php';
     }));
 
     const accion = (fd, msg) => fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer)
-        .then(d => Swal.fire({ icon: 'success', title: d.message }).then(() => location.reload())).catch(err => Swal.fire('No se pudo', err.message, 'error'));
-    document.querySelectorAll('.btn-accion').forEach(b => b.addEventListener('click', async () => {
+        .then(async d => { bootstrap.Modal.getInstance(document.getElementById('mEditar'))?.hide(); await recargarLista(); await Swal.fire({ icon: 'success', title: d.message }); }).catch(err => Swal.fire('No se pudo', err.message, 'error'));
+    document.addEventListener('click', async ev => {
+        const b = ev.target.closest('.btn-accion');
+        if (!b) return;
         const txt = { cancelar: '¿Cancelar este cobro?', eliminar: '¿Eliminar este cobro y sus PDF?', enviar_ya: '¿Enviar este cobro ahora?' }[b.dataset.accion];
         if (!(await Swal.fire({ title: txt, icon: 'question', showCancelButton: true, confirmButtonText: 'Sí', cancelButtonText: 'No' })).isConfirmed) return;
         const fd = new FormData(); fd.append('accion', b.dataset.accion); fd.append('id', b.dataset.id);
         if (b.dataset.accion === 'enviar_ya') Swal.fire({ title: 'Enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         accion(fd);
-    }));
-    document.querySelectorAll('.btn-reprogramar').forEach(b => b.addEventListener('click', async () => {
+    });
+    document.addEventListener('click', async ev => {
+        const b = ev.target.closest('.btn-reprogramar');
+        if (!b) return;
         const r = await Swal.fire({ title: 'Nueva fecha y hora', html: `<input type="datetime-local" id="nuevaFecha" class="form-control" value="${b.dataset.fecha}"><div class="small text-muted mt-2">Hora de Honduras</div>`,
             showCancelButton: true, confirmButtonText: 'Reprogramar', cancelButtonText: 'Cancelar', preConfirm: () => document.getElementById('nuevaFecha').value });
         if (!r.isConfirmed) return;
         const fd = new FormData(); fd.append('accion', 'reprogramar'); fd.append('id', b.dataset.id); fd.append('programado_para', r.value);
         accion(fd);
-    }));
+    });
 
     // ── Vista previa del correo (redacción y edición) ──
-    async function previa({ para, cc, asunto, html, receptor, ids, recibos, anticipos, documentos }) {
+    async function previa({ para, cc, asunto, html, receptor, ids, recibos, anticipos, documentos, tipo, cobroId }) {
         const fd = new FormData();
+        fd.append('tipo', tipo || '');
+        if (cobroId) fd.append('cobro_id', cobroId);
         fd.append('accion', 'previsualizar'); fd.append('receptor_id', receptor || ''); fd.append('mensaje_html', html); fd.append('asunto', asunto);
         (ids || []).forEach(i => fd.append('factura_ids[]', i));
         (recibos || []).forEach(i => fd.append('recibo_ids[]', i));
@@ -475,21 +539,23 @@ require_once '../../includes/templates/header.php';
     }
     document.getElementById('btnPrevia')?.addEventListener('click', () => previa({
         para: document.getElementById('cPara').value, cc: document.getElementById('cCc').value, asunto: document.getElementById('cAsunto').value,
-        html: getMensaje('cMensaje'), receptor: $cli.value, ids: bloque() === 'facturas' ? seleccionadas() : [], documentos: docsMarcados(),
+        tipo: $tipo.value, html: getMensaje('cMensaje'), receptor: $cli.value, ids: bloque() === 'facturas' ? seleccionadas() : [], documentos: docsMarcados(),
         recibos: bloque() === 'recibos' ? [...$rec.querySelectorAll('input[data-ant="0"]:checked')].map(i => i.value) : [],
         anticipos: bloque() === 'recibos' ? [...$rec.querySelectorAll('input[data-ant="1"]:checked')].map(i => i.value) : [],
     }));
     let editando = null;   // cobro abierto en «Editar» (para la vista previa)
     document.getElementById('ePrevia')?.addEventListener('click', () => previa({
         para: document.getElementById('ePara').value, cc: document.getElementById('eCc').value, asunto: document.getElementById('eAsunto').value,
-        html: getMensaje('eMensaje'), receptor: editando?.receptor_id, ids: editando?.facturas || [], recibos: editando?.recibos || [], documentos: editando?.documentos || [],
+        cobroId: document.getElementById('eId').value, html: getMensaje('eMensaje'), receptor: editando?.receptor_id, ids: editando?.facturas || [], recibos: editando?.recibos || [], documentos: [...document.querySelectorAll('#eDocs input:checked')].map(i => i.value), anticipos: editando?.anticipos || [],
     }));
 
     // ── Ver lo que se envió ──
     const fmt = d => d ? new Date(d.replace(' ', 'T')).toLocaleString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
     const estadosTxt = <?= json_encode(array_map(fn($e) => $e[0], $estados), JSON_UNESCAPED_UNICODE) ?>;
     const detalle = id => fetch('cobro_accion.php?ver=' + id).then(leer);
-    document.querySelectorAll('.btn-ver').forEach(b => b.addEventListener('click', async () => {
+    document.addEventListener('click', async ev => {
+        const b = ev.target.closest('.btn-ver');
+        if (!b) return;
         try {
             const d = await detalle(b.dataset.id), c = d.cobro;
             document.getElementById('vNum').textContent = '#' + c.id + (+c.prueba ? ' · prueba' : '');
@@ -506,13 +572,21 @@ require_once '../../includes/templates/header.php';
             document.getElementById('vHtml').srcdoc = d.html;
             bootstrap.Modal.getOrCreateInstance(document.getElementById('mVer')).show();
         } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
-    }));
+    });
 
     // ── Editar (solo los que aún no se envían) ──
-    document.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', async () => {
+    document.addEventListener('click', async ev => {
+        const b = ev.target.closest('.btn-editar');
+        if (!b) return;
         try {
             const det = await detalle(b.dataset.id), c = det.cobro;
-            editando = { receptor_id: c.receptor_id, facturas: det.adjuntos.filter(x => x.factura_id).map(x => x.factura_id), recibos: det.adjuntos.filter(x => x.recibo_id).map(x => x.recibo_id), documentos: det.adjuntos.filter(x => x.documento_id).map(x => x.documento_id) };
+            editando = { anticipos: det.adjuntos.filter(x => x.anticipo_id).map(x => x.anticipo_id), receptor_id: c.receptor_id, facturas: det.adjuntos.filter(x => x.factura_id).map(x => x.factura_id), recibos: det.adjuntos.filter(x => x.recibo_id).map(x => x.recibo_id), documentos: det.adjuntos.filter(x => x.documento_id).map(x => x.documento_id) };
+            const actuales = new Map(det.adjuntos.filter(x => x.documento_id).map(x => [+x.documento_id, x]));
+            const disponibles = [...(det.documentos || [])];
+            for (const [id, a] of actuales) if (!disponibles.some(d => +d.id === id)) disponibles.push({ id, nombre: a.etiqueta, txt: 'Copia adjunta', estado: '' });
+            document.getElementById('eDocs').innerHTML = disponibles.length ? disponibles.map(d => `<label class="border rounded px-2 py-1 small d-flex align-items-center gap-2">
+                <input class="form-check-input m-0" type="checkbox" name="documento_ids[]" value="${d.id}" data-vencido="${d.estado === 'vencido' ? '1' : '0'}" ${actuales.has(+d.id) ? 'checked' : ''}>
+                <span>${esc(d.nombre)}</span><span class="badge text-bg-light">${esc(d.txt)}</span></label>`).join('') : '<span class="text-muted small">No hay documentos disponibles. Agrégalos en Documentos de la empresa.</span>';
             document.getElementById('eNum').textContent = '#' + c.id;
             document.getElementById('eId').value = c.id;
             document.getElementById('ePara').value = c.para;
@@ -522,7 +596,8 @@ require_once '../../includes/templates/header.php';
             setMensaje('eMensaje', c.mensaje_html.replace(/\r?\n/g, ''));
             bootstrap.Modal.getOrCreateInstance(document.getElementById('mEditar')).show();
         } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
-    }));
+    });
+    document.getElementById('eDocs')?.addEventListener('change', e => { if (e.target.checked && e.target.dataset.vencido === '1') Swal.fire('Documento vencido', 'Este documento está vencido. Puedes renovarlo en Documentos de la empresa antes de adjuntarlo.', 'warning'); });
     document.getElementById('fEditar')?.addEventListener('submit', e => {
         e.preventDefault();
         const fd = new FormData(e.target);
@@ -531,7 +606,9 @@ require_once '../../includes/templates/header.php';
     });
 
     // ── Reenviar: copia con el mismo mensaje y los mismos PDF ──
-    document.querySelectorAll('.btn-reenviar').forEach(b => b.addEventListener('click', async () => {
+    document.addEventListener('click', async ev => {
+        const b = ev.target.closest('.btn-reenviar');
+        if (!b) return;
         const r = await Swal.fire({
             title: 'Reenviar cobro #' + b.dataset.id,
             html: `<div class="text-start small">
@@ -550,7 +627,7 @@ require_once '../../includes/templates/header.php';
         if (r.value.prueba) fd.append('prueba', '1');
         Swal.fire({ title: 'Enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         accion(fd);
-    }));
+    });
 
     if ($cli?.value) { abrir(); cargarFacturas(); }
 })();

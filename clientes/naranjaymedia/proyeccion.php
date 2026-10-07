@@ -4,6 +4,7 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/contrato_plan.php';
+require_once '../../includes/proyeccion_gastos.php';
 require_once '../../includes/templates/header.php';
 
 $cliente_id = (int)(USUARIO_ROL === 'superadmin'
@@ -31,9 +32,12 @@ $hoy_mes = (int)date('n');
 
 // 1. Contratos activos
 $stmtCt = $pdo->prepare("
-    SELECT id, tipo_contrato, monto, dia_pago,
-           frecuencia_meses, mes_inicio_ciclo, fecha_inicio, fecha_fin
-    FROM contratos WHERE cliente_id = ? AND estado = 'activo'
+    SELECT c.id, c.nombre_contrato, c.tipo_contrato, c.monto, c.dia_pago,
+           c.frecuencia_meses, c.mes_inicio_ciclo, c.fecha_inicio, c.fecha_fin,
+           cf.nombre AS receptor_nombre
+    FROM contratos c
+    LEFT JOIN clientes_factura cf ON cf.id=c.receptor_id AND cf.cliente_id=c.cliente_id
+    WHERE c.cliente_id = ? AND c.estado = 'activo'
 ");
 $stmtCt->execute([$cliente_id]);
 $contratos = $stmtCt->fetchAll(PDO::FETCH_ASSOC);
@@ -58,50 +62,14 @@ $stmtCatNom->execute([$cliente_id]);
 $cats_nom = $stmtCatNom->fetchAll(PDO::FETCH_COLUMN);
 $excl_sql = !empty($cats_nom) ? implode(',', array_map('intval', $cats_nom)) : '0';
 
-// 3. Promedio gastos fijos mensuales/quincenales (excluye únicos y anuales del avg)
-//    Gastos 'unico' → se excluyen (no se repiten)
-//    Gastos 'anual'  → se amortiza /12 y se suma aparte
-$stmtFij = $pdo->prepare("
-    SELECT COALESCE(AVG(tot),0) FROM (
-        SELECT SUM(monto) tot FROM gastos
-        WHERE cliente_id=? AND tipo='fijo' AND estado!='anulado'
-          AND frecuencia IN ('mensual','quincenal')
-          AND fecha BETWEEN DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND CURDATE()
-          AND categoria_id NOT IN ($excl_sql)
-        GROUP BY YEAR(fecha), MONTH(fecha)
-    ) t
-");
-$stmtFij->execute([$cliente_id]);
-$prom_fijos = (float)$stmtFij->fetchColumn();
-
-// Amortización de gastos anuales fijos (÷ 12 cada uno)
-$stmtAnual = $pdo->prepare("
-    SELECT COALESCE(SUM(monto)/12, 0)
-    FROM gastos
-    WHERE cliente_id=? AND tipo='fijo' AND estado!='anulado'
-      AND frecuencia='anual'
-      AND fecha BETWEEN DATE_SUB(CURDATE(), INTERVAL 12 MONTH) AND DATE_ADD(CURDATE(), INTERVAL 1 MONTH)
-      AND categoria_id NOT IN ($excl_sql)
-");
-$stmtAnual->execute([$cliente_id]);
-$prom_fijos += (float)$stmtAnual->fetchColumn();
-
-// 4. Promedio gastos variables recurrentes (excluye 'unico' → no se proyectan)
-//    Gastos 'unico' son eventos pasados, no se esperan en el futuro
-$stmtVar = $pdo->prepare("
-    SELECT COALESCE(AVG(tot),0) FROM (
-        SELECT SUM(monto) tot FROM gastos
-        WHERE cliente_id=? AND tipo='variable' AND estado!='anulado'
-          AND frecuencia IN ('mensual','quincenal')
-          AND fecha BETWEEN DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND CURDATE()
-          AND categoria_id NOT IN ($excl_sql)
-        GROUP BY YEAR(fecha), MONTH(fecha)
-    ) t
-");
-$stmtVar->execute([$cliente_id]);
-$prom_variables = (float)$stmtVar->fetchColumn();
-
-$egreso_mensual_base = $nomina_mensual + $prom_fijos + $prom_variables;
+// Calendario completo: incluye pagos registrados y respeta el fin de cada recurrencia.
+$stmtGastos = $pdo->prepare("SELECT g.*, COALESCE(cg.nombre, 'Sin categoría') AS categoria
+    FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id AND cg.cliente_id=g.cliente_id
+    WHERE g.cliente_id=? AND g.estado!='anulado'
+      AND (g.categoria_id IS NULL OR g.categoria_id NOT IN ($excl_sql))
+      AND (g.descripcion IS NULL OR g.descripcion NOT LIKE 'Sueldo %')");
+$stmtGastos->execute([$cliente_id]);
+$gastosCalendario = $stmtGastos->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Desglose nómina por colaborador (para panel detalle) ─────────────────────
 $stmtColabs = $pdo->prepare("
@@ -113,36 +81,7 @@ $stmtColabs = $pdo->prepare("
 $stmtColabs->execute([$cliente_id]);
 $colabs_desglose = $stmtColabs->fetchAll(PDO::FETCH_ASSOC);
 
-// ── Desglose gastos recurrentes promedio (excluye nómina + futuros) ───────────
-$stmtGastosDesg = $pdo->prepare("
-    SELECT cg.nombre AS categoria, cg.color, g.tipo, g.frecuencia,
-           COALESCE(g.descripcion, cg.nombre) AS descripcion,
-           SUM(g.monto)  AS total_3m,
-           COUNT(DISTINCT CONCAT(YEAR(g.fecha),'-',MONTH(g.fecha))) AS meses_n
-    FROM gastos g
-    INNER JOIN categorias_gastos cg ON cg.id = g.categoria_id
-    WHERE g.cliente_id = ? AND g.estado != 'anulado'
-      AND g.fecha BETWEEN DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND CURDATE()
-      AND g.categoria_id NOT IN ($excl_sql)
-      AND g.frecuencia IN ('mensual','quincenal','anual')
-    GROUP BY g.descripcion, g.categoria_id, g.frecuencia
-    ORDER BY total_3m DESC LIMIT 30
-");
-$stmtGastosDesg->execute([$cliente_id]);
-$gastos_desglose = $stmtGastosDesg->fetchAll(PDO::FETCH_ASSOC);
-foreach ($gastos_desglose as &$gd) {
-    // Para anuales: prom = monto/12 (amortizado); para únicos no llegan aquí ya
-    if ($gd['frecuencia'] === 'anual') {
-        $gd['prom']  = round((float)$gd['total_3m'] / 12, 2);
-        $gd['tag']   = 'anual';
-    } else {
-        $gd['prom']  = round((float)$gd['total_3m'] / max((int)$gd['meses_n'], 1), 2);
-        $gd['tag']   = $gd['frecuencia'];
-    }
-}
-unset($gd);
-$colabs_json = json_encode($colabs_desglose, JSON_UNESCAPED_UNICODE);
-$gastos_json = json_encode($gastos_desglose, JSON_UNESCAPED_UNICODE);
+$colabs_json = json_encode($colabs_desglose, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
 
 // 5. Proyección 12 meses
 // Turnos de contratos rotativos: se cargan una sola vez (antes: 1 consulta por contrato y por mes)
@@ -150,7 +89,7 @@ $turnosRotativos = [];
 $idsRotativos = array_column(array_filter($contratos, fn($c) => $c['tipo_contrato'] === 'rotativo'), 'id');
 if ($idsRotativos) {
     $ph = implode(',', array_fill(0, count($idsRotativos), '?'));
-    $stRot = $pdo->prepare("SELECT contrato_id, monto, orden FROM contratos_clientes_rotativos WHERE contrato_id IN ($ph) AND activo=1 ORDER BY contrato_id, orden ASC");
+    $stRot = $pdo->prepare("SELECT r.contrato_id, r.monto, r.orden, cf.nombre AS receptor_nombre FROM contratos_clientes_rotativos r JOIN contratos c ON c.id=r.contrato_id LEFT JOIN clientes_factura cf ON cf.id=r.receptor_id AND cf.cliente_id=c.cliente_id WHERE r.contrato_id IN ($ph) AND r.activo=1 ORDER BY r.contrato_id, r.orden ASC");
     $stRot->execute(array_values($idsRotativos));
     foreach ($stRot->fetchAll(PDO::FETCH_ASSOC) as $t) $turnosRotativos[$t['contrato_id']][] = $t;
 }
@@ -160,11 +99,14 @@ if ($idsRotativos) {
 $tipoContrato = array_column($contratos, 'tipo_contrato', 'id');
 $conPlan = array_flip(planContratosConPlan($pdo, $cliente_id));
 $planPorMes = [];
+$planDetalle = [];
+$contratosPorId = array_column($contratos, null, 'id');
 foreach (planPendientesPorMes($pdo, $cliente_id) as $k => $porContrato) {
     [$ka, $km] = array_map('intval', explode('-', $k));
     if ($ka * 12 + $km < $hoy_año * 12 + $hoy_mes) $k = $hoy_año . '-' . $hoy_mes;
     foreach ($porContrato as $ctId => $monto) {
         if (!isset($tipoContrato[$ctId])) continue;   // solo contratos activos
+        $planDetalle[$k][] = ['cliente' => $contratosPorId[$ctId]['receptor_nombre'] ?: 'Cliente sin nombre', 'nombre' => $contratosPorId[$ctId]['nombre_contrato'] ?: "Contrato #$ctId", 'tipo' => $tipoContrato[$ctId], 'monto' => (float)$monto, 'regla' => 'Plan de pagos pendiente (incluye vencidos en el mes actual)'];
         $planPorMes[$k][$tipoContrato[$ctId] === 'sin_factura' ? 'recibo' : 'estandar'] = ($planPorMes[$k][$tipoContrato[$ctId] === 'sin_factura' ? 'recibo' : 'estandar'] ?? 0) + $monto;
     }
 }
@@ -177,19 +119,22 @@ for ($offset = 0; $offset < 12; $offset++) {
 
     $ing_estandar += $planPorMes["$anio-$mes"]['estandar'] ?? 0;
     $ing_recibo += $planPorMes["$anio-$mes"]['recibo'] ?? 0;
+    $ing_detalle = $planDetalle["$anio-$mes"] ?? [];
     foreach ($contratos as $ct) {
+        $antes = $ing_estandar + $ing_periodico + $ing_recibo;
         if (isset($conPlan[(int)$ct['id']])) continue;   // ya proyectado con su plan
         $fi = new DateTime($ct['fecha_inicio']);
         $ff = $ct['fecha_fin'] ? new DateTime($ct['fecha_fin']) : null;
-        if ($fi > new DateTime("$anio-$mes-28")) continue;
+        if ($fi > new DateTime(date('Y-m-t', strtotime("$anio-$mes-01")))) continue;
         if ($ff && $ff < new DateTime("$anio-$mes-01")) continue;
         $monto = (float)$ct['monto'];
+        $clienteIngreso = $ct['receptor_nombre'] ?: 'Cliente sin nombre';
         switch ($ct['tipo_contrato']) {
             case 'estandar':
                 $ing_estandar += $monto;
                 break;
             case 'periodico':
-                $freq = (int)($ct['frecuencia_meses'] ?? 1);
+                $freq = max(1, (int)($ct['frecuencia_meses'] ?? 1));
                 $mesI = (int)($ct['mes_inicio_ciclo'] ?? (int)$fi->format('n'));
                 $anioI = (int)$fi->format('Y');
                 $off2 = ($anio - $anioI) * 12 + ($mes - $mesI);
@@ -205,7 +150,9 @@ for ($offset = 0; $offset < 12; $offset++) {
                         $fr = max(1, (int)($ct['frecuencia_meses'] ?? 1));
                         $ct2 = count($turnos) * $fr;
                         $pc = (($od % $ct2) + $ct2) % $ct2;
-                        $ing_estandar += (float)$turnos[(int)floor($pc / $fr)]['monto'];
+                        $turno = $turnos[(int)floor($pc / $fr)];
+                        $ing_estandar += (float)$turno['monto'];
+                        $clienteIngreso = $turno['receptor_nombre'] ?: $clienteIngreso;
                     }
                 }
                 break;
@@ -213,26 +160,20 @@ for ($offset = 0; $offset < 12; $offset++) {
                 $ing_recibo += $monto;
                 break;
         }
+        $aporte = $ing_estandar + $ing_periodico + $ing_recibo - $antes;
+        if ($aporte != 0) $ing_detalle[] = ['cliente' => $clienteIngreso, 'nombre' => $ct['nombre_contrato'] ?: 'Contrato #' . $ct['id'], 'tipo' => $ct['tipo_contrato'], 'monto' => round($aporte, 2), 'regla' => 'Contrato vigente · ' . $ct['tipo_contrato']];
     }
 
     $ing_real = $egr_real = null;
-    if ($anio < $hoy_año || ($anio == $hoy_año && $mes <= $hoy_mes)) {
-        $stR = $pdo->prepare("SELECT COALESCE(SUM(subtotal),0) FROM facturas WHERE cliente_id=? AND estado='emitida' AND YEAR(fecha_emision)=? AND MONTH(fecha_emision)=?");
-        $stR->execute([$cliente_id, $anio, $mes]);
-        $ing_real = (float)$stR->fetchColumn();
-        try {   // + recibos de contratos sin factura
-            $stRc = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM contratos_recibos WHERE cliente_id=? AND estado='emitido' AND YEAR(fecha_emision)=? AND MONTH(fecha_emision)=?");
-            $stRc->execute([$cliente_id, $anio, $mes]);
-            $ing_real += (float)$stRc->fetchColumn();
-        } catch (PDOException $e) {
-        }
-        $stE = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE cliente_id=? AND estado!='anulado' AND YEAR(fecha)=? AND MONTH(fecha)=?");
-        $stE->execute([$cliente_id, $anio, $mes]);
-        $egr_real = (float)$stE->fetchColumn();
-    }
 
     $ing_total = $ing_estandar + $ing_periodico + $ing_recibo;
-    $egr_total = $egreso_mensual_base;
+    $gastosMes = proyeccionGastosMes($gastosCalendario, $anio, $mes);
+    $fijosMes = $variablesMes = 0;
+    foreach ($gastosMes as $g) {
+        if ($g['tipo'] === 'fijo') $fijosMes += $g['total'];
+        else $variablesMes += $g['total'];
+    }
+    $egr_total = round($nomina_mensual + $fijosMes + $variablesMes, 2);
     $flujo = $ing_total - $egr_total;
     $alerta = $flujo < 0 ? 'critico' : ($flujo < $egr_total * 0.15 ? 'atencion' : 'ok');
     if ($alerta === 'critico')
@@ -251,15 +192,17 @@ for ($offset = 0; $offset < 12; $offset++) {
         'ing_recibo' => $ing_recibo,
         'ing_total' => $ing_total,
         'egr_nomina' => $nomina_mensual,
-        'egr_fijos' => $prom_fijos,
-        'egr_variables' => $prom_variables,
+        'egr_fijos' => $fijosMes,
+        'gastos_detalle' => $gastosMes,
+        'ing_detalle' => $ing_detalle,
+        'egr_variables' => $variablesMes,
         'egr_total' => $egr_total,
         'flujo' => $flujo,
         'alerta' => $alerta,
         'recomendacion' => $rec,
         'ing_real' => $ing_real,
         'egr_real' => $egr_real,
-        'es_pasado' => ($ing_real !== null),
+        'es_pasado' => false, // Todas las filas son proyecciones; el mes actual aún no está cerrado.
         'es_actual' => ($anio == $hoy_año && $mes == $hoy_mes),
     ];
 }
@@ -267,6 +210,8 @@ for ($offset = 0; $offset < 12; $offset++) {
 // (Se eliminó la escritura a proyecciones_cache en cada visita: ninguna parte del
 // sistema lee esa tabla y costaba una escritura por mes proyectado en cada carga.)
 
+$prom_fijos = array_sum(array_column($proyeccion, 'egr_fijos')) / 12;
+$prom_variables = array_sum(array_column($proyeccion, 'egr_variables')) / 12;
 $total_ing_proy = array_sum(array_column($proyeccion, 'ing_total'));
 $total_egr_proy = array_sum(array_column($proyeccion, 'egr_total'));
 $total_flujo    = array_sum(array_column($proyeccion, 'flujo'));
@@ -589,10 +534,10 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
 
     .det-item-name {
         color: var(--text);
-        max-width: 220px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap
+        flex: 1;
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere
     }
 
     .det-item-amt {
@@ -817,8 +762,7 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
         <div class="pj-card-hdr">
             <span class="pj-card-title"><i class="bi bi-bar-chart-line-fill text-success"></i> Flujo de Caja — 12 meses
                 proyectados</span>
-            <small class="text-muted" style="font-size:.75rem">Egresos = promedio real últimos 3 meses · Sin sueldos
-                dobles</small>
+            <small class="text-muted" style="font-size:.75rem">Egresos según calendario y vencimientos · Mes actual también proyectado</small>
         </div>
         <div class="p-3" style="height:280px"><canvas id="chartProy"></canvas></div>
         <div class="chart-legend pb-3">
@@ -941,8 +885,8 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
                 <tfoot>
                     <tr style="background:#f8fafc;font-weight:700;font-size:.83rem">
                         <td>TOTAL 12 MESES</td>
-                        <td class="text-end text-success">L <?= number_format($total_ing_proy, 0) ?></td>
-                        <td></td>
+                        <td class="text-end text-success">L <?= number_format(array_sum(array_column($proyeccion, 'ing_estandar')) + array_sum(array_column($proyeccion, 'ing_periodico')), 0) ?></td>
+                        <td class="text-end">L <?= number_format(array_sum(array_column($proyeccion, 'ing_recibo')), 0) ?></td>
                         <td class="text-end text-success">L <?= number_format($total_ing_proy, 0) ?></td>
                         <td class="text-end text-warning">-L <?= number_format($nomina_mensual * 12, 0) ?></td>
                         <td class="text-end text-danger">-L
@@ -977,12 +921,12 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
                     <div class="fw-bold mb-1 text-danger"><i class="bi bi-arrow-down-circle me-1"></i>Egresos</div>
                     <ul class="text-muted ps-3 mb-0" style="line-height:1.9">
                         <li>Nómina: salario bruto + cargas patronales IHSS/RAP</li>
-                        <li>Gastos fijos: promedio real últimos 3 meses</li>
-                        <li>Gastos variables: promedio real últimos 3 meses</li>
+                        <li>Gastos fijos: cuotas programadas hasta su fecha de vencimiento</li>
+                        <li>Gastos variables: importes registrados según su frecuencia</li>
                         <li><strong>Excluye sueldos del promedio</strong> (ya están en nómina)</li>
-                        <li><strong>Excluye gastos extraordinarios y futuros</strong></li>
-                        <li><strong>Excluye pagos únicos</strong> (no se repiten)</li>
-                        <li>Gastos anuales: amortizados ÷ 12/mes</li>
+                        <li>Pagos futuros registrados: incluidos en su mes correspondiente</li>
+                        <li>Pagos únicos: solo en el mes de su fecha, sin repetirse</li>
+                        <li>Gastos anuales: importe completo en el mes de pago</li>
                     </ul>
                 </div>
                 <div class="col-md-4">
@@ -1000,8 +944,8 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
                 Generado el <?= date('d/m/Y H:i') ?> ·
                 <?= count($contratos) ?> contrato(s) activo(s) ·
                 Nómina mensual: L <?= number_format($nomina_mensual, 2) ?> ·
-                Gastos fijos prom: L <?= number_format($prom_fijos, 2) ?> ·
-                Gastos variables prom: L <?= number_format($prom_variables, 2) ?>
+                Gastos fijos promedio proyectado: L <?= number_format($prom_fijos, 2) ?> ·
+                Gastos variables promedio proyectado: L <?= number_format($prom_variables, 2) ?>
             </div>
         </div>
     </div>
@@ -1011,9 +955,9 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
 <script>
     /* ── Datos para desglose ─────────────────────────────────────────────────── */
     const COLABS = <?= $colabs_json ?>;
-    const GASTOS_DG = <?= $gastos_json ?>;
+    const PROYECCION = <?= json_encode($proyeccion, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
     const NOMINA_M = <?= round($nomina_mensual, 2) ?>;
-    const GASTOS_M = <?= round($prom_fijos + $prom_variables, 2) ?>;
+    const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
     const fmtL = v => 'L ' + parseFloat(v).toLocaleString('es-HN', {
         minimumFractionDigits: 2,
@@ -1021,7 +965,9 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
     });
 
     /* ── Render desglose proyectado ──────────────────────────────────────────── */
-    function renderDesgloseProyectado(cell) {
+    function renderDesgloseProyectado(cell, idx) {
+        const p = PROYECCION[idx];
+        const GASTOS_M = p.egr_fijos + p.egr_variables;
         // Nómina breakdown
         let nomHtml = COLABS.map(c => {
             const bruto = parseFloat(c.salario_base);
@@ -1029,7 +975,7 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
             const rap = parseFloat(c.rap_pat);
             const costo = bruto + ihss + rap;
             return `<div class="det-item">
-            <span class="det-item-name"><i class="bi bi-person me-1 text-muted"></i>${c.nombre}</span>
+            <span class="det-item-name"><i class="bi bi-person me-1 text-muted"></i>${esc(c.nombre)}</span>
             <span class="det-item-amt text-warning">${fmtL(costo)}</span>
         </div>
         <div style="font-size:.7rem;color:#94a3b8;padding:0 .5rem .25rem 1.5rem">
@@ -1037,38 +983,17 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
         </div>`;
         }).join('');
 
-        // Gastos recurrentes breakdown
-        let gastHtml = '';
-        if (GASTOS_DG.length === 0) {
-            gastHtml = '<div class="text-muted small ps-2">Sin datos de los últimos 3 meses.</div>';
-        } else {
-            GASTOS_DG.forEach(g => {
-                const tipo = g.tipo === 'fijo' ? '🔒' : '📊';
-                const tagMap = {
-                    anual: 'anual ÷12',
-                    mensual: 'mensual',
-                    quincenal: 'quincenal'
-                };
-                const tagClr = {
-                    anual: '#dbeafe;color:#1d4ed8',
-                    mensual: '#d1fae5;color:#065f46',
-                    quincenal: '#ede9fe;color:#7c3aed'
-                };
-                const tagTxt = g.tag && tagMap[g.tag] ?
-                    `<span style="font-size:.62rem;background:${tagClr[g.tag]};padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:600">${tagMap[g.tag]}</span>` :
-                    '';
-                gastHtml += `<div class="det-item">
-                <span class="det-item-name" title="${g.descripcion}">${tipo} ${g.descripcion}${tagTxt}</span>
-                <span class="det-item-amt text-danger">~${fmtL(g.prom)}<small class="text-muted fw-normal">/mes</small></span>
-            </div>`;
-            });
-            gastHtml += `<div class="det-nota">
-            <i class="bi bi-info-circle me-1"></i>
-            Solo recurrentes (mensual/quincenal). Anuales = monto÷12. Pagos únicos y extraordinarios <strong>excluidos</strong>.
-        </div>`;
-        }
+        const gastHtml = p.gastos_detalle.map(g => `<div class="det-item">
+            <span class="det-item-name">${esc(g.descripcion || g.categoria)}<br>
+            <small class="text-muted">${esc(g.categoria)} · ${esc(g.tipo)} · ${esc(g.frecuencia)}<br>
+            ${g.fechas.map(esc).join(', ')} · ${g.fechas.length} pago(s) × ${fmtL(g.monto)}<br>
+            Vencimiento: ${esc(g.fecha_vencimiento || 'Sin fecha de fin')}</small></span>
+            <span class="det-item-amt text-danger">${fmtL(g.total)}</span></div>`).join('') || '<p class="text-muted">Sin gastos programados para este mes.</p>';
+        const ingresosHtml = p.ing_detalle.map(i => `<div class="det-item" style="gap:1rem;align-items:flex-start"><span class="det-item-name"><strong>${esc(i.cliente)}</strong><br><small>${esc(i.nombre)}</small><br><small class="text-muted">${esc(i.regla)}</small></span><span class="det-item-amt text-success">${fmtL(i.monto)}</span></div>`).join('') || '<p class="text-muted">Sin ingresos previstos.</p>';
 
         cell.innerHTML = `
+    <div class="mb-3"><div class="det-section-title">Ingresos proyectados · ${esc(p.mes_nombre)} ${p.anio}</div>${ingresosHtml}
+        <div class="det-total">Contratos: ${fmtL(p.ing_estandar + p.ing_periodico)} + Recibos: ${fmtL(p.ing_recibo)} = Total ingresos: ${fmtL(p.ing_total)}</div></div>
     <div class="det-grid">
         <div>
             <div class="det-section-title"><i class="bi bi-people-fill" style="color:#f59e0b"></i> Nómina proyectada</div>
@@ -1076,15 +1001,19 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
             <div class="det-total"><span>Total nómina/mes</span><span class="text-warning">${fmtL(NOMINA_M)}</span></div>
         </div>
         <div>
-            <div class="det-section-title"><i class="bi bi-receipt" style="color:#ef4444"></i> Gastos fijos/variables recurrentes</div>
+            <div class="det-section-title"><i class="bi bi-receipt" style="color:#ef4444"></i> Gastos programados del mes</div>
             ${gastHtml}
-            <div class="det-total"><span>Total gastos/mes (prom.)</span><span class="text-danger">${fmtL(GASTOS_M)}</span></div>
+            <div class="det-total"><span>Total gastos del mes</span><span class="text-danger">${fmtL(GASTOS_M)}</span></div>
         </div>
     </div>
     <div class="det-total mt-3" style="border-top:2px solid var(--border);padding-top:.6rem">
         <span style="font-size:.85rem">💸 Total egresos proyectados/mes</span>
-        <span style="font-size:1rem;color:#dc2626">${fmtL(NOMINA_M + GASTOS_M)}</span>
-    </div>`;
+        <span style="font-size:1rem;color:#dc2626">${fmtL(p.egr_total)}</span>
+    </div>
+    <div class="det-nota">Gastos = fijos ${fmtL(p.egr_fijos)} + variables/otros ${fmtL(p.egr_variables)}.
+    Egresos = nómina ${fmtL(p.egr_nomina)} + gastos ${fmtL(GASTOS_M)}.<br>
+    Flujo neto = ingresos ${fmtL(p.ing_total)} − egresos ${fmtL(p.egr_total)} = <strong>${fmtL(p.flujo)}</strong>.<br>
+    Estado: ${esc(p.alerta)}. ${esc(p.recomendacion)} El mes actual muestra la previsión completa, no un cierre real.</div>`;
     }
 
     /* ── Render desglose REAL (mes cerrado) ──────────────────────────────────── */
@@ -1153,7 +1082,7 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
             if (esPasado) {
                 renderDesgloseReal(cell, anio, mes);
             } else {
-                renderDesgloseProyectado(cell);
+                renderDesgloseProyectado(cell, idx);
             }
         });
     });

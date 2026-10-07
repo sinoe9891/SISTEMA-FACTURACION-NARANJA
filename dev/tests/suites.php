@@ -2359,3 +2359,5 @@ suite('Historial de sueldo (aumentos) y nóminas vencidas', function () {
     $pdo->exec("DELETE FROM colaborador_salarios WHERE colaborador_id = $id");
     $pdo->exec("UPDATE colaboradores SET salario_base = $orig WHERE id = $id");
 });
+
+require __DIR__ . '/cobros_lista_adjuntos.php';
