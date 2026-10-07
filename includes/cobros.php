@@ -357,18 +357,32 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
 }
 
 /** Plantilla del correo de cobro: el mensaje redactado dentro del diseño de la empresa. */
+/** Párrafo automático editable: quitar la versión anterior antes de reconstruirlo. */
+function cobroMensajeDocumentos(string $mensaje, array $documentos, string $tipo): string
+{
+    $auto = 'Para facilitar su gestión administrativa y tributaria, adjuntamos la documentación de respaldo: .*?Quedamos a su disposición para cualquier consulta sobre esta documentación\.';
+    $mensaje = preg_replace('~<p\b[^>]*>\s*' . $auto . '\s*</p>|' . $auto . '(?:\s*<br\s*/?>){0,2}~su', '', $mensaje);
+    $documentos = array_values(array_unique(array_filter(array_map('strval', $documentos))));
+    if (!$documentos || !in_array($tipo, [...COBRO_TIPOS_FACTURA, 'recordatorio_pago'], true)) return $mensaje;
+    $nombres = array_map(fn($nombre) => '<strong>' . htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8') . '</strong>', $documentos);
+    $ultimo = array_pop($nombres);
+    $lista = $nombres ? implode(', ', $nombres) . ' y ' . $ultimo : $ultimo;
+    $texto = 'Para facilitar su gestión administrativa y tributaria, adjuntamos la documentación de respaldo: ' . $lista
+        . '. Quedamos a su disposición para cualquier consulta sobre esta documentación.';
+    $desde = stripos($mensaje, 'Formas de pago');
+    $cierre = '~(?:^|<br\s*/?>|<p\b[^>]*>|<div\b[^>]*>)\s*(?=(?:<(?:strong|b|span)\b[^>]*>\s*)*(?:Quedo atent[oa]|Quedamos atent[oa]s|Agradecemos|Saludos|Atentamente|Cordialmente)\b)~iu';
+    if (preg_match($cierre, $mensaje, $m, PREG_OFFSET_CAPTURE, $desde === false ? 0 : $desde)) {
+        $pos = $m[0][1] + strlen($m[0][0]);
+        return substr($mensaje, 0, $pos) . $texto . '<br><br>' . substr($mensaje, $pos);
+    }
+    return $mensaje . '<p>' . $texto . '</p>';
+}
+
 function cobroPlantilla(string $mensaje, array $empresa, array $cfg, array $facturas, bool $prueba, array $documentos = [], string $tipo = ''): array
 {
     $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
-    $documentos = array_values(array_unique(array_filter(array_map('strval', $documentos))));
-    if ($documentos && in_array($tipo, [...COBRO_TIPOS_FACTURA, 'recordatorio_pago'], true)) {
-        $nombres = array_map(fn($nombre) => '<strong>' . $e($nombre) . '</strong>', $documentos);
-        $ultimo = array_pop($nombres);
-        $lista = $nombres ? implode(', ', $nombres) . ' y ' . $ultimo : $ultimo;
-        $parrafo = '<p>Para facilitar su gestión administrativa y tributaria, adjuntamos la documentación de respaldo: ' . $lista
-            . '. Quedamos a su disposición para cualquier consulta sobre esta documentación.</p>';
-        if (!str_contains($mensaje, $parrafo)) $mensaje .= $parrafo;
-    }
+    // Conservar intacto el texto histórico de correos enviados (no pasan documentos).
+    if ($documentos) $mensaje = cobroMensajeDocumentos($mensaje, $documentos, $tipo);
     $empresaNombre = ($empresa['alias'] ?? '') ?: ($empresa['nombre'] ?? 'La empresa');
     $logoUrl = $cfg['logo_url'] ?? '';
     $enlace = $cfg['enlace_url'] ?? '';
@@ -514,6 +528,10 @@ function cobroEditar(PDO $pdo, int $cid, int $id, array $d): void
                     $retirados[] = $dir . $archivo;
                 }
             }
+        }
+        if (!empty($d['actualizar_documentos'])) {
+            $nombresDocumentos = array_column(array_filter(cobroAdjuntos($pdo, $cid, $id), fn($a) => !empty($a['documento_id'])), 'etiqueta');
+            $mensaje = cobroMensajeDocumentos($mensaje, $nombresDocumentos, $c['tipo']);
         }
         $u = $pdo->prepare("UPDATE cobros_programados SET para = ?, cc = ?, asunto = ?, mensaje_html = ?, programado_para = ?, estado = 'programado', intentos = 0, error = NULL WHERE id = ? AND cliente_id = ?");
         $u->execute([$para, $cc ?: null, mb_substr($asunto, 0, 255), $mensaje, $dt->format('Y-m-d H:i:s'), $id, $cid]);

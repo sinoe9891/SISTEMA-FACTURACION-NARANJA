@@ -381,6 +381,28 @@ require_once '../../includes/templates/header.php';
         $tipo.dispatchEvent(new Event('change'));
     }));
 
+    function mensajeConDocumentos(html, nombres, tipo) {
+        const auto = 'Para facilitar su gestión administrativa y tributaria, adjuntamos la documentación de respaldo: [\\s\\S]*?Quedamos a su disposición para cualquier consulta sobre esta documentación\\.';
+        html = html.replace(new RegExp('<p\\b[^>]*>\\s*' + auto + '\\s*</p>|' + auto + '(?:\\s*<br\\s*/?>){0,2}', 'gu'), '');
+        if (!nombres.length || tipo === 'envio_recibo') return html;
+        const etiquetas = [...new Set(nombres)].map(n => '<strong>' + esc(n) + '</strong>');
+        const ultima = etiquetas.pop();
+        const lista = etiquetas.length ? etiquetas.join(', ') + ' y ' + ultima : ultima;
+        const texto = 'Para facilitar su gestión administrativa y tributaria, adjuntamos la documentación de respaldo: ' + lista + '. Quedamos a su disposición para cualquier consulta sobre esta documentación.';
+        const desde = Math.max(0, html.toLowerCase().indexOf('formas de pago'));
+        const cierre = /(?:^|<br\s*\/?>|<p\b[^>]*>|<div\b[^>]*>)\s*(?=(?:<(?:strong|b|span)\b[^>]*>\s*)*(?:Quedo atent[oa]|Quedamos atent[oa]s|Agradecemos|Saludos|Atentamente|Cordialmente)\b)/iu;
+        const m = cierre.exec(html.slice(desde));
+        if (m) { const pos = desde + m.index + m[0].length; return html.slice(0, pos) + texto + '<br><br>' + html.slice(pos); }
+        return html + '<p>' + texto + '</p>';
+    }
+    function actualizarParrafoDocumentos(editor, contenedor, tipo) {
+        const nombres = [...document.querySelectorAll('#' + contenedor + ' input:checked')].map(i => i.closest('label').querySelector('span').textContent);
+        const ed = tinymce.get(editor);
+        if (ed && !ed.initialized) { ed.once('init', () => actualizarParrafoDocumentos(editor, contenedor, tipo)); return; }
+        const anterior = getMensaje(editor), nuevo = mensajeConDocumentos(anterior, nombres, tipo);
+        if (nuevo !== anterior) setMensaje(editor, nuevo);
+    }
+
     // Documentos de la empresa (Constancia del SAR…): los marcados «por defecto» se marcan solos en los envíos de facturas
     let docs = [];
     function pintarDocs(inicial) {
@@ -395,8 +417,10 @@ require_once '../../includes/templates/header.php';
                 <input class="form-check-input m-0" type="checkbox" name="documento_ids[]" value="${d.id}" ${on ? 'checked' : ''}>
                 <span>${esc(d.nombre)}</span><span class="badge rounded-pill" style="background:${d.bg};color:${d.fg}">${esc(d.txt)}</span></label>`;
         }).join('');
+        actualizarParrafoDocumentos('cMensaje', 'cDocs', $tipo.value);
     }
     document.getElementById('cDocs')?.addEventListener('change', e => {
+        actualizarParrafoDocumentos('cMensaje', 'cDocs', $tipo.value);
         const d = docs.find(x => x.id === +e.target.value);
         if (e.target.checked && d && d.estado === 'vencido') Swal.fire('Documento vencido', '«' + d.nombre + '» está vencido. Súbelo renovado en Documentos de la empresa o desmárcalo.', 'warning');
     });
@@ -481,6 +505,7 @@ require_once '../../includes/templates/header.php';
             if (!r) return;
             document.getElementById('cAsunto').value = r.asunto || '';
             setMensaje('cMensaje', r.mensaje_html || '');
+            actualizarParrafoDocumentos('cMensaje', 'cDocs', $tipo.value);
             return;
         }
         if (!ids.length) return Swal.fire('Selecciona facturas', 'Marca al menos una factura para generar el mensaje.', 'info');
@@ -491,6 +516,7 @@ require_once '../../includes/templates/header.php';
         document.getElementById('cAsunto').value = r.asunto || '';
         // mensaje_html ya trae <br> (nl2br): los saltos de línea que quedan son solo espacio en HTML; no se convierten otra vez
         setMensaje('cMensaje', (r.mensaje_html || '').replace(/\r?\n/g, ''));
+        actualizarParrafoDocumentos('cMensaje', 'cDocs', $tipo.value);
     }
     document.getElementById('btnGenerar')?.addEventListener('click', e => { e.preventDefault(); generar(); });
     $tipo?.addEventListener('change', () => { mostrarBloque(); if (seleccionadas().length) generar(); });
@@ -602,7 +628,7 @@ require_once '../../includes/templates/header.php';
         if (!b) return;
         try {
             const det = await detalle(b.dataset.id), c = det.cobro;
-            editando = { anticipos: det.adjuntos.filter(x => x.anticipo_id).map(x => x.anticipo_id), receptor_id: c.receptor_id, facturas: det.adjuntos.filter(x => x.factura_id).map(x => x.factura_id), recibos: det.adjuntos.filter(x => x.recibo_id).map(x => x.recibo_id), documentos: det.adjuntos.filter(x => x.documento_id).map(x => x.documento_id) };
+            editando = { tipo: c.tipo, anticipos: det.adjuntos.filter(x => x.anticipo_id).map(x => x.anticipo_id), receptor_id: c.receptor_id, facturas: det.adjuntos.filter(x => x.factura_id).map(x => x.factura_id), recibos: det.adjuntos.filter(x => x.recibo_id).map(x => x.recibo_id), documentos: det.adjuntos.filter(x => x.documento_id).map(x => x.documento_id) };
             const actuales = new Map(det.adjuntos.filter(x => x.documento_id).map(x => [+x.documento_id, x]));
             const disponibles = [...(det.documentos || [])];
             for (const [id, a] of actuales) if (!disponibles.some(d => +d.id === id)) disponibles.push({ id, nombre: a.etiqueta, txt: 'Copia adjunta', estado: '' });
@@ -616,10 +642,11 @@ require_once '../../includes/templates/header.php';
             document.getElementById('eAsunto').value = c.asunto;
             document.getElementById('eFecha').value = c.programado_para.slice(0, 16).replace(' ', 'T');
             setMensaje('eMensaje', c.mensaje_html.replace(/\r?\n/g, ''));
+            actualizarParrafoDocumentos('eMensaje', 'eDocs', c.tipo);
             bootstrap.Modal.getOrCreateInstance(document.getElementById('mEditar')).show();
         } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
     });
-    document.getElementById('eDocs')?.addEventListener('change', e => { if (e.target.checked && e.target.dataset.vencido === '1') Swal.fire('Documento vencido', 'Este documento está vencido. Puedes renovarlo en Documentos de la empresa antes de adjuntarlo.', 'warning'); });
+    document.getElementById('eDocs')?.addEventListener('change', e => { actualizarParrafoDocumentos('eMensaje', 'eDocs', editando?.tipo); if (e.target.checked && e.target.dataset.vencido === '1') Swal.fire('Documento vencido', 'Este documento está vencido. Puedes renovarlo en Documentos de la empresa antes de adjuntarlo.', 'warning'); });
     document.getElementById('fEditar')?.addEventListener('submit', e => {
         e.preventDefault();
         const fd = new FormData(e.target);

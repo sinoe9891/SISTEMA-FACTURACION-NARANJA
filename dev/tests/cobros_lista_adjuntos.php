@@ -49,6 +49,13 @@ suite('Cobros lista y adjuntos editables', function () {
         }
         [$html, $texto] = cobroPlantilla('Hola', [], [], [], false, ['Constancia SAR'], 'envio_factura');
         check('versión de texto del correo también menciona la constancia', str_contains($html, 'Constancia SAR') && str_contains($texto, 'Constancia SAR'));
+        foreach (['<p>Información personalizada.</p><p>Formas de pago:<br>Banco 123</p><p>Saludos cordiales,</p>', 'Información personalizada.<br><br>Formas de pago:<br>Banco 123<br><br>Agradecemos su apoyo.<br><br>Saludos cordiales,'] as $original) {
+            $conDoc = cobroMensajeDocumentos($original, ['Constancia SAR'], 'envio_factura');
+            $repetido = cobroMensajeDocumentos($conDoc, ['Constancia SAR'], 'envio_factura');
+            check('párrafo entre cuentas y despedida sin duplicarse', substr_count($repetido, 'Para facilitar') === 1 && strpos($repetido, 'Banco 123') < strpos($repetido, 'Para facilitar') && strpos($repetido, 'Para facilitar') < strpos($repetido, 'Saludos cordiales'));
+            $sinDocumento = cobroMensajeDocumentos($conDoc, [], 'envio_factura');
+            check('desmarcar conserva el texto personalizado y retira solo el párrafo', str_contains($sinDocumento, 'Información personalizada.') && !str_contains($sinDocumento, 'Para facilitar'));
+        }
         [$sinDoc] = cobroPlantilla('Hola', [], [], [], false, [], 'envio_factura');
         [$recibo] = cobroPlantilla('Hola', [], [], [], false, ['Constancia SAR'], 'envio_recibo');
         check('sin documentos y envío de recibos no agregan el párrafo', !str_contains($sinDoc, 'Para facilitar') && !str_contains($recibo, 'Para facilitar'));
