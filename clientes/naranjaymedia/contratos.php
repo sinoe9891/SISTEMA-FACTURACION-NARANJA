@@ -131,6 +131,22 @@ foreach ($stPC->fetchAll(PDO::FETCH_ASSOC) as $f) {
     }
 }
 
+// Cobros por correo programados (aún sin enviar) de cada contrato: por sus facturas, recibos o pagos del plan
+$cobroProg = [];
+try {
+    $sqlProg = "SELECT x.contrato_id, MIN(c.programado_para) cuando, COUNT(DISTINCT c.id) n FROM (
+            SELECT f.contrato_id, cpf.cobro_id FROM cobros_programados_facturas cpf JOIN facturas f ON f.id = cpf.factura_id WHERE f.cliente_id = ? AND f.contrato_id IS NOT NULL"
+        . (cobrosExtrasDisponibleLocal($pdo) ? "
+            UNION SELECT r.contrato_id, x.cobro_id FROM cobros_programados_recibos x JOIN contratos_recibos r ON r.id = x.recibo_id WHERE r.cliente_id = ?
+            UNION SELECT p.contrato_id, x.cobro_id FROM cobros_programados_plan x JOIN contratos_plan p ON p.id = x.plan_id WHERE p.cliente_id = ?" : "") . "
+        ) x JOIN cobros_programados c ON c.id = x.cobro_id AND c.estado = 'programado' AND c.prueba = 0 GROUP BY x.contrato_id";
+    $stProg = $pdo->prepare($sqlProg);
+    $stProg->execute(cobrosExtrasDisponibleLocal($pdo) ? [$cliente_id, $cliente_id, $cliente_id] : [$cliente_id]);
+    foreach ($stProg->fetchAll(PDO::FETCH_ASSOC) as $r) $cobroProg[(int)$r['contrato_id']] = $r;
+} catch (Throwable $e) {
+    $cobroProg = [];   // módulo de cobros no instalado
+}
+
 // Contratos rotativos: un mismo cliente que factura a nombre de varias empresas
 $rotEmpresas = [];
 $stRot = $pdo->prepare("
@@ -188,7 +204,13 @@ $celdaCliente = function (array $c, bool $conDetalle) use ($rotEmpresas, $rotUlt
 // Cobertura: hasta qué mes está facturado (según el mes que cubre cada factura, no su fecha de emisión)
 // y cuánto debe. Sirve para clientes que facturan con meses de atraso.
 $mesesCorto = [1 => 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-$celdaCobertura = function (array $c) use ($mesesCorto, $porCobrar, $hoyStr): string {
+function cobrosExtrasDisponibleLocal(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) { try { $ok = (bool)$pdo->query("SHOW TABLES LIKE 'cobros_programados_plan'")->fetchColumn(); } catch (Throwable $e) { $ok = false; } }
+    return $ok;
+}
+$celdaCobertura = function (array $c) use ($mesesCorto, $porCobrar, $hoyStr, $cobroProg): string {
     if ($c['estado'] !== 'activo' && !(int)$c['impagas_n']) return '';   // (impagas_n: cualquier factura sin pagar)
     $h = '';
     if ($c['tipo_contrato'] === 'proyecto') {
@@ -224,6 +246,11 @@ $celdaCobertura = function (array $c) use ($mesesCorto, $porCobrar, $hoyStr): st
         $cls = $d <= 3 ? 'ct-sem-naranja' : ($d <= 7 ? 'ct-sem-amarillo' : 'ct-sem-gris');
         $cuando = $d === 0 ? 'vence hoy' : 'vence ' . (int)substr($pc['proxima'], 8, 2) . ' ' . $mesesCorto[(int)substr($pc['proxima'], 5, 2)] . ' (' . $d . ' d)';
         $h .= '<a class="ct-cob ct-sem ' . $cls . '" href="' . $url . '" title="Facturada, aún dentro del plazo de pago">Por cobrar L ' . number_format($pc['pend_total'], 2) . ' · ' . $cuando . '</a>';
+    }
+    // Ya hay un correo de cobro o envío programado para este contrato
+    if ($cp = $cobroProg[(int)$c['id']] ?? null) {
+        $h .= '<a class="ct-cob ct-prog d-block" href="cobros_programados" title="Correo programado en Cobros por correo (aún no se envía)"><i class="bi bi-envelope-check"></i> Correo programado '
+            . date('d/m g:i a', strtotime($cp['cuando'])) . ((int)$cp['n'] > 1 ? ' (+' . ((int)$cp['n'] - 1) . ')' : '') . '</a>';
     }
     return $h;
 };
@@ -691,6 +718,19 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
     }
 
     /* Facturado = por cobrar (azul); verde solo para «Al día» (pagado) */
+    .ct-prog {
+        display: inline-block;
+        margin-top: .2rem;
+        padding: .1rem .5rem;
+        border-radius: 20px;
+        font-size: .7rem;
+        font-weight: 600;
+        background: #f0fdfa;
+        color: #0f766e;
+        border: 1px solid #99f6e4;
+        text-decoration: none;
+    }
+
     .fact-fac {
         background: #eff6ff;
         color: #1d4ed8;
@@ -1042,7 +1082,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                 <span class="ct-card-title"><i class="bi bi-calendar-check-fill"></i> Próximas Fechas de Cobro —
                     <?= $mesesTitulo[(int)date('n')] . ' ' . date('Y') ?></span>
                 <span class="d-flex align-items-center gap-2">
-                    <?php if ($ctEsAdmin): ?><button type="button" class="btn btn-sm btn-outline-danger ct-eliminar-sel" disabled><i class="bi bi-trash me-1"></i>Eliminar seleccionados <span class="ct-sel-n"></span></button><?php endif; ?>
+                    <?php if ($ctEsAdmin): ?><button type="button" class="btn btn-sm btn-outline-danger ct-eliminar-sel" disabled><i class="bi bi-trash me-1"></i>Eliminar contratos <span class="ct-sel-n"></span></button><?php endif; ?>
                     <span class="ct-result-badge"><?= $nPrioridad ?> en 5 días o menos · <?= count($proximos) ?> activos</span>
                 </span>
             </div>
@@ -1173,7 +1213,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
         </select>
         <span class="ct-result-badge" id="ctBadge"><?= $total_contratos ?> contratos</span>
         <?php if ($ctEsAdmin): ?>
-            <button type="button" class="btn btn-sm btn-outline-danger ct-eliminar-sel" id="ctEliminarSel" disabled><i class="bi bi-trash me-1"></i>Eliminar seleccionados <span class="ct-sel-n"></span></button>
+            <button type="button" class="btn btn-sm btn-outline-danger ct-eliminar-sel" id="ctEliminarSel" disabled><i class="bi bi-trash me-1"></i>Eliminar contratos <span class="ct-sel-n"></span></button>
         <?php endif; ?>
     </div>
 
