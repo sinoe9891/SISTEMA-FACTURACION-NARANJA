@@ -971,7 +971,8 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
     <?php
     $proximos = array_filter($contratos, fn($c) => $c['estado'] === 'activo' && ($c['tipo_contrato'] !== 'proyecto' || !empty($c['plan']['prox'])));
     usort($proximos, fn($a, $b) => (int)$a['dias_para_pago'] - (int)$b['dias_para_pago']);
-    $proximos = array_slice($proximos, 0, 10);
+    // Prioridad: los que se cobran en 5 días o menos (y los atrasados); el resto con «Cargar más»
+    $nPrioridad = count(array_filter($proximos, fn($c) => (int)$c['dias_para_pago'] <= 5));
     ?>
     <?php if (!empty($proximos)): ?>
         <div class="ct-card">
@@ -980,7 +981,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                     <?= $mesesTitulo[(int)date('n')] . ' ' . date('Y') ?></span>
                 <span class="d-flex align-items-center gap-2">
                     <?php if ($ctEsAdmin): ?><button type="button" class="btn btn-sm btn-outline-danger ct-eliminar-sel" disabled><i class="bi bi-trash me-1"></i>Eliminar seleccionados <span class="ct-sel-n"></span></button><?php endif; ?>
-                    <span class="ct-result-badge"><?= count($proximos) ?> activos</span>
+                    <span class="ct-result-badge"><?= $nPrioridad ?> en 5 días o menos · <?= count($proximos) ?> activos</span>
                 </span>
             </div>
             <div class="ct-table-wrap">
@@ -1025,7 +1026,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                 $dTxt = "{$dias}d";
                             }
                         ?>
-                            <tr <?= $facturado ? 'class="table-success"' : '' ?>>
+                            <tr class="<?= $facturado ? 'table-success' : '' ?> <?= $dias > 5 ? 'd-none ct-prox-mas' : '' ?>">
                                 <?php if ($ctEsAdmin): ?><td class="ct-col-sel"><input type="checkbox" class="form-check-input ct-sel" value="<?= (int)$p['id'] ?>" aria-label="Seleccionar contrato #<?= (int)$p['id'] ?>"></td><?php endif; ?>
                                 <td><?= $celdaCliente($p, false) ?></td>
                                 <td class="small text-muted"><div class="ct-clamp" title="<?= htmlspecialchars($p['producto_nombre']) ?>"><?= htmlspecialchars($p['producto_nombre']) ?></div></td>
@@ -1070,9 +1071,30 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                 </div></td>
                             </tr>
                         <?php endforeach; ?>
+                        <?php if (!$nPrioridad): ?>
+                            <tr class="ct-prox-vacio"><td colspan="<?= $ctEsAdmin ? 8 : 7 ?>" class="text-center text-muted py-3">Ningún contrato se cobra en los próximos 5 días.</td></tr>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
+            <?php if (count($proximos) > $nPrioridad): ?>
+                <div class="text-center py-2 border-top">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="ctProxMas"><i class="bi bi-chevron-down me-1"></i>Cargar más (<?= count($proximos) - $nPrioridad ?>)</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="ctProxMenos"><i class="bi bi-chevron-up me-1"></i>Ver menos (solo prioridad)</button>
+                </div>
+                <script>
+                    (() => {
+                        const mas = document.getElementById('ctProxMas'), menos = document.getElementById('ctProxMenos');
+                        const ver = todo => {
+                            document.querySelectorAll('.ct-prox-mas').forEach(tr => tr.classList.toggle('d-none', !todo));
+                            document.querySelectorAll('.ct-prox-vacio').forEach(tr => tr.classList.toggle('d-none', todo));
+                            mas.classList.toggle('d-none', todo); menos.classList.toggle('d-none', !todo);
+                        };
+                        mas.addEventListener('click', () => ver(true));
+                        menos.addEventListener('click', () => ver(false));
+                    })();
+                </script>
+            <?php endif; ?>
         </div>
     <?php endif; ?>
 
