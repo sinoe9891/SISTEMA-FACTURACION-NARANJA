@@ -390,7 +390,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 
 	.fh-filter-grid {
 		display: grid;
-		grid-template-columns: 2fr 1fr 1fr auto;
+		grid-template-columns: 2fr 1.2fr 1fr 1fr auto;
 		gap: .75rem;
 		align-items: end;
 	}
@@ -1247,6 +1247,24 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 						<?php endif; ?>
 					</div>
 					<div>
+						<label class="fh-label">Año o mes</label>
+						<?php
+						$fhMeses = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+						$fhSel = '';
+						if ($fecha_desde && $fecha_hasta) {
+							if (substr($fecha_desde, 5) === '01-01' && substr($fecha_hasta, 5) === '12-31' && substr($fecha_desde, 0, 4) === substr($fecha_hasta, 0, 4)) $fhSel = substr($fecha_desde, 0, 4);
+							elseif (substr($fecha_desde, 8) === '01' && $fecha_hasta === date('Y-m-t', strtotime($fecha_desde))) $fhSel = substr($fecha_desde, 0, 7);
+						}
+						?>
+						<select class="fh-select" id="fhPeriodo">
+							<option value="">— Rango libre —</option>
+							<optgroup label="Año completo"><?php for ($y = (int)date('Y'); $y >= (int)date('Y') - 2; $y--): ?>
+								<option value="<?= $y ?>" <?= $fhSel === (string)$y ? 'selected' : '' ?>>Todo <?= $y ?></option><?php endfor; ?></optgroup>
+							<optgroup label="Mes"><?php for ($i = 0; $i < 24; $i++): $t = strtotime(date('Y-m-01') . " -$i month"); $v = date('Y-m', $t); ?>
+								<option value="<?= $v ?>" <?= $fhSel === $v ? 'selected' : '' ?>><?= $fhMeses[(int)date('n', $t)] . ' ' . date('Y', $t) ?></option><?php endfor; ?></optgroup>
+						</select>
+					</div>
+					<div>
 						<label class="fh-label">Desde</label>
 						<input type="date" name="fecha_desde" class="fh-date"
 							value="<?= htmlspecialchars($_GET['fecha_desde'] ?? '') ?>">
@@ -1262,6 +1280,23 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					</div>
 				</div>
 			</form>
+			<script>
+				// Filtros automáticos: al cambiar el período, el CAI o las fechas se aplica sin pulsar «Filtrar»
+				(() => {
+					const f = document.getElementById('fhFilterForm');
+					const desde = f.querySelector('[name=fecha_desde]'), hasta = f.querySelector('[name=fecha_hasta]');
+					const enviar = () => { f.querySelector('.btn-filter').innerHTML = '<span class="spinner-border spinner-border-sm"></span> Filtrando…'; f.submit(); };
+					document.getElementById('fhPeriodo').addEventListener('change', e => {
+						const v = e.target.value;
+						if (!v) return;
+						if (/^\d{4}$/.test(v)) { desde.value = v + '-01-01'; hasta.value = v + '-12-31'; }
+						else { const [y, m] = v.split('-').map(Number); desde.value = v + '-01'; hasta.value = v + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0'); }
+						enviar();
+					});
+					f.querySelector('select[name=cai_id]')?.addEventListener('change', enviar);
+					[desde, hasta].forEach(i => i.addEventListener('change', () => { document.getElementById('fhPeriodo').value = ''; if (i.value.length === 10) enviar(); }));
+				})();
+			</script>
 		</div>
 	<?php endif; ?>
 
