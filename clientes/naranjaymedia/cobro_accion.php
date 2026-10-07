@@ -6,6 +6,7 @@
 //   GET  ?pdf=<id>&factura=<factura_id>             → PDF adjunto tal como se envió
 //   POST accion=enviar_ya | cancelar | reprogramar   → id (+ programado_para)
 //   POST accion=editar (para, cc, asunto, mensaje_html, programado_para) | reenviar (para, cc, prueba) | eliminar
+//   POST accion=previsualizar (receptor_id, factura_ids[], asunto, mensaje_html) → HTML del correo tal como llegará (no envía)
 // Está junto a ver_factura.php porque los PDF se generan incluyéndolo (como la descarga ZIP).
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
@@ -136,6 +137,21 @@ try {
             $u->execute([$dt->format('Y-m-d H:i:s'), $id, $cid]);
             if (!$u->rowCount()) throw new Exception("Solo se pueden reprogramar cobros que aún no se envían.");
             echo json_encode(['success' => true, 'message' => 'Reprogramado para el ' . $dt->format('d/m/Y \a \l\a\s g:i a') . '.'], JSON_UNESCAPED_UNICODE);
+            break;
+
+        case 'previsualizar':
+            $rid = (int)($_POST['receptor_id'] ?? 0);
+            $ids = array_values(array_filter(array_map('intval', (array)($_POST['factura_ids'] ?? []))));
+            $nums = [];
+            if ($ids) {
+                $st = $pdo->prepare("SELECT correlativo FROM facturas WHERE cliente_id = ? AND receptor_id = ? AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ") ORDER BY correlativo");
+                $st->execute([$cid, $rid, ...$ids]);
+                $nums = $st->fetchAll(PDO::FETCH_COLUMN);
+            }
+            $emp = $pdo->prepare("SELECT nombre, alias FROM clientes_saas WHERE id = ?");
+            $emp->execute([$cid]);
+            [$html] = cobroPlantilla(cobroLimpiarHtml((string)($_POST['mensaje_html'] ?? '')), $emp->fetch(PDO::FETCH_ASSOC) ?: [], correoConfig($pdo, $cid, 'facturacion') ?? [], $nums, false);
+            echo json_encode(['success' => true, 'html' => $html, 'adjuntos' => $nums], JSON_UNESCAPED_UNICODE);
             break;
 
         case 'editar':

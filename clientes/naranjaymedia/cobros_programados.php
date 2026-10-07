@@ -100,9 +100,10 @@ require_once '../../includes/templates/header.php';
                     <input class="form-control" type="datetime-local" name="programado_para" value="<?= $manana ?>">
                     <div class="form-text">Hora de Honduras. Ahora son las <?= date('g:i a') ?>.</div></div>
                 <div class="col-md-7 d-flex flex-wrap align-items-end gap-2 justify-content-md-end">
+                    <button type="button" class="btn btn-outline-dark" id="btnPrevia"><i class="bi bi-window me-1"></i>Vista previa</button>
                     <div class="input-group" style="max-width:340px">
                         <input class="form-control" type="email" id="cParaPrueba" value="<?= htmlspecialchars($miCorreo) ?>" placeholder="tu correo">
-                        <button type="button" class="btn btn-outline-secondary" data-modo="prueba" <?= $cuentaLista ? '' : 'disabled' ?>><i class="bi bi-eye me-1"></i>Enviar prueba</button>
+                        <button type="button" class="btn btn-outline-secondary" data-modo="prueba" <?= $cuentaLista ? '' : 'disabled' ?>><i class="bi bi-send-check me-1"></i>Enviar prueba</button>
                     </div>
                     <button type="button" class="btn btn-outline-primary" data-modo="ahora" <?= $cuentaLista ? '' : 'disabled' ?>><i class="bi bi-send me-1"></i>Enviar ahora</button>
                     <button type="button" class="btn btn-primary" data-modo="programar"><i class="bi bi-calendar-check me-1"></i>Programar</button>
@@ -151,6 +152,16 @@ require_once '../../includes/templates/header.php';
         </div>
     </div>
 
+    <!-- Vista previa del correo (no envía nada) -->
+    <div class="modal fade" id="mPrevia" tabindex="-1" style="z-index:1065"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-window me-1"></i> Vista previa del correo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <dl class="row small mb-2" id="pDatos"></dl>
+            <iframe id="pHtml" sandbox="" title="Vista previa" style="width:100%;height:600px;border:1px solid var(--bs-border-color);border-radius:8px;background:#f1f5f9"></iframe>
+            <div class="form-text">Así le llega al cliente (con el logo y pie de la cuenta Facturación). Los PDF de las facturas van adjuntos.</div>
+        </div>
+    </div></div></div>
+
     <!-- Ver cobro -->
     <div class="modal fade" id="mVer" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title"><i class="bi bi-envelope-open me-1"></i> Cobro <span id="vNum"></span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -184,7 +195,7 @@ require_once '../../includes/templates/header.php';
                         <div class="form-text">Los PDF adjuntos no cambian. Para otras facturas, cancela este cobro y crea uno nuevo.</div></div>
                 </div>
             </div>
-            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button><button class="btn btn-primary" type="submit"><i class="bi bi-floppy me-1"></i> Guardar cambios</button></div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-dark me-auto" id="ePrevia"><i class="bi bi-window me-1"></i> Vista previa</button><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button><button class="btn btn-primary" type="submit"><i class="bi bi-floppy me-1"></i> Guardar cambios</button></div>
         </form>
     </div></div></div>
 <?php endif; ?>
@@ -320,6 +331,30 @@ require_once '../../includes/templates/header.php';
         accion(fd);
     }));
 
+    // ── Vista previa del correo (redacción y edición) ──
+    async function previa({ para, cc, asunto, html, receptor, ids }) {
+        const fd = new FormData();
+        fd.append('accion', 'previsualizar'); fd.append('receptor_id', receptor || ''); fd.append('mensaje_html', html); fd.append('asunto', asunto);
+        (ids || []).forEach(i => fd.append('factura_ids[]', i));
+        try {
+            const d = await fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer);
+            const fila = (k, v) => `<dt class="col-sm-2 text-muted fw-normal">${k}</dt><dd class="col-sm-10 mb-1">${v || '<span class="text-muted">—</span>'}</dd>`;
+            document.getElementById('pDatos').innerHTML = fila('Para', esc(para)) + fila('CC', esc(cc)) + fila('Asunto', '<strong>' + esc(asunto) + '</strong>')
+                + fila('Adjuntos', d.adjuntos.length ? d.adjuntos.map(n => `<span class="badge text-bg-light border me-1"><i class="bi bi-file-earmark-pdf text-danger"></i> factura ${esc(n)}</span>`).join('') : '');
+            document.getElementById('pHtml').srcdoc = d.html;
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('mPrevia')).show();
+        } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+    }
+    document.getElementById('btnPrevia')?.addEventListener('click', () => previa({
+        para: document.getElementById('cPara').value, cc: document.getElementById('cCc').value, asunto: document.getElementById('cAsunto').value,
+        html: getMensaje('cMensaje'), receptor: $cli.value, ids: seleccionadas(),
+    }));
+    let editando = null;   // cobro abierto en «Editar» (para la vista previa)
+    document.getElementById('ePrevia')?.addEventListener('click', () => previa({
+        para: document.getElementById('ePara').value, cc: document.getElementById('eCc').value, asunto: document.getElementById('eAsunto').value,
+        html: getMensaje('eMensaje'), receptor: editando?.receptor_id, ids: editando?.facturas || [],
+    }));
+
     // ── Ver lo que se envió ──
     const fmt = d => d ? new Date(d.replace(' ', 'T')).toLocaleString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
     const estadosTxt = <?= json_encode(array_map(fn($e) => $e[0], $estados), JSON_UNESCAPED_UNICODE) ?>;
@@ -346,7 +381,8 @@ require_once '../../includes/templates/header.php';
     // ── Editar (solo los que aún no se envían) ──
     document.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', async () => {
         try {
-            const c = (await detalle(b.dataset.id)).cobro;
+            const det = await detalle(b.dataset.id), c = det.cobro;
+            editando = { receptor_id: c.receptor_id, facturas: det.adjuntos.map(x => x.factura_id) };
             document.getElementById('eNum').textContent = '#' + c.id;
             document.getElementById('eId').value = c.id;
             document.getElementById('ePara').value = c.para;

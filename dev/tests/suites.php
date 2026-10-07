@@ -1266,6 +1266,9 @@ suite('Cobros por correo programados', function () {
     check('la copia (CC) trae los correos de «Responder a» de Facturación', str_contains($r['body'], 'const ccBase = ["gerencia@ejemplo.test","administracion@ejemplo.test"]'));
     $msg = $c->postJson('procesar_accion_factura.php', ['accion' => 'generar_mensaje', 'factura_ids' => $ids, 'tipo' => 'saldo_pendiente']);
     check('genera asunto y mensaje con la plantilla', ($msg['json']['success'] ?? false) && ($msg['json']['asunto'] ?? '') !== '', substr($msg['body'], 0, 200));
+    $pv = $c->post('cobro_accion.php', ['accion' => 'previsualizar', 'receptor_id' => $rid, 'factura_ids[0]' => $ids[0] ?? 0, 'asunto' => 'X', 'mensaje_html' => '<p>Hola <strong>QA previa</strong></p><ol><li>uno</li></ol><script>x</script>']);
+    check('la vista previa arma el correo sin enviarlo', ($pv['json']['success'] ?? false) && str_contains($pv['json']['html'] ?? '', 'QA previa') && str_contains($pv['json']['html'] ?? '', '<ol>')
+        && !str_contains($pv['json']['html'] ?? '', '<script') && count($pv['json']['adjuntos'] ?? []) === 1, substr($pv['body'], 0, 200));
     check('el saludo es «Buen día, equipo de …»', str_contains($msg['json']['mensaje'] ?? '', 'Buen día, equipo de '), substr($msg['json']['mensaje'] ?? '', 0, 80));
 
     $base = ['accion' => 'crear', 'receptor_id' => $rid, 'tipo' => 'saldo_pendiente', 'para' => 'cliente@ejemplo.test', 'cc' => 'copia@ejemplo.test',
