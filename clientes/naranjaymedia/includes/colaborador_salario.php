@@ -1,6 +1,6 @@
 <?php
 // clientes/naranjaymedia/includes/colaborador_salario.php — Historial de sueldo (admin, superadmin y Nómina y gastos).
-//   POST accion=guardar  colaborador_id, desde, salario_base, motivo (con id: edita ese ajuste)
+//   POST accion=guardar  colaborador_id, desde, salario_base, puesto, motivo (con id: edita ese ajuste)
 //   POST accion=eliminar id
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
@@ -14,11 +14,11 @@ try {
     $cid = (int)cliente_actual();
     $pdo->beginTransaction();
     if (($_POST['accion'] ?? '') === 'guardar' && (int)($_POST['id'] ?? 0)) {
-        salarioEditar($pdo, $cid, (int)$_POST['id'], (string)($_POST['desde'] ?? ''), (float)($_POST['salario_base'] ?? -1), (string)($_POST['motivo'] ?? ''));
-        $msg = 'Ajuste de sueldo actualizado.';
+        salarioEditar($pdo, $cid, (int)$_POST['id'], (string)($_POST['desde'] ?? ''), (float)($_POST['salario_base'] ?? -1), (string)($_POST['motivo'] ?? ''), (string)($_POST['puesto'] ?? ''));
+        $msg = 'Ajuste actualizado.';
     } elseif (($_POST['accion'] ?? '') === 'guardar') {
-        salarioRegistrar($pdo, $cid, (int)($_POST['colaborador_id'] ?? 0), (string)($_POST['desde'] ?? ''), (float)($_POST['salario_base'] ?? -1), (string)($_POST['motivo'] ?? ''), (int)USUARIO_ID);
-        $msg = 'Ajuste de sueldo registrado.';
+        salarioRegistrar($pdo, $cid, (int)($_POST['colaborador_id'] ?? 0), (string)($_POST['desde'] ?? ''), (float)($_POST['salario_base'] ?? -1), (string)($_POST['motivo'] ?? ''), (int)USUARIO_ID, (string)($_POST['puesto'] ?? ''));
+        $msg = 'Ajuste registrado.';
     } elseif (($_POST['accion'] ?? '') === 'eliminar') {
         $st = $pdo->prepare("SELECT colaborador_id FROM colaborador_salarios WHERE id = ? AND cliente_id = ?");
         $st->execute([(int)($_POST['id'] ?? 0), $cid]);

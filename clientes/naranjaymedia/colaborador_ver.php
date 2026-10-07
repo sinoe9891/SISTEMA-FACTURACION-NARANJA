@@ -2453,13 +2453,13 @@ $tipos_btn_p = [
 
     </div><!-- /historial -->
 
-    <!-- ── Historial de sueldo (aumentos y ajustes) ───────────────────────── -->
+    <!-- ── Historial de sueldo y cargo (aumentos, ajustes y cambios de puesto) ── -->
     <?php require_once '../../includes/salarios.php';
     if (salariosDisponible($pdo)):
         $histSueldo = salariosHistorial($pdo, (int)$cliente_id, (int)$col['id'])[(int)$col['id']] ?? []; ?>
     <div class="cv-card mt-3 mb-3" id="historialSueldo">
         <div class="cv-card-hdr">
-            <span class="cv-card-hdr-title"><i class="bi bi-graph-up-arrow text-primary"></i>Historial de sueldo</span>
+            <span class="cv-card-hdr-title"><i class="bi bi-graph-up-arrow text-primary"></i>Historial de sueldo y cargo</span>
             <?php if (puedeNomina()): ?><button type="button" class="btn btn-sm btn-outline-primary" id="btnAjusteSueldo"><i class="bi bi-plus-lg me-1"></i>Registrar ajuste</button><?php endif; ?>
         </div>
         <div class="p-3">
@@ -2467,13 +2467,15 @@ $tipos_btn_p = [
                 <div class="small text-muted">Sin ajustes registrados: rige el sueldo actual (L <?= number_format((float)$col['salario_base'], 2) ?>) desde el ingreso. Registra aquí los aumentos para que las nóminas de meses anteriores se calculen con el sueldo de cada época.</div>
             <?php else: ?>
                 <div class="table-responsive"><table class="table table-sm mb-0 align-middle">
-                    <thead><tr><th>Desde</th><th class="text-end">Sueldo mensual</th><th class="text-end">Cambio</th><th>Motivo</th><?php if (puedeNomina()): ?><th></th><?php endif; ?></tr></thead>
+                    <thead><tr><th>Desde</th><th>Cargo</th><th class="text-end">Sueldo mensual</th><th class="text-end">Cambio</th><th>Motivo</th><?php if (puedeNomina()): ?><th></th><?php endif; ?></tr></thead>
                     <tbody>
                         <?php // Del más reciente al más antiguo; el cambio se compara con el ajuste anterior en el tiempo
                         $ordenados = array_reverse($histSueldo);
                         foreach ($ordenados as $ix => $h): $ant = $ordenados[$ix + 1] ?? null; $dif = $ant === null ? null : (float)$h['salario_base'] - (float)$ant['salario_base']; ?>
                             <tr class="<?= $h['desde'] > date('Y-m-d') ? 'text-muted' : '' ?> <?= $ix >= 2 ? 'd-none sj-mas' : '' ?>">
                                 <td class="text-nowrap"><?= date('d/m/Y', strtotime($h['desde'])) ?><?= $h['desde'] > date('Y-m-d') ? ' <span class="badge bg-light text-secondary border">Programado</span>' : '' ?></td>
+                                <td class="small"><?php $pu = $h['puesto'] ?? ''; $puAnt = null; foreach (array_slice($ordenados, $ix + 1) as $o) if (!empty($o['puesto'])) { $puAnt = $o['puesto']; break; } ?>
+                                    <?= $pu !== '' ? htmlspecialchars($pu) . ($puAnt !== null && $puAnt !== $pu ? ' <span class="badge bg-light text-primary border">Cambio de cargo</span>' : '') : '<span class="text-muted">—</span>' ?></td>
                                 <td class="text-end fw-semibold">L <?= number_format((float)$h['salario_base'], 2) ?></td>
                                 <td class="text-end small <?= $dif > 0 ? 'text-success' : ($dif < 0 ? 'text-danger' : 'text-muted') ?>"><?= $dif === null ? 'Inicial' : ($dif == 0 ? '—' : ($dif > 0 ? '+' : '−') . ' L ' . number_format(abs($dif), 2)) ?></td>
                                 <td class="small"><?= htmlspecialchars($h['motivo'] ?? '') ?></td>
@@ -2495,12 +2497,13 @@ $tipos_btn_p = [
         const URL_S = 'includes/colaborador_salario.php', COL = <?= (int)$col['id'] ?>;
         const enviar = d => { const fd = new FormData(); Object.entries(d).forEach(([k, v]) => fd.append(k, v)); return fetch(URL_S, { method: 'POST', body: fd }).then(r => r.json()).then(x => { if (!x.success) throw new Error(x.error); return x; }); };
         const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        const formulario = h => Swal.fire({ title: h ? 'Editar ajuste de sueldo' : 'Ajuste de sueldo', html: `<div class="text-start">
+        const formulario = h => Swal.fire({ title: h ? 'Editar ajuste' : 'Ajuste de sueldo o cargo', html: `<div class="text-start">
                 <label class="form-label small">Rige desde</label><input type="date" id="sjDesde" class="form-control mb-2" value="${h ? h.desde : new Date().toLocaleDateString('sv-SE')}">
                 <label class="form-label small">Sueldo mensual (L)</label><input type="number" step="0.01" min="0" id="sjMonto" class="form-control mb-2" value="${h ? h.salario_base : <?= (float)$col['salario_base'] ?>}">
-                <label class="form-label small">Motivo</label><input id="sjMotivo" class="form-control" maxlength="255" placeholder="Ej.: Aumento por desempeño" value="${esc(h ? h.motivo : '')}"></div>`,
+                <label class="form-label small">Cargo desde esa fecha</label><input id="sjPuesto" class="form-control mb-2" maxlength="150" placeholder="Ej.: Community Manager" value="${esc(h ? (h.puesto || '') : <?= json_encode((string)($col['puesto'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)}">
+                <label class="form-label small">Motivo</label><input id="sjMotivo" class="form-control" maxlength="255" placeholder="Ej.: Aumento por desempeño o ascenso" value="${esc(h ? h.motivo : '')}"></div>`,
                 showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', focusConfirm: false,
-                preConfirm: () => enviar(Object.assign({ accion: 'guardar', colaborador_id: COL, desde: document.getElementById('sjDesde').value, salario_base: document.getElementById('sjMonto').value, motivo: document.getElementById('sjMotivo').value }, h ? { id: h.id } : {})).catch(e => Swal.showValidationMessage(e.message)) })
+                preConfirm: () => enviar(Object.assign({ accion: 'guardar', colaborador_id: COL, desde: document.getElementById('sjDesde').value, salario_base: document.getElementById('sjMonto').value, puesto: document.getElementById('sjPuesto').value, motivo: document.getElementById('sjMotivo').value }, h ? { id: h.id } : {})).catch(e => Swal.showValidationMessage(e.message)) })
                 .then(r => { if (r.isConfirmed && r.value) Swal.fire({ icon: 'success', title: r.value.message, timer: 1500, showConfirmButton: false }).then(() => location.reload()); });
         document.getElementById('btnAjusteSueldo')?.addEventListener('click', () => formulario(null));
         document.querySelectorAll('.btn-editar-sueldo').forEach(b => b.addEventListener('click', () => formulario(JSON.parse(b.dataset.h))));
