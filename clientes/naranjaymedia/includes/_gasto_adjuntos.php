@@ -66,6 +66,14 @@ function borrarAdjuntoGastoSiHuerfano(PDO $pdo, ?string $archivo): void
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM gastos WHERE archivo_adjunto = ?");
     $stmt->execute([$archivo]);
     if ((int)$stmt->fetchColumn() > 0) return;
+    // También puede ser el comprobante de un movimiento bancario
+    try {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM movimientos_bancarios WHERE archivo_adjunto = ?");
+        $stmt->execute([$archivo]);
+        if ((int)$stmt->fetchColumn() > 0) return;
+    } catch (PDOException $e) {
+        // sin la columna (migración 2026-10-07_movimiento_comprobante): solo cuentan los gastos
+    }
     $ruta = gastoAdjuntoDir() . basename($archivo);
     if (is_file($ruta)) @unlink($ruta);
 }

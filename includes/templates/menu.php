@@ -100,8 +100,8 @@ $menuLateral = [
 	] : [],
 ];
 
-// Rol Nómina: solo la sección Personal (session.php bloquea el resto)
-if (USUARIO_ROL === 'nomina') $menuLateral = ['Personal' => $menuLateral['Personal']];
+// Rol Nómina y gastos: Personal, Pagos y gastos y Bancos (session.php bloquea el resto)
+if (USUARIO_ROL === 'nomina') $menuLateral = ['Personal' => $menuLateral['Personal'], 'Pagos y gastos' => $menuLateral['Pagos y gastos'], 'Bancos' => $menuLateral['Bancos']];
 
 // Permisos por rol (Configuración → Permisos por rol): se ocultan las opciones desactivadas para este rol
 // y, si se abre una de sus páginas directamente, se redirige a la primera opción permitida. «Inicio» siempre se ve.

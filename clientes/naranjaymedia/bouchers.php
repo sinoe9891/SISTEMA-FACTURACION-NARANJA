@@ -54,7 +54,7 @@ require_once '../../includes/templates/header.php';
                 <?php endfor; ?></optgroup></select></div>
         <div class="col-6 col-md-2"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" id="fDesde" value="<?= $f['desde'] ?>"></div>
         <div class="col-6 col-md-2"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" id="fHasta" value="<?= $f['hasta'] ?>"></div>
-        <?php if (USUARIO_ROL !== 'nomina'): ?>
+        <?php if (true): ?>
             <div class="col-6 col-md-3"><label class="form-label small">Pagos</label>
                 <select class="form-select form-select-sm" name="tipo"><?php foreach (BOUCHER_TIPOS as $k => $t): ?><option value="<?= $k ?>" <?= $f['tipo'] === $k ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?></select></div>
         <?php endif; ?>

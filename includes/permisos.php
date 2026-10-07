@@ -5,7 +5,7 @@
  * Lo que el código ya prohíbe a un rol (p. ej. Usuarios para el facturador) no se puede habilitar desde aquí.
  * El superadmin siempre ve todo. Sin la tabla permisos_menu, todo sigue como antes.
  */
-const PERMISOS_ROLES = ['admin' => 'Admin', 'facturador' => 'Facturador', 'lector' => 'Lector', 'nomina' => 'Nómina'];
+const PERMISOS_ROLES = ['admin' => 'Admin', 'facturador' => 'Facturador', 'lector' => 'Lector', 'nomina' => 'Nómina y gastos'];
 
 /** [rol][pagina] => bool, de la tabla (en caché por petición). */
 function permisosMenu(PDO $pdo): array
@@ -30,8 +30,8 @@ function permisoMenu(PDO $pdo, string $rol, string $pagina): bool
 
 /**
  * ¿El código permite a este rol usar la página? (lo que aquí es «no» no se puede habilitar desde la configuración).
- * Refleja las restricciones de cada página: Configuración y Cobros por correo son de administradores; el rol Nómina
- * solo tiene la sección Personal (ROL_NOMINA_ARCHIVOS en session.php).
+ * Refleja las restricciones de cada página: Configuración y Cobros por correo son de administradores; el rol
+ * Nómina y gastos tiene Personal, Pagos y gastos y Bancos (ROL_NOMINA_ARCHIVOS en session.php).
  */
 function permisoDisponible(string $rol, string $pagina): bool
 {

@@ -6,7 +6,8 @@ require_once '../../includes/bancos.php';
 
 $cid = cliente_actual();
 $instalado = bancosDisponible($pdo);
-$puedeEditar = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);
+$puedeEditar = in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true);   // emitir y marcar cobrado (Nómina y gastos también)
+$puedeAnular = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);
 $estado = in_array($_GET['estado'] ?? '', ['emitido', 'cobrado', 'anulado'], true) ? $_GET['estado'] : '';
 
 $cuentasCheques = [];
@@ -78,7 +79,7 @@ require_once '../../includes/templates/header.php';
                                     <?php if ($ch['estado'] === 'emitido'): ?>
                                         <button class="btn btn-sm btn-outline-success btn-cobrar" data-id="<?= (int)$ch['id'] ?>" data-num="<?= htmlspecialchars($ch['numero']) ?>" data-fecha="<?= $ch['fecha_emision'] ?>">Cobrado</button>
                                     <?php endif; ?>
-                                    <?php if ($ch['estado'] !== 'anulado'): ?>
+                                    <?php if ($ch['estado'] !== 'anulado' && $puedeAnular): ?>
                                         <button class="btn btn-sm btn-outline-danger btn-anular" data-id="<?= (int)$ch['id'] ?>" data-num="<?= htmlspecialchars($ch['numero']) ?>" data-estado="<?= $ch['estado'] ?>" title="Anular"><i class="bi bi-x-lg"></i></button>
                                     <?php endif; ?>
                                 </td>

@@ -57,7 +57,7 @@ try {
         $st = $pdo->prepare("SELECT id, descripcion FROM gastos WHERE cliente_id = ? AND estado = 'pagado' AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ") ORDER BY fecha, id");
         $st->execute([$cid, ...$ids]);
         $validos = [];
-        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $g) if (USUARIO_ROL !== 'nomina' || esGastoNomina((string)$g['descripcion'])) $validos[] = (int)$g['id'];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $g) $validos[] = (int)$g['id'];
         if (!$validos) throw new Exception("Ninguno de los pagos seleccionados tiene boucher.");
         $token = bin2hex(random_bytes(16));
         $d = sys_get_temp_dir() . '/bouchers_lote/' . $token . '/';

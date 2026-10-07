@@ -187,6 +187,7 @@ function bancoAnularMovimiento(PDO $pdo, int $cid, int $movId): void
     if (!$m) throw new Exception("Movimiento no encontrado.");
     if ((int)$m['anulado']) throw new Exception("El movimiento ya está anulado.");
     if ($m['cheque_id']) throw new Exception("Este movimiento es de un cheque: anula el cheque desde la chequera.");
+    if (!empty($m['gasto_id'])) throw new Exception("Este movimiento es el pago de un gasto: anula el gasto desde Gastos (se anula también este movimiento).");
     if ((int)$m['conciliado']) throw new Exception("El movimiento está conciliado con el estado de cuenta: quita la conciliación antes de anularlo.");
     if ($m['transferencia_grupo']) {
         $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE transferencia_grupo = ? AND cliente_id = ?")->execute([$m['transferencia_grupo'], $cid]);

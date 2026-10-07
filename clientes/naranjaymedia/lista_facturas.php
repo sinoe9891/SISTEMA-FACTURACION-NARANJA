@@ -185,7 +185,7 @@ $stmtNoDeclAtrasadas = $pdo->prepare("
 	SELECT COUNT(*) AS cantidad, IFNULL(SUM(isv_15 + isv_18), 0) AS isv_pendiente
 	FROM facturas
 	WHERE cliente_id = ? AND establecimiento_id = ?
-	  AND estado = 'emitida' AND estado_declarada = 'no'
+	  AND estado = 'emitida' AND estado_declarada = 0
 	  AND fecha_emision < ?
 ");
 $stmtNoDeclAtrasadas->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual]);
@@ -197,7 +197,7 @@ $stmtNoDeclMesActual = $pdo->prepare("
 	SELECT COUNT(*) AS cantidad, IFNULL(SUM(isv_15 + isv_18), 0) AS isv_mes_actual
 	FROM facturas
 	WHERE cliente_id = ? AND establecimiento_id = ?
-	  AND estado = 'emitida' AND estado_declarada = 'no'
+	  AND estado = 'emitida' AND estado_declarada = 0
 	  AND fecha_emision >= ? AND fecha_emision <= ?
 ");
 $stmtNoDeclMesActual->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual, $ultimo_dia_mes_actual]);

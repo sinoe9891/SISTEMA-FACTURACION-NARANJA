@@ -4,11 +4,16 @@
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 require_once '../../../includes/bancos.php';
+require_once __DIR__ . '/_gasto_adjuntos.php';
 header('Content-Type: application/json; charset=utf-8');
 
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception("Método no permitido.");
-    if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) throw new Exception("Solo un administrador puede registrar operaciones bancarias.");
+    // Nómina y gastos registra movimientos, transferencias y cheques; las cuentas y las anulaciones son de administradores
+    $accionPedida = $_POST['accion'] ?? '';
+    $soloAdmin = ['cuenta_guardar', 'cuenta_estado', 'predeterminar', 'anular_movimiento', 'cheque_anular'];
+    if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true) && (USUARIO_ROL !== 'nomina' || in_array($accionPedida, $soloAdmin, true)))
+        throw new Exception("Solo un administrador puede " . (in_array($accionPedida, $soloAdmin, true) ? 'administrar las cuentas o anular operaciones' : 'registrar operaciones bancarias') . ".");
     if (!bancosDisponible($pdo)) throw new Exception("El módulo de bancos no está instalado (falta sql/migraciones/2026-10-03_bancos.sql).");
     $cid = cliente_actual();
     if (!$cid) throw new Exception("Empresa no identificada.");
@@ -72,8 +77,30 @@ try {
             break;
 
         case 'movimiento':
+            // Comprobante opcional (JPG, PNG, WEBP o PDF) y, en las salidas, registrarlo también como gasto pagado
+            [$archivo, $archivoNombre] = guardarAdjuntoGasto($_FILES['comprobante'] ?? null, $cid) ?? [null, null];
             $extra['id'] = bancoMovimientoManual($pdo, $cid, $uid, $_POST);
+            $mov = $pdo->query("SELECT * FROM movimientos_bancarios WHERE id = " . (int)$extra['id'])->fetch(PDO::FETCH_ASSOC);
+            if ($archivo) $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ?")->execute([$archivo, $archivoNombre, $mov['id']]);
             $mensaje = 'Movimiento registrado.';
+            if (!empty($_POST['como_gasto'])) {
+                if ($mov['sentido'] !== 'salida') throw new Exception("Solo una salida (retiro, comisión o ajuste que resta) se registra como gasto.");
+                $cuentaMov = bancoCuenta($pdo, $cid, (int)$mov['cuenta_id']);
+                if ($cuentaMov['moneda'] !== 'HNL') throw new Exception("Los gastos son en lempiras: elige una cuenta en lempiras.");
+                $cat = filter_input(INPUT_POST, 'categoria_id', FILTER_VALIDATE_INT) ?: null;
+                if (!$cat) throw new Exception("Elige la categoría del gasto.");
+                $st = $pdo->prepare("SELECT COUNT(*) FROM categorias_gastos WHERE id = ? AND cliente_id = ?");
+                $st->execute([$cat, $cid]);
+                if (!$st->fetchColumn()) throw new Exception("Categoría no válida.");
+                $proveedor = mb_substr(trim((string)($_POST['proveedor'] ?? '')), 0, 150) ?: null;
+                $pdo->prepare("INSERT INTO gastos (cliente_id, categoria_id, descripcion, monto, fecha, frecuencia, tipo, metodo_pago, proveedor, factura_ref, estado, archivo_adjunto, archivo_nombre, usuario_id)
+                               VALUES (?, ?, ?, ?, ?, 'unico', 'variable', 'transferencia', ?, ?, 'pagado', ?, ?, ?)")
+                    ->execute([$cid, $cat, $mov['descripcion'], $mov['monto'], $mov['fecha'], $proveedor, $mov['referencia'], $archivo, $archivoNombre, $uid]);
+                $gastoId = (int)$pdo->lastInsertId();
+                $pdo->prepare("UPDATE movimientos_bancarios SET gasto_id = ? WHERE id = ?")->execute([$gastoId, $mov['id']]);
+                $extra['gasto_id'] = $gastoId;
+                $mensaje = 'Movimiento registrado y agregado a Gastos.';
+            }
             break;
 
         case 'transferencia':
@@ -120,6 +147,7 @@ try {
     echo json_encode(['success' => true, 'message' => $mensaje] + $extra, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    if (!empty($archivo)) borrarAdjuntoGastoSiHuerfano($pdo, $archivo);   // el comprobante subido no quedó en ningún registro
     http_response_code(400);
     $msg = $e instanceof PDOException ? 'Error de base de datos al guardar la operación.' : $e->getMessage();
     if ($e instanceof PDOException) error_log('banco_accion.php: ' . $e->getMessage());

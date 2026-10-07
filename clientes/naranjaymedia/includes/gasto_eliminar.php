@@ -22,7 +22,7 @@ try {
         $conc = $pdo->prepare("SELECT COUNT(*) FROM movimientos_bancarios WHERE gasto_id=? AND cliente_id=? AND anulado=0 AND conciliado=1");
         $conc->execute([$gasto_id, $cid]);
         if ($conc->fetchColumn()) throw new Exception("El pago de este gasto ya está conciliado en el banco: quita la conciliación antes de anularlo.");
-        $pdo->prepare("UPDATE movimientos_bancarios SET anulado=1 WHERE gasto_id=? AND cliente_id=? AND tipo='pago_gasto'")->execute([$gasto_id, $cid]);
+        $pdo->prepare("UPDATE movimientos_bancarios SET anulado=1 WHERE gasto_id=? AND cliente_id=?")->execute([$gasto_id, $cid]);
     }
 
     if ($accion === 'eliminar' && in_array(USUARIO_ROL, ['admin','superadmin'])) {

@@ -15,7 +15,8 @@ try {
     header('Location: ./bancos');
     exit;
 }
-$puedeEditar = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);
+$puedeEditar = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);   // anular movimientos
+$puedeConciliar = $puedeEditar || USUARIO_ROL === 'nomina';
 $mon = $cuenta['moneda'];
 
 $valida = fn($f) => ($d = DateTime::createFromFormat('Y-m-d', (string)$f)) && $d->format('Y-m-d') === $f;
@@ -90,14 +91,16 @@ require_once '../../includes/templates/header.php';
                     <tr class="<?= $anul ? 'text-muted text-decoration-line-through' : '' ?>">
                         <td class="text-nowrap"><?= date('d/m/Y', strtotime($m['fecha'])) ?></td>
                         <td><span class="app-badge app-badge-muted"><?= $etiquetasTipo[$m['tipo']] ?? $m['tipo'] ?></span></td>
-                        <td><?= htmlspecialchars($m['descripcion']) ?><?= $m['tasa_cambio'] ? ' <small class="text-muted">(tasa ' . rtrim(rtrim(number_format((float)$m['tasa_cambio'], 4), '0'), '.') . ')</small>' : '' ?><?= $anul ? ' <span class="app-badge app-badge-danger">Anulado</span>' : '' ?></td>
+                        <td><?= htmlspecialchars($m['descripcion']) ?>
+                            <?php if (!empty($m['archivo_adjunto'])): ?> <a href="movimiento_archivo?id=<?= (int)$m['id'] ?>" target="_blank" class="text-secondary" title="Ver comprobante"><i class="bi bi-paperclip"></i></a><?php endif; ?>
+                            <?php if (!empty($m['gasto_id'])): ?> <a href="gasto_ver?id=<?= (int)$m['gasto_id'] ?>" class="app-badge app-badge-muted text-decoration-none" title="Ver el gasto">Gasto #<?= (int)$m['gasto_id'] ?></a><?php endif; ?><?= $m['tasa_cambio'] ? ' <small class="text-muted">(tasa ' . rtrim(rtrim(number_format((float)$m['tasa_cambio'], 4), '0'), '.') . ')</small>' : '' ?><?= $anul ? ' <span class="app-badge app-badge-danger">Anulado</span>' : '' ?></td>
                         <td class="small font-monospace"><?= htmlspecialchars($m['referencia'] ?? '') ?></td>
                         <td class="app-num text-success"><?= $m['sentido'] === 'entrada' ? bancoMoneda((float)$m['monto'], $mon) : '' ?></td>
                         <td class="app-num text-danger"><?= $m['sentido'] === 'salida' ? bancoMoneda((float)$m['monto'], $mon) : '' ?></td>
                         <td class="app-num"><?= $anul ? '' : bancoMoneda((float)$m['saldo'], $mon) ?></td>
                         <td class="text-center">
                             <?php if (!$anul): ?>
-                                <input type="checkbox" class="form-check-input chk-conciliar" data-id="<?= (int)$m['id'] ?>" <?= (int)$m['conciliado'] ? 'checked' : '' ?> <?= $puedeEditar ? '' : 'disabled' ?> aria-label="Conciliado">
+                                <input type="checkbox" class="form-check-input chk-conciliar" data-id="<?= (int)$m['id'] ?>" <?= (int)$m['conciliado'] ? 'checked' : '' ?> <?= $puedeConciliar ? '' : 'disabled' ?> aria-label="Conciliado">
                             <?php endif; ?>
                         </td>
                         <?php if ($puedeEditar): ?>

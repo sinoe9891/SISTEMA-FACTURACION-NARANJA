@@ -1595,20 +1595,34 @@ suite('Rol Nómina', function () {
 
     $r = $n->get('colaboradores');
     check('entra a Colaboradores', $r['code'] === 200 && str_contains($r['body'], 'id="btnRegistrarMov"') && sinErroresPhp($r['body']), errorPhp($r['body']));
-    check('el menú solo muestra Personal', str_contains($r['body'], 'href="pagos_nomina"') && !str_contains($r['body'], 'href="lista_facturas"') && !str_contains($r['body'], 'href="gastos"') && !str_contains($r['body'], 'href="usuarios"'));
+    check('el menú muestra Personal, Pagos y gastos y Bancos (nada de facturación ni configuración)', str_contains($r['body'], 'href="pagos_nomina"') && str_contains($r['body'], 'href="gastos"') && str_contains($r['body'], 'href="bancos"')
+        && str_contains($r['body'], 'href="cuentas_pagar"') && !str_contains($r['body'], 'href="lista_facturas"') && !str_contains($r['body'], 'href="financiero"') && !str_contains($r['body'], 'href="usuarios"'));
     $r = $n->get('pagos_nomina');
     check('entra a Pagos de nómina', $r['code'] === 200 && str_contains($r['body'], 'data-nomina-accion="anular"') && sinErroresPhp($r['body']), errorPhp($r['body']));
     $col = (int)$pdo->query("SELECT id FROM colaboradores WHERE cliente_id = 2 AND activo = 1 LIMIT 1")->fetchColumn();
     $r = $n->get('colaborador_ver', ['id' => $col, 'todo' => 1]);
     check('ve la ficha con los botones de editar/anular pagos', $r['code'] === 200 && str_contains($r['body'], 'data-nomina-accion=') && sinErroresPhp($r['body']), errorPhp($r['body']));
-    foreach (['dashboard', 'lista_facturas', 'gastos', 'financiero', 'balance_general', 'usuarios', 'configuracion_correo', 'respaldos', 'clientes'] as $p) {
+    foreach (['gastos', 'cuentas_pagar', 'categorias_gastos', 'bancos', 'cheques', 'tarjetas'] as $p) {
+        $r = $n->get($p);
+        check("entra a $p", $r['code'] === 200 && str_contains($r['body'], 'id="appSidebar"') && sinErroresPhp($r['body']), errorPhp($r['body']) . " código {$r['code']}");
+    }
+    $r = $n->get('bancos');
+    check('en Bancos registra movimientos, pero no crea ni edita cuentas', str_contains($r['body'], 'data-abrir="modalMovimiento"') && !str_contains($r['body'], 'id="btnNuevaCuenta"') && !str_contains($r['body'], 'p-0 btn-editar-cuenta"'));
+    $r = $n->post('includes/banco_accion.php', ['accion' => 'cuenta_guardar', 'banco' => 'X', 'numero' => '1', 'tipo' => 'ahorro', 'moneda' => 'HNL']);
+    check('no puede crear cuentas bancarias', !($r['json']['success'] ?? true), $r['body']);
+    $r = $n->post('includes/banco_accion.php', ['accion' => 'anular_movimiento', 'id' => 1]);
+    check('no puede anular movimientos', str_contains($r['json']['error'] ?? '', 'administrador'), $r['body']);
+    $cat = (int)$pdo->query("SELECT id FROM categorias_gastos WHERE cliente_id = 2 LIMIT 1")->fetchColumn();
+    $r = $n->post('includes/gasto_guardar.php', ['descripcion' => 'QA gasto rol nómina', 'monto' => 10, 'fecha' => date('Y-m-d'), 'categoria_id' => $cat, 'frecuencia' => 'unico', 'tipo' => 'variable', 'metodo_pago' => 'efectivo', 'estado' => 'pendiente']);
+    $gq = (int)$pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND descripcion = 'QA gasto rol nómina' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    check('puede registrar un gasto', ($r['json']['success'] ?? false) && $gq, $r['body']);
+    if ($gq) $pdo->exec("DELETE FROM gastos WHERE id = $gq");
+    foreach (['dashboard', 'lista_facturas', 'financiero', 'balance_general', 'usuarios', 'configuracion_correo', 'respaldos', 'clientes', 'contratos', 'cuentas_cobrar'] as $p) {
         $r = $n->get($p);
         check("no entra a $p", in_array($r['code'], [301, 302], true) && !str_contains($r['body'], 'id="appSidebar"'), "código {$r['code']}");
     }
-    $r = $n->post('includes/gasto_eliminar.php', ['id' => 1, 'accion' => 'anular']);
-    check('no puede usar acciones de otras secciones', $r['code'] === 403 && ($r['json']['success'] ?? true) === false);
-    $gNoNomina = (int)$pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND archivo_adjunto IS NOT NULL AND descripcion NOT LIKE 'Sueldo %' AND descripcion NOT LIKE 'Bono:%' LIMIT 1")->fetchColumn();
-    if ($gNoNomina) check('no ve comprobantes de otros gastos', $n->get('gasto_archivo', ['id' => $gNoNomina])['code'] === 404);
+    $r = $n->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => 1]);
+    check('no puede usar acciones de otras secciones (cobros de facturas)', $r['code'] === 403 && ($r['json']['success'] ?? true) === false);
     $r = $n->get('includes/nomina_pago_accion.php', ['vinculos' => (int)$pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND descripcion LIKE 'Sueldo %' AND estado <> 'anulado' LIMIT 1")->fetchColumn()]);
     check('puede consultar/anular pagos de nómina', ($r['json']['success'] ?? false) === true, $r['body']);
     $f = login('qa.facturador@local.test');
@@ -2122,4 +2136,83 @@ suite('Pagos del plan vencidos en Contratos y Cuentas por cobrar', function () {
         && str_contains($r['body'], 'QA cuota próxima') && str_contains($r['body'], 'Planes de pago vencidos'), errorPhp($r['body']));
     check('el botón de cobrar ya no es verde', !str_contains($r['body'], 'btn-success btn-cobrar'));
     $pdo->exec("DELETE FROM contratos_plan WHERE contrato_id = $ctr");
+});
+
+suite('Movimiento bancario con comprobante y registrado como gasto', function () {
+    global $pdo;
+    $f = fn($sql) => $pdo->query($sql)->fetchColumn();
+    $c = login('qa.admin@local.test');
+    $pdo->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, moneda, saldo_inicial, fecha_saldo_inicial, activa, predeterminada) VALUES (2, 'QA Banco Mov', 'ahorro', 'QA0000099', 'HNL', 1000, '2026-01-01', 1, 0)");
+    $cta = (int)$pdo->lastInsertId();
+    $cat = (int)$f("SELECT id FROM categorias_gastos WHERE cliente_id = 2 ORDER BY id LIMIT 1");
+    $png = new CURLFile(__DIR__ . '/../../clientes/css/logo-correo.png', 'image/png', 'comprobante.png');
+    $r = $c->post('includes/banco_accion.php', ['accion' => 'movimiento', 'cuenta_id' => $cta, 'tipo' => 'comision', 'fecha' => date('Y-m-d'), 'monto' => 55.5,
+        'descripcion' => 'QA comisión con gasto', 'referencia' => 'QA-REF', 'como_gasto' => 1, 'categoria_id' => $cat, 'proveedor' => 'QA Banco', 'comprobante' => $png]);
+    $mov = (int)($r['json']['id'] ?? 0);
+    $gid = (int)($r['json']['gasto_id'] ?? 0);
+    $g = $gid ? $pdo->query("SELECT * FROM gastos WHERE id = $gid")->fetch(PDO::FETCH_ASSOC) : [];
+    check('una comisión se registra también como gasto pagado, con categoría y comprobante', ($r['json']['success'] ?? false) && $g && $g['estado'] === 'pagado' && (int)$g['categoria_id'] === $cat
+        && (float)$g['monto'] == 55.5 && $g['archivo_adjunto'] && (int)$f("SELECT gasto_id FROM movimientos_bancarios WHERE id = $mov") === $gid, $r['body']);
+    $a = $c->get('movimiento_archivo', ['id' => $mov]);
+    check('el comprobante del movimiento se puede ver', $a['code'] === 200 && str_starts_with($a['body'], "\x89PNG"), "código {$a['code']}");
+    check('y es el mismo comprobante del gasto', $c->get('gasto_archivo', ['id' => $gid])['code'] === 200);
+    $r = $c->post('includes/banco_accion.php', ['accion' => 'anular_movimiento', 'id' => $mov]);
+    check('el movimiento de un gasto no se anula desde Bancos', str_contains($r['json']['error'] ?? '', 'anula el gasto desde Gastos'), $r['body']);
+    $r = $c->post('includes/gasto_eliminar.php', ['id' => $gid, 'accion' => 'anular']);
+    check('anular el gasto anula también su movimiento', ($r['json']['success'] ?? false) && (int)$f("SELECT anulado FROM movimientos_bancarios WHERE id = $mov") === 1, $r['body']);
+    $r = $c->post('includes/banco_accion.php', ['accion' => 'movimiento', 'cuenta_id' => $cta, 'tipo' => 'deposito', 'fecha' => date('Y-m-d'), 'monto' => 10, 'descripcion' => 'QA depósito', 'como_gasto' => 1, 'categoria_id' => $cat]);
+    check('un depósito no se puede registrar como gasto', !($r['json']['success'] ?? true) && !$f("SELECT COUNT(*) FROM movimientos_bancarios WHERE cuenta_id = $cta AND descripcion = 'QA depósito'"), $r['body']);
+    $r = $c->post('includes/banco_accion.php', ['accion' => 'movimiento', 'cuenta_id' => $cta, 'tipo' => 'retiro', 'fecha' => date('Y-m-d'), 'monto' => 10, 'descripcion' => 'QA retiro sin cat', 'como_gasto' => 1]);
+    check('como gasto pide la categoría', str_contains($r['json']['error'] ?? '', 'categoría'), $r['body']);
+    $b = $c->get('bancos');
+    check('el formulario de movimiento trae comprobante y categorías', sinErroresPhp($b['body']) && str_contains($b['body'], 'name="comprobante"') && str_contains($b['body'], 'id="movCategoria"'), errorPhp($b['body']));
+    // limpieza
+    $arch = $g['archivo_adjunto'] ?? '';
+    $pdo->exec("DELETE FROM gastos WHERE id = $gid");
+    $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id = $cta");
+    $pdo->exec("DELETE FROM cuentas_bancarias WHERE id = $cta");
+    if ($arch) @unlink(__DIR__ . '/../../clientes/naranjaymedia/includes/uploads/gastos/' . basename($arch));
+});
+
+suite('Barrido de todas las páginas por rol', function () {
+    global $pdo;
+    $f = fn($sql) => (int)$pdo->query($sql)->fetchColumn();
+    // Páginas del menú y sus páginas hijas, con un registro real cuando lo necesitan
+    $paginas = ['dashboard', 'generar_factura', 'lista_facturas', 'contratos', 'crear_contrato', 'cuentas_cobrar', 'cobros_programados', 'cuentas_pagar', 'gastos',
+        'bouchers', 'categorias_gastos', 'bancos', 'cheques', 'tarjetas', 'financiero', 'estados_financieros', 'estados_financieros?tab=balance', 'balance_general', 'proyeccion',
+        'colaboradores', 'pagos_nomina', 'clientes', 'crear_cliente', 'productos', 'productos_clientes', 'pos', 'pos_turnos', 'inventario', 'inventario_traslados',
+        'inventario_reportes', 'configuracion_cai', 'configuracion_mensajes', 'configuracion_correo', 'configuracion_firmas', 'usuarios', 'respaldos', 'configuracion_permisos',
+        'empresas', 'financiero?vista=anual&anio=' . date('Y')];
+    $ids = [
+        'facturas_contrato?contrato_id=' => $f("SELECT id FROM contratos WHERE cliente_id = 2 ORDER BY id DESC LIMIT 1"),
+        'editar_contrato?id=' => $f("SELECT id FROM contratos WHERE cliente_id = 2 ORDER BY id DESC LIMIT 1"),
+        'generar_recibo?contrato_id=' => $f("SELECT id FROM contratos WHERE cliente_id = 2 AND tipo_contrato = 'sin_factura' LIMIT 1"),
+        'ver_factura?id=' => $f("SELECT id FROM facturas WHERE cliente_id = 2 AND estado = 'emitida' ORDER BY id DESC LIMIT 1"),
+        'estado_cuenta?receptor_id=' => $f("SELECT receptor_id FROM facturas WHERE cliente_id = 2 LIMIT 1"),
+        'gasto_ver?id=' => $f("SELECT id FROM gastos WHERE cliente_id = 2 ORDER BY id DESC LIMIT 1"),
+        'colaborador_ver?id=' => $f("SELECT id FROM colaboradores WHERE cliente_id = 2 LIMIT 1"),
+        'editar_cliente?id=' => $f("SELECT id FROM clientes_factura WHERE cliente_id = 2 LIMIT 1"),
+    ];
+    foreach ($ids as $p => $id) if ($id) $paginas[] = $p . $id;
+    // Usuario temporal con el rol Nómina y gastos
+    $pdo->exec("DELETE FROM usuarios WHERE correo = 'qa.nomina2@local.test'");
+    $pdo->prepare("INSERT INTO usuarios (cliente_id, nombre, correo, clave, rol, estado, creado_en) VALUES (2, 'QA Nómina 2', 'qa.nomina2@local.test', ?, 'nomina', 'activo', NOW())")->execute([password_hash(QA_PASS, PASSWORD_DEFAULT)]);
+    $uid = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO usuario_establecimientos (usuario_id, establecimiento_id) SELECT ?, establecimiento_id FROM usuario_establecimientos ue JOIN usuarios u ON u.id = ue.usuario_id WHERE u.correo = 'qa.admin@local.test'")->execute([$uid]);
+    $roles = ['admin' => login('qa.admin@local.test'), 'superadmin' => login('qa.super@local.test', 1, 2), 'facturador' => login('qa.facturador@local.test'), 'nomina' => login('qa.nomina2@local.test')];
+    foreach ($roles as $rol => $c) {
+        $malas = [];
+        foreach ($paginas as $p) {
+            [$ruta, $qs] = array_pad(explode('?', $p, 2), 2, '');
+            parse_str($qs, $q);
+            $r = $c->get($ruta, $q);
+            // Válido: carga sin errores de PHP, o niega el acceso con una redirección limpia
+            $ok = in_array($r['code'], [200, 301, 302], true) && sinErroresPhp($r['body']);
+            if ($r['code'] === 200 && $ruta !== 'ver_factura' && !str_contains($r['body'], 'id="appSidebar"') && !str_contains($r['body'], 'Acceso denegado') && !str_contains($r['body'], 'Swal.fire')) $ok = false;
+            if (!$ok) $malas[] = "$p ({$r['code']}) " . errorPhp($r['body']);
+        }
+        check("$rol: las " . count($paginas) . " páginas cargan sin errores o niegan el acceso", !$malas, implode(' | ', array_slice($malas, 0, 5)));
+    }
+    $pdo->exec("DELETE FROM usuario_establecimientos WHERE usuario_id = $uid");
+    $pdo->exec("DELETE FROM usuarios WHERE id = $uid");
 });

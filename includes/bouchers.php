@@ -56,7 +56,6 @@ function boucherFiltros(array $g): array
     $f = ['desde' => $fecha($g['desde'] ?? null, date('Y-m-01')), 'hasta' => $fecha($g['hasta'] ?? null, date('Y-m-t')),
           'tipo' => isset(BOUCHER_TIPOS[$t = (string)($g['tipo'] ?? '')]) ? $t : ''];
     if ($f['desde'] > $f['hasta']) [$f['desde'], $f['hasta']] = [$f['hasta'], $f['desde']];
-    if (defined('USUARIO_ROL') && USUARIO_ROL === 'nomina') $f['tipo'] = 'nomina';   // el rol Nómina solo ve pagos a colaboradores
     return $f;
 }
 

@@ -114,17 +114,22 @@ define('USUARIO_NOMBRE', $usuario['nombre']);
 define('USUARIO_ROL', $usuario['rol']);
 
 /*
- * Rol «nomina»: solo la sección Personal. Lista blanca de archivos (páginas y acciones); cualquier otro
- * se rechaza aquí, para no depender de que cada página revise el rol.
+ * Rol «nomina» (Nómina y gastos): Personal, Pagos y gastos y Bancos. Lista blanca de archivos (páginas y acciones);
+ * cualquier otro se rechaza aquí, para no depender de que cada página revise el rol. Lo delicado sigue siendo de
+ * administradores dentro de cada acción (crear/editar cuentas bancarias, anular movimientos y cheques, eliminar gastos).
  */
 const ROL_NOMINA_ARCHIVOS = [
     // Páginas
     'colaboradores', 'colaborador_ver', 'colaborador_reporte', 'colaborador_recibo_pdf', 'pagos_nomina', 'pagos_nomina_exportar',
-    'gasto_archivo', 'gasto_ver', 'logout', 'seleccionar_establecimiento',
+    'gasto_archivo', 'gasto_ver', 'movimiento_archivo', 'logout', 'seleccionar_establecimiento',
+    'cuentas_pagar', 'gastos', 'categorias_gastos', 'bancos', 'banco_cuenta', 'cheques', 'tarjetas',
     // Acciones (clientes/<empresa>/includes/)
     'colaborador_guardar', 'colaborador_actualizar', 'colaborador_cuotas_info', 'colaborador_pago_guardar',
     'prestamo_guardar', 'prestamo_editar', 'prestamo_cancelar', 'prestamo_eliminar', 'prestamo_cuota_pagar', 'prestamo_cuota_editar',
     'nomina_pago_accion', 'correo_accion', 'colaborador_firma', 'boucher_pdf', 'boucher_lote', 'bouchers',
+    'gasto_guardar', 'gasto_actualizar', 'gasto_marcar_pagado', 'gasto_eliminar',
+    'categoria_gasto_guardar', 'categoria_gasto_actualizar', 'categoria_gasto_eliminar',
+    'tarjeta_guardar', 'tarjeta_actualizar', 'tarjeta_eliminar', 'banco_accion',
 ];
 if (USUARIO_ROL === 'nomina' && !in_array(basename($_SERVER['SCRIPT_NAME'] ?? '', '.php'), ROL_NOMINA_ARCHIVOS, true)) {
     $__esAccion = str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/includes/') || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET';
@@ -137,7 +142,7 @@ if (USUARIO_ROL === 'nomina' && !in_array(basename($_SERVER['SCRIPT_NAME'] ?? ''
     exit;
 }
 
-/** ¿El gasto es un pago a colaborador (sueldo, bono, viático o pago adicional)? El rol Nómina solo ve estos. */
+/** ¿El gasto es un pago a colaborador (sueldo, bono, viático o pago adicional)? */
 function esGastoNomina(string $descripcion): bool
 {
     return (bool)preg_match('/^(Sueldo |Bono: |Vi[aá]tico: |Pago adicional - )/u', $descripcion);

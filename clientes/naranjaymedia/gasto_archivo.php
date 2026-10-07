@@ -16,7 +16,7 @@ $stmt = $pdo->prepare("SELECT archivo_adjunto, archivo_nombre, descripcion FROM 
 $stmt->execute([$id ?: 0, $cid]);
 $g = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$g || empty($g['archivo_adjunto']) || (USUARIO_ROL === 'nomina' && !esGastoNomina((string)$g['descripcion']))) {
+if (!$g || empty($g['archivo_adjunto'])) {
     http_response_code(404);
     exit('Comprobante no encontrado.');
 }

@@ -35,7 +35,6 @@ if (!empty($_GET['ids'])) {
     $nombre = null;
 }
 // El rol Nómina solo imprime pagos a colaboradores
-if (USUARIO_ROL === 'nomina') $gastos = array_values(array_filter($gastos, fn($g) => esGastoNomina((string)$g['descripcion'])));
 if (!$gastos) { http_response_code(404); exit('No hay pagos para generar bouchers.'); }
 if (count($gastos) > BOUCHER_MAX) { http_response_code(400); exit('Son ' . count($gastos) . ' pagos: el máximo por descarga es ' . BOUCHER_MAX . '. Reduce el rango de fechas.'); }
 

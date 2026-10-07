@@ -212,7 +212,7 @@ $stmtNoDeclaradas = $pdo->prepare("
 	WHERE cliente_id = ? 
 	  AND establecimiento_id = ?
 	  AND estado = 'emitida'
-	  AND estado_declarada = 'no'
+	  AND estado_declarada = 0
 	  AND fecha_emision < ?
 ");
 $stmtNoDeclaradas->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual]);
@@ -268,7 +268,7 @@ $stmtActualMes = $pdo->prepare("
 	WHERE cliente_id = ? 
 	  AND establecimiento_id = ?
 	  AND estado = 'emitida'
-	  AND estado_declarada = 'no'
+	  AND estado_declarada = 0
 	  AND fecha_emision >= ? AND fecha_emision <= ?
 ");
 $stmtActualMes->execute([

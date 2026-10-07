@@ -25,8 +25,8 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$id, $cliente_id]);
 $g = $stmt->fetch(PDO::FETCH_ASSOC);
-if (!$g || (USUARIO_ROL === 'nomina' && !esGastoNomina((string)$g['descripcion']))) {
-    header('Location: ' . (USUARIO_ROL === 'nomina' ? 'colaboradores' : 'gastos'));
+if (!$g) {
+    header('Location: gastos');
     exit;
 }
 

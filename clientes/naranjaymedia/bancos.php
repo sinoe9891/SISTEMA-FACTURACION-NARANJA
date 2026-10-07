@@ -5,10 +5,18 @@ require_once '../../includes/session.php';
 require_once '../../includes/bancos.php';
 
 $cid = cliente_actual();
-$puedeEditar = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);
+$puedeEditar = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);           // cuentas: crear, editar, activar, predeterminar
+$puedeMover = $puedeEditar || USUARIO_ROL === 'nomina';                          // movimientos y transferencias
 $instalado = bancosDisponible($pdo);
 $cuentas = $instalado && $cid ? bancoCuentas($pdo, $cid) : [];
 $activas = array_values(array_filter($cuentas, fn($c) => (int)$c['activa']));
+// Categorías de gastos (para registrar una salida también como gasto)
+$catsGasto = [];
+if ($puedeMover && $cid) {
+    $stCat = $pdo->prepare("SELECT id, nombre FROM categorias_gastos WHERE cliente_id = ? ORDER BY nombre");
+    $stCat->execute([$cid]);
+    $catsGasto = $stCat->fetchAll(PDO::FETCH_ASSOC);
+}
 
 $totales = ['HNL' => 0.0, 'USD' => 0.0];
 $comprometido = ['HNL' => 0.0, 'USD' => 0.0];
@@ -38,11 +46,11 @@ require_once '../../includes/templates/header.php';
         <h1 class="app-page-title">Bancos</h1>
         <p class="app-page-sub">Cuentas de ahorro y de cheques, en lempiras o dólares.</p>
     </div>
-    <?php if ($instalado && $puedeEditar): ?>
+    <?php if ($instalado && $puedeMover): ?>
         <div class="d-flex flex-wrap gap-2">
             <button class="btn btn-outline-primary" data-abrir="modalMovimiento" <?= $activas ? '' : 'disabled' ?>><i class="bi bi-plus-slash-minus me-1"></i> Movimiento</button>
             <button class="btn btn-outline-primary" data-abrir="modalTransferencia" <?= count($activas) > 1 ? '' : 'disabled' ?>><i class="bi bi-arrow-left-right me-1"></i> Transferencia</button>
-            <button class="btn btn-primary" id="btnNuevaCuenta"><i class="bi bi-bank me-1"></i> Nueva cuenta</button>
+            <?php if ($puedeEditar): ?><button class="btn btn-primary" id="btnNuevaCuenta"><i class="bi bi-bank me-1"></i> Nueva cuenta</button><?php endif; ?>
         </div>
     <?php endif; ?>
 </div>
@@ -133,7 +141,7 @@ require_once '../../includes/templates/header.php';
         </div>
     <?php endif; ?>
 
-    <?php if ($puedeEditar): ?>
+    <?php if ($puedeMover): ?>
         <!-- Modal cuenta -->
         <div class="modal fade" id="modalCuenta" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-fullscreen-sm-down">
@@ -173,6 +181,21 @@ require_once '../../includes/templates/header.php';
                         <div class="col-6"><label class="form-label">Monto *</label><input class="form-control" type="number" step="0.01" min="0.01" name="monto" required></div>
                         <div class="col-6"><label class="form-label">Referencia</label><input class="form-control" name="referencia" maxlength="100" placeholder="N.° de boleta, etc."></div>
                         <div class="col-12"><label class="form-label">Descripción *</label><input class="form-control" name="descripcion" required maxlength="255"></div>
+                        <div class="col-12"><label class="form-label">Comprobante <span class="text-muted small">(opcional: JPG, PNG, WEBP o PDF, máx. 5 MB)</span></label>
+                            <input class="form-control" type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
+                        <!-- Salidas: registrarlas también como gasto (con su categoría) para que cuenten en Gastos y en el Estado de resultados -->
+                        <div class="col-12" id="movGastoWrap">
+                            <div class="border rounded p-2" style="background:#f8fafc">
+                                <div class="form-check"><input class="form-check-input" type="checkbox" name="como_gasto" value="1" id="movComoGasto">
+                                    <label class="form-check-label" for="movComoGasto">Registrar también como gasto <span class="text-muted small">(queda pagado, con su categoría y comprobante)</span></label></div>
+                                <div class="row g-2 mt-1 d-none" id="movGastoCampos">
+                                    <div class="col-sm-6"><label class="form-label small mb-1">Categoría *</label>
+                                        <select class="form-select form-select-sm" name="categoria_id" id="movCategoria"><option value="">— Selecciona —</option>
+                                            <?php foreach ($catsGasto as $cg): ?><option value="<?= (int)$cg['id'] ?>"><?= htmlspecialchars($cg['nombre']) ?></option><?php endforeach; ?></select></div>
+                                    <div class="col-sm-6"><label class="form-label small mb-1">Proveedor</label><input class="form-control form-control-sm" name="proveedor" maxlength="150" placeholder="Opcional"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" type="submit">Registrar</button></div>
                 </form>
@@ -210,7 +233,7 @@ require_once '../../includes/templates/header.php';
     const B = window.Bancos;
     if (!B || !document.getElementById('modalCuenta')) return;
     const fCuenta = document.getElementById('formCuenta');
-    document.getElementById('btnNuevaCuenta').addEventListener('click', () => {
+    document.getElementById('btnNuevaCuenta')?.addEventListener('click', () => {
         fCuenta.reset(); fCuenta.elements.id.value = '';
         document.getElementById('tituloCuenta').textContent = 'Nueva cuenta';
         B.modal('modalCuenta').show();
@@ -229,9 +252,29 @@ require_once '../../includes/templates/header.php';
     B.formulario(document.getElementById('formMovimiento'));
     B.formulario(document.getElementById('formTransferencia'));
 
+    // «Registrar también como gasto»: solo en salidas (retiro, comisión o ajuste que resta)
+    const fMov = document.getElementById('formMovimiento'), chkGasto = document.getElementById('movComoGasto');
+    function revisarGasto() {
+        const tipo = document.getElementById('movTipo').value;
+        const salida = tipo === 'retiro' || tipo === 'comision' || (tipo === 'ajuste' && fMov.elements.sentido.value === 'salida');
+        document.getElementById('movGastoWrap').classList.toggle('d-none', !salida);
+        if (!salida) chkGasto.checked = false;
+        document.getElementById('movGastoCampos').classList.toggle('d-none', !chkGasto.checked);
+        document.getElementById('movCategoria').required = chkGasto.checked;
+        // Comisión bancaria: sugiere una categoría de comisiones/bancos si existe
+        const cat = document.getElementById('movCategoria');
+        if (chkGasto.checked && tipo === 'comision' && !cat.value) {
+            const o = [...cat.options].find(o => /comisi|banc/i.test(o.text));
+            if (o) cat.value = o.value;
+        }
+    }
     document.getElementById('movTipo').addEventListener('change', function () {
         document.getElementById('movSentidoWrap').classList.toggle('d-none', this.value !== 'ajuste');
+        revisarGasto();
     });
+    fMov.elements.sentido.addEventListener('change', revisarGasto);
+    chkGasto.addEventListener('change', revisarGasto);
+    revisarGasto();
     // Transferencia: tasa solo si las monedas son distintas
     const o = document.getElementById('trOrigen'), d = document.getElementById('trDestino');
     if (d.options.length > 1) d.selectedIndex = 1;

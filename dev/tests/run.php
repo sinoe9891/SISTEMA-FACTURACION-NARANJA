@@ -92,6 +92,8 @@ function login(string $correo, int $estab = 1, ?int $clienteSel = null): Cliente
     }
     // Token CSRF de la sesión (como lo toma el navegador del <meta>)
     $d = $c->get('dashboard');
+    // Roles sin Inicio (p. ej. Nómina y gastos) se redirigen: el token se toma de su primera página
+    if (!preg_match('/<meta name="csrf-token" content="([a-f0-9]+)"/', $d['body'], $m)) $d = $c->get('colaboradores');
     if (preg_match('/<meta name="csrf-token" content="([a-f0-9]+)"/', $d['body'], $m)) $c->csrf = $m[1];
     return $c;
 }
