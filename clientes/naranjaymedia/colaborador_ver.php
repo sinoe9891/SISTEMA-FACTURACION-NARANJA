@@ -585,7 +585,12 @@ $tipos_btn_p = [
     }
 
     /* ── Fila de 3 tarjetas (datos, desglose, resumen) ─────────────────────── */
-    .cv-top3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; align-items: stretch; margin-bottom: 1.25rem; }
+    .cv-hero-firma { margin-left: auto; min-width: 250px; max-width: 320px; background: #fff; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; padding: .55rem .7rem; color: #1e293b; }
+    .cv-hero-firma-lbl { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; }
+    .cv-hero-firma-caja { height: 70px; display: flex; align-items: center; justify-content: center; border: 1px dashed #cbd5e1; border-radius: 6px; background: #fff; }
+    .cv-hero-firma-caja img { max-height: 64px; max-width: 100%; }
+    @media(max-width:767px) { .cv-hero-firma { margin-left: 0; max-width: none; width: 100%; } }
+    .cv-top3 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; align-items: stretch; margin-bottom: 1.25rem; }
     .cv-top3 > .cv-card { margin-bottom: 0; height: 100%; }
     @media(max-width:991px) { .cv-top3 { grid-template-columns: 1fr; } }
 
@@ -1553,6 +1558,12 @@ $tipos_btn_p = [
                 <?php if ($col['telefono']): ?>
                     <span><i class="bi bi-phone me-1"></i><?= htmlspecialchars($col['telefono']) ?></span>
                 <?php endif; ?>
+                <?php if ($col['email']): ?>
+                    <span><i class="bi bi-envelope me-1"></i><?= htmlspecialchars($col['email']) ?></span>
+                <?php endif; ?>
+                <?php if ($col['dpi']): ?>
+                    <span><i class="bi bi-person-vcard me-1"></i>DPI <?= htmlspecialchars($col['dpi']) ?></span>
+                <?php endif; ?>
             </div>
             <div class="d-flex flex-wrap gap-2 mt-2">
                 <span class="cv-hero-pill">
@@ -1561,6 +1572,7 @@ $tipos_btn_p = [
                 <span class="cv-hero-pill">
                     <i class="bi bi-calendar-check me-1"></i>Ingreso: <?= date('d/m/Y', strtotime($col['fecha_ingreso'])) ?>
                 </span>
+                <span class="cv-hero-pill"><i class="bi bi-circle-fill me-1" style="font-size:.55rem;color:<?= $col['activo'] ? '#22c55e' : '#94a3b8' ?>"></i><?= $col['activo'] ? 'Activo' : 'Inactivo' ?></span>
                 <?php if ($total_deuda_activa > 0): ?>
                     <span class="cv-hero-pill" style="background:rgba(239,68,68,.2);border-color:rgba(239,68,68,.3)">
                         ⚠️ Deuda: L <?= number_format($total_deuda_activa, 2) ?>
@@ -1573,12 +1585,40 @@ $tipos_btn_p = [
                 <?php endif; ?>
             </div>
         </div>
+        <!-- Firma digital (sale en sus bouchers y recibos) y edición de datos -->
+        <div class="cv-hero-firma" id="firma">
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
+                <span class="cv-hero-firma-lbl"><i class="bi bi-pen me-1"></i>Firma</span>
+                <span class="no-print d-flex gap-1">
+                    <?php if (puedeNomina()): ?>
+                        <label class="btn btn-sm btn-outline-primary py-0 mb-0" title="PNG o JPG, firma oscura sobre fondo blanco. Cualquier tamaño: se recorta sola."><i class="bi bi-upload"></i> <?= $col['url_firma'] ? 'Cambiar' : 'Subir' ?>
+                            <input type="file" id="firmaArchivo" accept="image/png,image/jpeg" hidden></label>
+                        <?php if ($col['url_firma']): ?><button type="button" class="btn btn-sm btn-outline-danger py-0" id="firmaQuitar" title="Quitar firma"><i class="bi bi-trash"></i></button><?php endif; ?>
+                    <?php endif; ?>
+                    <?php if ($col['activo']): ?>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 btn-editar-colab" title="Editar datos del colaborador"
+                            data-col='<?= json_encode($col, JSON_HEX_APOS | JSON_HEX_QUOT) ?>'><i class="bi bi-pencil-fill"></i> Editar</button>
+                    <?php endif; ?>
+                </span>
+            </div>
+            <div class="cv-hero-firma-caja">
+                <?php if ($col['url_firma']): ?>
+                    <img src="includes/colaborador_firma.php?id=<?= (int)$col['id'] ?>&v=<?= substr(md5((string)$col['url_firma']), 0, 8) ?>" alt="Firma de <?= htmlspecialchars($nombreCompleto) ?>">
+                <?php else: ?>
+                    <span class="small text-muted">Sin firma: súbela para que salga en sus bouchers.</span>
+                <?php endif; ?>
+            </div>
+        </div>
         <div class="cv-tenure">
             <div class="cv-tenure-num"><?= $anios > 0 ? $anios : $mesesAnt ?></div>
             <div class="cv-tenure-lbl"><?= $anios > 0 ? ($anios === 1 ? 'año' : 'años') : 'mes(es)' ?></div>
             <div style="font-size:.6rem;opacity:.55;margin-top:2px">antigüedad</div>
         </div>
     </div>
+
+    <?php if ($col['notas']): ?>
+        <div class="mb-3 p-2 rounded-2" style="background:#f8fafc;font-size:.82rem;color:#555;border:1px solid var(--border)"><i class="bi bi-sticky me-1 text-secondary"></i><?= nl2br(htmlspecialchars($col['notas'])) ?></div>
+    <?php endif; ?>
 
     <!-- ── KPIs ──────────────────────────────────────────────────────────── -->
     <div class="cv-kpis">
@@ -1704,87 +1744,6 @@ $tipos_btn_p = [
 
     <!-- ── Fila de 3 tarjetas del mismo ancho: datos, desglose salarial y resumen de pagos ── -->
     <div class="cv-top3">
-            <!-- Datos personales -->
-            <div class="cv-card">
-                <div class="cv-card-hdr">
-                    <span class="cv-card-hdr-title">
-                        <i class="bi bi-person-vcard text-primary"></i>Datos Personales
-                    </span>
-                    <?php if ($col['activo']): ?>
-                        <button class="btn-icon bi-teal btn-editar-colab no-print"
-                            style="font-size:.75rem;padding:.3rem .7rem"
-                            data-col='<?= json_encode($col, JSON_HEX_APOS | JSON_HEX_QUOT) ?>'>
-                            <i class="bi bi-pencil-fill"></i> Editar
-                        </button>
-                    <?php endif; ?>
-                </div>
-                <div class="cv-card-body">
-                    <?php if ($col['dpi']): ?>
-                        <div class="info-row">
-                            <span class="info-lbl">DPI</span>
-                            <span class="info-val"><?= htmlspecialchars($col['dpi']) ?></span>
-                        </div>
-                    <?php endif; ?>
-                    <?php if ($col['email']): ?>
-                        <div class="info-row">
-                            <span class="info-lbl">Email</span>
-                            <span class="info-val" style="font-size:.77rem"><?= htmlspecialchars($col['email']) ?></span>
-                        </div>
-                    <?php endif; ?>
-                    <div class="info-row">
-                        <span class="info-lbl">Ingreso</span>
-                        <span class="info-val"><?= date('d/m/Y', strtotime($col['fecha_ingreso'])) ?></span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-lbl">Antigüedad</span>
-                        <span class="info-val">
-                            <?php
-                            if ($anios > 0)      echo $anios . ' año(s) ' . $mesesAnt . ' mes(es)';
-                            elseif ($mesesAnt)  echo $mesesAnt . ' mes(es)';
-                            else                echo $diasTotal . ' día(s)';
-                            ?>
-                        </span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-lbl">Estado</span>
-                        <span class="info-val">
-                            <?php if ($col['activo']): ?>
-                                <span class="status-badge sb-pagado"><i class="bi bi-circle-fill"
-                                        style="font-size:7px"></i>Activo</span>
-                            <?php else: ?>
-                                <span class="status-badge sb-anulado"><i class="bi bi-circle-fill"
-                                        style="font-size:7px"></i>Inactivo</span>
-                            <?php endif; ?>
-                        </span>
-                    </div>
-                    <!-- Firma digital: sale en los bouchers y recibos de sus pagos -->
-                    <div class="info-row d-block" id="firma">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <span class="info-lbl">Firma</span>
-                            <?php if (puedeNomina()): ?>
-                                <span class="no-print">
-                                    <label class="btn btn-sm btn-outline-primary py-0 mb-0" title="PNG o JPG, firma oscura sobre fondo blanco. Cualquier tamaño: se recorta sola."><i class="bi bi-upload"></i> <?= $col['url_firma'] ? 'Cambiar' : 'Subir' ?>
-                                        <input type="file" id="firmaArchivo" accept="image/png,image/jpeg" hidden></label>
-                                    <?php if ($col['url_firma']): ?><button type="button" class="btn btn-sm btn-outline-danger py-0" id="firmaQuitar" title="Quitar firma"><i class="bi bi-trash"></i></button><?php endif; ?>
-                                </span>
-                            <?php endif; ?>
-                        </div>
-                        <?php if ($col['url_firma']): ?>
-                            <img src="includes/colaborador_firma.php?id=<?= (int)$col['id'] ?>&v=<?= substr(md5((string)$col['url_firma']), 0, 8) ?>" alt="Firma de <?= htmlspecialchars($nombreCompleto) ?>"
-                                style="max-width:100%;max-height:80px;background:#fff;border:1px dashed #cbd5e1;border-radius:6px;padding:4px">
-                        <?php else: ?>
-                            <div class="small text-muted">Sin firma. Sube una foto o imagen PNG/JPG de la firma en tinta oscura sobre fondo blanco (cualquier tamaño: el sistema recorta los bordes blancos solo).</div>
-                        <?php endif; ?>
-                    </div>
-                    <?php if ($col['notas']): ?>
-                        <div class="mt-2 p-2 rounded-2"
-                            style="background:#f8fafc;font-size:.8rem;color:#555;border:1px solid var(--border)">
-                            <i class="bi bi-sticky me-1 text-secondary"></i><?= nl2br(htmlspecialchars($col['notas'])) ?>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-
         <!-- Desglose salarial -->
         <div class="cv-card">
             <div class="cv-card-hdr">
