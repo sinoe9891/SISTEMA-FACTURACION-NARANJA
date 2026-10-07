@@ -1550,7 +1550,12 @@ $tipos_btn_p = [
             <span class="cv-status-dot <?= $col['activo'] ? 'on' : 'off' ?>"></span>
         </div>
         <div class="cv-hero-info">
-            <div class="cv-hero-name"><?= htmlspecialchars($nombreCompleto) ?></div>
+            <div class="cv-hero-name d-flex align-items-center flex-wrap gap-2"><?= htmlspecialchars($nombreCompleto) ?>
+                <?php if ($col['activo']): ?>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 btn-editar-colab no-print" style="font-size:.78rem" title="Editar datos y firma del colaborador"
+                        data-col='<?= json_encode($col, JSON_HEX_APOS | JSON_HEX_QUOT) ?>'><i class="bi bi-pencil-fill me-1"></i>Editar</button>
+                <?php endif; ?>
+            </div>
             <div class="cv-hero-meta">
                 <span><i class="bi bi-briefcase me-1"></i><?= htmlspecialchars($col['puesto']) ?></span>
                 <?php if ($col['departamento']): ?>
@@ -1591,12 +1596,6 @@ $tipos_btn_p = [
                 <?php endif; ?>
             </div>
         </div>
-        <?php if ($col['activo']): ?>
-            <div class="cv-hero-acciones no-print">
-                <button type="button" class="btn btn-sm btn-outline-secondary btn-editar-colab" title="Editar datos y firma del colaborador"
-                    data-col='<?= json_encode($col, JSON_HEX_APOS | JSON_HEX_QUOT) ?>'><i class="bi bi-pencil-fill me-1"></i> Editar</button>
-            </div>
-        <?php endif; ?>
         <div class="cv-tenure">
             <div class="cv-tenure-num"><?= $anios > 0 ? $anios : $mesesAnt ?></div>
             <div class="cv-tenure-lbl"><?= $anios > 0 ? ($anios === 1 ? 'año' : 'años') : 'mes(es)' ?></div>
