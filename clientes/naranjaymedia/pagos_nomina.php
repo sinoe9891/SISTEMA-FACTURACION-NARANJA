@@ -54,9 +54,9 @@ require_once '../../includes/templates/header.php';
               $anioV = (int)substr($f['desde'], 0, 4); $mesV = (int)substr($f['desde'], 5, 2); ?>
         <div class="col-6 col-md-auto" style="min-width:9rem"><label class="form-label small">Vista</label>
             <select class="form-select form-select-sm" id="fVista">
-                <option value="anual" <?= $vista === 'anual' ? 'selected' : '' ?>>Anual</option>
-                <option value="mensual" <?= $vista === 'mensual' ? 'selected' : '' ?>>Mensual</option>
-                <option value="rango" <?= $vista === 'rango' ? 'selected' : '' ?>>Rango de fechas</option>
+                <option value="anual" <?= $vista === 'anual' ? 'selected' : '' ?>>📅 Anual</option>
+                <option value="mensual" <?= $vista === 'mensual' ? 'selected' : '' ?>>🗓️ Mensual</option>
+                <option value="rango" <?= $vista === 'rango' ? 'selected' : '' ?>>↔️ Rango de fechas</option>
             </select></div>
         <div class="col-6 col-md-auto f-mes<?= $vista === 'mensual' ? '' : ' d-none' ?>" style="min-width:9rem"><label class="form-label small">Mes</label>
             <select class="form-select form-select-sm" id="fMes"><?php foreach ($mesesTxt as $n => $t): ?><option value="<?= $n ?>" <?= $mesV === $n ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?></select></div>
