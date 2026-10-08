@@ -15,8 +15,8 @@ function gastosCobrarDisponible(PDO $pdo): bool
 }
 
 /**
- * Gastos por cobrar a un cliente (o a todos si $receptorId = 0): ya pagados o con fecha cumplida, sin factura.
- * Los programados a futuro (p. ej. la renovación del próximo año) no se avisan hasta que llegue su fecha.
+ * Gastos por cobrar a un cliente (o a todos si $receptorId = 0): ya pagados o que vencen este mes, sin factura.
+ * Se cobran en la factura del mes: la renovación sale desde el día 1 de su mes; las de meses siguientes, no.
  */
 function gastosPorCobrar(PDO $pdo, int $cid, int $receptorId = 0): array
 {
@@ -28,7 +28,7 @@ function gastosPorCobrar(PDO $pdo, int $cid, int $receptorId = 0): array
          . ($lic ? ", l.comision_pct" : ", NULL AS comision_pct") . "
             FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id" . ($lic ? " LEFT JOIN licencias l ON l.id = g.licencia_id" : '') . "
             WHERE g.cliente_id = ? AND g.cobrar_receptor_id IS NOT NULL AND g.cobrado_factura_id IS NULL
-              AND g.estado <> 'anulado' AND (g.estado = 'pagado' OR g.fecha <= CURDATE())"
+              AND g.estado <> 'anulado' AND (g.estado = 'pagado' OR g.fecha <= LAST_DAY(CURDATE()))"
          . ($receptorId ? " AND g.cobrar_receptor_id = ?" : '') . " ORDER BY g.fecha, g.id";
     $st = $pdo->prepare($sql);
     $st->execute($receptorId ? [$cid, $receptorId] : [$cid]);
