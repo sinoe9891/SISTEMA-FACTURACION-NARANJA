@@ -34,7 +34,7 @@ if (!in_array($datos['rol'], ['admin', 'superadmin'])) {
 	exit;
 }
 
-$cliente_id = $datos['cliente_id'];
+$cliente_id = (int)cliente_actual();   // empresa activa (header.php vuelve a definir $datos, sin cliente_id)
 
 $stmtClientes = $pdo->prepare("SELECT * FROM clientes_factura WHERE cliente_id = ? ORDER BY nombre ASC");
 $stmtClientes->execute([$cliente_id]);
