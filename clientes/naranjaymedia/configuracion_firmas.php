@@ -17,6 +17,7 @@ $ayuda = [
     'vobo' => 'Visto bueno final (gerencia).',
 ];
 require_once '../../includes/templates/header.php';
+require_once '../../includes/templates/config_tabs.php';
 ?>
 
 <div class="app-page-header">

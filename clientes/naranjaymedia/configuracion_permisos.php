@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $instalada) {
 if (isset($_GET['ok'])) $aviso = 'Permisos guardados. Los cambios aplican al recargar la página de cada usuario.';
 
 require_once '../../includes/templates/header.php';   // define $menuLateral (completo para el superadmin)
+require_once '../../includes/templates/config_tabs.php';
 $usuariosPorRol = $pdo->query("SELECT rol, COUNT(*) FROM usuarios WHERE estado = 'activo' GROUP BY rol")->fetchAll(PDO::FETCH_KEY_PAIR);
 ?>
 

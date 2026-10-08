@@ -2391,5 +2391,22 @@ suite('Facturas: el contrato no se liga solo (una pauta o un extra puede pasar d
     if ($id) { $pdo->exec("DELETE FROM factura_items_receptor WHERE factura_id = $id"); $pdo->exec("DELETE FROM facturas WHERE id = $id"); }
 });
 
+suite('Configuración con pestañas y Tasa del dólar (BCH)', function () {
+    $a = login('qa.admin@local.test');
+    $r = $a->get('configuracion');
+    check('«Configuración» abre la primera pestaña', $r['code'] === 302 && str_contains((string)$r['loc'], 'configuracion_cai'), $r['code'] . ' ' . $r['loc']);
+    foreach (['configuracion_cai', 'configuracion_mensajes', 'configuracion_correo', 'configuracion_firmas', 'configuracion_documentos', 'configuracion_tasa'] as $p) {
+        $r = $a->get($p);
+        check("$p muestra las pestañas con la suya activa", sinErroresPhp($r['body']) && str_contains($r['body'], 'app-config-tabs') && preg_match('#class="nav-link text-nowrap active[^"]*" href="' . $p . '"#', $r['body']), errorPhp($r['body']));
+    }
+    $d = $a->get('dashboard');
+    check('el menú tiene una sola «Configuración» y «Usuarios» aparte', str_contains($d['body'], 'href="configuracion"') && str_contains($d['body'], 'href="usuarios"') && !str_contains($d['body'], 'href="configuracion_mensajes"'));
+    $t = $a->get('configuracion_tasa');
+    check('Tasa del dólar no muestra la clave guardada', !preg_match('#value="[0-9a-f]{32}"#', $t['body']));
+    $f = login('qa.facturador@local.test');
+    $r = $f->get('configuracion_tasa');
+    check('facturador: no entra a Tasa del dólar', $r['code'] === 302 || !str_contains($r['body'], 'formClave'));
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

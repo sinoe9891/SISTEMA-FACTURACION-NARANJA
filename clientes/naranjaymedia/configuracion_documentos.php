@@ -13,6 +13,7 @@ $instalada = docsDisponible($pdo);
 $docs = $instalada ? docsLista($pdo, $cid) : [];
 $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
 require_once '../../includes/templates/header.php';
+require_once '../../includes/templates/config_tabs.php';
 ?>
 
 <div class="app-page-header">

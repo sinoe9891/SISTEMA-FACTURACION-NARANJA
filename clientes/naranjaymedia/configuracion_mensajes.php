@@ -103,6 +103,7 @@ require_once '../../includes/cobros.php';
 $defaults += ['factura_y_saldo' => COBRO_PLANTILLA_FACTURA_Y_SALDO] + COBRO_PLANTILLAS_EXTRA;   // Factura + saldo, recordatorio del plan y envío de recibos
 
 require_once '../../includes/templates/header.php';
+require_once '../../includes/templates/config_tabs.php';
 ?>
 
 <style>

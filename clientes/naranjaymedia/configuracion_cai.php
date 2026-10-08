@@ -59,6 +59,7 @@ $vencidos      = $total_cais - $activos;
 $hoy           = date('Y-m-d');
 
 require_once '../../includes/templates/header.php';
+require_once '../../includes/templates/config_tabs.php';
 ?>
 
 <style>

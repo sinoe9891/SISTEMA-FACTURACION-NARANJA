@@ -40,6 +40,7 @@ $tipos = ['prueba' => 'Prueba', 'pago_colaborador' => 'Aviso de pago', 'cobro' =
 $rutaCron = realpath(__DIR__ . '/../../cron/tareas.php') ?: dirname(__DIR__, 2) . '/cron/tareas.php';
 
 require_once '../../includes/templates/header.php';
+require_once '../../includes/templates/config_tabs.php';
 ?>
 
 <div class="app-page-header">
