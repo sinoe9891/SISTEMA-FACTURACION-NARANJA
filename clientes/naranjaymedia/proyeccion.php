@@ -5,6 +5,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/contrato_plan.php';
 require_once '../../includes/proyeccion_gastos.php';
+require_once '../../includes/cuentas.php';
 require_once '../../includes/templates/header.php';
 
 $cliente_id = (int)(USUARIO_ROL === 'superadmin'
@@ -111,6 +112,31 @@ foreach (planPendientesPorMes($pdo, $cliente_id) as $k => $porContrato) {
     }
 }
 
+// Facturas emitidas sin cobrar (Cuentas por cobrar): se esperan en el mes actual. Para no contar dos veces:
+// - las de un contrato activo con plan de pagos que no están ligadas a una línea del plan ya vienen en esa línea pendiente;
+// - las de este mes de un contrato activo sin plan ya vienen en la proyección mensual del contrato.
+$cxcMes = 0.0;
+$cxcDetalle = [];
+$mesActualIni = date('Y-m-01');
+$ligadasPlan = [];
+try {
+    $ligadasPlan = array_flip(array_map('intval', $pdo->query("SELECT factura_id FROM contratos_plan WHERE factura_id IS NOT NULL AND cliente_id = " . (int)$cliente_id)->fetchAll(PDO::FETCH_COLUMN)));
+} catch (Throwable $e) { $ligadasPlan = []; }
+$ctDeFactura = [];
+$st = $pdo->prepare("SELECT id, contrato_id FROM facturas WHERE cliente_id = ? AND estado = 'emitida' AND contrato_id IS NOT NULL");
+$st->execute([$cliente_id]);
+$ctDeFactura = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+foreach (cxcFacturasPendientes($pdo, (int)$cliente_id) as $fx) {
+    $ctF = (int)($ctDeFactura[$fx['id']] ?? 0);
+    if ($ctF && isset($tipoContrato[$ctF])) {   // contrato activo
+        if (isset($conPlan[$ctF]) && !isset($ligadasPlan[(int)$fx['id']])) continue;
+        if (!isset($conPlan[$ctF]) && substr($fx['fecha_emision'], 0, 10) >= $mesActualIni) continue;
+    }
+    $cxcMes += (float)$fx['saldo'];
+    $cxcDetalle[] = ['cliente' => $fx['receptor'], 'nombre' => 'Factura ' . $fx['correlativo'] . ' · ' . date('d/m/Y', strtotime($fx['fecha_emision'])), 'tipo' => 'cxc', 'monto' => round((float)$fx['saldo'], 2),
+                     'regla' => 'Factura emitida sin cobrar (' . (int)$fx['dias'] . ' días)' . ((float)$fx['abonado'] > 0 ? ' · saldo después de abonos' : '')];
+}
+
 $proyeccion = [];
 for ($offset = 0; $offset < 12; $offset++) {
     $mes  = (($hoy_mes - 1 + $offset) % 12) + 1;
@@ -166,7 +192,9 @@ for ($offset = 0; $offset < 12; $offset++) {
 
     $ing_real = $egr_real = null;
 
-    $ing_total = $ing_estandar + $ing_periodico + $ing_recibo;
+    $ing_cxc = $offset === 0 ? $cxcMes : 0.0;   // lo pendiente de cobro se espera en el mes actual
+    if ($offset === 0) $ing_detalle = array_merge($ing_detalle, $cxcDetalle);
+    $ing_total = $ing_estandar + $ing_periodico + $ing_recibo + $ing_cxc;
     $gastosMes = proyeccionGastosMes($gastosCalendario, $anio, $mes);
     $fijosMes = $variablesMes = 0;
     foreach ($gastosMes as $g) {
@@ -190,6 +218,7 @@ for ($offset = 0; $offset < 12; $offset++) {
         'ing_estandar' => $ing_estandar,
         'ing_periodico' => $ing_periodico,
         'ing_recibo' => $ing_recibo,
+        'ing_cxc' => $ing_cxc,
         'ing_total' => $ing_total,
         'egr_nomina' => $nomina_mensual,
         'egr_fijos' => $fijosMes,
@@ -798,6 +827,7 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
                         <th>Mes</th>
                         <th class="text-end">Ing. Contratos</th>
                         <th class="text-end">Ing. Recibos</th>
+                        <th class="text-end" title="Facturas emitidas que siguen sin pagar: se esperan en el mes actual">Por cobrar</th>
                         <th class="text-end">Total Ing.</th>
                         <th class="text-end">Nómina</th>
                         <th class="text-end">Gastos fijos/var</th>
@@ -828,6 +858,9 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
                             </td>
                             <td class="text-end">
                                 <?= $p['ing_recibo'] > 0 ? "<span style='color:#7c3aed'>L " . number_format($p['ing_recibo'], 0) . "</span>" : "<span class='text-muted'>—</span>" ?>
+                            </td>
+                            <td class="text-end">
+                                <?= $p['ing_cxc'] > 0 ? "<span style='color:#0e7490'>L " . number_format($p['ing_cxc'], 0) . "</span>" : "<span class='text-muted'>—</span>" ?>
                             </td>
                             <td class="text-end fw-bold">L
                                 <?= number_format($p['es_pasado'] && $p['ing_real'] !== null ? $p['ing_real'] : $p['ing_total'], 0) ?>
@@ -878,7 +911,7 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
                         </tr>
                         <!-- FILA DESGLOSE (oculta) -->
                         <tr class="det-row d-none" id="det-<?= $i ?>">
-                            <td colspan="10" class="det-row-cell"></td>
+                            <td colspan="11" class="det-row-cell"></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -887,6 +920,7 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
                         <td>TOTAL 12 MESES</td>
                         <td class="text-end text-success">L <?= number_format(array_sum(array_column($proyeccion, 'ing_estandar')) + array_sum(array_column($proyeccion, 'ing_periodico')), 0) ?></td>
                         <td class="text-end">L <?= number_format(array_sum(array_column($proyeccion, 'ing_recibo')), 0) ?></td>
+                        <td class="text-end">L <?= number_format(array_sum(array_column($proyeccion, 'ing_cxc')), 0) ?></td>
                         <td class="text-end text-success">L <?= number_format($total_ing_proy, 0) ?></td>
                         <td class="text-end text-warning">-L <?= number_format($nomina_mensual * 12, 0) ?></td>
                         <td class="text-end text-danger">-L
@@ -993,7 +1027,7 @@ $chart_flujo  = array_map(fn($p) => round($p['flujo'], 2), $proyeccion);
 
         cell.innerHTML = `
     <div class="mb-3"><div class="det-section-title">Ingresos proyectados · ${esc(p.mes_nombre)} ${p.anio}</div>${ingresosHtml}
-        <div class="det-total">Contratos: ${fmtL(p.ing_estandar + p.ing_periodico)} + Recibos: ${fmtL(p.ing_recibo)} = Total ingresos: ${fmtL(p.ing_total)}</div></div>
+        <div class="det-total">Contratos: ${fmtL(p.ing_estandar + p.ing_periodico)} + Recibos: ${fmtL(p.ing_recibo)}${p.ing_cxc > 0 ? ' + Por cobrar: ' + fmtL(p.ing_cxc) : ''} = Total ingresos: ${fmtL(p.ing_total)}</div></div>
     <div class="det-grid">
         <div>
             <div class="det-section-title"><i class="bi bi-people-fill" style="color:#f59e0b"></i> Nómina proyectada</div>
