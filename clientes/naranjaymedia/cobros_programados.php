@@ -60,6 +60,12 @@ require_once '../../includes/templates/header.php';
 ?>
 
 <style>
+    #cbTabs { padding: 0 1rem; gap: .5rem; border-bottom: 1px solid var(--bs-border-color, #e2e8f0); overflow-x: auto; }
+    #cbTabs .nav-link { padding: .9rem 1rem; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; color: var(--bs-secondary-color, #64748b); font-weight: 600; white-space: nowrap; transition: color .15s, border-color .15s; }
+    #cbTabs .nav-link:hover { color: var(--bs-primary, #e4550d); background: var(--bs-tertiary-bg, #f8fafc); }
+    #cbTabs .nav-link.active { color: var(--bs-primary, #e4550d); border-bottom-color: currentColor; }
+    #cbTabs .nav-link:focus-visible { outline: 2px solid var(--bs-primary, #e4550d); outline-offset: -4px; }
+
     /* El formulario debe ser el contenedor flex del modal para que solo el cuerpo se desplace. */
     #mEditar .modal-dialog, #mPrevia .modal-dialog {
         height: calc(100vh - 1.5rem);
@@ -191,13 +197,13 @@ require_once '../../includes/templates/header.php';
 
     <?php else: ?>
     <!-- Lista -->
-    <nav class="nav nav-pills gap-2 mb-3" id="cbTabs" aria-label="Cobros por estado">
-        <?php foreach (['programados' => 'Programados', 'enviados' => 'Enviados'] as $tab => $nombre): ?>
-            <button type="button" class="nav-link <?= $pestana === $tab ? 'active' : '' ?>" data-tab="<?= $tab ?>" aria-pressed="<?= $pestana === $tab ? 'true' : 'false' ?>"><?= $nombre ?></button>
-        <?php endforeach; ?>
-    </nav>
     <div class="app-card">
         <div class="app-card-header"><span><i class="bi bi-list-check me-1"></i> Cobros</span><span class="app-badge" id="cbTotal"><?= $listado['total'] ?></span></div>
+    <nav class="nav flex-nowrap" id="cbTabs" aria-label="Cobros por estado">
+        <?php foreach (['programados' => 'Programados', 'enviados' => 'Enviados'] as $tab => $nombre): ?>
+            <button type="button" class="nav-link <?= $pestana === $tab ? 'active' : '' ?>" data-tab="<?= $tab ?>" aria-pressed="<?= $pestana === $tab ? 'true' : 'false' ?>"><i class="bi <?= $tab === 'programados' ? 'bi-calendar-event' : 'bi-send-check' ?> me-2" aria-hidden="true"></i><?= $nombre ?></button>
+        <?php endforeach; ?>
+    </nav>
         <div class="app-card-body border-bottom">
             <div class="row g-2 align-items-end">
                 <div class="col-md-4"><label class="form-label" for="cbBuscar">Buscar</label><input type="search" class="form-control" id="cbBuscar" placeholder="Cliente, asunto, correo o factura…" value="<?= htmlspecialchars((string)($_GET['q'] ?? '')) ?>"></div>
