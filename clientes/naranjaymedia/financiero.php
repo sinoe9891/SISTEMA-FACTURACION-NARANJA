@@ -1045,10 +1045,9 @@ for ($m = 1; $m <= 12; $m++) {
                     <!-- Únicos -->
                     <tr class="tr-sub tr-egr">
                         <td class="ps-4" style="color:#7c3aed;font-size:.75rem">
-                            ↳ 📌 Únicos / Eventuales
-                            <span
-                                style="font-size:.63rem;background:#ede9fe;color:#7c3aed;padding:1px 5px;border-radius:4px;margin-left:3px;font-weight:600">sin
-                                recurrencia</span>
+                            ↳ 📌 De esos, pagos únicos
+                            <span title="Los mismos gastos de arriba (fijos + variables + extraordinarios), vistos por frecuencia: los que no se repiten (tarjeta, impuestos, compras…). No se suman otra vez al total."
+                                style="font-size:.63rem;background:#ede9fe;color:#7c3aed;padding:1px 5px;border-radius:4px;margin-left:3px;font-weight:600;cursor:help">ya incluidos arriba</span>
                         </td>
                         <?php $tot_uni = 0;
                         for ($m = 1; $m <= 12; $m++): $v = (float)($egr_por_mes[$m]['unicos'] ?? 0);
@@ -1063,7 +1062,7 @@ for ($m = 1; $m <= 12; $m++) {
                     <!-- Anuales -->
                     <tr class="tr-sub tr-egr">
                         <td class="ps-4" style="color:#0891b2;font-size:.75rem">
-                            ↳ 📆 Anuales
+                            ↳ 📆 De esos, anuales
                             <span
                                 style="font-size:.63rem;background:#e0f2fe;color:#0891b2;padding:1px 5px;border-radius:4px;margin-left:3px;font-weight:600">1
                                 vez/año</span>
