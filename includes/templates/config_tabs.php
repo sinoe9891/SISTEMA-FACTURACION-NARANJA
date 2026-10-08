@@ -14,12 +14,12 @@ $__cfgTabs = array_values(array_filter([
     !empty($es_superadmin) ? ['configuracion_permisos', 'bi-shield-lock', 'Permisos', []] : null,
 ]));
 ?>
-<div class="app-config-tabs mb-3">
-    <ul class="nav nav-tabs flex-nowrap overflow-auto" style="scrollbar-width:thin">
+<div class="app-card app-tabs-card app-config-tabs mb-3">
+    <nav class="nav flex-nowrap app-tabs-linea" aria-label="Secciones de configuración">
         <?php foreach ($__cfgTabs as [$__p, $__ic, $__t, $__sub]): $__act = $paginaActual === $__p || in_array($paginaActual, $__sub, true); ?>
-            <li class="nav-item"><a class="nav-link text-nowrap <?= $__act ? 'active fw-semibold' : '' ?>" href="<?= $__p ?>"<?= $__act ? ' aria-current="page"' : '' ?>><i class="bi <?= $__ic ?> me-1"></i><?= htmlspecialchars($__t) ?></a></li>
+            <a class="nav-link text-nowrap <?= $__act ? 'active' : '' ?>" href="<?= $__p ?>"<?= $__act ? ' aria-current="page"' : '' ?>><i class="bi <?= $__ic ?> me-2" aria-hidden="true"></i><?= htmlspecialchars($__t) ?></a>
         <?php endforeach; ?>
-    </ul>
+    </nav>
 </div>
 <script>
 // Pestañas internas de la página (p. ej. en Correo): al guardar y recargar se vuelve a la misma

@@ -1315,3 +1315,11 @@ button.app-stat:disabled { cursor: default; opacity: .6; transform: none; box-sh
 .sb-widget .sb-op mark { padding: 0; background: #fde68a; color: inherit; border-radius: 2px; }
 .sb-widget .sb-vacio { padding: .5rem .75rem; font-size: .82rem; color: var(--bs-secondary-color, #64748b); }
 .sb-widget.sb-disabled .sb-input { background-color: var(--bs-secondary-bg, #e9ecef); }
+
+/* Pestañas dentro de una tarjeta, con línea bajo la activa (Configuración; mismo estilo que Cobros por correo) */
+.app-tabs-card { padding: 0; overflow: hidden; }
+.app-tabs-linea { padding: 0 .75rem; gap: .25rem; overflow-x: auto; scrollbar-width: thin; }
+.app-tabs-linea .nav-link { padding: .85rem 1rem; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; color: var(--bs-secondary-color, #64748b); font-weight: 600; white-space: nowrap; transition: color .15s, border-color .15s, background .15s; }
+.app-tabs-linea .nav-link:hover { color: var(--bs-primary, #e4550d); background: var(--bs-tertiary-bg, #f8fafc); }
+.app-tabs-linea .nav-link.active { color: var(--bs-primary, #e4550d); border-bottom-color: currentColor; }
+.app-tabs-linea .nav-link:focus-visible { outline: 2px solid var(--bs-primary, #e4550d); outline-offset: -4px; }

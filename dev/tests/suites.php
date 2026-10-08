@@ -2397,7 +2397,7 @@ suite('Configuración con pestañas y Tasa del dólar (BCH)', function () {
     check('«Configuración» abre la primera pestaña', $r['code'] === 302 && str_contains((string)$r['loc'], 'configuracion_cai'), $r['code'] . ' ' . $r['loc']);
     foreach (['configuracion_cai', 'configuracion_mensajes', 'configuracion_correo', 'configuracion_firmas', 'configuracion_documentos', 'configuracion_tasa'] as $p) {
         $r = $a->get($p);
-        check("$p muestra las pestañas con la suya activa", sinErroresPhp($r['body']) && str_contains($r['body'], 'app-config-tabs') && preg_match('#class="nav-link text-nowrap active[^"]*" href="' . $p . '"#', $r['body']), errorPhp($r['body']));
+        check("$p muestra las pestañas con la suya activa", sinErroresPhp($r['body']) && str_contains($r['body'], 'app-config-tabs') && preg_match('#class="nav-link text-nowrap active" href="' . $p . '"#', $r['body']), errorPhp($r['body']));
     }
     $d = $a->get('dashboard');
     check('el menú tiene una sola «Configuración» y «Usuarios» aparte', str_contains($d['body'], 'href="configuracion"') && str_contains($d['body'], 'href="usuarios"') && !str_contains($d['body'], 'href="configuracion_mensajes"'));
