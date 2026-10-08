@@ -11,7 +11,11 @@ const NOMINA_TIPOS = ['sueldo' => 'Sueldo', 'bono' => 'Bono', 'viatico' => 'Viá
 /** Filtros normalizados desde $_GET (por defecto: el año en curso). */
 function nominaFiltros(array $g): array
 {
-    $fecha = fn($v, $d) => (is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) ? $v : $d;
+    // Fecha válida (año 2000 en adelante: al escribir el año en el campo de fecha llegan valores como 0002-…)
+    $fecha = fn($v, $d) => (is_string($v) && preg_match('/^(\d{4})-\d{2}-\d{2}$/', $v, $m) && $m[1] >= 2000 && strtotime($v)) ? $v : $d;
+    // ?anio=2024 → todo ese año (el selector de año de la página)
+    $anio = (int)($g['anio'] ?? 0);
+    if ($anio >= 2000 && $anio <= (int)date('Y') + 1) { $g['desde'] = "$anio-01-01"; $g['hasta'] = "$anio-12-31"; }
     $f = [
         'desde' => $fecha($g['desde'] ?? null, date('Y') . '-01-01'),
         'hasta' => $fecha($g['hasta'] ?? null, date('Y-m-d')),

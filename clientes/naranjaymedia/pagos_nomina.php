@@ -22,6 +22,9 @@ $colabs->execute([$cid]);
 $colabs = $colabs->fetchAll(PDO::FETCH_ASSOC);
 $qs = http_build_query(array_filter($f, fn($v) => $v !== '' && $v !== 0));
 $L = fn($v) => 'L ' . number_format((float)$v, 2);
+// Años con pagos, para el selector de año
+$anioMin = (int)($pdo->query("SELECT YEAR(MIN(fecha)) FROM gastos WHERE cliente_id = " . (int)$cid . " AND estado <> 'anulado'")->fetchColumn() ?: date('Y'));
+$anioSel = (substr($f['desde'], 0, 4) === substr($f['hasta'], 0, 4) && substr($f['desde'], 5) === '01-01' && (substr($f['hasta'], 5) === '12-31' || $f['hasta'] === date('Y-m-d'))) ? (int)substr($f['desde'], 0, 4) : 0;
 $atajos = [
     'Este mes' => [date('Y-m-01'), date('Y-m-d')],
     'Mes anterior' => [date('Y-m-01', strtotime('first day of last month')), date('Y-m-t', strtotime('last day of last month'))],
@@ -49,6 +52,10 @@ require_once '../../includes/templates/header.php';
 <!-- Filtros -->
 <form class="app-card app-card-body mb-3" method="get" id="formFiltros">
     <div class="row g-2 align-items-end">
+        <div class="col-6 col-md-1"><label class="form-label small">Año</label>
+            <select class="form-select form-select-sm" id="fAnio"><option value="">Otro</option>
+                <?php for ($y = (int)date('Y'); $y >= $anioMin; $y--): ?><option value="<?= $y ?>" <?= $anioSel === $y ? 'selected' : '' ?>><?= $y ?></option><?php endfor; ?>
+            </select></div>
         <div class="col-6 col-md-2"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" value="<?= $f['desde'] ?>"></div>
         <div class="col-6 col-md-2"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" value="<?= $f['hasta'] ?>"></div>
         <div class="col-md-2"><label class="form-label small">Colaborador</label>
@@ -222,7 +229,20 @@ require_once '../../includes/templates/header.php';
     document.getElementById('pSelZip').addEventListener('click', () => bouchersZip(elegidosIds()));
     pintarSel();
     // Los filtros se aplican al cambiar (las pestañas de abajo no recargan)
-    document.querySelectorAll('#formFiltros select, #formFiltros input[type=date]').forEach(el => el.addEventListener('change', () => document.getElementById('formFiltros').submit()));
+    const form = document.getElementById('formFiltros');
+    form.querySelectorAll('select:not(#fAnio)').forEach(el => el.addEventListener('change', () => form.submit()));
+    // Año: pone desde/hasta de todo ese año
+    document.getElementById('fAnio').addEventListener('change', e => {
+        const y = e.target.value; if (!y) return;
+        form.desde.value = y + '-01-01'; form.hasta.value = y + '-12-31'; form.submit();
+    });
+    // Fechas: se aplican cuando la fecha está completa (al escribir el año, el campo cambia con cada dígito)
+    let tFecha;
+    form.querySelectorAll('input[type=date]').forEach(el => el.addEventListener('change', () => {
+        clearTimeout(tFecha);
+        if (!/^(19|20)\d{2}-\d{2}-\d{2}$/.test(el.value)) return;
+        tFecha = setTimeout(() => form.submit(), 700);
+    }));
     document.querySelectorAll('.btn-aviso').forEach(b => b.addEventListener('click', async () => {
         if (!(await Swal.fire({ title: 'Enviar aviso de pago', text: 'Se enviará al colaborador con el comprobante adjunto.', icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' })).isConfirmed) return;
         const fd = new FormData(); fd.append('accion', 'enviar_pago'); fd.append('gasto_id', b.dataset.gasto);
