@@ -5,6 +5,7 @@ require_once '../../includes/functions.php';
 require_once '../../includes/intentos.php';
 require_once '../../includes/inventario.php';
 require_once '../../includes/factura_contrato.php';
+require_once '../../includes/facturacion.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 	die("Método no permitido.");
@@ -220,6 +221,12 @@ try {
 	$total = $subtotal + $isv_15 + $isv_18;
 	if ($total <= 0) throw new Exception("El total de la factura debe ser mayor que 0.");
 	$monto_letras = numeroALetras($total);
+
+	// Sigue sin contrato: si es una mensualidad, se liga sola al contrato del cliente (igual que al crearla)
+	if (!$contratoId && !$factura['contrato_id']) {
+		$contratoId = facturaContratoAutomatico($pdo, (int)$factura['cliente_id'], $cambiar_receptor ? (int)$receptor_id : (int)$factura['receptor_id'], (float)$subtotal);
+		if ($contratoId) $cambioContrato = true;
+	}
 
 	// Actualizar factura
 	$setReceptor = $cambiar_receptor ? "receptor_id = ?,\n        " : "";

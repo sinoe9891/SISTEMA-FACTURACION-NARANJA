@@ -121,16 +121,8 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
     $total    = round($subtotal + $isv_15 + $isv_18, 2);
     if ($total <= 0) throw new Exception("El total de la factura debe ser mayor que 0.");
 
-    // Sin contrato elegido: si el cliente tiene un solo contrato activo (propio o como empresa de un rotativo) y la factura
-    // incluye la mensualidad (subtotal ≥ monto del contrato), se liga a ese contrato. Así ninguna mensualidad queda suelta.
-    if (!$contrato_id) {
-        $stmt = $pdo->prepare("SELECT c.id, COALESCE((SELECT r.monto FROM contratos_clientes_rotativos r WHERE r.contrato_id = c.id AND r.receptor_id = ? AND r.activo = 1 LIMIT 1), c.monto) AS mensual
-            FROM contratos c WHERE c.cliente_id = ? AND c.estado = 'activo' AND c.tipo_contrato <> 'sin_factura'
-              AND (c.receptor_id = ? OR (c.tipo_contrato = 'rotativo' AND EXISTS (SELECT 1 FROM contratos_clientes_rotativos r WHERE r.contrato_id = c.id AND r.receptor_id = ? AND r.activo = 1)))");
-        $stmt->execute([$receptor_id, $cliente_id, $receptor_id, $receptor_id]);
-        $activos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        if (count($activos) === 1 && (float)$activos[0]['mensual'] > 0 && $subtotal + 0.005 >= (float)$activos[0]['mensual']) $contrato_id = (int)$activos[0]['id'];
-    }
+    // Sin contrato elegido: una mensualidad se liga sola al contrato del cliente (ver facturaContratoAutomatico)
+    if (!$contrato_id) $contrato_id = facturaContratoAutomatico($pdo, (int)$cliente_id, (int)$receptor_id, (float)$subtotal);
 
     // ── Guardar ───────────────────────────────────────────────────────────────
     $pdo->prepare("
@@ -159,4 +151,20 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
     invDescontarFactura($pdo, $cliente_id, $factura_id, (int)$establecimiento_id, $usuario_id);
 
     return ['id' => $factura_id, 'correlativo' => $correlativo, 'subtotal' => $subtotal, 'isv_15' => $isv_15, 'isv_18' => $isv_18, 'total' => $total, 'contrato_id' => $contrato_id];
+}
+
+/**
+ * Contrato al que corresponde una factura sin contrato: si el cliente tiene UN solo contrato activo con factura
+ * (propio o como empresa de un contrato rotativo) y la factura incluye la mensualidad (subtotal ≥ monto mensual),
+ * devuelve ese contrato. Con varios contratos o un monto menor (un extra), no se adivina: devuelve null.
+ */
+function facturaContratoAutomatico(PDO $pdo, int $cid, int $receptorId, float $subtotal): ?int
+{
+    $st = $pdo->prepare("SELECT c.id, COALESCE((SELECT r.monto FROM contratos_clientes_rotativos r WHERE r.contrato_id = c.id AND r.receptor_id = ? AND r.activo = 1 LIMIT 1), c.monto) AS mensual
+        FROM contratos c WHERE c.cliente_id = ? AND c.estado = 'activo' AND c.tipo_contrato <> 'sin_factura'
+          AND (c.receptor_id = ? OR (c.tipo_contrato = 'rotativo' AND EXISTS (SELECT 1 FROM contratos_clientes_rotativos r WHERE r.contrato_id = c.id AND r.receptor_id = ? AND r.activo = 1)))");
+    $st->execute([$receptorId, $cid, $receptorId, $receptorId]);
+    $activos = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (count($activos) !== 1 || (float)$activos[0]['mensual'] <= 0) return null;
+    return $subtotal + 0.005 >= (float)$activos[0]['mensual'] ? (int)$activos[0]['id'] : null;
 }

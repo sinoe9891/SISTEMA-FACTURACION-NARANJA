@@ -520,6 +520,8 @@ require_once '../../includes/templates/header.php';
                 o.dataset.monto = c.montos?.[Number(rId)] ?? 0;
                 selCt.appendChild(o);
             });
+            // Un solo contrato activo: queda elegido (las mensualidades van a su contrato; si es un extra, se cambia a «Sin contrato»)
+            if (cts.length === 1) { selCt.value = String(cts[0].id); selCt.dispatchEvent(new Event('change', { bubbles: true })); }
         }
     });
 

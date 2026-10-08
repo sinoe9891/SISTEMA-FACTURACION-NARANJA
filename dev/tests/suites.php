@@ -2393,6 +2393,16 @@ suite('Facturas: una mensualidad sin contrato se liga sola al contrato del clien
     $r = $fact(round((float)$k['monto'] / 3, 2));
     $id2 = (int)($r['json']['factura_id'] ?? 0);
     check('un extra menor a la mensualidad queda sin contrato', $id2 && $pdo->query("SELECT contrato_id FROM facturas WHERE id = $id2")->fetchColumn() === null, $r['body']);
+    // Al editarla y subirla al monto de la mensualidad, también se liga sola
+    if ($id2) {
+        $f2 = $pdo->query("SELECT * FROM facturas WHERE id = $id2")->fetch(PDO::FETCH_ASSOC);
+        $r = $c->post('guardar_factura_editada.php', ['factura_id' => $id2, 'receptor_id' => $f2['receptor_id'], 'fecha_emision' => date('Y-m-d\TH:i', strtotime($f2['fecha_emision'])), 'condicion_pago' => $f2['condicion_pago'],
+            'estado' => 'emitida', 'motivo' => 'QA', 'usuario_autoriza' => 'qa.admin@local.test', 'clave_autoriza' => QA_PASS,
+            'productos[0][id]' => $prod, 'productos[0][cantidad]' => 1, 'productos[0][precio_unitario]' => (float)$k['monto'], 'productos[0][descripcion_html]' => 'QA mensualidad']);
+        check('al editarla con el monto de la mensualidad se liga al contrato', (int)$pdo->query("SELECT contrato_id FROM facturas WHERE id = $id2")->fetchColumn() === (int)$k['id'], substr(strip_tags($r['body']), 0, 200));
+    }
+    $nf = $c->get('generar_factura', ['receptor_id' => $k['receptor_id']]);
+    check('Nueva factura deja elegido el único contrato del cliente', str_contains($nf['body'], 'if (cts.length === 1)') && sinErroresPhp($nf['body']), errorPhp($nf['body']));
     foreach (array_filter([$id1, $id2]) as $id) { $pdo->exec("DELETE FROM factura_items_receptor WHERE factura_id = $id"); $pdo->exec("DELETE FROM facturas WHERE id = $id"); }
 });
 
