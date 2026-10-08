@@ -2375,5 +2375,26 @@ suite('Permisos: solo admin y Nómina manejan colaboradores, pagos y préstamos'
     check('admin: las acciones no le niegan el acceso', $r['code'] !== 403, substr($r['body'], 0, 160));
 });
 
+suite('Facturas: una mensualidad sin contrato se liga sola al contrato del cliente', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $cai = $pdo->query("SELECT * FROM cai_rangos WHERE cliente_id=2 AND fecha_limite >= CURDATE() ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $prod = $pdo->query("SELECT id FROM productos_clientes WHERE cliente_id=2 AND precio > 0 LIMIT 1")->fetchColumn();
+    // Un cliente con un solo contrato activo con factura
+    $k = $pdo->query("SELECT c.id, c.receptor_id, c.monto FROM contratos c WHERE c.cliente_id = 2 AND c.estado = 'activo' AND c.tipo_contrato IN ('estandar','periodico') AND c.monto > 0
+                      AND (SELECT COUNT(*) FROM contratos c2 WHERE c2.cliente_id = 2 AND c2.estado = 'activo' AND c2.tipo_contrato <> 'sin_factura' AND c2.receptor_id = c.receptor_id) = 1
+                      AND NOT EXISTS (SELECT 1 FROM contratos_clientes_rotativos r JOIN contratos c3 ON c3.id = r.contrato_id AND c3.estado = 'activo' WHERE r.receptor_id = c.receptor_id AND r.activo = 1) LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if (!$k || !$cai || !$prod) { check('hay datos para probar (cliente con un contrato)', false); return; }
+    $fact = fn($precio) => $c->post('guardar_factura.php', ['receptor_id' => $k['receptor_id'], 'cai_rango_id' => $cai['id'], 'condicion_pago' => 'Contado', 'establecimiento_id' => $cai['establecimiento_id'],
+        'productos[0][id]' => $prod, 'productos[0][cantidad]' => 1, 'productos[0][precio]' => $precio, 'productos[0][detalles]' => 'QA mensualidad']);
+    $r = $fact((float)$k['monto']);
+    $id1 = (int)($r['json']['factura_id'] ?? 0);
+    check('con el monto de la mensualidad queda ligada al contrato', $id1 && (int)$pdo->query("SELECT contrato_id FROM facturas WHERE id = $id1")->fetchColumn() === (int)$k['id'], $r['body']);
+    $r = $fact(round((float)$k['monto'] / 3, 2));
+    $id2 = (int)($r['json']['factura_id'] ?? 0);
+    check('un extra menor a la mensualidad queda sin contrato', $id2 && $pdo->query("SELECT contrato_id FROM facturas WHERE id = $id2")->fetchColumn() === null, $r['body']);
+    foreach (array_filter([$id1, $id2]) as $id) { $pdo->exec("DELETE FROM factura_items_receptor WHERE factura_id = $id"); $pdo->exec("DELETE FROM facturas WHERE id = $id"); }
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';
