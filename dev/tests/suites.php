@@ -1261,7 +1261,9 @@ suite('Cobros por correo programados', function () {
     $r = $c->get('cobro_accion.php', ['facturas' => $rid]);
     check('lista las facturas del cliente con su saldo', ($r['json']['success'] ?? false) && count($r['json']['facturas'] ?? []) > 0 && isset($r['json']['facturas'][0]['saldo']), substr($r['body'], 0, 200));
     $ids = array_slice(array_column($r['json']['facturas'] ?? [], 'id'), 0, 2);
-    $r = $c->get('cobros_programados', ['receptor_id' => $rid]);
+    $old = $c->get('cobros_programados', ['receptor_id' => $rid]);
+    check('el enlace antiguo con cliente redirige a Nuevo cobro', $old['code'] === 302 && str_contains((string)($old['loc'] ?? ''), 'nuevo_cobro?receptor_id=' . $rid), $old['code'] . ' ' . ($old['loc'] ?? ''));
+    $r = $c->get('nuevo_cobro', ['receptor_id' => $rid]);
     check('la página de cobros carga', $r['code'] === 200 && sinErroresPhp($r['body']), errorPhp($r['body']));
     check('la copia (CC) trae los correos de «Responder a» de Facturación', str_contains($r['body'], 'const ccBase = ["gerencia@ejemplo.test","administracion@ejemplo.test"]'));
     $msg = $c->postJson('procesar_accion_factura.php', ['accion' => 'generar_mensaje', 'factura_ids' => $ids, 'tipo' => 'saldo_pendiente']);
@@ -1431,7 +1433,7 @@ suite('Accesos directos a Cobros por correo', function () {
     $pdo = db();
     $c = login('qa.admin@local.test');
     $r = $c->get('cuentas_cobrar');
-    check('Cuentas por cobrar enlaza el cobro por correo por cliente', str_contains($r['body'], 'cobros_programados?receptor_id=') && sinErroresPhp($r['body']), errorPhp($r['body']));
+    check('Cuentas por cobrar enlaza el cobro por correo por cliente', str_contains($r['body'], 'nuevo_cobro?receptor_id=') && sinErroresPhp($r['body']), errorPhp($r['body']));
     $r = $c->get('lista_facturas');
     check('el Historial de facturas tiene «Enviar por correo»', str_contains($r['body'], 'id="fhBulkCorreoBtn"') && str_contains($r['body'], 'data-receptor-id=') && sinErroresPhp($r['body']), errorPhp($r['body']));
     $k = $pdo->query("SELECT f.contrato_id, f.receptor_id, f.id FROM facturas f WHERE f.cliente_id = 2 AND f.contrato_id IS NOT NULL AND f.estado = 'emitida' ORDER BY f.id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
@@ -1439,7 +1441,7 @@ suite('Accesos directos a Cobros por correo', function () {
         $r = $c->get('facturas_contrato', ['contrato_id' => $k['contrato_id']]);
         check('Facturas del contrato enlaza el cobro del contrato y por factura', str_contains($r['body'], 'contrato_id=' . $k['contrato_id'] . '" class="btn btn-sm"') && str_contains($r['body'], '&facturas=' . $k['id']) && sinErroresPhp($r['body']), errorPhp($r['body']));
     }
-    $r = $c->get('cobros_programados', ['receptor_id' => $k['receptor_id'] ?? 0, 'facturas' => ($k['id'] ?? 0) . ',abc', 'tipo' => 'envio_factura']);
+    $r = $c->get('nuevo_cobro', ['receptor_id' => $k['receptor_id'] ?? 0, 'facturas' => ($k['id'] ?? 0) . ',abc', 'tipo' => 'envio_factura']);
     check('Cobros por correo recibe la preselección y el tipo', str_contains($r['body'], '"ids":[' . ($k['id'] ?? 0) . ']') && str_contains($r['body'], 'value="envio_factura" selected') && sinErroresPhp($r['body']), errorPhp($r['body']));
     $f = login('qa.facturador@local.test');
     check('un facturador no ve los accesos de correo', !str_contains($f->get('cuentas_cobrar')['body'], 'Cobrar por correo') && !str_contains($f->get('lista_facturas')['body'], 'id="fhBulkCorreoBtn"'));
@@ -1952,7 +1954,8 @@ suite('Plan de pagos del contrato y recibos en los reportes', function () {
 
     // Contrato con recibo (como CAE): anticipo + 6 cuotas, sin ISV aunque se pida
     $lineas = [['tipo' => 'anticipo', 'concepto' => 'Anticipo 20%', 'fecha' => date('Y-m-d', strtotime('-2 days')), 'monto' => 17000]];
-    for ($i = 0; $i < 6; $i++) $lineas[] = ['tipo' => 'cuota', 'concepto' => 'Cuota ' . ($i + 1), 'fecha' => date('Y-m-05', strtotime("first day of +$i month")), 'monto' => 25500];
+    // Las cuotas desde el mes siguiente: así el anticipo (hace 2 días) siempre es la primera línea, sea cual sea el día de hoy
+    for ($i = 0; $i < 6; $i++) $lineas[] = ['tipo' => 'cuota', 'concepto' => 'Cuota ' . ($i + 1), 'fecha' => date('Y-m-05', strtotime('first day of +' . ($i + 1) . ' month')), 'monto' => 25500];
     $r = $c->post('includes/contrato_plan_accion.php', ['accion' => 'guardar', 'contrato_id' => $recCtr, 'con_isv' => '1', 'lineas' => json_encode($lineas)]);
     check('guarda el plan de un contrato con recibo', ($r['json']['success'] ?? false), $r['body']);
     check('con recibo no lleva ISV y el total es 170,000', (float)$f("SELECT SUM(total) FROM contratos_plan WHERE contrato_id = $recCtr") == 170000 && !(float)$f("SELECT SUM(isv) FROM contratos_plan WHERE contrato_id = $recCtr"));
@@ -2088,7 +2091,7 @@ suite('Recibos con banco, PDF, recordatorios del plan y envío de recibos por co
     check('el detalle del cobro muestra el recibo adjunto', ($v['json']['adjuntos'][0]['recibo_id'] ?? 0) == $rec1 && str_starts_with($c->get('cobro_accion.php', ['pdf' => $cobroRecibo, 'recibo' => $rec1])['body'], '%PDF'));
     $r = $c->post('cobro_accion.php', ['accion' => 'crear', 'modo' => 'prueba', 'para_prueba' => 'yo@ejemplo.test', 'receptor_id' => $rid, 'tipo' => 'envio_recibo', 'asunto' => 'X', 'mensaje_html' => 'Hola']);
     check('no envía un recibo sin elegir recibos', !($r['json']['success'] ?? true));
-    $pg = $c->get('cobros_programados', ['receptor_id' => $rid, 'tipo' => 'recordatorio_pago', 'plan' => implode(',', $lin)]);
+    $pg = $c->get('nuevo_cobro', ['receptor_id' => $rid, 'tipo' => 'recordatorio_pago', 'plan' => implode(',', $lin)]);
     check('la página de cobros ofrece recordatorio y envío de recibos', sinErroresPhp($pg['body']) && str_contains($pg['body'], 'value="recordatorio_pago" selected') && str_contains($pg['body'], 'id="cPlan"') && str_contains($pg['body'], 'Recordatorio de'), errorPhp($pg['body']));
     $fc = $c->get('facturas_contrato', ['contrato_id' => $ctr]);
     check('la ficha ofrece «Enviar recordatorio» y el PDF de cada recibo', sinErroresPhp($fc['body']) && str_contains($fc['body'], 'tipo=recordatorio_pago') && str_contains($fc['body'], 'recibo_pdf?id=' . $rec1), errorPhp($fc['body']));
