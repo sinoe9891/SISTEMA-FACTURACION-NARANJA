@@ -126,7 +126,13 @@ require_once '../../includes/templates/header.php';
 
             <tr class="app-estado-sec"><td colspan="3">Patrimonio</td></tr>
             <tr><td class="app-estado-i2">Utilidad del ejercicio <span class="app-estado-nota">(1 de enero al corte)</span></td><td><?= $L($b['utilidad_ejercicio']) ?></td><td></td></tr>
+            <?php if (!empty($b['aportes_socios']) || !empty($b['retiros_socios'])): ?>
+            <tr><td class="app-estado-i2">Aportes de socios <span class="app-estado-nota">(acumulados al corte)</span></td><td><?= $L($b['aportes_socios']) ?></td><td></td></tr>
+            <tr><td class="app-estado-i2">Retiros de socios <span class="app-estado-nota">(acumulados al corte)</span></td><td>− <?= $L($b['retiros_socios']) ?></td><td></td></tr>
+            <tr><td class="app-estado-i2">Capital, resultados anteriores y ajustes</td><td class="app-estado-sub-l"><?= $L($b['patrimonio_anterior'] - $b['aportes_socios'] + $b['retiros_socios']) ?></td><td></td></tr>
+            <?php else: ?>
             <tr><td class="app-estado-i2">Capital, resultados anteriores y ajustes</td><td class="app-estado-sub-l"><?= $L($b['patrimonio_anterior']) ?></td><td></td></tr>
+            <?php endif; ?>
             <tr class="app-estado-tot"><td>Total patrimonio</td><td></td><td class="app-estado-sub-l"><?= $L($b['total_patrimonio']) ?></td></tr>
 
             <tr class="app-estado-final"><td>Total pasivo más patrimonio</td><td></td><td><?= $L($b['total_pasivo'] + $b['total_patrimonio']) ?></td></tr>
@@ -139,7 +145,7 @@ require_once '../../includes/templates/header.php';
             <p>El ISV cobrado en el período (L <?= number_format($r['isv'], 2) ?>) no es ingreso: se declara y se paga al SAR.</p>
         <?php else: ?>
             <p><strong>Cómo se calcula.</strong> Efectivo: saldo de cada cuenta bancaria a la fecha. Cuentas por cobrar: facturas emitidas hasta la fecha menos los abonos recibidos hasta esa fecha. Cuentas por pagar: gastos registrados como pendientes. ISV: el de facturas que aún no se marcan como declaradas.</p>
-            <p>El patrimonio es la diferencia entre activo y pasivo. «Capital, resultados anteriores y ajustes» incluye lo que el sistema no registra: aportes y retiros de socios, dinero que no pasó por las cuentas bancarias y activos fijos (mobiliario y equipo se registran como gasto).</p>
+            <p>El patrimonio es la diferencia entre activo y pasivo. Los aportes y retiros de socios se registran en «Socios: aportes y retiros». «Capital, resultados anteriores y ajustes» incluye lo que el sistema no registra: dinero que no pasó por las cuentas bancarias y activos fijos (mobiliario y equipo se registran como gasto).</p>
             <?php foreach ($b['usd_sin_convertir'] as $u): ?><p class="text-danger">La cuenta <?= $e($u['nombre']) ?> tiene US$ <?= number_format($u['usd'], 2) ?> que no se sumaron: escribe la tasa de cambio arriba.</p><?php endforeach; ?>
         <?php endif; ?>
         <p class="app-estado-pie">Generado el <?= date('d/m/Y g:i a') ?> · Los números entre paréntesis son negativos.</p>

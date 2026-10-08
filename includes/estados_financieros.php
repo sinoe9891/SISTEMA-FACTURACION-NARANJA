@@ -178,10 +178,14 @@ function efBalance(PDO $pdo, int $cid, string $corte, float $tasa): array
     $totalPasivo = $suma($pasivo);
     $patrimonio = round($totalActivo - $totalPasivo, 2);
     $ejercicio = efResultados($pdo, $cid, substr($corte, 0, 4) . '-01-01', $corte)['utilidad'];
+    // Aportes y retiros de socios acumulados al corte: se muestran aparte dentro del patrimonio
+    require_once __DIR__ . '/socios.php';
+    $soc = sociosDisponible($pdo) ? sociosTotales($pdo, $cid, $corte) : ['aportes' => 0.0, 'retiros' => 0.0];
 
     return [
         'activo' => $activo, 'pasivo' => $pasivo, 'total_activo' => $totalActivo, 'total_pasivo' => $totalPasivo,
         'utilidad_ejercicio' => $ejercicio, 'patrimonio_anterior' => round($patrimonio - $ejercicio, 2), 'total_patrimonio' => $patrimonio,
+        'aportes_socios' => $soc['aportes'], 'retiros_socios' => $soc['retiros'],
         'usd_sin_convertir' => $sinConvertir,
     ];
 }

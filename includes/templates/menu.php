@@ -53,12 +53,13 @@ $menuLateral = [
 		$__menuEsAdmin ? ['bouchers', 'bi-receipt-cutoff', 'Bouchers', []] : null,
 		['categorias_gastos', 'bi-tags', 'Categorías de gastos', []],
 	])),
-	'Bancos' => [
+	'Bancos' => array_values(array_filter([
 		['bancos', 'bi-bank', 'Bancos', ['banco_cuenta']],
 		['cheques', 'bi-journal-check', 'Cheques', []],
 		['tarjetas', 'bi-credit-card', 'Tarjetas', []],
 		['activos', 'bi-pc-display', 'Activos y préstamos', []],
-	],
+		$__menuEsAdmin ? ['socios', 'bi-person-badge', 'Socios: aportes y retiros', []] : null,
+	])),
 	'Reportes' => [
 		['financiero', 'bi-graph-up', 'Estado de resultados', []],
 		['estados_financieros', 'bi-journal-text', 'Estado de resultados clásico', []],
