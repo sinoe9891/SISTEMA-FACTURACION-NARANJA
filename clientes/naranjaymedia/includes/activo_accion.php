@@ -7,6 +7,7 @@
 //   POST accion=prestamo_guardar acreedor, descripcion, fecha, monto, num_cuotas, tasa_anual, fecha_primera_cuota, cuenta_id, activo_id,
 //                                categoria_id, gasto_grupo_id (cuotas ya registradas en Gastos) | generar_cuotas=1
 //   POST accion=prestamo_anular  id
+//   POST accion=depreciacion     activa (1 | 0): calcular o no la depreciación de los activos
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 require_once '../../../includes/activos.php';
@@ -35,6 +36,12 @@ try {
 
     $pdo->beginTransaction();
     switch ($accion) {
+        case 'depreciacion':
+            // Interruptor: la depreciación se calcula al vuelo, así que al volver a encenderla todo se recalcula
+            $on = !empty($_POST['activa']) ? 1 : 0;
+            $pdo->prepare("UPDATE clientes_saas SET depreciacion_activa = ? WHERE id = ?")->execute([$on, $cid]);
+            $msg = $on ? 'Depreciación activada: se recalculó en todos los reportes.' : 'Depreciación desactivada: ya no se resta en los reportes.';
+            break;
         case 'activo_guardar':
             $nombre = mb_substr(trim((string)($_POST['nombre'] ?? '')), 0, 200);
             $categoria = isset(ACTIVO_CATEGORIAS[$_POST['categoria'] ?? '']) ? $_POST['categoria'] : 'otro';

@@ -29,7 +29,8 @@ if ($instalado) {
 }
 $L = fn($v) => 'L ' . number_format((float)$v, 2);
 $totCosto = array_sum(array_map(fn($a) => empty($a['fecha_baja']) ? (float)$a['costo'] : 0, $activos));
-$totAcum = array_sum(array_map(fn($a) => empty($a['fecha_baja']) ? activoAcumulada($a, $hoy) : 0, $activos));
+$depOn = $instalado && depreciacionActiva($pdo, $cid);
+$totAcum = $depOn ? array_sum(array_map(fn($a) => empty($a['fecha_baja']) ? activoAcumulada($a, $hoy) : 0, $activos)) : 0;
 $totDeuda = array_sum(array_column($saldosPrest, 'saldo'));
 $depMes = activosDepreciacionPeriodo($pdo, $cid, date('Y-m-01'), date('Y-m-t'));
 $antProv = $instalado ? anticiposProveedorSaldo($pdo, $cid, $hoy) : 0;
@@ -53,6 +54,15 @@ require_once '../../includes/templates/header.php';
 <?php if (!$instalado): ?>
     <div class="alert alert-warning">Falta instalar <code>sql/migraciones/2026-10-08_activos_prestamos.sql</code>.</div>
 <?php else: ?>
+    <div class="app-card mb-3"><div class="app-card-body d-flex flex-wrap align-items-center gap-3 py-2">
+        <div class="form-check form-switch m-0">
+            <input class="form-check-input" type="checkbox" role="switch" id="swDep" <?= $depOn ? 'checked' : '' ?> <?= $puedeEditar ? '' : 'disabled' ?>>
+            <label class="form-check-label fw-semibold" for="swDep">Calcular depreciación</label>
+        </div>
+        <span class="small text-muted"><?= $depOn
+            ? 'Se resta cada mes en el Estado de resultados y baja el valor de los activos en el Balance.'
+            : 'Apagada: no se resta en los resultados y los activos se muestran a su costo. Al encenderla se recalcula todo, también los meses anteriores.' ?></span>
+    </div></div>
     <div class="app-stats">
         <div class="app-stat"><div class="app-stat-icon"><i class="bi bi-pc-display"></i></div>
             <div><div class="app-stat-val"><?= $L($totCosto - $totAcum) ?></div><div class="app-stat-lbl">Valor en libros de los activos</div></div></div>
@@ -192,6 +202,11 @@ require_once '../../includes/templates/header.php';
     const enviar = fd => fetch(URL_A, { method: 'POST', body: fd }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.error || 'No se pudo guardar.'); return d; });
     const listo = d => Swal.fire({ icon: 'success', title: d.message }).then(() => location.reload());
     const error = e => Swal.fire('No se pudo', e.message, 'error');
+    // Interruptor de la depreciación (se recalcula todo al encenderla)
+    document.getElementById('swDep')?.addEventListener('change', e => {
+        const fd = new FormData(); fd.append('accion', 'depreciacion'); fd.append('activa', e.target.checked ? '1' : '');
+        enviar(fd).then(listo).catch(err => { e.target.checked = !e.target.checked; error(err); });
+    });
     const fA = document.getElementById('formActivo'), fP = document.getElementById('formPrestamo');
     if (!fA) return;
     const mA = new bootstrap.Modal(document.getElementById('modalActivo')), mP = new bootstrap.Modal(document.getElementById('modalPrestamo'));

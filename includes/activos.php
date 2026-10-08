@@ -91,8 +91,26 @@ function activosLista(PDO $pdo, int $cid): array
 }
 
 /** Total de depreciación del período (para el Estado de resultados). */
+/** ¿La empresa calcula la depreciación? (Activos y préstamos → interruptor). Apagada: no resta en resultados y los activos quedan a su costo. */
+function depreciacionActiva(PDO $pdo, int $cid): bool
+{
+    static $cache = [];
+    if (!isset($cache[$cid])) {
+        try {
+            $st = $pdo->prepare("SELECT depreciacion_activa FROM clientes_saas WHERE id = ?");
+            $st->execute([$cid]);
+            $v = $st->fetchColumn();
+            $cache[$cid] = $v === false || $v === null ? true : (bool)$v;
+        } catch (Throwable $e) {
+            $cache[$cid] = true;   // columna aún no instalada
+        }
+    }
+    return $cache[$cid];
+}
+
 function activosDepreciacionPeriodo(PDO $pdo, int $cid, string $desde, string $hasta): float
 {
+    if (!depreciacionActiva($pdo, $cid)) return 0.0;
     $t = 0.0;
     foreach (activosLista($pdo, $cid) as $a) $t += activoDepreciacion($a, $desde, $hasta);
     return round($t, 2);
@@ -104,7 +122,7 @@ function activosBalance(PDO $pdo, int $cid, string $corte): array
     $out = [];
     foreach (activosLista($pdo, $cid) as $a) {
         if ($a['fecha_compra'] > $corte || (!empty($a['fecha_baja']) && $a['fecha_baja'] <= $corte)) continue;
-        $acum = activoAcumulada($a, $corte);
+        $acum = depreciacionActiva($pdo, $cid) ? activoAcumulada($a, $corte) : 0.0;
         $out[] = ['id' => (int)$a['id'], 'nombre' => $a['nombre'], 'costo' => (float)$a['costo'], 'acumulada' => $acum, 'neto' => round((float)$a['costo'] - $acum, 2)];
     }
     return $out;
