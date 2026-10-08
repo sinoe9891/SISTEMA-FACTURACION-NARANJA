@@ -264,7 +264,7 @@ require_once '../../includes/templates/header.php';
 <script>
     // Solo los formatos que conserva el correo (includes/cobros.php → cobroLimpiarHtml): negrita, cursiva, subrayado y listas.
     tinymce.init({
-        selector: '#cMensaje, #eMensaje', license_key: 'gpl', menubar: false, branding: false, promotion: false, statusbar: false,
+        selector: '#cMensaje, #eMensaje', entity_encoding: 'raw', license_key: 'gpl', menubar: false, branding: false, promotion: false, statusbar: false,
         language: 'es', language_url: 'https://cdn.jsdelivr.net/npm/tinymce-i18n@24.10.21/langs7/es.js',
         plugins: 'lists', toolbar: 'undo redo | bold italic underline | bullist numlist | removeformat',
         formats: { underline: { inline: 'u' } }, valid_elements: 'p,br,strong/b,em/i,u,ul,ol,li,div,span',
@@ -382,8 +382,12 @@ require_once '../../includes/templates/header.php';
     }));
 
     function mensajeConDocumentos(html, nombres, tipo) {
-        const auto = 'Para facilitar su gestión administrativa y tributaria, adjuntamos la documentación de respaldo: [\\s\\S]*?Quedamos a su disposición para cualquier consulta sobre esta documentación\\.';
-        html = html.replace(new RegExp('<p\\b[^>]*>\\s*' + auto + '\\s*</p>|' + auto + '(?:\\s*<br\\s*/?>){0,2}', 'gu'), '');
+        let auto = String.raw`Para facilitar su gestión administrativa y tributaria, adjuntamos la documentación de respaldo: [\s\S]*?Quedamos a su disposición para cualquier consulta sobre esta documentación\.`;
+        // Compatibilidad con mensajes guardados por el editor usando entidades HTML.
+        auto = auto.replace(/ó/g, '(?:ó|&oacute;|&#0*243;|&#x0*f3;)')
+            .replace(/á/g, '(?:á|&aacute;|&#0*225;|&#x0*e1;)')
+            .replace(/ /g, String.raw`(?:\s|\u00a0|&nbsp;|&#0*160;|&#x0*a0;)+`);
+        html = html.replace(new RegExp(String.raw`<p\b[^>]*>\s*${auto}\s*</p>|${auto}(?:\s*<br\s*/?>){0,2}`, 'giu'), '');
         if (!nombres.length || tipo === 'envio_recibo') return html;
         const etiquetas = [...new Set(nombres)].map(n => '<strong>' + esc(n) + '</strong>');
         const ultima = etiquetas.pop();

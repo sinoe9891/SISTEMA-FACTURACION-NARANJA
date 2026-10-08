@@ -374,7 +374,14 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
 function cobroMensajeDocumentos(string $mensaje, array $documentos, string $tipo): string
 {
     $auto = 'Para facilitar su gestión administrativa y tributaria, adjuntamos la documentación de respaldo: .*?Quedamos a su disposición para cualquier consulta sobre esta documentación\.';
-    $mensaje = preg_replace('~<p\b[^>]*>\s*' . $auto . '\s*</p>|' . $auto . '(?:\s*<br\s*/?>){0,2}~su', '', $mensaje);
+    // TinyMCE puede serializar tildes y espacios como entidades HTML.
+    // Reconocerlas sin decodificar el mensaje completo ni alterar texto personalizado.
+    $auto = strtr($auto, [
+        'ó' => '(?:ó|&oacute;|&#0*243;|&#x0*f3;)',
+        'á' => '(?:á|&aacute;|&#0*225;|&#x0*e1;)',
+        ' ' => '(?:\s|\x{00a0}|&nbsp;|&#0*160;|&#x0*a0;)+',
+    ]);
+    $mensaje = preg_replace('~<p\b[^>]*>\s*' . $auto . '\s*</p>|' . $auto . '(?:\s*<br\s*/?>){0,2}~isu', '', $mensaje);
     $documentos = array_values(array_unique(array_filter(array_map('strval', $documentos))));
     if (!$documentos || !in_array($tipo, [...COBRO_TIPOS_FACTURA, 'recordatorio_pago'], true)) return $mensaje;
     $nombres = array_map(fn($nombre) => '<strong>' . htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8') . '</strong>', $documentos);
