@@ -4,6 +4,7 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/firmantes.php';
+require_once '../../includes/salarios.php';
 
 // ── Buscar autoload de DOMPDF ─────────────────────────────────────────────────
 $candidates = [
@@ -77,7 +78,11 @@ $IHSS_EMP  = 0.035; $IHSS_PAT = 0.07;
 $RAP_EMP   = 0.015; $RAP_PAT  = 0.015;
 $IHSS_TOPE = 10294.10;
 
-$salario  = $colab ? (float)$colab['salario_base'] : 0;
+// Sueldo y puesto vigentes en la fecha del pago (historial), no los de hoy
+$histCol  = $colab ? salariosHistorial($pdo, (int)$cliente_id, (int)$colab['id']) : [];
+$salario  = $colab ? salarioVigente($histCol, $colab, $gasto['fecha']) : 0;
+$puestoHist = null;
+foreach ($histCol[(int)($colab['id'] ?? 0)] ?? [] as $h) if ($h['desde'] <= $gasto['fecha'] && trim((string)$h['puesto']) !== '') $puestoHist = $h['puesto'];
 $tipo_pago= $colab['tipo_pago'] ?? 'mensual';
 $div      = $tipo_pago === 'quincenal' ? 2 : 1;
 $base_i   = min($salario, $IHSS_TOPE);
@@ -87,9 +92,11 @@ $ihss_p   = ($colab['aplica_ihss'] ?? 0) ? round($base_i * $IHSS_PAT / $div, 2) 
 $rap_p    = ($colab['aplica_rap']  ?? 0) ? round($salario * $RAP_PAT  / $div, 2) : 0;
 $bruto    = round($salario / $div, 2);
 $neto     = round(($salario / $div) - $ihss_e - $rap_e, 2);
+// Si se pagó distinto de lo que da el sueldo (p. ej. se redujo ese mes), se muestra la diferencia para que el recibo cuadre
 
 $total_desc  = array_sum(array_column($deducciones, 'monto'));
 $total_extra = array_sum(array_column($extras, 'monto'));
+$ajuste = $bruto > 0 ? round((float)$gasto['monto'] - ($neto - $total_desc + $total_extra), 2) : 0;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtL(float $n): string {
@@ -162,7 +169,7 @@ $razon      = $empresa['razon_social'] ?? $empresa['nombre'] ?? '—';
 $direccion  = $empresa['direccion']    ?? '';
 $tel_emp    = $empresa['telefono']     ?? '';
 $nombre_col = $colab ? trim(($colab['nombre'] ?? '') . ' ' . ($colab['apellido'] ?? '')) : '—';
-$puesto_col = $colab['puesto']    ?? '—';
+$puesto_col = $puestoHist ?? ($colab['puesto'] ?? '—');
 $dpi_col    = $colab['dpi']       ?? '';
 $banco_col  = $colab['banco']     ?? '';
 $ciudad_col = $colab['ciudad']    ?? '';
@@ -276,6 +283,7 @@ ob_start(); ?>
     <?php if (($ihss_e + $rap_e) > 0): ?><tr class="sub"><td>Neto base</td><td class="num"><?= $L($neto) ?></td></tr><?php endif; ?>
     <?php foreach ($deducciones as $d): ?><tr class="menos"><td>− <?= $e($d['desc_prest']) ?> (cuota <?= (int)$d['numero_cuota'] ?>)</td><td class="num">− <?= $L($d['monto']) ?></td></tr><?php endforeach; ?>
     <?php foreach ($extras as $ex): ?><tr class="mas"><td>+ <?= $e($ex['descripcion']) ?></td><td class="num">+ <?= $L($ex['monto']) ?></td></tr><?php endforeach; ?>
+    <?php if (abs($ajuste) >= 0.01): ?><tr class="<?= $ajuste < 0 ? 'menos' : 'mas' ?>"><td><?= $ajuste < 0 ? '− Pagado menos que el salario del período' : '+ Pagado adicional al salario del período' ?></td><td class="num"><?= $ajuste < 0 ? '− ' : '+ ' ?><?= $L(abs($ajuste)) ?></td></tr><?php endif; ?>
     <tr class="total"><td>TOTAL PAGADO</td><td class="num"><?= $L($gasto['monto']) ?></td></tr>
     <?php if (($ihss_p + $rap_p) > 0): ?><tr class="patronal"><td>Aporte patronal de la empresa (IHSS + RAP), no se descuenta al colaborador</td><td class="num"><?= $L($ihss_p + $rap_p) ?></td></tr><?php endif; ?>
 </table>

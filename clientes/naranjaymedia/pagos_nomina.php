@@ -22,15 +22,13 @@ $colabs->execute([$cid]);
 $colabs = $colabs->fetchAll(PDO::FETCH_ASSOC);
 $qs = http_build_query(array_filter($f, fn($v) => $v !== '' && $v !== 0));
 $L = fn($v) => 'L ' . number_format((float)$v, 2);
-// Años con pagos, para el selector de año
+// Selector «Año o mes» (como en Bouchers): años con pagos y los últimos 24 meses
 $anioMin = (int)($pdo->query("SELECT YEAR(MIN(fecha)) FROM gastos WHERE cliente_id = " . (int)$cid . " AND estado <> 'anulado'")->fetchColumn() ?: date('Y'));
-$anioSel = (substr($f['desde'], 0, 4) === substr($f['hasta'], 0, 4) && substr($f['desde'], 5) === '01-01' && (substr($f['hasta'], 5) === '12-31' || $f['hasta'] === date('Y-m-d'))) ? (int)substr($f['desde'], 0, 4) : 0;
-$atajos = [
-    'Este mes' => [date('Y-m-01'), date('Y-m-d')],
-    'Mes anterior' => [date('Y-m-01', strtotime('first day of last month')), date('Y-m-t', strtotime('last day of last month'))],
-    'Este año' => [date('Y-01-01'), date('Y-m-d')],
-    'Año anterior' => [(date('Y') - 1) . '-01-01', (date('Y') - 1) . '-12-31'],
-];
+$mesesTxt = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+$y1 = substr($f['desde'], 0, 4);
+$periodoSel = '';
+if ($y1 === substr($f['hasta'], 0, 4) && substr($f['desde'], 5) === '01-01' && (substr($f['hasta'], 5) === '12-31' || $f['hasta'] === date('Y-m-d'))) $periodoSel = $y1;
+elseif (substr($f['desde'], 8) === '01' && substr($f['desde'], 0, 7) === substr($f['hasta'], 0, 7) && ($f['hasta'] === date('Y-m-t', strtotime($f['desde'])) || $f['hasta'] === date('Y-m-d'))) $periodoSel = substr($f['desde'], 0, 7);
 
 require_once '../../includes/templates/header.php';
 ?>
@@ -52,32 +50,28 @@ require_once '../../includes/templates/header.php';
 <!-- Filtros -->
 <form class="app-card app-card-body mb-3" method="get" id="formFiltros">
     <div class="row g-2 align-items-end">
-        <div class="col-6 col-md-1"><label class="form-label small">Año</label>
-            <select class="form-select form-select-sm" id="fAnio"><option value="">Otro</option>
-                <?php for ($y = (int)date('Y'); $y >= $anioMin; $y--): ?><option value="<?= $y ?>" <?= $anioSel === $y ? 'selected' : '' ?>><?= $y ?></option><?php endfor; ?>
+        <div class="col-6 col-md-auto" style="min-width:11rem"><label class="form-label small">Año o mes</label>
+            <select class="form-select form-select-sm" id="fPeriodo"><option value="">Rango personalizado…</option>
+                <optgroup label="Año completo"><?php for ($y = (int)date('Y'); $y >= $anioMin; $y--): ?><option value="<?= $y ?>" <?= $periodoSel === (string)$y ? 'selected' : '' ?>>Todo <?= $y ?></option><?php endfor; ?></optgroup>
+                <optgroup label="Mes"><?php for ($i = 0; $i < 24; $i++): $t = strtotime(date('Y-m-01') . " -$i month"); $v = date('Y-m', $t); ?><option value="<?= $v ?>" <?= $periodoSel === $v ? 'selected' : '' ?>><?= $mesesTxt[(int)date('n', $t)] . ' ' . date('Y', $t) ?></option><?php endfor; ?></optgroup>
             </select></div>
-        <div class="col-6 col-md-2"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" value="<?= $f['desde'] ?>"></div>
-        <div class="col-6 col-md-2"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" value="<?= $f['hasta'] ?>"></div>
-        <div class="col-md-2"><label class="form-label small">Colaborador</label>
+        <div class="col-6 col-md-auto f-rango<?= $periodoSel ? ' d-none' : '' ?>"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" value="<?= $f['desde'] ?>"></div>
+        <div class="col-6 col-md-auto f-rango<?= $periodoSel ? ' d-none' : '' ?>"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" value="<?= $f['hasta'] ?>"></div>
+        <div class="col-12 col-md-auto" style="min-width:12rem"><label class="form-label small">Colaborador</label>
             <select class="form-select form-select-sm" name="colaborador"><option value="">Todos</option>
                 <?php foreach ($colabs as $c): ?><option value="<?= (int)$c['id'] ?>" <?= $f['colaborador'] === (int)$c['id'] ? 'selected' : '' ?>><?= htmlspecialchars($c['nombre']) ?><?= (int)$c['activo'] ? '' : ' (inactivo)' ?></option><?php endforeach; ?>
             </select></div>
-        <div class="col-6 col-md-1"><label class="form-label small">Tipo</label>
+        <div class="col-6 col-md-auto" style="min-width:8rem"><label class="form-label small">Tipo</label>
             <select class="form-select form-select-sm" name="tipo"><option value="">Todos</option>
                 <?php foreach (NOMINA_TIPOS as $k => $t): ?><option value="<?= $k ?>" <?= $f['tipo'] === $k ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?>
             </select></div>
-        <div class="col-6 col-md-1"><label class="form-label small">Quincena</label>
+        <div class="col-6 col-md-auto" style="min-width:8rem"><label class="form-label small">Quincena</label>
             <select class="form-select form-select-sm" name="quincena"><option value="">Todas</option><option value="1" <?= $f['quincena'] === '1' ? 'selected' : '' ?>>1ª</option><option value="2" <?= $f['quincena'] === '2' ? 'selected' : '' ?>>2ª</option><option value="mensual" <?= $f['quincena'] === 'mensual' ? 'selected' : '' ?>>Mensual</option></select></div>
-        <div class="col-6 col-md-2"><label class="form-label small">Comprobante</label>
+        <div class="col-6 col-md-auto" style="min-width:8rem"><label class="form-label small">Comprobante</label>
             <select class="form-select form-select-sm" name="comprobante"><option value="">Todos</option><option value="con" <?= $f['comprobante'] === 'con' ? 'selected' : '' ?>>Con</option><option value="sin" <?= $f['comprobante'] === 'sin' ? 'selected' : '' ?>>Sin</option></select></div>
-        <div class="col-6 col-md-1"><label class="form-label small">Aviso</label>
+        <div class="col-6 col-md-auto" style="min-width:8rem"><label class="form-label small">Aviso</label>
             <select class="form-select form-select-sm" name="aviso"><option value="">Todos</option><option value="si" <?= $f['aviso'] === 'si' ? 'selected' : '' ?>>Enviado</option><option value="no" <?= $f['aviso'] === 'no' ? 'selected' : '' ?>>Sin enviar</option></select></div>
-        <div class="col-md-1 d-grid"><a href="pagos_nomina" class="btn btn-sm btn-outline-secondary" title="Quitar filtros"><i class="bi bi-x-lg"></i></a></div>
-    </div>
-    <div class="d-flex flex-wrap gap-1 mt-2">
-        <?php foreach ($atajos as $txt => [$d, $h]): ?>
-            <a class="btn btn-sm <?= $f['desde'] === $d && $f['hasta'] === $h ? 'btn-primary' : 'btn-outline-secondary' ?>" href="?<?= htmlspecialchars(http_build_query(['desde' => $d, 'hasta' => $h] + array_filter($f, fn($v, $k) => !in_array($k, ['desde', 'hasta'], true) && $v !== '' && $v !== 0, ARRAY_FILTER_USE_BOTH))) ?>"><?= $txt ?></a>
-        <?php endforeach; ?>
+        <div class="col-auto"><a href="pagos_nomina" class="btn btn-sm btn-outline-secondary" title="Quitar filtros"><i class="bi bi-x-lg me-1"></i>Limpiar</a></div>
     </div>
 </form>
 
@@ -203,6 +197,28 @@ require_once '../../includes/templates/header.php';
 <script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
 <script src="../../clientes/js/nomina-pago.js?v=<?= @filemtime(__DIR__ . '/../js/nomina-pago.js') ?>"></script>
 <script>
+// Filtros de arriba: van aparte para que funcionen aunque la tabla esté vacía
+(function () {
+    const form = document.getElementById('formFiltros');
+    form.querySelectorAll('select:not(#fPeriodo)').forEach(el => el.addEventListener('change', () => form.submit()));
+    // Año o mes: pone desde/hasta de ese período; «Rango personalizado» muestra las fechas
+    document.getElementById('fPeriodo').addEventListener('change', e => {
+        const v = e.target.value;
+        if (!v) { form.querySelectorAll('.f-rango').forEach(d => d.classList.remove('d-none')); form.desde.focus(); return; }
+        if (v.length === 4) { form.desde.value = v + '-01-01'; form.hasta.value = v + '-12-31'; }
+        else { const [y, m] = v.split('-').map(Number); form.desde.value = v + '-01'; form.hasta.value = v + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0'); }
+        form.submit();
+    });
+    // Fechas: se aplican cuando la fecha está completa (al escribir el año, el campo cambia con cada dígito)
+    let tFecha;
+    form.querySelectorAll('input[type=date]').forEach(el => el.addEventListener('change', () => {
+        clearTimeout(tFecha);
+        if (!/^(19|20)\d{2}-\d{2}-\d{2}$/.test(el.value)) return;
+        tFecha = setTimeout(() => form.submit(), 700);
+    }));
+})();
+</script>
+<script>
 (function () {
     // Filtro por monto, total de lo filtrado, selección y bouchers de los seleccionados
     const tbl = document.getElementById('tablaPagos'), filas = [...tbl.querySelectorAll('tr[data-fila]')];
@@ -229,20 +245,6 @@ require_once '../../includes/templates/header.php';
     document.getElementById('pSelZip').addEventListener('click', () => bouchersZip(elegidosIds()));
     pintarSel();
     // Los filtros se aplican al cambiar (las pestañas de abajo no recargan)
-    const form = document.getElementById('formFiltros');
-    form.querySelectorAll('select:not(#fAnio)').forEach(el => el.addEventListener('change', () => form.submit()));
-    // Año: pone desde/hasta de todo ese año
-    document.getElementById('fAnio').addEventListener('change', e => {
-        const y = e.target.value; if (!y) return;
-        form.desde.value = y + '-01-01'; form.hasta.value = y + '-12-31'; form.submit();
-    });
-    // Fechas: se aplican cuando la fecha está completa (al escribir el año, el campo cambia con cada dígito)
-    let tFecha;
-    form.querySelectorAll('input[type=date]').forEach(el => el.addEventListener('change', () => {
-        clearTimeout(tFecha);
-        if (!/^(19|20)\d{2}-\d{2}-\d{2}$/.test(el.value)) return;
-        tFecha = setTimeout(() => form.submit(), 700);
-    }));
     document.querySelectorAll('.btn-aviso').forEach(b => b.addEventListener('click', async () => {
         if (!(await Swal.fire({ title: 'Enviar aviso de pago', text: 'Se enviará al colaborador con el comprobante adjunto.', icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' })).isConfirmed) return;
         const fd = new FormData(); fd.append('accion', 'enviar_pago'); fd.append('gasto_id', b.dataset.gasto);
