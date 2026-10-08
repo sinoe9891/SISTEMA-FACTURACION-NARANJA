@@ -98,6 +98,7 @@ try {
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $rm) {
         $ing_por_mes[(int)$rm['m']] ??= ['mes_num' => (int)$rm['m'], 'subtotal' => 0, 'isv' => 0, 'total_con_isv' => 0, 'qty' => 0];
         $ing_por_mes[(int)$rm['m']]['subtotal'] += (float)$rm['total'];
+        $ing_por_mes[(int)$rm['m']]['recibos'] = ($ing_por_mes[(int)$rm['m']]['recibos'] ?? 0) + (float)$rm['total'];
         $ing_por_mes[(int)$rm['m']]['total_con_isv'] += (float)$rm['total'];
     }
     $st = $pdo->prepare("SELECT cf.nombre AS cliente_nombre, COUNT(*) qty, SUM(r.monto) subtotal FROM contratos_recibos r JOIN clientes_factura cf ON cf.id = r.receptor_id
@@ -990,13 +991,20 @@ for ($m = 1; $m <= 12; $m++) {
                         <td class="text-end fw-bold small" style="color:#059669">L
                             <?= number_format($total_ing_anual, 0) ?></td>
                     </tr>
+                    <?php // Ingresos = facturas (sin ISV) + recibos de contratos sin factura
+                    foreach (['fact' => '↳ Facturación emitida (sin ISV)', 'rec' => '↳ Recibos (contratos sin factura)'] as $k => $lbl):
+                        $tot = 0; ?>
                     <tr class="tr-sub tr-ing">
-                        <td class="ps-4 text-muted">↳ Facturación emitida</td>
-                        <?php for ($m = 1; $m <= 12; $m++): $v = (float)($ing_por_mes[$m]['subtotal'] ?? 0); ?>
+                        <td class="ps-4 text-muted"><?= $lbl ?></td>
+                        <?php for ($m = 1; $m <= 12; $m++):
+                            $rec = (float)($ing_por_mes[$m]['recibos'] ?? 0);
+                            $v = $k === 'rec' ? $rec : (float)($ing_por_mes[$m]['subtotal'] ?? 0) - $rec;
+                            $tot += $v; ?>
                             <td class="text-end text-muted"><?= $v > 0 ? number_format($v, 0) : '' ?></td>
                         <?php endfor; ?>
-                        <td class="text-end text-muted small">L <?= number_format($total_ing_anual, 0) ?></td>
+                        <td class="text-end text-muted small">L <?= number_format($tot, 0) ?></td>
                     </tr>
+                    <?php endforeach; ?>
 
                     <!-- EGRESOS -->
                     <tr class="tr-egr">
