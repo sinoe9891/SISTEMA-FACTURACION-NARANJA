@@ -18,17 +18,30 @@ const COBRO_TIPOS = ['envio_factura' => 'Envío de factura', 'saldo_pendiente' =
 /** Tipos que adjuntan facturas */
 const COBRO_TIPOS_FACTURA = ['envio_factura', 'saldo_pendiente', 'factura_y_saldo'];
 
+/** Adapta las frases heredadas únicamente en plantillas dirigidas al equipo. */
+function cobroPlantillaEquipo(string $contenido): string
+{
+    if (strpos($contenido, '{{saludo}}') === false) return $contenido;
+    return strtr($contenido, [
+        'Espero que se encuentre bien.' => 'Espero se encuentren muy bien.',
+        'Espero que se encuentre muy bien.' => 'Espero se encuentren muy bien.',
+        'Asimismo, le recordamos' => 'Asimismo, les recordamos',
+        'Le compartimos el detalle' => 'Les compartimos el detalle',
+        'Le escribo para darle seguimiento' => 'Les escribo para dar seguimiento',
+    ]);
+}
+
 /** Plantilla por defecto de «Factura + saldo pendiente»: la factura nueva con sus conceptos y las que tienen saldo (con abonos). */
 const COBRO_PLANTILLA_FACTURA_Y_SALDO = [
     'asunto' => 'Factura N.° {{numeros_facturas}} y saldo pendiente - {{cliente_nombre}}',
-    'contenido' => "{{saludo}}\n\nEspero que se encuentre bien.\n\nAdjunto {{detalle_facturas}}\n\nAsimismo, le recordamos las facturas que tienen saldo pendiente de pago:\n\n{{saldo_pendiente}}\n\nCon la nueva factura, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,",
+    'contenido' => "{{saludo}}\n\nEspero se encuentren muy bien.\n\nAdjunto {{detalle_facturas}}\n\nAsimismo, les recordamos las facturas que tienen saldo pendiente de pago:\n\n{{saldo_pendiente}}\n\nCon la nueva factura, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,",
 ];
 
 /** Plantillas por defecto de los tipos sin factura (se pueden cambiar en Mensajes y cuentas de pago). */
 const COBRO_PLANTILLAS_EXTRA = [
     'recordatorio_pago' => [
         'asunto' => 'Recordatorio de pago - {{cliente_nombre}}',
-        'contenido' => "{{saludo}}\n\nEspero que se encuentre muy bien.\n\nLe compartimos el detalle de los pagos de su plan:\n\n{{detalle_facturas}}\n\nTotal: L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos su apoyo. Quedamos atentos a su confirmación.\n\nSaludos cordiales,",
+        'contenido' => "{{saludo}}\n\nEspero se encuentren muy bien.\n\nLes compartimos el detalle de los pagos de su plan:\n\n{{detalle_facturas}}\n\nTotal: L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos su apoyo. Quedamos atentos a su confirmación.\n\nSaludos cordiales,",
     ],
     'envio_recibo' => [
         'asunto' => 'Recibo de pago - {{cliente_nombre}}',
@@ -118,7 +131,7 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
     $MESU = array_map('ucfirst', $MES);
     $rep = ['{{saludo}}' => $b('Buen día, equipo de ' . $cliente . ':'), '{{cliente_nombre}}' => $h($cliente), '{{detalle_facturas}}' => $detalle,
             '{{total}}' => $b(number_format($total, 2)), '{{cuentas_pago}}' => $cuentasTxt, '{{mes_actual}}' => $MESU[(int)date('n')], '{{anio_actual}}' => date('Y')];
-    $html = nl2br(strtr(htmlspecialchars((string)$pl['contenido'], ENT_QUOTES, 'UTF-8'), $rep), false);
+    $html = nl2br(strtr(htmlspecialchars(cobroPlantillaEquipo((string)$pl['contenido']), ENT_QUOTES, 'UTF-8'), $rep), false);
     $asunto = strtr((string)$pl['asunto'], ['{{cliente_nombre}}' => $cliente, '{{mes_actual}}' => $MESU[(int)date('n')], '{{anio_actual}}' => date('Y'), '{{total}}' => number_format($total, 2)]);
     return ['asunto' => $asunto, 'mensaje_html' => str_replace(["\r", "\n"], '', $html)];
 }

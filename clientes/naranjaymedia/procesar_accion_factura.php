@@ -317,8 +317,8 @@ try {
 
 		if (!$plantilla) {
 			$defaults = [
-				'envio_factura' => "{{saludo}}\n\nEspero que se encuentre bien.\n\nAdjunto {{detalle_facturas}}\n\n{{cuentas_pago}}\n\nQuedo atento a cualquier consulta o confirmación de recepción.\n\nSaludos cordiales,",
-				'saldo_pendiente' => "{{saludo}}\n\nEspero que se encuentre muy bien.\n\nLe escribo para darle seguimiento a las siguientes facturas pendientes de pago:\n\n{{detalle_facturas}}\n\nPor lo anterior, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,",
+				'envio_factura' => "{{saludo}}\n\nEspero se encuentren muy bien.\n\nAdjunto {{detalle_facturas}}\n\n{{cuentas_pago}}\n\nQuedo atento a cualquier consulta o confirmación de recepción.\n\nSaludos cordiales,",
+				'saldo_pendiente' => "{{saludo}}\n\nEspero se encuentren muy bien.\n\nLes escribo para dar seguimiento a las siguientes facturas pendientes de pago:\n\n{{detalle_facturas}}\n\nPor lo anterior, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,",
 				'factura_y_saldo' => COBRO_PLANTILLA_FACTURA_Y_SALDO['contenido'],
 			];
 			$contenido = $defaults[$tipo];
@@ -328,6 +328,8 @@ try {
 			$contenido = $plantilla['contenido'];
 			$asunto = $plantilla['asunto'];
 		}
+
+		$contenido = cobroPlantillaEquipo($contenido);
 
 		// Versión texto plano (sin etiquetas, para pegar en editores de texto simple)
 		$reemplazos = [

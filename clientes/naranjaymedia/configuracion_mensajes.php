@@ -92,11 +92,11 @@ foreach ($plantillasRaw as $p) {
 $defaults = [
 	'envio_factura' => [
 		'asunto' => 'Facturas {{cliente_nombre}} - Mes de {{mes_actual}} de {{anio_actual}}',
-		'contenido' => "{{saludo}}\n\nEspero que se encuentre bien.\n\nAdjunto {{detalle_facturas}}\n\n{{cuentas_pago}}\n\nQuedo atento a cualquier consulta o confirmación de recepción.\n\nSaludos cordiales,"
+		'contenido' => "{{saludo}}\n\nEspero se encuentren muy bien.\n\nAdjunto {{detalle_facturas}}\n\n{{cuentas_pago}}\n\nQuedo atento a cualquier consulta o confirmación de recepción.\n\nSaludos cordiales,"
 	],
 	'saldo_pendiente' => [
 		'asunto' => 'Saldo pendiente de pago - {{cliente_nombre}}',
-		'contenido' => "{{saludo}}\n\nEspero que se encuentre muy bien.\n\nLe escribo para darle seguimiento a las siguientes facturas pendientes de pago:\n\n{{detalle_facturas}}\n\nPor lo anterior, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,"
+		'contenido' => "{{saludo}}\n\nEspero se encuentren muy bien.\n\nLes escribo para dar seguimiento a las siguientes facturas pendientes de pago:\n\n{{detalle_facturas}}\n\nPor lo anterior, el saldo total pendiente asciende a L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos mucho su apoyo y gestión. Quedamos atentos a su confirmación.\n\nSaludos cordiales,"
 	]
 ];
 require_once '../../includes/cobros.php';
@@ -409,6 +409,7 @@ require_once '../../includes/templates/header.php';
 
 			<?php foreach (['envio_factura', 'saldo_pendiente', 'factura_y_saldo', 'recordatorio_pago', 'envio_recibo'] as $tipo):
 				$p = $plantillas[$tipo] ?? $defaults[$tipo];
+				$p['contenido'] = cobroPlantillaEquipo($p['contenido']);
 			?>
 				<form method="POST" class="cm-plantilla-form <?= $tipo === 'envio_factura' ? 'active' : '' ?>"
 					data-tab-form="<?= $tipo ?>">
