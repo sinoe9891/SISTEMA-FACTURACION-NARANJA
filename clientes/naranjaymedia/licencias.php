@@ -26,7 +26,7 @@ $categorias = $st->fetchAll(PDO::FETCH_KEY_PAIR);
 $catDefecto = (int)(array_search('Licencias Digitales', $categorias, true) ?: 0);
 
 // Totales al año (mensual × 12) de las activas
-$anual = fn($l) => licenciaCostoHnl($pdo, $cid, $l) * ($l['frecuencia'] === 'mensual' ? 12 : 1);
+$anual = fn($l) => licenciaCostoHnl($pdo, $cid, $l) * licenciaVecesAnio($l['frecuencia']);
 $costoPropias = $costoClientes = $ventaClientes = 0.0;
 foreach ($lista as $l) {
     if (!(int)$l['activa']) continue;
@@ -74,7 +74,7 @@ require_once '../../includes/templates/header.php';
                         <td><div class="fw-semibold"><?= htmlspecialchars($l['nombre']) ?><?= $act ? '' : ' <span class="badge bg-light text-secondary border">Inactiva</span>' ?></div>
                             <div class="small text-muted"><?= htmlspecialchars(trim(($l['proveedor'] ?? '') . ($l['categoria'] ? ' · ' . $l['categoria'] : ''), ' ·')) ?></div></td>
                         <td><?= $l['receptor_id'] ? '<i class="bi bi-person me-1"></i>' . htmlspecialchars((string)$l['cliente_nombre']) . ' <span class="small text-muted">(+' . $fmtPct($l['comision_pct']) . ')</span>' : '<span class="text-muted">Empresa</span>' ?></td>
-                        <td><?= $l['frecuencia'] === 'mensual' ? 'Mensual' : 'Anual' ?></td>
+                        <td><?= LICENCIA_FRECUENCIAS[$l['frecuencia']] ?? $l['frecuencia'] ?></td>
                         <td class="app-num"><?= $l['moneda'] === 'USD' ? 'USD ' . number_format((float)$l['costo'], 2) . '<div class="small text-muted">' . $L($costoL) . '</div>' : $L($l['costo']) ?></td>
                         <td class="app-num"><?= $l['receptor_id'] ? '<span class="fw-semibold">' . $L(licenciaPrecio($costoL, (float)$l['comision_pct'])) . '</span>' : '<span class="text-muted">—</span>' ?></td>
                         <td class="text-nowrap"><?= date('d/m/Y', strtotime($l['proxima_renovacion'])) ?><?php if ($act): ?> <span class="sem-pill sem-<?= $sem ?>"><?= $txt ?></span><?php endif; ?></td>
@@ -99,7 +99,7 @@ require_once '../../includes/templates/header.php';
                 <div class="row g-3">
                     <div class="col-md-7"><label class="form-label small">Nombre <span class="text-danger">*</span></label><input class="form-control" name="nombre" required maxlength="150" placeholder="Ej.: Adobe Creative Cloud, Hosting sigurban.com"></div>
                     <div class="col-md-5"><label class="form-label small">Proveedor</label><input class="form-control" name="proveedor" maxlength="150" placeholder="Adobe, GoDaddy, Google…"></div>
-                    <div class="col-md-4"><label class="form-label small">Frecuencia</label><select class="form-select" name="frecuencia"><option value="anual">Anual</option><option value="mensual">Mensual</option></select></div>
+                    <div class="col-md-4"><label class="form-label small">Frecuencia</label><select class="form-select" name="frecuencia"><?php foreach (LICENCIA_FRECUENCIAS as $k => $v): ?><option value="<?= $k ?>"><?= $v ?></option><?php endforeach; ?></select></div>
                     <div class="col-md-3"><label class="form-label small">Moneda</label><select class="form-select" name="moneda"><option value="HNL">Lempiras</option><option value="USD">Dólares</option></select></div>
                     <div class="col-md-5"><label class="form-label small">Costo por renovación <span class="text-danger">*</span></label><input type="number" class="form-control" name="costo" step="0.01" min="0.01" required></div>
                     <div class="col-md-4"><label class="form-label small">Próxima renovación <span class="text-danger">*</span></label><input type="date" class="form-control" name="proxima_renovacion" required></div>

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS licencias (
     nombre VARCHAR(150) NOT NULL,
     proveedor VARCHAR(150) NULL,
     categoria_id INT NULL,
-    frecuencia ENUM('mensual','anual') NOT NULL DEFAULT 'anual',
+    frecuencia ENUM('mensual','anual','bienal') NOT NULL DEFAULT 'anual',
     moneda ENUM('HNL','USD') NOT NULL DEFAULT 'HNL',
     costo DECIMAL(14,2) NOT NULL,
     proxima_renovacion DATE NOT NULL,
@@ -20,3 +20,5 @@ CREATE TABLE IF NOT EXISTS licencias (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ALTER TABLE gastos ADD COLUMN IF NOT EXISTS licencia_id INT NULL AFTER cobrado_factura_id;
 ALTER TABLE gastos ADD INDEX IF NOT EXISTS idx_gastos_licencia (licencia_id);
+-- Renovaciones cada 2 años (p. ej. dominios .hn)
+ALTER TABLE licencias MODIFY frecuencia ENUM('mensual','anual','bienal') NOT NULL DEFAULT 'anual';

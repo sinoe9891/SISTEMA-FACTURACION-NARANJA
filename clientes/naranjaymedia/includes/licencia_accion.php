@@ -30,7 +30,7 @@ try {
     $id = (int)($_POST['id'] ?? 0);
     $nombre = mb_substr(trim((string)($_POST['nombre'] ?? '')), 0, 150);
     $proveedor = mb_substr(trim((string)($_POST['proveedor'] ?? '')), 0, 150) ?: null;
-    $frecuencia = ($_POST['frecuencia'] ?? '') === 'mensual' ? 'mensual' : 'anual';
+    $frecuencia = isset(LICENCIA_FRECUENCIAS[$_POST['frecuencia'] ?? '']) ? $_POST['frecuencia'] : 'anual';
     $moneda = ($_POST['moneda'] ?? '') === 'USD' ? 'USD' : 'HNL';
     $costo = round((float)str_replace(',', '', (string)($_POST['costo'] ?? 0)), 2);
     $fecha = trim((string)($_POST['proxima_renovacion'] ?? ''));

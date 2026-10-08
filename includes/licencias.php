@@ -44,6 +44,20 @@ function licenciaPrecio(float $costoHnl, float $pct): float
     return round($costoHnl * (1 + $pct / 100), 2);
 }
 
+/** Frecuencia del gasto de la renovación: mensual/anual se repiten solos al pagarse; cada 2 años lo programa la licencia. */
+function licenciaFrecuenciaGasto(string $f): string
+{
+    return in_array($f, ['mensual', 'anual'], true) ? $f : 'unico';
+}
+
+/** Cuántas veces se paga al año (para los totales anuales). */
+function licenciaVecesAnio(string $f): float
+{
+    return ['mensual' => 12.0, 'anual' => 1.0, 'bienal' => 0.5][$f] ?? 1.0;
+}
+
+const LICENCIA_FRECUENCIAS = ['anual' => 'Anual', 'mensual' => 'Mensual', 'bienal' => 'Cada 2 años'];
+
 function licenciasLista(PDO $pdo, int $cid, bool $soloActivas = false): array
 {
     if (!licenciasDisponible($pdo)) return [];
@@ -68,7 +82,7 @@ function licenciaSiguienteFecha(string $fecha, string $frecuencia): string
 {
     $d = new DateTime($fecha);
     $dia = (int)$d->format('j');
-    $d->modify('first day of this month')->modify($frecuencia === 'mensual' ? '+1 month' : '+1 year');
+    $d->modify('first day of this month')->modify(['mensual' => '+1 month', 'bienal' => '+2 years'][$frecuencia] ?? '+1 year');
     $d->setDate((int)$d->format('Y'), (int)$d->format('n'), min($dia, (int)$d->format('t')));
     return $d->format('Y-m-d');
 }
@@ -94,7 +108,7 @@ function licenciasSincronizar(PDO $pdo, int $cid, int $usuario = 0): void
         if ($pend) {
             // Datos de la licencia al día en el gasto pendiente; la fecha manda la del gasto (p. ej. si se movió al pagar)
             $pdo->prepare("UPDATE gastos SET descripcion = ?, monto = ?, categoria_id = ?, proveedor = ?, frecuencia = ?, metodo_pago = ?, cobrar_receptor_id = ? WHERE id = ?")
-                ->execute([$desc, $monto, $l['categoria_id'] ?: null, $l['proveedor'] ?: null, $l['frecuencia'], $l['metodo_pago'], $l['receptor_id'] ?: null, (int)$pend['id']]);
+                ->execute([$desc, $monto, $l['categoria_id'] ?: null, $l['proveedor'] ?: null, licenciaFrecuenciaGasto($l['frecuencia']), $l['metodo_pago'], $l['receptor_id'] ?: null, (int)$pend['id']]);
             if ($pend['fecha'] !== $l['proxima_renovacion'])
                 $pdo->prepare("UPDATE licencias SET proxima_renovacion = ? WHERE id = ?")->execute([$pend['fecha'], $id]);
             continue;
@@ -110,7 +124,7 @@ function licenciasSincronizar(PDO $pdo, int $cid, int $usuario = 0): void
         $grupo = (int)$st->fetchColumn() ?: null;
         $pdo->prepare("INSERT INTO gastos (cliente_id, categoria_id, descripcion, monto, fecha, frecuencia, dia_pago, gasto_grupo_id, tipo, metodo_pago, proveedor, notas, estado, usuario_id, cobrar_receptor_id, licencia_id)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fijo', ?, ?, ?, 'pendiente', ?, ?, ?)")
-            ->execute([$cid, $l['categoria_id'] ?: null, $desc, $monto, $fecha, $l['frecuencia'], (int)substr($fecha, 8, 2), $grupo, $l['metodo_pago'], $l['proveedor'] ?: null,
+            ->execute([$cid, $l['categoria_id'] ?: null, $desc, $monto, $fecha, licenciaFrecuenciaGasto($l['frecuencia']), (int)substr($fecha, 8, 2), $grupo, $l['metodo_pago'], $l['proveedor'] ?: null,
                        'Renovación de la licencia #' . $id . ($l['moneda'] === 'USD' ? ' (USD ' . number_format((float)$l['costo'], 2) . ' a la tasa del día)' : ''), $usuario, $l['receptor_id'] ?: null, $id]);
         $nuevo = (int)$pdo->lastInsertId();
         if (!$grupo) $pdo->prepare("UPDATE gastos SET gasto_grupo_id = ? WHERE id = ?")->execute([$nuevo, $nuevo]);
