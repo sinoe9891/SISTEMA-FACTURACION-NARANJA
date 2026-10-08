@@ -26,6 +26,10 @@ suite('Cobros lista y adjuntos editables', function () {
         check('segunda página contiene los cinco restantes', substr_count($list['json']['html'] ?? '', 'class="form-check-input cb-seleccion"') === 5);
         $list = $cli->get('cobros_programados.php',['ajax'=>1,'q'=>$tag,'cliente'=>$ridOtro]);
         check('filtro de cliente respeta aislamiento de empresa', ($list['json']['total'] ?? -1) === 0);
+        $enviadosTab = $cli->get('cobros_programados.php', ['ajax'=>1,'tab'=>'enviados','q'=>$tag,'cliente'=>$rid,'por_pagina'=>10]);
+        check('enviados filtra por cliente y búsqueda con paginación', ($enviadosTab['json']['total'] ?? -1) === 1 && ($enviadosTab['json']['por_pagina'] ?? 0) === 10);
+        $programadosTab = $cli->get('cobros_programados.php', ['ajax'=>1,'tab'=>'programados','q'=>$tag,'por_pagina'=>300,'pagina'=>2]);
+        check('programados excluye enviados y conserva segunda página', ($programadosTab['json']['total'] ?? -1) === 305 && ($programadosTab['json']['pagina'] ?? 0) === 2);
         $page = $cli->get('cobros_programados.php');
         check('pantalla incluye filtro autocompletable y edición de documentos', sinErroresPhp($page['body']) && str_contains($page['body'],'id="cbCliente" data-buscar') && str_contains($page['body'],'id="eDocs"'), errorPhp($page['body']));
         file_put_contents('/tmp/cobros-pagina-test.html', $page['body']);

@@ -6,6 +6,8 @@ function cobrosListado(PDO $pdo, int $cid, array $f): array
     if (!in_array($tam, [10, 25, 50, 100, 200, 300], true)) $tam = 25;
     $where = ['c.cliente_id = ?'];
     $params = [$cid];
+    $pestana = ($f['tab'] ?? (($f['estado'] ?? '') === 'enviado' ? 'enviados' : 'programados')) === 'enviados' ? 'enviados' : 'programados';
+    $where[] = $pestana === 'enviados' ? "c.estado = 'enviado'" : "c.estado <> 'enviado'";
     if (!empty($f['cliente'])) { $where[] = 'c.receptor_id = ?'; $params[] = (int)$f['cliente']; }
     if (in_array($f['estado'] ?? '', ['programado', 'enviando', 'enviado', 'error', 'cancelado'], true)) {
         $where[] = 'c.estado = ?'; $params[] = $f['estado'];
@@ -36,7 +38,7 @@ function cobrosListado(PDO $pdo, int $cid, array $f): array
         (SELECT GROUP_CONCAT(f.correlativo ORDER BY f.correlativo SEPARATOR ', ') FROM cobros_programados_facturas x JOIN facturas f ON f.id=x.factura_id AND f.cliente_id=c.cliente_id WHERE x.cobro_id=c.id) AS facturas";
     if ($extras) $sql .= ", (SELECT GROUP_CONCAT(CONCAT('Recibo ', LPAD(r.numero_recibo, 5, '0')) ORDER BY r.numero_recibo SEPARATOR ', ') FROM cobros_programados_recibos x JOIN contratos_recibos r ON r.id=x.recibo_id AND r.cliente_id=c.cliente_id WHERE x.cobro_id=c.id) AS recibos,
         (SELECT COUNT(*) FROM cobros_programados_plan x WHERE x.cobro_id=c.id) AS pagos_plan";
-    $st = $pdo->prepare($sql . $from . " ORDER BY c.estado = 'programado' DESC, CASE WHEN c.estado = 'programado' THEN c.programado_para END ASC, c.programado_para DESC, c.id DESC LIMIT $tam OFFSET $offset");
+    $st = $pdo->prepare($sql . $from . " ORDER BY c.estado = 'programado' DESC, CASE WHEN c.estado = 'programado' THEN c.programado_para END ASC, CASE WHEN c.estado = 'enviado' THEN c.enviado_en END DESC, c.programado_para DESC, c.id DESC LIMIT $tam OFFSET $offset");
     $st->execute($params);
     return ['cobros' => $st->fetchAll(PDO::FETCH_ASSOC), 'total' => $total, 'pagina' => $pagina, 'paginas' => $paginas, 'por_pagina' => $tam];
 }

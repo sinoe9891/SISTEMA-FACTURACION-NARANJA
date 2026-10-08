@@ -37,6 +37,7 @@ $preAnticipos = array_values(array_filter(array_map('intval', explode(',', (stri
 $extras = $instalado && cobrosExtrasDisponible($pdo);
 
 require_once '../../includes/cobros_listado.php';
+$pestana = ($_GET['tab'] ?? (($_GET['estado'] ?? '') === 'enviado' ? 'enviados' : 'programados')) === 'enviados' ? 'enviados' : 'programados';
 $listado = $instalado && !$nuevoCobro ? cobrosListado($pdo, $cid, $_GET) : ['cobros' => [], 'total' => 0, 'pagina' => 1, 'paginas' => 1, 'por_pagina' => 25];
 $cobros = $listado['cobros'];
 $miCorreo = $pdo->prepare("SELECT correo FROM usuarios WHERE id = ?");
@@ -190,6 +191,11 @@ require_once '../../includes/templates/header.php';
 
     <?php else: ?>
     <!-- Lista -->
+    <nav class="nav nav-pills gap-2 mb-3" id="cbTabs" aria-label="Cobros por estado">
+        <?php foreach (['programados' => 'Programados', 'enviados' => 'Enviados'] as $tab => $nombre): ?>
+            <button type="button" class="nav-link <?= $pestana === $tab ? 'active' : '' ?>" data-tab="<?= $tab ?>" aria-pressed="<?= $pestana === $tab ? 'true' : 'false' ?>"><?= $nombre ?></button>
+        <?php endforeach; ?>
+    </nav>
     <div class="app-card">
         <div class="app-card-header"><span><i class="bi bi-list-check me-1"></i> Cobros</span><span class="app-badge" id="cbTotal"><?= $listado['total'] ?></span></div>
         <div class="app-card-body border-bottom">
@@ -304,6 +310,7 @@ require_once '../../includes/templates/header.php';
 
     // Filtros remotos y paginación: seleccionar todos afecta solamente a la página visible.
     const $filas = document.getElementById('cbFilas'), $todos = document.getElementById('cbTodos'), $eliminar = document.getElementById('cbEliminar');
+    let pestanaLista = <?= json_encode($pestana) ?>;
     let paginaLista = <?= (int)$listado['pagina'] ?>, cargandoLista = false, peticionLista = 0, timerLista;
     const checksLista = () => [...document.querySelectorAll('#cbFilas .cb-seleccion')];
     function seleccionLista() {
@@ -334,7 +341,7 @@ require_once '../../includes/templates/header.php';
         cargandoLista = true; seleccionLista();
         document.getElementById('cbLista').setAttribute('aria-busy', 'true');
         document.getElementById('cbError').textContent = '';
-        const params = new URLSearchParams({ ajax: '1', pagina, por_pagina: document.getElementById('cbPorPagina').value,
+        const params = new URLSearchParams({ ajax: '1', tab: pestanaLista, pagina, por_pagina: document.getElementById('cbPorPagina').value,
             q: document.getElementById('cbBuscar').value, cliente: document.getElementById('cbCliente').value, estado: document.getElementById('cbEstado').value });
         try {
             const d = await fetch('cobros_programados.php?' + params).then(leer);
@@ -347,6 +354,25 @@ require_once '../../includes/templates/header.php';
             if (numero === peticionLista) { cargandoLista = false; document.getElementById('cbLista').setAttribute('aria-busy', 'false'); seleccionLista(); }
         }
     }
+    function pintarPestana() {
+        document.querySelectorAll('#cbTabs [data-tab]').forEach(b => {
+            const activa = b.dataset.tab === pestanaLista;
+            b.classList.toggle('active', activa); b.setAttribute('aria-pressed', String(activa));
+        });
+        const estado = document.getElementById('cbEstado');
+        if (!estado) return;
+        [...estado.options].forEach(o => { o.hidden = o.value !== '' && ((o.value === 'enviado') !== (pestanaLista === 'enviados')); });
+        if (estado.selectedOptions[0]?.hidden) estado.value = '';
+        estado.disabled = pestanaLista === 'enviados';
+    }
+    document.getElementById('cbTabs')?.addEventListener('click', e => {
+        const b = e.target.closest('[data-tab]');
+        if (!b || b.dataset.tab === pestanaLista) return;
+        pestanaLista = b.dataset.tab;
+        document.getElementById('cbEstado').value = '';
+        pintarPestana(); recargarLista(1);
+    });
+    pintarPestana();
     document.getElementById('cbBuscar')?.addEventListener('input', () => {
         ++peticionLista; clearTimeout(timerLista);
         cargandoLista = true; seleccionLista();
