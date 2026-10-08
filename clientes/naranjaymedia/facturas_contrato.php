@@ -38,15 +38,23 @@ if (!$contrato) {
 
 // ── Facturas ──────────────────────────────────────────────────────────────────
 $stmtF = $pdo->prepare("
-    SELECT f.*,
+    SELECT f.*, rf.nombre AS empresa_factura,
            COALESCE(f.periodo_mes,  MONTH(f.fecha_emision)) AS periodo_mes_ef,
            COALESCE(f.periodo_anio, YEAR(f.fecha_emision))  AS periodo_anio_ef
-    FROM facturas f
+    FROM facturas f LEFT JOIN clientes_factura rf ON rf.id = f.receptor_id
     WHERE f.contrato_id=? AND f.cliente_id=? AND f.estado='emitida'
     ORDER BY f.fecha_emision DESC, f.id DESC
 ");
 $stmtF->execute([$contrato_id, $cliente_id]);
 $facturas = $stmtF->fetchAll(PDO::FETCH_ASSOC);
+// Contrato con varias empresas (rotativo): a cuál se le facturó cada mes y cuánto a cada una
+$porEmpresa = [];
+foreach ($facturas as $fx) {
+    $porEmpresa[$fx['empresa_factura'] ?? '—'] ??= ['n' => 0, 'total' => 0.0];
+    $porEmpresa[$fx['empresa_factura'] ?? '—']['n']++;
+    $porEmpresa[$fx['empresa_factura'] ?? '—']['total'] += (float)$fx['total'];
+}
+$variasEmpresas = count($porEmpresa) > 1;
 
 // ── Abonos (cuentas por cobrar): cuánto se ha pagado de cada factura ─────────
 $hayAbonos = cxcDisponible($pdo);
@@ -1139,6 +1147,12 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
             </div>
         <?php else: ?>
             <div style="overflow-x:auto">
+                <?php if ($variasEmpresas): ?>
+                    <div class="d-flex flex-wrap gap-2 mb-2 small">
+                        <span class="text-muted">Facturado por empresa:</span>
+                        <?php foreach ($porEmpresa as $emp => $pe): ?><span class="badge border" style="background:#f8fafc;color:#334155;font-weight:500"><?= htmlspecialchars($emp) ?> · <?= $pe['n'] ?> factura(s) · L <?= number_format($pe['total'], 2) ?></span><?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
                 <table class="fc-table">
                     <thead>
                         <tr>
@@ -1168,6 +1182,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 </td>
                                 <td>
                                     <div class="fw-semibold"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></div>
+                                    <?php if ($variasEmpresas): ?><div class="small text-muted" style="max-width:220px"><?= htmlspecialchars((string)$f['empresa_factura']) ?></div><?php endif; ?>
                                 </td>
                                 <td class="text-center">
                                     <?php
