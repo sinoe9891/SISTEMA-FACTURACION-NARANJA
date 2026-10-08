@@ -520,8 +520,6 @@ require_once '../../includes/templates/header.php';
                 o.dataset.monto = c.montos?.[Number(rId)] ?? 0;
                 selCt.appendChild(o);
             });
-            // Un solo contrato activo: queda elegido (las mensualidades van a su contrato; si es un extra, se cambia a «Sin contrato»)
-            if (cts.length === 1) { selCt.value = String(cts[0].id); selCt.dispatchEvent(new Event('change', { bubbles: true })); }
         }
     });
 
@@ -631,8 +629,18 @@ require_once '../../includes/templates/header.php';
     }
 
     /* ── Envío AJAX ──────────────────────────────────────────────────────────── */
-    document.getElementById('formFactura').addEventListener('submit', function(e) {
+    document.getElementById('formFactura').addEventListener('submit', async function(e) {
         e.preventDefault();
+        // Sin contrato, pero el cliente tiene uno y el monto alcanza su mensualidad: preguntar (no se liga solo; puede ser una pauta o un extra)
+        const selC = document.getElementById('contrato_id'), rIdC = Number(document.getElementById('receptor_id').value);
+        const ctsC = CONTRATOS_FACTURA.filter(c => c.receptores.includes(rIdC));
+        const subC = parseFloat(document.getElementById('h_subtotal').value) || 0;
+        if (!selC.value && ctsC.length === 1 && Number(ctsC[0].montos?.[rIdC] || 0) > 0 && subC + 0.005 >= Number(ctsC[0].montos[rIdC])) {
+            const resp = await Swal.fire({ icon: 'question', title: '¿Es la mensualidad del contrato?', html: `Este cliente tiene el contrato <strong>${(ctsC[0].etiquetas?.[rIdC] || '#' + ctsC[0].id).replace(/[<>&]/g, '')}</strong> y el monto alcanza su mensualidad.`,
+                showDenyButton: true, showCancelButton: true, confirmButtonText: 'Sí, ligarla al contrato', denyButtonText: 'No, es otra cosa (pauta, extra)', cancelButtonText: 'Volver' });
+            if (resp.isDismissed) return;
+            if (resp.isConfirmed) selC.value = String(ctsC[0].id);
+        }
         const btn = document.getElementById('btnGuardar');
         btn.disabled = true;
         btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Guardando...';

@@ -2375,35 +2375,20 @@ suite('Permisos: solo admin y Nómina manejan colaboradores, pagos y préstamos'
     check('admin: las acciones no le niegan el acceso', $r['code'] !== 403, substr($r['body'], 0, 160));
 });
 
-suite('Facturas: una mensualidad sin contrato se liga sola al contrato del cliente', function () {
+suite('Facturas: el contrato no se liga solo (una pauta o un extra puede pasar de la mensualidad)', function () {
     $pdo = db();
     $c = login('qa.admin@local.test');
     $cai = $pdo->query("SELECT * FROM cai_rangos WHERE cliente_id=2 AND fecha_limite >= CURDATE() ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
     $prod = $pdo->query("SELECT id FROM productos_clientes WHERE cliente_id=2 AND precio > 0 LIMIT 1")->fetchColumn();
-    // Un cliente con un solo contrato activo con factura
-    $k = $pdo->query("SELECT c.id, c.receptor_id, c.monto FROM contratos c WHERE c.cliente_id = 2 AND c.estado = 'activo' AND c.tipo_contrato IN ('estandar','periodico') AND c.monto > 0
-                      AND (SELECT COUNT(*) FROM contratos c2 WHERE c2.cliente_id = 2 AND c2.estado = 'activo' AND c2.tipo_contrato <> 'sin_factura' AND c2.receptor_id = c.receptor_id) = 1
-                      AND NOT EXISTS (SELECT 1 FROM contratos_clientes_rotativos r JOIN contratos c3 ON c3.id = r.contrato_id AND c3.estado = 'activo' WHERE r.receptor_id = c.receptor_id AND r.activo = 1) LIMIT 1")->fetch(PDO::FETCH_ASSOC);
-    if (!$k || !$cai || !$prod) { check('hay datos para probar (cliente con un contrato)', false); return; }
-    $fact = fn($precio) => $c->post('guardar_factura.php', ['receptor_id' => $k['receptor_id'], 'cai_rango_id' => $cai['id'], 'condicion_pago' => 'Contado', 'establecimiento_id' => $cai['establecimiento_id'],
-        'productos[0][id]' => $prod, 'productos[0][cantidad]' => 1, 'productos[0][precio]' => $precio, 'productos[0][detalles]' => 'QA mensualidad']);
-    $r = $fact((float)$k['monto']);
-    $id1 = (int)($r['json']['factura_id'] ?? 0);
-    check('con el monto de la mensualidad queda ligada al contrato', $id1 && (int)$pdo->query("SELECT contrato_id FROM facturas WHERE id = $id1")->fetchColumn() === (int)$k['id'], $r['body']);
-    $r = $fact(round((float)$k['monto'] / 3, 2));
-    $id2 = (int)($r['json']['factura_id'] ?? 0);
-    check('un extra menor a la mensualidad queda sin contrato', $id2 && $pdo->query("SELECT contrato_id FROM facturas WHERE id = $id2")->fetchColumn() === null, $r['body']);
-    // Al editarla y subirla al monto de la mensualidad, también se liga sola
-    if ($id2) {
-        $f2 = $pdo->query("SELECT * FROM facturas WHERE id = $id2")->fetch(PDO::FETCH_ASSOC);
-        $r = $c->post('guardar_factura_editada.php', ['factura_id' => $id2, 'receptor_id' => $f2['receptor_id'], 'fecha_emision' => date('Y-m-d\TH:i', strtotime($f2['fecha_emision'])), 'condicion_pago' => $f2['condicion_pago'],
-            'estado' => 'emitida', 'motivo' => 'QA', 'usuario_autoriza' => 'qa.admin@local.test', 'clave_autoriza' => QA_PASS,
-            'productos[0][id]' => $prod, 'productos[0][cantidad]' => 1, 'productos[0][precio_unitario]' => (float)$k['monto'], 'productos[0][descripcion_html]' => 'QA mensualidad']);
-        check('al editarla con el monto de la mensualidad se liga al contrato', (int)$pdo->query("SELECT contrato_id FROM facturas WHERE id = $id2")->fetchColumn() === (int)$k['id'], substr(strip_tags($r['body']), 0, 200));
-    }
+    $k = $pdo->query("SELECT c.id, c.receptor_id, c.monto FROM contratos c WHERE c.cliente_id = 2 AND c.estado = 'activo' AND c.tipo_contrato IN ('estandar','periodico') AND c.monto > 0 LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if (!$k || !$cai || !$prod) { check('hay datos para probar (cliente con contrato)', false); return; }
+    $r = $c->post('guardar_factura.php', ['receptor_id' => $k['receptor_id'], 'cai_rango_id' => $cai['id'], 'condicion_pago' => 'Contado', 'establecimiento_id' => $cai['establecimiento_id'],
+        'productos[0][id]' => $prod, 'productos[0][cantidad]' => 1, 'productos[0][precio]' => (float)$k['monto'] * 2, 'productos[0][detalles]' => 'QA pauta']);
+    $id = (int)($r['json']['factura_id'] ?? 0);
+    check('una factura sin contrato elegido queda sin contrato aunque pase de la mensualidad', $id && $pdo->query("SELECT contrato_id FROM facturas WHERE id = $id")->fetchColumn() === null, $r['body']);
     $nf = $c->get('generar_factura', ['receptor_id' => $k['receptor_id']]);
-    check('Nueva factura deja elegido el único contrato del cliente', str_contains($nf['body'], 'if (cts.length === 1)') && sinErroresPhp($nf['body']), errorPhp($nf['body']));
-    foreach (array_filter([$id1, $id2]) as $id) { $pdo->exec("DELETE FROM factura_items_receptor WHERE factura_id = $id"); $pdo->exec("DELETE FROM facturas WHERE id = $id"); }
+    check('Nueva factura pregunta si es la mensualidad (no la elige sola)', str_contains($nf['body'], '¿Es la mensualidad del contrato?') && !str_contains($nf['body'], 'if (cts.length === 1)') && sinErroresPhp($nf['body']), errorPhp($nf['body']));
+    if ($id) { $pdo->exec("DELETE FROM factura_items_receptor WHERE factura_id = $id"); $pdo->exec("DELETE FROM facturas WHERE id = $id"); }
 });
 
 require __DIR__ . '/cobros_lista_adjuntos.php';
