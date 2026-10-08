@@ -379,6 +379,8 @@ unset($__v);
                                 class="fw-semibold">L <?= number_format($totales_mes['subtotal'] ?? 0, 2) ?></span></div>
                         <div class="d-flex justify-content-between mb-1"><span class="text-muted small">ISV</span><span
                                 class="fw-semibold">L <?= number_format($totales_mes['isv'] ?? 0, 2) ?></span></div>
+                        <?php if (!empty($totales_mes['recibos'])): ?><div class="d-flex justify-content-between mb-1"><span class="text-muted small">Incluye recibos (sin factura)</span><span
+                                class="fw-semibold">L <?= number_format($totales_mes['recibos'], 2) ?></span></div><?php endif; ?>
                         <div class="d-flex justify-content-between pt-2 border-top mt-1"><span
                                 class="fw-bold">Total</span><span class="fw-bold text-success">L
                                 <?= number_format($totales_mes['total'] ?? 0, 2) ?></span></div>
@@ -394,6 +396,8 @@ unset($__v);
                                 class="fw-semibold">L <?= number_format($totales_anio['subtotal'] ?? 0, 2) ?></span></div>
                         <div class="d-flex justify-content-between mb-1"><span class="text-muted small">ISV</span><span
                                 class="fw-semibold">L <?= number_format($totales_anio['isv'] ?? 0, 2) ?></span></div>
+                        <?php if (!empty($totales_anio['recibos'])): ?><div class="d-flex justify-content-between mb-1"><span class="text-muted small">Incluye recibos (sin factura)</span><span
+                                class="fw-semibold">L <?= number_format($totales_anio['recibos'], 2) ?></span></div><?php endif; ?>
                         <div class="d-flex justify-content-between pt-2 border-top mt-1"><span
                                 class="fw-bold">Total</span><span class="fw-bold text-primary">L
                                 <?= number_format($totales_anio['total'] ?? 0, 2) ?></span></div>
@@ -817,6 +821,7 @@ unset($__v);
                                     <th>Año</th>
                                     <th class="text-end">Subtotal (L)</th>
                                     <th class="text-end">ISV (L)</th>
+                                    <th class="text-end">Recibos (L)</th>
                                     <th class="text-end">Total (L)</th>
                                 </tr>
                             </thead>
@@ -824,6 +829,7 @@ unset($__v);
                                         <td><?= htmlspecialchars($ax['anio']) ?></td>
                                         <td class="text-end">L <?= number_format((float)$ax['subtotal'], 2) ?></td>
                                         <td class="text-end">L <?= number_format((float)$ax['isv'], 2) ?></td>
+                                        <td class="text-end">L <?= number_format((float)($ax['recibos'] ?? 0), 2) ?></td>
                                         <td class="text-end fw-bold">L <?= number_format((float)$ax['total'], 2) ?></td>
                                     </tr><?php endforeach; ?></tbody>
                         </table>
@@ -1593,6 +1599,10 @@ unset($__v);
                     backgroundColor: 'rgba(30,64,175,0.55)',
                     data: <?= json_encode(array_map(fn($r) => (float)$r['subtotal'], $ingresos)) ?>
                 }, {
+                    label: 'Recibos (sin factura)',
+                    backgroundColor: 'rgba(124,58,237,0.55)',
+                    data: <?= json_encode(array_map(fn($r) => (float)($r['recibos'] ?? 0), $ingresos)) ?>
+                }, {
                     label: 'ISV',
                     backgroundColor: 'rgba(245,158,11,0.55)',
                     data: <?= json_encode(array_map(fn($r) => (float)$r['isv'], $ingresos)) ?>
@@ -1631,6 +1641,10 @@ unset($__v);
                     label: 'Subtotal',
                     backgroundColor: 'rgba(30,64,175,0.4)',
                     data: <?= json_encode(array_map(fn($x) => (float)$x['subtotal'], $ingresos_anuales ?? [])) ?>
+                }, {
+                    label: 'Recibos (sin factura)',
+                    backgroundColor: 'rgba(124,58,237,0.55)',
+                    data: <?= json_encode(array_map(fn($x) => (float)($x['recibos'] ?? 0), $ingresos_anuales ?? [])) ?>
                 }, {
                     label: 'ISV',
                     backgroundColor: 'rgba(245,158,11,0.4)',

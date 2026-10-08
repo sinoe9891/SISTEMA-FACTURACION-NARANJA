@@ -335,6 +335,34 @@ $stmtIngresosPorAnio = $pdo->prepare("
 $stmtIngresosPorAnio->execute([$cliente_id, $establecimiento_activo, $fecha_inicio, $fecha_fin]);
 $ingresos_anuales = $stmtIngresosPorAnio->fetchAll(PDO::FETCH_ASSOC);
 
+// Recibos de contratos sin factura: también son ingresos (sin ISV). Se suman a los gráficos y totales y se muestran aparte.
+$dbRecibos = function (string $desde, string $hasta, string $agrupar = '') use ($pdo, $cliente_id) {
+	try {
+		$sel = $agrupar === 'mes' ? "DATE_FORMAT(fecha_emision, '%Y-%m') k," : ($agrupar === 'anio' ? "YEAR(fecha_emision) k," : "'t' k,");
+		$st = $pdo->prepare("SELECT $sel COALESCE(SUM(monto),0) m FROM contratos_recibos WHERE cliente_id = ? AND estado = 'emitido' AND DATE(fecha_emision) BETWEEN ? AND ? GROUP BY k");
+		$st->execute([$cliente_id, $desde, $hasta]);
+		return array_map('floatval', $st->fetchAll(PDO::FETCH_KEY_PAIR));
+	} catch (Throwable $e) { return []; }   // módulo de recibos no instalado
+};
+$sumarRecibos = function (array $filas, array $rec, string $clave) {
+	$idx = [];
+	foreach ($filas as $i => $f) { $filas[$i]['recibos'] = 0.0; $idx[(string)$f[$clave]] = $i; }
+	foreach ($rec as $k => $m) {
+		if (!isset($idx[(string)$k])) { $filas[] = [$clave => $k, 'subtotal' => 0, 'isv' => 0, 'total' => 0, 'recibos' => 0.0]; $idx[(string)$k] = array_key_last($filas); }
+		$i = $idx[(string)$k];
+		$filas[$i]['recibos'] = $m; $filas[$i]['subtotal'] += $m; $filas[$i]['total'] += $m;
+	}
+	usort($filas, fn($a, $b) => strcmp((string)$a[$clave], (string)$b[$clave]));
+	return $filas;
+};
+$ingresos = $sumarRecibos($ingresos, $dbRecibos($fecha_inicio, $fecha_fin, 'mes'), 'mes');
+$ingresos_anuales = $sumarRecibos($ingresos_anuales, $dbRecibos($fecha_inicio, $fecha_fin, 'anio'), 'anio');
+foreach ([[&$totales_mes, $fecha_mes_inicio, $fecha_mes_fin], [&$totales_anio, $fecha_anio_inicio, $fecha_anio_fin]] as [&$tot, $d, $h]) {
+	$r = array_sum($dbRecibos($d, $h));
+	$tot['recibos'] = $r; $tot['subtotal'] = (float)$tot['subtotal'] + $r; $tot['total'] = (float)$tot['total'] + $r;
+}
+unset($tot);
+
 // ✅ Resumen por receptor (trae receptor_id y cantidad_facturas)
 $stmtResumenReceptores = $pdo->prepare("
 	SELECT
