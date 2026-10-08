@@ -51,6 +51,10 @@ $contratosFactura = array_values(array_filter(facturaContratosDisponibles($pdo, 
 if ($get_receptor_id)
     $contratos_iniciales = array_values(array_filter($contratosFactura, fn($c) => in_array($get_receptor_id, $c['receptores'], true)));
 
+// Gastos pagados por la empresa que se le cobran al cliente (p. ej. su hosting): aviso al elegir el cliente
+require_once '../../includes/gastos_cobrar.php';
+$gastosCobrar = [];
+foreach (gastosPorCobrar($pdo, (int)$cliente_id) as $gc) $gastosCobrar[(int)$gc['cobrar_receptor_id']][] = ['id' => (int)$gc['id'], 'fecha' => $gc['fecha'], 'descripcion' => $gc['descripcion'], 'monto' => (float)$gc['monto']];
 require_once '../../includes/templates/header.php';
 ?>
 
@@ -314,6 +318,13 @@ require_once '../../includes/templates/header.php';
                                 </select>
                                 <div class="form-text">Selecciona el contrato al que corresponde o «Sin contrato». Asociarla facilita el seguimiento mensual desde Contratos.</div>
                             </div>
+                            <div class="col-12 d-none" id="bloqueGastosCobrar">
+                                <div class="alert alert-warning mb-0 py-2 small">
+                                    <div class="fw-semibold mb-1"><i class="bi bi-arrow-repeat me-1"></i>Gastos pendientes de cobrarle a este cliente</div>
+                                    <div id="listaGastosCobrar"></div>
+                                    <div class="text-muted mt-1">Agrega la línea en el detalle y marca aquí los que incluyes: al guardar quedan como cobrados en esta factura.</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -459,9 +470,22 @@ require_once '../../includes/templates/header.php';
     const CONTRATOS_FACTURA = <?= json_encode($contratosFactura, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
     let productoIndex = 1;
 
+    /* ── Gastos que se le cobran al cliente ─────────────────────────────────── */
+    const GASTOS_COBRAR = <?= json_encode($gastosCobrar, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+    function pintarGastosCobrar(rId) {
+        const lista = GASTOS_COBRAR[rId] || [], cont = document.getElementById('bloqueGastosCobrar');
+        cont.classList.toggle('d-none', !lista.length);
+        const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        document.getElementById('listaGastosCobrar').innerHTML = lista.map(g => `<div class="form-check">
+            <input class="form-check-input" type="checkbox" name="gastos_cobrar[]" value="${g.id}" id="gc${g.id}">
+            <label class="form-check-label" for="gc${g.id}">${esc(g.descripcion)} · ${g.fecha.split('-').reverse().join('/')} · <strong>L ${g.monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></label></div>`).join('');
+    }
+    if (document.getElementById('receptor_id').value) pintarGastosCobrar(document.getElementById('receptor_id').value);
+
     /* ── Cambio de receptor ──────────────────────────────────────────────────── */
     document.getElementById('receptor_id').addEventListener('change', function() {
         const rId = this.value;
+        pintarGastosCobrar(rId);
         const bloque = document.getElementById('bloqueContrato');
         const selCt = document.getElementById('contrato_id');
         selCt.innerHTML = '<option value="">— Sin contrato (factura directa) —</option>';

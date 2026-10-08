@@ -27,7 +27,14 @@ try {
 			$avisoPlan = ' No se ligó al plan de pagos: ' . $e->getMessage();
 		}
 	}
+	// Gastos que se le cobraban al cliente y se incluyeron en esta factura
+	$cobrados = 0;
+	if (!empty($_POST['gastos_cobrar'])) {
+		require_once '../../includes/gastos_cobrar.php';
+		$cobrados = gastosMarcarCobrados($pdo, (int)$cliente_id, (array)$_POST['gastos_cobrar'], (int)$factura['id'], (int)($_POST['receptor_id'] ?? 0));
+	}
 	$pdo->commit();
+	if ($cobrados) $avisoPlan .= ' ' . $cobrados . ' gasto(s) del cliente quedaron como cobrados en esta factura.';
 
 	echo json_encode([
 		'success'    => true,

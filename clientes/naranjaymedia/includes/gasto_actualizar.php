@@ -198,6 +198,18 @@ try {
         $nat = $_POST['naturaleza'] ?? '';
         if (in_array($nat, ['gasto', 'anticipo', 'isv', 'retiro'], true) && in_array($gastoActual['naturaleza'] ?? 'gasto', ['gasto', 'anticipo', 'isv', 'retiro'], true))
             $pdo->prepare("UPDATE gastos SET naturaleza = ? WHERE id = ? AND cliente_id = ?")->execute([$nat, $gasto_id, $cid]);
+        // Se le cobra a un cliente: si cambia el cliente, deja de contar la factura donde se incluyó
+        if (array_key_exists('cobrar_receptor_id', $_POST) && $pdo->query("SHOW COLUMNS FROM gastos LIKE 'cobrar_receptor_id'")->fetchColumn()) {
+            $cobrarA = (int)$_POST['cobrar_receptor_id'];
+            if ($cobrarA) {
+                $okRec = $pdo->prepare("SELECT COUNT(*) FROM clientes_factura WHERE id = ? AND cliente_id = ?");
+                $okRec->execute([$cobrarA, $cid]);
+                if (!$okRec->fetchColumn()) $cobrarA = 0;
+            }
+            if ((int)($gastoActual['cobrar_receptor_id'] ?? 0) !== $cobrarA)
+                $pdo->prepare("UPDATE gastos SET cobrar_receptor_id = ?, cobrado_factura_id = NULL WHERE id = ? AND cliente_id = ?")->execute([$cobrarA ?: null, $gasto_id, $cid]);
+            $gastoActual['cobrar_receptor_id'] = $cobrarA ?: null;
+        }
         // Si pasó de pendiente a pagado y es recurrente, programar el período siguiente
         // (con los datos ya editados: monto, día de pago, vencimiento, etc.)
         if ($estado === 'pagado') {

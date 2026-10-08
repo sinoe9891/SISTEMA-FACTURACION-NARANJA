@@ -73,11 +73,15 @@ function programarSiguienteGastoRecurrente(PDO $pdo, array $gasto, int $cid, int
         $gasto['proveedor'],
         $usuario_id,
     ]);
+    $nuevoId = (int)$pdo->lastInsertId();
     // La siguiente cuota conserva su naturaleza (p. ej. abono a capital de un préstamo) y su préstamo
     if (!empty($gasto['naturaleza']) && $gasto['naturaleza'] !== 'gasto') {
         $pdo->prepare("UPDATE gastos SET naturaleza = ?, prestamo_id = ?, activo_id = ? WHERE id = ?")
-            ->execute([$gasto['naturaleza'], $gasto['prestamo_id'] ?? null, $gasto['activo_id'] ?? null, (int)$pdo->lastInsertId()]);
+            ->execute([$gasto['naturaleza'], $gasto['prestamo_id'] ?? null, $gasto['activo_id'] ?? null, $nuevoId]);
     }
+    // El período siguiente también se le cobra al mismo cliente (p. ej. la renovación anual de su hosting)
+    if (!empty($gasto['cobrar_receptor_id']))
+        $pdo->prepare("UPDATE gastos SET cobrar_receptor_id = ? WHERE id = ? AND cliente_id = ?")->execute([(int)$gasto['cobrar_receptor_id'], $nuevoId, $cid]);
 
     return $fechaSig;
 }

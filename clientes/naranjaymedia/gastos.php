@@ -76,9 +76,19 @@ $cuentas_pago = bancosDisponible($pdo)
     ? array_values(array_filter(bancoCuentas($pdo, cliente_actual(), true), fn($c) => $c['moneda'] === 'HNL'))
     : [];
 
+// Clientes a los que se les puede cobrar un gasto (reembolsables, p. ej. su hosting)
+require_once '../../includes/gastos_cobrar.php';
+$gcDisponible = gastosCobrarDisponible($pdo);
+$gcClientes = [];
+if ($gcDisponible) {
+    $st = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cliente_id = ? ORDER BY nombre");
+    $st->execute([cliente_actual()]);
+    $gcClientes = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+}
+
 /* ── Gastos con filtros ───────────────────────────────────────────────────── */
-$sql    = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono
-           FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id
+$sql    = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono" . ($gcDisponible ? ", fc.correlativo AS cobrado_correlativo" : '') . "
+           FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id" . ($gcDisponible ? " LEFT JOIN facturas fc ON fc.id = g.cobrado_factura_id" : '') . "
            WHERE g.cliente_id=? AND g.fecha BETWEEN ? AND ?";
 $params = [$cliente_id, $fecha_ini, $fecha_fin];
 if ($cat_filtro) {
@@ -956,6 +966,13 @@ $total  = count($gastos);
                                     <span class="badge border" style="font-size:9px;background:#eef2ff;color:#3730a3" title="<?= $natG === 'anticipo' ? 'Dinero a favor: cuando llegue la factura del proveedor, edítalo y cambia la naturaleza a «Gasto del período».' : ($natG === 'isv' ? 'ISV cobrado a los clientes que se entrega al SAR: no se contó como ingreso, así que tampoco resta como gasto. Multas, intereses y honorarios van aparte como gasto.' : ($natG === 'retiro' ? 'Dinero de la empresa usado en algo personal de un socio: no resta en el Estado de resultados.' : 'No resta en el Estado de resultados.')) ?>">
                                         <?= ['capital' => 'Abono a capital (no es gasto)', 'activo' => 'Compra de activo (se deprecia)', 'anticipo' => 'Anticipo a proveedor', 'isv' => 'Pago de ISV (no es gasto)', 'retiro' => 'Retiro de socio (no es gasto)'][$natG] ?? $natG ?></span>
                                 <?php endif; ?>
+                                <?php if (!empty($g['cobrar_receptor_id'])): ?>
+                                    <?php if (!empty($g['cobrado_factura_id'])): ?>
+                                        <a href="ver_factura?id=<?= (int)$g['cobrado_factura_id'] ?>" target="_blank" class="badge border text-decoration-none" style="font-size:9px;background:#ecfdf5;color:#047857" title="Ya se le cobró al cliente en esta factura">✓ Cobrado en factura <?= htmlspecialchars(substr((string)($g['cobrado_correlativo'] ?? ''), -8)) ?></a>
+                                    <?php else: ?>
+                                        <span class="badge border" style="font-size:9px;background:#fff7ed;color:#c2410c" title="Al hacerle su próxima factura sale el aviso hasta que lo incluyas">↻ Se cobra a <?= htmlspecialchars($gcClientes[$g['cobrar_receptor_id']] ?? 'cliente') ?></span>
+                                    <?php endif; ?>
+                                <?php endif; ?>
                             </td>
                             <td><span class="tipo-badge <?= $tCls ?>"><?= $tLbl ?></span></td>
                             <td data-col="cat" style="font-size:.83rem;"><?php if (!empty($g['cat_nombre'])): ?><span
@@ -1122,6 +1139,15 @@ $total  = count($gastos);
                         <div class="col-md-6"><label class="mf-label">Proveedor / Beneficiario</label><input type="text"
                                 name="proveedor" id="g_prov" class="mf-input" placeholder="Nombre del proveedor"
                                 maxlength="200"></div>
+                        <?php if ($gcDisponible): ?>
+                        <div class="col-md-6"><label class="mf-label">Se le cobra a un cliente <span class="text-muted fw-normal" style="text-transform:none;letter-spacing:0">(opcional)</span></label>
+                            <select name="cobrar_receptor_id" id="g_cobrar" class="mf-select" data-buscar>
+                                <option value="">— No, es gasto de la empresa —</option>
+                                <?php foreach ($gcClientes as $gcId => $gcNom): ?><option value="<?= (int)$gcId ?>"><?= htmlspecialchars($gcNom) ?></option><?php endforeach; ?>
+                            </select>
+                            <small class="text-muted" style="font-size:.72rem">Ej.: el hosting de un cliente. Al hacerle su próxima factura sale el aviso hasta que lo incluyas.</small>
+                        </div>
+                        <?php endif; ?>
 
                         <!-- Método de pago + Tarjeta -->
                         <div class="col-md-6"><label class="mf-label">Método de pago</label>
@@ -1553,6 +1579,7 @@ $total  = count($gastos);
         document.getElementById('g_fecha').value = new Date().toISOString().slice(0, 10);
         document.getElementById('g_nat').disabled = false;
         document.getElementById('g_nat_info').classList.add('d-none');
+        if (document.getElementById('g_cobrar')) document.getElementById('g_cobrar').value = '';   // el buscador se actualiza con el valor
         gsLimpiarComp();
         // Reset comprobante actual section
         document.getElementById('gsCompActual').style.display = 'none';
@@ -1592,6 +1619,8 @@ $total  = count($gastos);
             document.getElementById('g_estado').value = g.estado || 'pendiente';
             document.getElementById('g_cat').value = g.categoria_id || '';
             document.getElementById('g_prov').value = g.proveedor || '';
+            const gCobrar = document.getElementById('g_cobrar');
+            if (gCobrar) gCobrar.value = g.cobrar_receptor_id || '';
             document.getElementById('g_notas').value = g.notas || '';
             document.getElementById('g_colab').value =
                 ''; // Colaborador no guardado en gastos directamente (usa proveedor)

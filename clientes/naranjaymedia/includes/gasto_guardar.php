@@ -166,6 +166,15 @@ try {
     if (in_array($natPost, ['anticipo', 'isv', 'retiro'], true) && $pdo->query("SHOW COLUMNS FROM gastos LIKE 'naturaleza'")->fetchColumn())
         $pdo->prepare("UPDATE gastos SET naturaleza = ? WHERE id IN (" . implode(',', array_map('intval', $ids_creados)) . ") AND cliente_id = ?")->execute([$natPost, $cid]);
 
+    // Se le cobra a un cliente (reembolsable): aviso en su próxima factura
+    $cobrarA = (int)($_POST['cobrar_receptor_id'] ?? 0);
+    if ($cobrarA && $pdo->query("SHOW COLUMNS FROM gastos LIKE 'cobrar_receptor_id'")->fetchColumn()) {
+        $okRec = $pdo->prepare("SELECT COUNT(*) FROM clientes_factura WHERE id = ? AND cliente_id = ?");
+        $okRec->execute([$cobrarA, $cid]);
+        if ($okRec->fetchColumn())
+            $pdo->prepare("UPDATE gastos SET cobrar_receptor_id = ? WHERE id IN (" . implode(',', array_map('intval', $ids_creados)) . ") AND cliente_id = ?")->execute([$cobrarA, $cid]);
+    }
+
     $pdo->commit();
 
     $msg = count($ids_creados) > 1
