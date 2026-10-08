@@ -2166,6 +2166,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
                         ['pago', 'bi-cash-coin', 'success', 'Pago de nómina', 'Quincena o mes; descuenta cuotas y suma bonos'],
                         ['prestamo', 'bi-cash-stack', 'danger', 'Préstamo', 'Se descuenta en cuotas'],
                         ['adelanto', 'bi-lightning-charge', 'warning', 'Adelanto', 'Descuento único en el próximo pago'],
+                        ['honorarios', 'bi-briefcase', 'primary', 'Honorarios', 'Pago por proyecto, sin IHSS ni RAP'],
                         ['bono', 'bi-gift', 'success', 'Bono', 'Se suma al próximo pago'],
                         ['viatico', 'bi-airplane', 'info', 'Viático', 'Gasto de viaje; se suma al próximo pago'],
                         ['multa', 'bi-slash-circle', 'secondary', 'Multa / descuento', 'Descuento único'],

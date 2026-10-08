@@ -44,7 +44,8 @@ if ($rol_usuario === 'superadmin') {
 			   cf.email AS receptor_email,
 			   c.logo_url, c.nombre AS cliente_nombre, c.rtn, c.direccion, c.telefono, c.email,
 			   cai.cai, cai.rango_inicio, cai.rango_fin, cai.fecha_limite, cai.fecha_recepcion,
-			   cai.rango_cai_inicio, cai.rango_cai_fin, cai.numero_certificado AS cai_numero_certificado
+			   cai.rango_cai_inicio, cai.rango_cai_fin, cai.numero_certificado AS cai_numero_certificado,
+			   cai.imprenta_nombre AS cai_imprenta_nombre, cai.imprenta_rtn AS cai_imprenta_rtn, cai.imprenta_telefono AS cai_imprenta_telefono
 		FROM facturas f
 		INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
 		INNER JOIN clientes_saas c ON f.cliente_id = c.id
@@ -62,7 +63,8 @@ if ($rol_usuario === 'superadmin') {
            cf.email AS receptor_email,
            c.logo_url, c.nombre AS cliente_nombre, c.rtn, c.direccion, c.telefono, c.email,
            cai.cai, cai.rango_inicio, cai.rango_fin, cai.fecha_limite, cai.fecha_recepcion,
-           cai.rango_cai_inicio, cai.rango_cai_fin, cai.numero_certificado AS cai_numero_certificado
+           cai.rango_cai_inicio, cai.rango_cai_fin, cai.numero_certificado AS cai_numero_certificado,
+			   cai.imprenta_nombre AS cai_imprenta_nombre, cai.imprenta_rtn AS cai_imprenta_rtn, cai.imprenta_telefono AS cai_imprenta_telefono
     FROM facturas f
     INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
     INNER JOIN clientes_saas c ON f.cliente_id = c.id
@@ -791,13 +793,18 @@ if (!function_exists('formatFecha')) {
 
 				<strong style="font-size: 10px;">— INFORMACIÓN DEL EMISOR AUTORIZADO —</strong><br>
 
-				<strong>Imprenta:</strong> <?= htmlspecialchars($configuracion['certificador_nombre']) ?>
+				<?php // Talonarios impresos: la imprenta es la del CAI (p. ej. Gráficos de Occidente), no la del sistema
+				$impPropia = !empty($factura['cai_imprenta_nombre']); ?>
+				<strong>Imprenta:</strong> <?= htmlspecialchars($impPropia ? $factura['cai_imprenta_nombre'] : $configuracion['certificador_nombre']) ?>
 				&nbsp;|&nbsp;
-				<strong>RTN Imprenta:</strong> <?= htmlspecialchars($configuracion['certificador_rtn']) ?>
+				<strong>RTN Imprenta:</strong> <?= htmlspecialchars($impPropia ? (string)$factura['cai_imprenta_rtn'] : $configuracion['certificador_rtn']) ?>
 				&nbsp;|&nbsp;
 				<strong>N.° Certificado:</strong> <?= htmlspecialchars($factura['cai_numero_certificado'] ?: $configuracion['numero_certificado']) ?>
 				<br>
 
+				<?php if ($impPropia): ?>
+					<?php if (!empty($factura['cai_imprenta_telefono'])): ?><strong>Tel:</strong> <?= htmlspecialchars($factura['cai_imprenta_telefono']) ?><?php endif; ?>
+				<?php else: ?>
 				<?php if (!empty($configuracion['imprenta_direccion'])): ?>
 					<strong>Dir. Imprenta:</strong> <?= htmlspecialchars($configuracion['imprenta_direccion']) ?>
 					&nbsp;|&nbsp;
@@ -811,9 +818,10 @@ if (!function_exists('formatFecha')) {
 				<?php if (!empty($configuracion['imprenta_correo'])): ?>
 					<?= htmlspecialchars($configuracion['imprenta_correo']) ?>
 				<?php endif; ?>
+				<?php endif; ?>
 				<br>
 
-				<?php if (!empty($configuracion['footer_factura'])): ?>
+				<?php if (!$impPropia && !empty($configuracion['footer_factura'])): ?>
 					<em><?= nl2br(htmlspecialchars($configuracion['footer_factura'])) ?></em><br>
 				<?php endif; ?>
 				<!-- 

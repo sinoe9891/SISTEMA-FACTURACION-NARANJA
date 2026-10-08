@@ -1534,6 +1534,7 @@ $tipos_btn_p = [
                     <li><hr class="dropdown-divider"></li>
                     <li><button class="dropdown-item" data-registrar="prestamo"><i class="bi bi-cash-stack text-danger me-2"></i>Préstamo <small class="text-muted">· en cuotas</small></button></li>
                     <li><button class="dropdown-item" data-registrar="adelanto"><i class="bi bi-lightning-charge text-warning me-2"></i>Adelanto <small class="text-muted">· descuento único</small></button></li>
+                    <li><button class="dropdown-item" data-registrar="honorarios"><i class="bi bi-briefcase text-primary me-2"></i>Honorarios <small class="text-muted">· pago por proyecto</small></button></li>
                     <li><button class="dropdown-item" data-registrar="bono"><i class="bi bi-gift text-success me-2"></i>Bono</button></li>
                     <li><button class="dropdown-item" data-registrar="viatico"><i class="bi bi-airplane text-info me-2"></i>Viático</button></li>
                     <li><button class="dropdown-item" data-registrar="multa"><i class="bi bi-slash-circle text-secondary me-2"></i>Multa / descuento</button></li>
@@ -2766,6 +2767,53 @@ $tipos_btn_p = [
     </div>
 </div>
 
+<!-- MODAL: Honorarios (pago por proyecto) -->
+<div class="modal fade" id="modalHonorarios" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header py-3" style="background:linear-gradient(135deg,#2563eb,#1e3a8a)">
+                <h5 class="modal-title fw-bold text-white"><i class="bi bi-briefcase me-2"></i>Honorarios · pago por proyecto</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-3">Para trabajos por proyecto (sin salario fijo): no calcula IHSS ni RAP, no descuenta cuotas ni suma bonos. Sale en Pagos de nómina como «Honorarios».</p>
+                <form id="formHonorarios" enctype="multipart/form-data">
+                    <input type="hidden" name="colaborador_id" value="<?= $id ?>">
+                    <div class="row g-3">
+                        <div class="col-12"><label class="mf-label">Proyecto o concepto <span class="text-danger">*</span></label>
+                            <input type="text" name="concepto" class="mf-input" maxlength="200" required placeholder="Ej.: Manual de marca DC Group"></div>
+                        <div class="col-md-6"><label class="mf-label">Monto (L) <span class="text-danger">*</span></label>
+                            <input type="number" name="monto" class="mf-input" step="0.01" min="0.01" required></div>
+                        <div class="col-md-6"><label class="mf-label">Fecha de pago <span class="text-danger">*</span></label>
+                            <input type="date" name="fecha" class="mf-input" value="<?= date('Y-m-d') ?>" required></div>
+                        <div class="col-md-6"><label class="mf-label">Método</label>
+                            <select name="metodo_pago" class="mf-select">
+                                <option value="transferencia">🏦 Transferencia</option><option value="efectivo">💵 Efectivo</option>
+                                <option value="cheque">📝 Cheque</option><option value="tarjeta">💳 Tarjeta</option><option value="otro">🔷 Otro</option>
+                            </select></div>
+                        <div class="col-md-6"><label class="mf-label">Referencia</label>
+                            <input type="text" name="referencia" class="mf-input" maxlength="60" placeholder="N.° de transferencia"></div>
+                        <?php if ($cuentasPago): ?>
+                        <div class="col-12"><label class="mf-label">Sale de la cuenta</label>
+                            <select name="cuenta_id" class="mf-select"><option value="">— No registrar en banco —</option>
+                                <?php foreach ($cuentasPago as $cb): ?><option value="<?= (int)$cb['id'] ?>"<?= bancoSel($cb) ?>><?= htmlspecialchars($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?>
+                            </select></div>
+                        <?php endif; ?>
+                        <div class="col-12"><label class="mf-label">Notas <span class="text-muted fw-normal" style="text-transform:none;letter-spacing:0">(opcional)</span></label>
+                            <textarea name="notas" class="mf-input" rows="2" style="height:auto;resize:vertical"></textarea></div>
+                        <div class="col-12"><label class="mf-label"><i class="bi bi-paperclip me-1 text-secondary"></i>Comprobante <span class="text-muted fw-normal" style="text-transform:none;letter-spacing:0">(opcional · JPG, PNG, PDF · máx 5 MB)</span></label>
+                            <input type="file" name="comprobante" class="form-control form-control-sm" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-top">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary px-4" id="btnGuardarHonorarios"><i class="bi bi-check-circle me-1"></i>Registrar honorarios</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- MODAL: Editar Colaborador -->
 <div class="modal fade" id="modalEditarColab" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -3453,18 +3501,35 @@ $tipos_btn_p = [
 
     /* ══ REGISTRAR desde la barra superior o un enlace (?registrar=…) ══════════
        Cambia a la pestaña correcta, baja hasta ella para que se vea y abre el formulario. */
-    const REG_TAB = { pago: 'pagos', prestamo: 'prestamos', adelanto: 'prestamos', multa: 'prestamos', bono: 'bonos', viatico: 'viaticos' };
+    const REG_TAB = { pago: 'pagos', honorarios: 'pagos', prestamo: 'prestamos', adelanto: 'prestamos', multa: 'prestamos', bono: 'bonos', viatico: 'viaticos' };
     function irYRegistrar(tipo) {
         const tab = REG_TAB[tipo];
         if (!tab) return;
         setTab(tab);
         history.replaceState(null, '', location.pathname + location.search.replace(/([?&])registrar=[^&]*&?/, '$1').replace(/[?&]$/, '') + '#tab-' + tab);
         document.getElementById('mainTabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Honorarios: también para colaboradores inactivos (trabajos por proyecto)
+        if (tipo === 'honorarios') { setTimeout(() => bootstrap.Modal.getOrCreateInstance(document.getElementById('modalHonorarios')).show(), 350); return; }
         <?php if ($col['activo']): ?>
         setTimeout(() => tipo === 'pago' ? abrirModalPago(0) : abrirModalRegistrar(tipo), 350);
         <?php endif; ?>
     }
     document.querySelectorAll('[data-registrar]').forEach(b => b.addEventListener('click', () => irYRegistrar(b.dataset.registrar)));
+    document.getElementById('btnGuardarHonorarios')?.addEventListener('click', async e => {
+        const f = document.getElementById('formHonorarios');
+        if (!f.reportValidity()) return;
+        const btn = e.currentTarget; btn.disabled = true;
+        try {
+            const r = await fetch('includes/colaborador_honorarios_guardar.php', { method: 'POST', body: new FormData(f) });
+            const d = await r.json().catch(() => ({ success: false, error: 'Respuesta inesperada del servidor (' + r.status + ').' }));
+            if (!d.success) throw new Error(d.error);
+            bootstrap.Modal.getInstance(document.getElementById('modalHonorarios'))?.hide();
+            const s = await Swal.fire({ icon: 'success', title: 'Listo', text: d.message, showCancelButton: true, confirmButtonText: 'Ver recibo', cancelButtonText: 'Cerrar' });
+            if (s.isConfirmed) window.open(d.recibo_url, '_blank');
+            location.reload();
+        } catch (err) { Swal.fire('No se pudo registrar', err.message, 'error'); }
+        finally { btn.disabled = false; }
+    });
     {
         const q = new URLSearchParams(location.search), h = location.hash.replace('#tab-', '');
         if (q.get('registrar')) irYRegistrar(q.get('registrar'));

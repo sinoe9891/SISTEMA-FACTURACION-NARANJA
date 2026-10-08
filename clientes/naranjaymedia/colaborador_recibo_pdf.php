@@ -45,7 +45,9 @@ $empresa = $sc->fetch(PDO::FETCH_ASSOC) ?: [];
 // ── Colaborador (buscar por nombre en la descripción) ─────────────────────────
 // Formato: "Sueldo Nombre Apellido — 1ª Quincena" o "Sueldo Nombre Apellido"
 $colab = null;
-if (preg_match('/^(?:Sueldo|Bono:|Viático:|Viatico:)\s+(.+?)(?:\s+—|$)/u', $gasto['descripcion'], $m)) {
+$esHonorarios = (bool)preg_match('/^Honorarios\s+(.+?)\s+—\s+(.+)$/u', $gasto['descripcion'], $mh);
+if ($esHonorarios) $m = [0, $mh[1]];
+if ($esHonorarios || preg_match('/^(?:Sueldo|Bono:|Viático:|Viatico:)\s+(.+?)(?:\s+—|$)/u', $gasto['descripcion'], $m)) {
     $sq = $pdo->prepare("SELECT * FROM colaboradores WHERE cliente_id=? AND CONCAT(nombre,' ',apellido) LIKE ? LIMIT 1");
     $sq->execute([$cliente_id, '%' . trim($m[1]) . '%']);
     $colab = $sq->fetch(PDO::FETCH_ASSOC);
@@ -80,7 +82,7 @@ $IHSS_TOPE = 10294.10;
 
 // Sueldo y puesto vigentes en la fecha del pago (historial), no los de hoy
 $histCol  = $colab ? salariosHistorial($pdo, (int)$cliente_id, (int)$colab['id']) : [];
-$salario  = $colab ? salarioVigente($histCol, $colab, $gasto['fecha']) : 0;
+$salario  = $colab && !$esHonorarios ? salarioVigente($histCol, $colab, $gasto['fecha']) : 0;   // honorarios: pago por proyecto, sin salario
 $puestoHist = null;
 foreach ($histCol[(int)($colab['id'] ?? 0)] ?? [] as $h) if ($h['desde'] <= $gasto['fecha'] && trim((string)$h['puesto']) !== '') $puestoHist = $h['puesto'];
 $tipo_pago= $colab['tipo_pago'] ?? 'mensual';
@@ -270,13 +272,14 @@ ob_start(); ?>
             <tr><td class="k">Puesto</td><td class="v"><?= $e($puesto_col) ?></td></tr>
             <?php if ($dpi_col): ?><tr><td class="k">Identidad</td><td class="v"><?= $e($dpi_col) ?></td></tr><?php endif; ?>
             <?php if ($cuenta_col): ?><tr><td class="k">Cuenta</td><td class="v"><?= $e($cuenta_col) ?></td></tr><?php endif; ?>
-            <tr><td class="k">Tipo de pago</td><td class="v"><?= $e(ucfirst($tipo_pago)) ?></td></tr>
+            <tr><td class="k">Tipo de pago</td><td class="v"><?= $esHonorarios ? "Por proyecto (honorarios)" : $e(ucfirst($tipo_pago)) ?></td></tr>
         </table>
     </td>
 </tr></table>
 
 <table class="des">
     <tr><th>Concepto</th><th class="num">Monto</th></tr>
+    <?php if ($esHonorarios): ?><tr><td>Honorarios por proyecto · <?= $e($mh[2]) ?></td><td class="num"><?= $L($gasto['monto']) ?></td></tr><?php endif; ?>
     <?php if ($bruto > 0): ?><tr><td>Salario bruto · <?= $e($periodo_lbl) ?></td><td class="num"><?= $L($bruto) ?></td></tr><?php endif; ?>
     <?php if ($ihss_e > 0): ?><tr class="menos"><td>− IHSS empleado (3.5%)</td><td class="num">− <?= $L($ihss_e) ?></td></tr><?php endif; ?>
     <?php if ($rap_e > 0): ?><tr class="menos"><td>− RAP empleado (1.5%)</td><td class="num">− <?= $L($rap_e) ?></td></tr><?php endif; ?>

@@ -23,6 +23,9 @@ try {
     $rango_cai_inicio    = strtoupper(trim($_POST['rango_cai_inicio'] ?? ''));
     $rango_cai_fin       = strtoupper(trim($_POST['rango_cai_fin']    ?? ''));
     $numero_certificado  = trim($_POST['numero_certificado']    ?? '') ?: null;
+    $imprenta_nombre     = mb_substr(trim($_POST['imprenta_nombre']   ?? ''), 0, 150) ?: null;
+    $imprenta_rtn        = mb_substr(preg_replace('/[^0-9]/', '', $_POST['imprenta_rtn'] ?? ''), 0, 20) ?: null;
+    $imprenta_telefono   = mb_substr(trim($_POST['imprenta_telefono'] ?? ''), 0, 60) ?: null;
 
     if (!$cai_id) throw new Exception("CAI no identificado.");
     if (!$cai) throw new Exception("El código CAI es obligatorio.");
@@ -90,7 +93,10 @@ try {
             rango_fin           = ?,
             rango_cai_inicio    = ?,
             rango_cai_fin       = ?,
-            numero_certificado  = ?
+            numero_certificado  = ?,
+            imprenta_nombre     = ?,
+            imprenta_rtn        = ?,
+            imprenta_telefono   = ?
         WHERE id = ?
     ")->execute([
         $cai,
@@ -103,6 +109,9 @@ try {
         $rango_cai_inicio,
         $rango_cai_fin,
         $numero_certificado,
+        $imprenta_nombre,
+        $imprenta_rtn,
+        $imprenta_telefono,
         $cai_id,
     ]);
 

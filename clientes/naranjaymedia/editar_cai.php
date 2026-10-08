@@ -590,6 +590,22 @@ require_once '../../includes/templates/header.php';
                         <span class="ec-hint">Se imprime en el PDF de las facturas emitidas con este CAI. Si se deja
                             vacío, se usa el certificado general del sistema.</span>
                     </div>
+                    <div class="ec-field">
+                        <label class="ec-label"><i class="bi bi-printer"></i> Imprenta</label>
+                        <input type="text" name="imprenta_nombre" class="ec-input" maxlength="150"
+                            value="<?= htmlspecialchars($cai['imprenta_nombre'] ?? '') ?>" placeholder="Gráficos de Occidente">
+                        <span class="ec-hint">Para talonarios impresos. Vacío = la imprenta general del sistema.</span>
+                    </div>
+                    <div class="ec-field">
+                        <label class="ec-label"><i class="bi bi-hash"></i> RTN de la imprenta</label>
+                        <input type="text" name="imprenta_rtn" class="ec-input font-monospace" maxlength="20"
+                            value="<?= htmlspecialchars($cai['imprenta_rtn'] ?? '') ?>" placeholder="04019004010909">
+                    </div>
+                    <div class="ec-field">
+                        <label class="ec-label"><i class="bi bi-telephone"></i> Teléfono de la imprenta</label>
+                        <input type="text" name="imprenta_telefono" class="ec-input" maxlength="60"
+                            value="<?= htmlspecialchars($cai['imprenta_telefono'] ?? '') ?>" placeholder="2662-0198">
+                    </div>
                 </div>
             </div>
         </div>
