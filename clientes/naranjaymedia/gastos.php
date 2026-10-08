@@ -895,16 +895,17 @@ $total  = count($gastos);
             <table class="gs-table" id="gsTable">
                 <thead>
                     <tr>
-                        <th data-col="0"><i class="bi bi-calendar3 me-1"></i>Fecha<i
+                        <th data-col="0" title="Número de gasto">N.º<i class="bi bi-arrow-up sort-icon"></i></th>
+                        <th data-col="1"><i class="bi bi-calendar3 me-1"></i>Fecha<i
                                 class="bi bi-arrow-up sort-icon"></i></th>
-                        <th data-col="1"><i class="bi bi-file-text me-1"></i>Descripción<i
+                        <th data-col="2"><i class="bi bi-file-text me-1"></i>Descripción<i
                                 class="bi bi-arrow-up sort-icon"></i></th>
-                        <th data-col="2"><i class="bi bi-tag me-1"></i>Tipo<i class="bi bi-arrow-up sort-icon"></i></th>
-                        <th data-col="3"><i class="bi bi-folder me-1"></i>Categoría<i
+                        <th data-col="3"><i class="bi bi-tag me-1"></i>Tipo<i class="bi bi-arrow-up sort-icon"></i></th>
+                        <th data-col="4"><i class="bi bi-folder me-1"></i>Categoría<i
                                 class="bi bi-arrow-up sort-icon"></i></th>
-                        <th data-col="4"><i class="bi bi-cash me-1"></i>Monto<i class="bi bi-arrow-up sort-icon"></i>
+                        <th data-col="5"><i class="bi bi-cash me-1"></i>Monto<i class="bi bi-arrow-up sort-icon"></i>
                         </th>
-                        <th data-col="5"><i class="bi bi-circle me-1"></i>Estado<i class="bi bi-arrow-up sort-icon"></i>
+                        <th data-col="6"><i class="bi bi-circle me-1"></i>Estado<i class="bi bi-arrow-up sort-icon"></i>
                         </th>
                         <th style="cursor:default;"><i class="bi bi-gear me-1"></i>Acciones</th>
                     </tr>
@@ -926,7 +927,8 @@ $total  = count($gastos);
                         <tr data-search="<?= htmlspecialchars($src) ?>"
                             data-tipo="<?= htmlspecialchars($g['tipo'] ?? '') ?>"
                             data-estado="<?= htmlspecialchars($est) ?>">
-                            <td data-col="fecha" style="white-space:nowrap;font-size:.83rem;color:#64748b;font-weight:600;">
+                            <td data-sort="<?= str_pad((string)(int)$g['id'], 10, '0', STR_PAD_LEFT) ?>" style="white-space:nowrap;font-size:.8rem;color:#94a3b8;font-weight:700;">#<?= (int)$g['id'] ?></td>
+                            <td data-col="fecha" data-sort="<?= htmlspecialchars((string)$g['fecha']) ?>" style="white-space:nowrap;font-size:.83rem;color:#64748b;font-weight:600;">
                                 <?= date('d/m/Y', strtotime($g['fecha'])) ?>
                                 <?php if ($dias_diff > 0): ?><br><span class="badge bg-danger"
                                         style="font-size:9px"><?= $dias_diff ?> días atraso</span><?php endif; ?>
@@ -961,7 +963,7 @@ $total  = count($gastos);
                                         style="background:<?= $g['cat_color'] ?>18;color:<?= $g['cat_color'] ?>;border:1px solid <?= $g['cat_color'] ?>40;font-size:.73rem;"><i
                                             class="fa-solid <?= $g['cat_icono'] ?> me-1"></i><?= htmlspecialchars($g['cat_nombre']) ?></span><?php else: ?><span
                                         style="opacity:.4;font-size:.8rem;">—</span><?php endif; ?></td>
-                            <td
+                            <td data-sort="<?= str_pad((string)(int)round((float)($g['monto'] ?? 0) * 100), 14, '0', STR_PAD_LEFT) ?>"
                                 style="font-weight:700;white-space:nowrap;<?= $est === 'anulado' ? 'text-decoration:line-through;opacity:.5' : '' ?>">
                                 L <?= number_format((float)($g['monto'] ?? 0), 2) ?></td>
                             <td>
@@ -1012,7 +1014,7 @@ $total  = count($gastos);
                 <?php if ($total > 0): ?>
                     <tfoot class="table-light">
                         <tr>
-                            <td colspan="4" class="text-end fw-bold small pe-3">TOTAL:</td>
+                            <td colspan="5" class="text-end fw-bold small pe-3">TOTAL:</td>
                             <td class="fw-bold" style="color:#d97706;">L <?= number_format((float)$kpi['total_mes'], 2) ?>
                             </td>
                             <td colspan="2"></td>
@@ -1391,7 +1393,7 @@ $total  = count($gastos);
             '<mark class="gs-highlight">$1</mark>');
         const colTxt = (r, i) => {
             const td = r.querySelectorAll('td')[i];
-            return td ? (td.dataset.original || td.textContent).trim().toLowerCase() : '';
+            return td ? (td.dataset.sort || td.dataset.original || td.textContent).trim().toLowerCase() : '';   // data-sort: número y fecha ordenan bien
         };
         const filtered = () => allRows.filter(r => {
             const s = !query || r.dataset.search.includes(query.toLowerCase());
