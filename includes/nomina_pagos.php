@@ -6,7 +6,7 @@
  */
 
 const NOMINA_MESES = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-const NOMINA_TIPOS = ['sueldo' => 'Sueldo', 'bono' => 'Bono', 'viatico' => 'Viático', 'otro' => 'Otro pago'];
+const NOMINA_TIPOS = ['sueldo' => 'Sueldo', 'honorarios' => 'Honorarios', 'bono' => 'Bono', 'viatico' => 'Viático', 'otro' => 'Otro pago'];
 
 /** Filtros normalizados desde $_GET (por defecto: el año en curso). */
 function nominaFiltros(array $g): array
@@ -32,6 +32,7 @@ function nominaFiltros(array $g): array
 function nominaTipo(string $descripcion): string
 {
     if (stripos($descripcion, 'Sueldo ') === 0) return 'sueldo';
+    if (stripos($descripcion, 'Honorarios ') === 0) return 'honorarios';   // pagos por proyecto, antes de tener salario
     if (stripos($descripcion, 'Bono') === 0) return 'bono';
     if (preg_match('/^vi[aá]tico/iu', $descripcion)) return 'viatico';
     return 'otro';

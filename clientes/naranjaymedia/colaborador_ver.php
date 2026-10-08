@@ -79,7 +79,7 @@ $sqlPagos = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icon
     FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id
     WHERE g.cliente_id=? AND (
         g.descripcion LIKE ? OR g.descripcion LIKE ? OR
-        g.descripcion LIKE ? OR g.descripcion LIKE ?
+        g.descripcion LIKE ? OR g.descripcion LIKE ? OR g.descripcion LIKE ?
     )";
 $paramsPagos = [
     $cliente_id,
@@ -87,6 +87,7 @@ $paramsPagos = [
     'Bono: %' . $nombreCompleto,
     'Viático: %' . $nombreCompleto,
     'Pago adicional - ' . $nombreCompleto . '%',
+    'Honorarios ' . $nombreCompleto . '%',   // pagos por proyecto antes de tener salario
 ];
 if (!$filtro_todo) {
     $sqlPagos .= " AND YEAR(g.fecha)=? AND MONTH(g.fecha)=?";
@@ -2476,8 +2477,8 @@ $tipos_btn_p = [
                                 <td class="text-nowrap"><?= date('d/m/Y', strtotime($h['desde'])) ?><?= $h['desde'] > date('Y-m-d') ? ' <span class="badge bg-light text-secondary border">Programado</span>' : '' ?></td>
                                 <td class="small"><?php $pu = $h['puesto'] ?? ''; $puAnt = null; foreach (array_slice($ordenados, $ix + 1) as $o) if (!empty($o['puesto'])) { $puAnt = $o['puesto']; break; } ?>
                                     <?= $pu !== '' ? htmlspecialchars($pu) . ($puAnt !== null && $puAnt !== $pu ? ' <span class="badge bg-light text-primary border">Cambio de cargo</span>' : '') : '<span class="text-muted">—</span>' ?></td>
-                                <td class="text-end fw-semibold">L <?= number_format((float)$h['salario_base'], 2) ?></td>
-                                <td class="text-end small <?= $dif > 0 ? 'text-success' : ($dif < 0 ? 'text-danger' : 'text-muted') ?>"><?= $dif === null ? 'Inicial' : ($dif == 0 ? '—' : ($dif > 0 ? '+' : '−') . ' L ' . number_format(abs($dif), 2)) ?></td>
+                                <td class="text-end fw-semibold"><?= (float)$h['salario_base'] > 0 ? 'L ' . number_format((float)$h['salario_base'], 2) : '<span class="text-muted fw-normal">Por proyecto (honorarios)</span>' ?></td>
+                                <td class="text-end small <?= $dif > 0 ? 'text-success' : ($dif < 0 ? 'text-danger' : 'text-muted') ?>"><?= $dif === null ? 'Inicial' : ($ant !== null && (float)$ant['salario_base'] <= 0 ? 'Inicia salario' : ($dif == 0 ? '—' : ($dif > 0 ? '+' : '−') . ' L ' . number_format(abs($dif), 2))) ?></td>
                                 <td class="small"><?= htmlspecialchars($h['motivo'] ?? '') ?></td>
                                 <?php if (puedeNomina()): ?><td class="text-end text-nowrap"><button type="button" class="btn btn-link btn-sm p-0 me-2 btn-editar-sueldo" data-h='<?= json_encode($h, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>' title="Editar"><i class="bi bi-pencil"></i></button><button type="button" class="btn btn-link btn-sm p-0 text-danger btn-quitar-sueldo" data-id="<?= (int)$h['id'] ?>" title="Quitar"><i class="bi bi-x-lg"></i></button></td><?php endif; ?>
                             </tr>

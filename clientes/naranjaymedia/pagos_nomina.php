@@ -50,11 +50,18 @@ require_once '../../includes/templates/header.php';
 <!-- Filtros -->
 <form class="app-card app-card-body mb-3" method="get" id="formFiltros">
     <div class="row g-2 align-items-end">
-        <div class="col-6 col-md-auto" style="min-width:11rem"><label class="form-label small">Año o mes</label>
-            <select class="form-select form-select-sm" id="fPeriodo"><option value="">Rango personalizado…</option>
-                <optgroup label="Año completo"><?php for ($y = (int)date('Y'); $y >= $anioMin; $y--): ?><option value="<?= $y ?>" <?= $periodoSel === (string)$y ? 'selected' : '' ?>>Todo <?= $y ?></option><?php endfor; ?></optgroup>
-                <optgroup label="Mes"><?php for ($i = 0; $i < 24; $i++): $t = strtotime(date('Y-m-01') . " -$i month"); $v = date('Y-m', $t); ?><option value="<?= $v ?>" <?= $periodoSel === $v ? 'selected' : '' ?>><?= $mesesTxt[(int)date('n', $t)] . ' ' . date('Y', $t) ?></option><?php endfor; ?></optgroup>
+        <?php $vista = $periodoSel === '' ? 'rango' : (strlen($periodoSel) === 4 ? 'anual' : 'mensual');
+              $anioV = (int)substr($f['desde'], 0, 4); $mesV = (int)substr($f['desde'], 5, 2); ?>
+        <div class="col-6 col-md-auto" style="min-width:9rem"><label class="form-label small">Vista</label>
+            <select class="form-select form-select-sm" id="fVista">
+                <option value="anual" <?= $vista === 'anual' ? 'selected' : '' ?>>Anual</option>
+                <option value="mensual" <?= $vista === 'mensual' ? 'selected' : '' ?>>Mensual</option>
+                <option value="rango" <?= $vista === 'rango' ? 'selected' : '' ?>>Rango de fechas</option>
             </select></div>
+        <div class="col-6 col-md-auto f-mes<?= $vista === 'mensual' ? '' : ' d-none' ?>" style="min-width:9rem"><label class="form-label small">Mes</label>
+            <select class="form-select form-select-sm" id="fMes"><?php foreach ($mesesTxt as $n => $t): ?><option value="<?= $n ?>" <?= $mesV === $n ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?></select></div>
+        <div class="col-6 col-md-auto f-anio<?= $vista === 'rango' ? ' d-none' : '' ?>" style="min-width:7rem"><label class="form-label small">Año</label>
+            <select class="form-select form-select-sm" id="fAnioSel"><?php for ($y = (int)date('Y'); $y >= $anioMin; $y--): ?><option value="<?= $y ?>" <?= $anioV === $y ? 'selected' : '' ?>><?= $y ?></option><?php endfor; ?></select></div>
         <div class="col-6 col-md-auto f-rango<?= $periodoSel ? ' d-none' : '' ?>"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" value="<?= $f['desde'] ?>"></div>
         <div class="col-6 col-md-auto f-rango<?= $periodoSel ? ' d-none' : '' ?>"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" value="<?= $f['hasta'] ?>"></div>
         <div class="col-12 col-md-auto" style="min-width:12rem"><label class="form-label small">Colaborador</label>
@@ -200,15 +207,21 @@ require_once '../../includes/templates/header.php';
 // Filtros de arriba: van aparte para que funcionen aunque la tabla esté vacía
 (function () {
     const form = document.getElementById('formFiltros');
-    form.querySelectorAll('select:not(#fPeriodo)').forEach(el => el.addEventListener('change', () => form.submit()));
-    // Año o mes: pone desde/hasta de ese período; «Rango personalizado» muestra las fechas
-    document.getElementById('fPeriodo').addEventListener('change', e => {
-        const v = e.target.value;
-        if (!v) { form.querySelectorAll('.f-rango').forEach(d => d.classList.remove('d-none')); form.desde.focus(); return; }
-        if (v.length === 4) { form.desde.value = v + '-01-01'; form.hasta.value = v + '-12-31'; }
-        else { const [y, m] = v.split('-').map(Number); form.desde.value = v + '-01'; form.hasta.value = v + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0'); }
+    const fVista = document.getElementById('fVista'), fMes = document.getElementById('fMes'), fAnio = document.getElementById('fAnioSel');
+    form.querySelectorAll('select:not(#fVista):not(#fMes):not(#fAnioSel)').forEach(el => el.addEventListener('change', () => form.submit()));
+    // Vista + Mes + Año (como en Gastos): arman desde/hasta y recargan; «Rango de fechas» muestra Desde/Hasta
+    const aplicarPeriodo = () => {
+        const v = fVista.value, y = +fAnio.value, m = +fMes.value;
+        form.querySelector('.f-mes').classList.toggle('d-none', v !== 'mensual');
+        form.querySelector('.f-anio').classList.toggle('d-none', v === 'rango');
+        form.querySelectorAll('.f-rango').forEach(d => d.classList.toggle('d-none', v !== 'rango'));
+        if (v === 'rango') { form.desde.focus(); return; }
+        const p = n => String(n).padStart(2, '0');
+        if (v === 'anual') { form.desde.value = y + '-01-01'; form.hasta.value = y + '-12-31'; }
+        else { form.desde.value = y + '-' + p(m) + '-01'; form.hasta.value = y + '-' + p(m) + '-' + p(new Date(y, m, 0).getDate()); }
         form.submit();
-    });
+    };
+    [fVista, fMes, fAnio].forEach(el => el.addEventListener('change', aplicarPeriodo));
     // Fechas: se aplican cuando la fecha está completa (al escribir el año, el campo cambia con cada dígito)
     let tFecha;
     form.querySelectorAll('input[type=date]').forEach(el => el.addEventListener('change', () => {
