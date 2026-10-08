@@ -2360,5 +2360,17 @@ suite('Historial de sueldo (aumentos) y nóminas vencidas', function () {
     $pdo->exec("UPDATE colaboradores SET salario_base = $orig WHERE id = $id");
 });
 
+suite('Permisos: solo admin y Nómina manejan colaboradores, pagos y préstamos', function () {
+    $c = login('qa.facturador@local.test');
+    foreach (['colaborador_guardar', 'colaborador_actualizar', 'colaborador_pago_guardar', 'colaborador_cuotas_info', 'colaborador_honorarios_guardar',
+              'prestamo_guardar', 'prestamo_editar', 'prestamo_eliminar', 'prestamo_cancelar', 'prestamo_cuota_pagar', 'prestamo_cuota_editar'] as $acc) {
+        $r = $c->post("includes/$acc.php", ['colaborador_id' => 1, 'id' => 1]);
+        check("facturador: $acc responde sin permiso", $r['code'] === 403 || (($r['json']['success'] ?? true) === false && str_contains((string)($r['json']['error'] ?? ''), 'permiso')), substr($r['body'], 0, 160));
+    }
+    $a = login('qa.admin@local.test');
+    $r = $a->post('includes/colaborador_cuotas_info.php', ['colaborador_id' => 1]);
+    check('admin: las acciones no le niegan el acceso', $r['code'] !== 403, substr($r['body'], 0, 160));
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

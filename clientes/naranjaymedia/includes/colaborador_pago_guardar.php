@@ -4,6 +4,12 @@
 require_once __DIR__ . '/../../../includes/db.php';
 require_once __DIR__ . '/../../../includes/session.php';
 header('Content-Type: application/json; charset=utf-8');
+// Solo administradores y el rol Nómina manejan colaboradores, pagos y préstamos
+if (!puedeNomina()) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'No tienes permiso para esta acción de colaboradores.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 define('IHSS_EMPLEADO',  0.035);
 define('IHSS_PATRONAL', 0.07);

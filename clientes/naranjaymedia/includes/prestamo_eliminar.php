@@ -2,6 +2,12 @@
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 header('Content-Type: application/json; charset=utf-8');
+// Solo administradores y el rol Nómina manejan colaboradores, pagos y préstamos
+if (!puedeNomina()) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'No tienes permiso para esta acción de colaboradores.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 try {
     $cid = (int)(USUARIO_ROL === 'superadmin'
