@@ -543,7 +543,7 @@ $meses_es = [
                         showDenyButton: true, denyButtonText: '<i class="bi bi-file-earmark-pdf me-1"></i>Ver PDF', denyButtonColor: '#475569',
                         showCancelButton: true, cancelButtonText: 'Listo',
                     }).then(r => {
-                        if (r.isConfirmed) window.location.href = 'cobros_programados?receptor_id=<?= (int)$ct['receptor_id'] ?>&tipo=envio_recibo&recibos=' + d.recibo_id;
+                        if (r.isConfirmed) window.location.href = 'nuevo_cobro?receptor_id=<?= (int)$ct['receptor_id'] ?>&tipo=envio_recibo&recibos=' + d.recibo_id;
                         else if (r.isDenied) { window.open('recibo_pdf?id=' + d.recibo_id, '_blank'); window.location.href = 'facturas_contrato?contrato_id=<?= (int)$ct['id'] ?>'; }
                         else window.location.href = 'facturas_contrato?contrato_id=<?= (int)$ct['id'] ?>';
                     });

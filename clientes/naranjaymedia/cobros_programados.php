@@ -1,12 +1,19 @@
 <?php
 // Cobros por correo: facturas en PDF + mensaje, enviados ahora o programados (hora de Honduras).
-$titulo = 'Cobros por correo';
+$nuevoCobro = defined('COBRO_PAGINA_NUEVO') && COBRO_PAGINA_NUEVO;
+$titulo = $nuevoCobro ? 'Nuevo cobro' : 'Cobros por correo';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/cobros.php';
 
 if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) {
     header('Location: dashboard');
+    exit;
+}
+// Mantener compatibles los enlaces antiguos que abren una redacción preseleccionada.
+if (!$nuevoCobro && !isset($_GET['ajax']) && isset($_GET['receptor_id'])) {
+    $preseleccion = array_intersect_key($_GET, array_flip(['receptor_id', 'tipo', 'facturas', 'contrato_id', 'recibos', 'plan', 'anticipos']));
+    header('Location: nuevo_cobro?' . http_build_query($preseleccion));
     exit;
 }
 $cid = cliente_actual();
@@ -30,7 +37,7 @@ $preAnticipos = array_values(array_filter(array_map('intval', explode(',', (stri
 $extras = $instalado && cobrosExtrasDisponible($pdo);
 
 require_once '../../includes/cobros_listado.php';
-$listado = $instalado ? cobrosListado($pdo, $cid, $_GET) : ['cobros' => [], 'total' => 0, 'pagina' => 1, 'paginas' => 1, 'por_pagina' => 25];
+$listado = $instalado && !$nuevoCobro ? cobrosListado($pdo, $cid, $_GET) : ['cobros' => [], 'total' => 0, 'pagina' => 1, 'paginas' => 1, 'por_pagina' => 25];
 $cobros = $listado['cobros'];
 $miCorreo = $pdo->prepare("SELECT correo FROM usuarios WHERE id = ?");
 $miCorreo->execute([(int)USUARIO_ID]);
@@ -75,10 +82,14 @@ require_once '../../includes/templates/header.php';
 
 <div class="app-page-header">
     <div>
-        <h1 class="app-page-title"><i class="bi bi-send-check me-2"></i>Cobros por correo</h1>
+        <h1 class="app-page-title"><i class="bi bi-send-check me-2"></i><?= htmlspecialchars($titulo) ?></h1>
         <p class="app-page-sub">Envía al cliente sus facturas o recibos en PDF (con los documentos de la empresa que quieras, como la Constancia del SAR), un cobro del saldo pendiente o un recordatorio de los pagos de su plan, ahora o programado (hora de Honduras).</p>
     </div>
-    <button class="btn btn-primary" id="btnNuevoCobro" <?= $instalado ? '' : 'disabled' ?>><i class="bi bi-plus-lg me-1"></i> Nuevo cobro</button>
+    <?php if ($nuevoCobro): ?>
+        <a class="btn btn-outline-secondary" href="cobros_programados"><i class="bi bi-arrow-left me-1"></i> Volver a cobros</a>
+    <?php elseif ($instalado): ?>
+        <a class="btn btn-primary" href="nuevo_cobro"><i class="bi bi-plus-lg me-1"></i> Nuevo cobro</a>
+    <?php endif; ?>
 </div>
 
 <?php if (!$instalado): ?>
@@ -89,10 +100,11 @@ require_once '../../includes/templates/header.php';
             <div>La cuenta de correo <strong>Facturación</strong> no está lista. <a href="configuracion_correo?tab=facturacion" class="alert-link">Configúrala aquí</a> (servidor, usuario y contraseña) para poder enviar.</div></div>
     <?php endif; ?>
 
+    <?php if ($nuevoCobro): ?>
     <!-- Nuevo cobro -->
-    <div class="app-card mb-3" id="cardNuevo" style="display:none">
+    <div class="app-card mb-3" id="cardNuevo">
         <div class="app-card-header"><span><i class="bi bi-envelope-plus me-1"></i> Nuevo cobro</span>
-            <button type="button" class="btn-close" id="btnCerrarNuevo" aria-label="Cerrar"></button></div>
+            <a href="cobros_programados" class="btn btn-sm btn-outline-secondary">Cancelar</a></div>
         <form class="app-card-body" id="formCobro" novalidate>
             <input type="hidden" name="accion" value="crear">
             <div class="row g-3">
@@ -176,6 +188,7 @@ require_once '../../includes/templates/header.php';
         </form>
     </div>
 
+    <?php else: ?>
     <!-- Lista -->
     <div class="app-card">
         <div class="app-card-header"><span><i class="bi bi-list-check me-1"></i> Cobros</span><span class="app-badge" id="cbTotal"><?= $listado['total'] ?></span></div>
@@ -204,6 +217,8 @@ require_once '../../includes/templates/header.php';
     </div>
 
     <div class="app-pager mb-3" id="cbPie" aria-live="polite"></div>
+
+    <?php endif; ?>
 
     <!-- Vista previa del correo (no envía nada) -->
     <div class="modal fade" id="mPrevia" tabindex="-1" style="z-index:1065"><div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down"><div class="modal-content">
@@ -353,10 +368,6 @@ require_once '../../includes/templates/header.php';
     });
     if ($filas) { pintarPagina(<?= json_encode(array_diff_key($listado, ['cobros' => true])) ?>); seleccionLista(); }
 
-    const abrir = () => { card.style.display = ''; card.scrollIntoView({ behavior: 'smooth' }); };
-    document.getElementById('btnNuevoCobro')?.addEventListener('click', abrir);
-    document.getElementById('btnCerrarNuevo')?.addEventListener('click', () => card.style.display = 'none');
-
     let pre = <?= json_encode(['ids' => $preFacturas, 'contrato' => $preContrato, 'recibos' => $preRecibos, 'plan' => $prePlan, 'anticipos' => $preAnticipos]) ?>;   // preselección del acceso directo (solo la primera carga)
     const $tipo = document.getElementById('cTipo'), $rec = document.getElementById('cRecibos'), $plan = document.getElementById('cPlan');
     // Qué lista usa cada tipo: facturas (saldo/envío), recibos o pagos del plan
@@ -436,7 +447,7 @@ require_once '../../includes/templates/header.php';
         const saldo = filas.reduce((s, i) => s + Number(i.dataset.saldo), 0);
         document.getElementById('cResumen').innerHTML = filas.length ? `<strong>${filas.length}</strong> factura(s) · saldo <strong>${L(saldo)}</strong>` : '<span class="text-muted">Ninguna factura seleccionada.</span>';
     }
-    $tb.addEventListener('change', resumen);
+    $tb?.addEventListener('change', resumen);
 
     // CC: contactos generales del cliente + los del proyecto/contrato de las facturas marcadas.
     // Si el usuario escribe en el campo, ya no se reemplaza automáticamente.
@@ -444,15 +455,15 @@ require_once '../../includes/templates/header.php';
     const ccBase = <?= json_encode(array_values(array_filter(correoLista((string)($cfgFact['responder_a'] ?? ''))))) ?>;
     let contactos = [], ccManual = false;
     const $cc = document.getElementById('cCc');
-    $cc.addEventListener('input', () => ccManual = true);
+    $cc?.addEventListener('input', () => ccManual = true);
     function llenarCc() {
         if (ccManual) return;
         const ks = new Set([...$tb.querySelectorAll('input[type=checkbox]:checked')].map(i => i.dataset.contrato).filter(Boolean));
         const correos = [...ccBase, ...contactos.filter(c => !c.contrato_id || ks.has(String(c.contrato_id))).map(c => c.email)];
         $cc.value = [...new Set(correos.map(c => c.trim().toLowerCase()).filter(Boolean))].join(', ');
     }
-    llenarCc();
-    $tb.addEventListener('change', llenarCc);
+    if (form) llenarCc();
+    $tb?.addEventListener('change', llenarCc);
     function marcar(fn) { $tb.querySelectorAll('input[type=checkbox]').forEach(i => i.checked = fn(i)); resumen(); llenarCc(); }
     document.getElementById('selConSaldo')?.addEventListener('click', e => { e.preventDefault(); marcar(i => Number(i.dataset.saldo) > 0); });
     document.getElementById('selNinguna')?.addEventListener('click', e => { e.preventDefault(); marcar(() => false); });
@@ -491,7 +502,7 @@ require_once '../../includes/templates/header.php';
             pintarDocs(true);
             pre = { ids: [], contrato: 0, recibos: [], plan: [], anticipos: [] };
             resumen();
-            llenarCc();
+            if (form) llenarCc();
             if (seleccionadas().length) generar();
         } catch (err) { $tb.innerHTML = `<tr><td colspan="6" class="text-danger py-3">${esc(err.message)}</td></tr>`; }
     }
@@ -524,7 +535,7 @@ require_once '../../includes/templates/header.php';
     }
     document.getElementById('btnGenerar')?.addEventListener('click', e => { e.preventDefault(); generar(); });
     $tipo?.addEventListener('change', () => { mostrarBloque(); if (seleccionadas().length) generar(); });
-    mostrarBloque();
+    if (form) mostrarBloque();
     $rec?.addEventListener('change', () => generar());
     $plan?.addEventListener('change', () => seleccionadas().length && generar());
     const marcarPlan = fn => { $plan.querySelectorAll('input[type=checkbox]').forEach(i => i.checked = fn(+i.dataset.dias)); if (seleccionadas().length) generar(); };
@@ -545,7 +556,7 @@ require_once '../../includes/templates/header.php';
         }
         Swal.fire({ title: modo === 'programar' ? 'Generando PDF y programando…' : 'Generando PDF y enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer)
-            .then(d => Swal.fire({ icon: 'success', title: d.message }).then(() => { if (modo !== 'prueba') location.reload(); }))
+            .then(d => Swal.fire({ icon: 'success', title: d.message }).then(() => { if (modo !== 'prueba') location.href = 'cobros_programados'; }))
             .catch(err => Swal.fire('No se pudo', err.message, 'error'));
     }));
 
@@ -682,7 +693,7 @@ require_once '../../includes/templates/header.php';
         accion(fd);
     });
 
-    if ($cli?.value) { abrir(); cargarFacturas(); }
+    if ($cli?.value) cargarFacturas();
 })();
 </script>
 

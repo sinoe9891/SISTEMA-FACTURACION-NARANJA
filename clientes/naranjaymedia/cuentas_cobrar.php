@@ -93,7 +93,7 @@ require_once '../../includes/templates/header.php';
                             <td class="app-num"><?= $p['facturas'] ?></td>
                             <?php foreach (array_keys($tramos) as $t): ?><td class="app-num <?= $p[$t] > 0 ? 'text-' . $colorTramo[$t] : 'text-muted' ?>"><?= $p[$t] > 0 ? number_format($p[$t], 2) : '—' ?></td><?php endforeach; ?>
                             <td class="app-num fw-semibold"><?= $L($p['saldo']) ?></td>
-                            <?php if ($puedeCorreo): ?><td class="text-end"><a class="btn btn-sm btn-outline-primary text-nowrap" href="cobros_programados?receptor_id=<?= (int)$rid ?>" title="Enviar o programar el cobro de su saldo por correo"><i class="bi bi-send"></i> Cobrar por correo</a></td><?php endif; ?>
+                            <?php if ($puedeCorreo): ?><td class="text-end"><a class="btn btn-sm btn-outline-primary text-nowrap" href="nuevo_cobro?receptor_id=<?= (int)$rid ?>" title="Enviar o programar el cobro de su saldo por correo"><i class="bi bi-send"></i> Cobrar por correo</a></td><?php endif; ?>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -123,7 +123,7 @@ require_once '../../includes/templates/header.php';
                             <td class="app-num fw-semibold"><?= number_format((float)$l['total'], 2) ?></td>
                             <td class="text-nowrap"><span class="badge rounded-pill" style="background:<?= $sbg ?>;color:<?= $sfg ?>"><?= $stx ?></span></td>
                             <td class="text-end text-nowrap">
-                                <?php if ($puedeCorreo): ?><a class="btn btn-sm btn-outline-secondary" href="cobros_programados?receptor_id=<?= $l['receptor_id'] ?>&tipo=recordatorio_pago&plan=<?= (int)$l['id'] ?>" title="Enviar un recordatorio de pago por correo"><i class="bi bi-send"></i></a><?php endif; ?>
+                                <?php if ($puedeCorreo): ?><a class="btn btn-sm btn-outline-secondary" href="nuevo_cobro?receptor_id=<?= $l['receptor_id'] ?>&tipo=recordatorio_pago&plan=<?= (int)$l['id'] ?>" title="Enviar un recordatorio de pago por correo"><i class="bi bi-send"></i></a><?php endif; ?>
                                 <?php if ($puedeCobrar): ?><a class="btn btn-sm btn-outline-primary" href="facturas_contrato?contrato_id=<?= (int)$l['contrato_id'] ?>#planPagos" title="Registrar el cobro en la ficha del contrato"><i class="bi bi-cash-coin"></i> Registrar cobro</a><?php endif; ?>
                             </td>
                         </tr>
@@ -159,7 +159,7 @@ require_once '../../includes/templates/header.php';
                             <td class="app-num fw-semibold"><?= number_format((float)$f['saldo'], 2) ?></td>
                             <td class="text-end text-nowrap">
                                 <button class="btn btn-sm btn-outline-secondary btn-abonos" data-id="<?= (int)$f['id'] ?>" title="Ver abonos"><i class="bi bi-clock-history"></i></button>
-                                <?php if ($puedeCorreo): ?><a class="btn btn-sm btn-outline-primary" href="cobros_programados?receptor_id=<?= (int)$f['receptor_id'] ?>&facturas=<?= (int)$f['id'] ?>" title="Cobrar esta factura por correo"><i class="bi bi-send"></i></a><?php endif; ?>
+                                <?php if ($puedeCorreo): ?><a class="btn btn-sm btn-outline-primary" href="nuevo_cobro?receptor_id=<?= (int)$f['receptor_id'] ?>&facturas=<?= (int)$f['id'] ?>" title="Cobrar esta factura por correo"><i class="bi bi-send"></i></a><?php endif; ?>
                                 <?php if ($puedeCobrar): ?>
                                     <button class="btn btn-sm btn-outline-primary btn-cobrar" data-id="<?= (int)$f['id'] ?>" data-saldo="<?= number_format((float)$f['saldo'], 2, '.', '') ?>"
                                         data-corr="<?= htmlspecialchars($f['correlativo']) ?>" data-fecha="<?= substr($f['fecha_emision'], 0, 10) ?>"><i class="bi bi-cash-coin"></i> Registrar cobro</button>

@@ -662,7 +662,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                 </a>
             <?php endif; ?>
             <?php if ($puedeCorreo && !$esRecibo): ?>
-                <a href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&contrato_id=<?= (int)$contrato['id'] ?>" class="btn btn-sm"
+                <a href="nuevo_cobro?receptor_id=<?= (int)$contrato['receptor_id'] ?>&contrato_id=<?= (int)$contrato['id'] ?>" class="btn btn-sm"
                     style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.3);font-weight:600"
                     title="Enviar o programar por correo el cobro de las facturas con saldo de este contrato">
                     <i class="bi bi-send me-1"></i>Cobrar por correo
@@ -932,7 +932,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                 <span class="fc-card-title"><i class="bi bi-calendar2-check text-success"></i> Plan de pagos
                     <?php if ($plan): ?><small class="text-muted fw-normal"><?= $planRes['n_pagadas'] ?> de <?= $planRes['n'] ?> pagados</small><?php endif; ?></span>
                 <?php if ($puedeCorreo && $planPendIds): ?>
-                    <a class="btn btn-sm btn-outline-secondary me-1" href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=recordatorio_pago&plan=<?= implode(',', $planPendIds) ?>" title="Enviar o programar por correo un recordatorio de los pagos pendientes"><i class="bi bi-send me-1"></i>Enviar recordatorio</a>
+                    <a class="btn btn-sm btn-outline-secondary me-1" href="nuevo_cobro?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=recordatorio_pago&plan=<?= implode(',', $planPendIds) ?>" title="Enviar o programar por correo un recordatorio de los pagos pendientes"><i class="bi bi-send me-1"></i>Enviar recordatorio</a>
                 <?php endif; ?>
                 <?php if ($puedePlan): ?>
                     <button class="btn btn-sm btn-outline-primary" id="btnEditarPlan"><i class="bi bi-<?= $plan ? 'pencil' : 'plus-lg' ?> me-1"></i><?= $plan ? 'Editar plan' : 'Crear plan de pagos' ?></button>
@@ -1055,7 +1055,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 <td class="small"><?= htmlspecialchars($a['referencia'] ?? '') ?: '—' ?></td>
                                 <td class="text-end fw-semibold text-nowrap">L <?= number_format((float)$a['monto'], 2) ?></td>
                                 <td class="text-center small"><?= $a['factura_id'] ? '<a href="ver_factura?id=' . (int)$a['factura_id'] . '" target="_blank" class="font-monospace">' . htmlspecialchars($a['correlativo']) . '</a>' : ((int)$a['anulado'] ? '' : '<span class="badge" style="background:#fef3c7;color:#92400e">Sin factura</span>') ?></td>
-                                <td class="text-end text-nowrap"><?php if (!(int)$a['anulado']): ?><a href="recibo_pdf?anticipo=<?= (int)$a['id'] ?>" target="_blank" class="btn btn-link btn-sm p-0 me-2 text-secondary" title="Recibo de anticipo en PDF"><i class="bi bi-file-earmark-pdf"></i></a><?php if ($puedeCorreo): ?><a href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&anticipos=<?= (int)$a['id'] ?>" class="btn btn-link btn-sm p-0 me-2 text-secondary" title="Enviar el recibo por correo (ahora o programado)"><i class="bi bi-send"></i></a><?php endif; ?><?php endif; ?><?php if (!(int)$a['anulado'] && !$a['factura_id'] && in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?><button class="btn btn-link btn-sm p-0 text-danger btn-anular-anticipo" data-id="<?= (int)$a['id'] ?>" title="Anular"><i class="bi bi-x-circle"></i></button><?php endif; ?></td>
+                                <td class="text-end text-nowrap"><?php if (!(int)$a['anulado']): ?><a href="recibo_pdf?anticipo=<?= (int)$a['id'] ?>" target="_blank" class="btn btn-link btn-sm p-0 me-2 text-secondary" title="Recibo de anticipo en PDF"><i class="bi bi-file-earmark-pdf"></i></a><?php if ($puedeCorreo): ?><a href="nuevo_cobro?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&anticipos=<?= (int)$a['id'] ?>" class="btn btn-link btn-sm p-0 me-2 text-secondary" title="Enviar el recibo por correo (ahora o programado)"><i class="bi bi-send"></i></a><?php endif; ?><?php endif; ?><?php if (!(int)$a['anulado'] && !$a['factura_id'] && in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?><button class="btn btn-link btn-sm p-0 text-danger btn-anular-anticipo" data-id="<?= (int)$a['id'] ?>" title="Anular"><i class="bi bi-x-circle"></i></button><?php endif; ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -1105,7 +1105,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 <td class="small"><?= htmlspecialchars(ucfirst($r['metodo_pago'])) ?></td>
                                 <td class="text-end fw-bold" style="color:var(--brand)">L <?= number_format((float)$r['monto'], 2) ?></td>
                                 <td class="text-center text-nowrap"><a href="recibo_pdf?id=<?= (int)$r['id'] ?>" target="_blank" class="btn btn-sm btn-outline-secondary" title="Ver el recibo en PDF"><i class="bi bi-file-earmark-pdf"></i></a>
-                                    <?php if ($puedeCorreo): ?><a href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&recibos=<?= (int)$r['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Enviar este recibo por correo"><i class="bi bi-send"></i></a><?php endif; ?></td>
+                                    <?php if ($puedeCorreo): ?><a href="nuevo_cobro?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&recibos=<?= (int)$r['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Enviar este recibo por correo"><i class="bi bi-send"></i></a><?php endif; ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -1222,7 +1222,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                             </button>
                                         <?php endif; ?>
                                         <?php if ($puedeCorreo): ?>
-                                            <a href="cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&facturas=<?= (int)$f['id'] ?>&tipo=<?= $f['saldo'] > 0 ? 'saldo_pendiente' : 'envio_factura' ?>"
+                                            <a href="nuevo_cobro?receptor_id=<?= (int)$contrato['receptor_id'] ?>&facturas=<?= (int)$f['id'] ?>&tipo=<?= $f['saldo'] > 0 ? 'saldo_pendiente' : 'envio_factura' ?>"
                                                 class="btn btn-sm btn-outline-secondary" title="Enviar esta factura por correo"><i class="bi bi-send"></i></a>
                                         <?php endif; ?>
                                         <button class="btn btn-sm btn-outline-danger btn-desvincular"
@@ -1800,7 +1800,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
         showDenyButton: true, denyButtonText: '<i class="bi bi-file-earmark-pdf me-1"></i>Ver recibo', denyButtonColor: '#475569',
         showCancelButton: true, cancelButtonText: 'Listo',
     }).then(r => {
-        if (r.isConfirmed) location.href = 'cobros_programados?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&anticipos=' + id;
+        if (r.isConfirmed) location.href = 'nuevo_cobro?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&anticipos=' + id;
         else { if (r.isDenied) window.open('recibo_pdf?anticipo=' + id, '_blank'); location.reload(); }
     });
     const enviar = fd => fetch(URL_ANT, { method: 'POST', body: fd }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.error || 'No se pudo guardar.'); return d; });

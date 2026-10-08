@@ -1787,7 +1787,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			if (cbs.some(cb => cb.dataset.estado !== 'emitida')) return Swal.fire('Facturas no válidas', 'Solo se pueden enviar facturas emitidas (no anuladas).', 'info');
 			const clientes = new Set(cbs.map(cb => cb.dataset.receptorId));
 			if (clientes.size > 1) return Swal.fire('Varios clientes', 'Cada correo va a un solo cliente. Selecciona facturas de un mismo cliente.', 'info');
-			window.location.href = 'cobros_programados?receptor_id=' + [...clientes][0] + '&tipo=envio_factura&facturas=' + cbs.map(cb => cb.dataset.facturaId).join(',');
+			window.location.href = 'nuevo_cobro?receptor_id=' + [...clientes][0] + '&tipo=envio_factura&facturas=' + cbs.map(cb => cb.dataset.facturaId).join(',');
 		});
 		$bulkMensajeBtn?.addEventListener('click', () => {
 			const ids = Array.from(selectedIds);

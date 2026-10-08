@@ -29,6 +29,13 @@ suite('Cobros lista y adjuntos editables', function () {
         $page = $cli->get('cobros_programados.php');
         check('pantalla incluye filtro autocompletable y edición de documentos', sinErroresPhp($page['body']) && str_contains($page['body'],'id="cbCliente" data-buscar') && str_contains($page['body'],'id="eDocs"'), errorPhp($page['body']));
         file_put_contents('/tmp/cobros-pagina-test.html', $page['body']);
+        check('listado sin formulario nuevo y con enlace a página independiente', !str_contains($page['body'], 'id="formCobro"') && str_contains($page['body'], 'href="nuevo_cobro"'));
+        $nuevo = $cli->get('nuevo_cobro.php', ['receptor_id'=>$rid, 'tipo'=>'saldo_pendiente', 'facturas'=>'256,245']);
+        check('página nueva solo con formulario y preselección', sinErroresPhp($nuevo['body']) && str_contains($nuevo['body'], 'id="formCobro"') && !str_contains($nuevo['body'], 'id="cbTabla"') && str_contains($nuevo['body'], '"ids":[256,245]') && str_contains($nuevo['body'], 'value="saldo_pendiente" selected'));
+        file_put_contents('/tmp/cobros-nuevo-test.html', $nuevo['body']);
+        $antiguo = $cli->get('cobros_programados.php', ['receptor_id'=>$rid, 'tipo'=>'envio_factura', 'facturas'=>'256,245']);
+        check('enlace antiguo redirige preservando selección', $antiguo['code'] === 302 && $antiguo['loc'] === 'nuevo_cobro?'.http_build_query(['receptor_id'=>$rid, 'tipo'=>'envio_factura', 'facturas'=>'256,245']));
+
         foreach ([2,$cidOtro] as $cid) {
             $dir = docDir($cid); if (!is_dir($dir)) mkdir($dir,0775,true);
             $archivo = $tag . '-' . $cid . '.pdf';
