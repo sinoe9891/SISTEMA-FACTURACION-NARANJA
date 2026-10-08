@@ -21,8 +21,12 @@ function gastosCobrarDisponible(PDO $pdo): bool
 function gastosPorCobrar(PDO $pdo, int $cid, int $receptorId = 0): array
 {
     if (!gastosCobrarDisponible($pdo)) return [];
-    $sql = "SELECT g.id, g.fecha, g.descripcion, g.monto, g.estado, g.proveedor, g.cobrar_receptor_id, cf.nombre AS cliente
-            FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id
+    // Si viene de una licencia, también su comisión (precio al cliente = costo + %)
+    $lic = false;
+    try { $lic = (bool)$pdo->query("SHOW COLUMNS FROM gastos LIKE 'licencia_id'")->fetchColumn(); } catch (Throwable $e) { $lic = false; }
+    $sql = "SELECT g.id, g.fecha, g.descripcion, g.monto, g.estado, g.proveedor, g.cobrar_receptor_id, cf.nombre AS cliente"
+         . ($lic ? ", l.comision_pct" : ", NULL AS comision_pct") . "
+            FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id" . ($lic ? " LEFT JOIN licencias l ON l.id = g.licencia_id" : '') . "
             WHERE g.cliente_id = ? AND g.cobrar_receptor_id IS NOT NULL AND g.cobrado_factura_id IS NULL
               AND g.estado <> 'anulado' AND (g.estado = 'pagado' OR g.fecha <= CURDATE())"
          . ($receptorId ? " AND g.cobrar_receptor_id = ?" : '') . " ORDER BY g.fecha, g.id";

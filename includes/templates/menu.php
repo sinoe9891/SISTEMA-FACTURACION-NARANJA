@@ -50,6 +50,7 @@ $menuLateral = [
 	'Pagos y gastos' => array_values(array_filter([
 		['cuentas_pagar', 'bi-calendar-check', 'Cuentas por pagar', []],
 		['gastos', 'bi-wallet2', 'Gastos', ['gasto_ver']],
+		$__menuEsAdmin ? ['licencias', 'bi-key', 'Licencias', []] : null,
 		$__menuEsAdmin ? ['bouchers', 'bi-receipt-cutoff', 'Bouchers', []] : null,
 		['categorias_gastos', 'bi-tags', 'Categorías de gastos', []],
 	])),

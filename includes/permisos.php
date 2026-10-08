@@ -36,7 +36,7 @@ function permisoMenu(PDO $pdo, string $rol, string $pagina): bool
 function permisoDisponible(string $rol, string $pagina): bool
 {
     $soloSuper = ['configuracion_permisos', 'empresas', 'seleccionar_cliente'];
-    $soloAdmin = ['configuracion_firmas', 'configuracion_documentos', 'configuracion_cai', 'configuracion_mensajes', 'configuracion_correo', 'usuarios', 'respaldos', 'cobros_programados', 'bouchers', 'pagos_nomina', 'socios'];
+    $soloAdmin = ['configuracion_firmas', 'configuracion_documentos', 'configuracion_cai', 'configuracion_mensajes', 'configuracion_correo', 'usuarios', 'respaldos', 'cobros_programados', 'bouchers', 'pagos_nomina', 'socios', 'licencias'];
     if ($pagina === 'dashboard' || in_array($pagina, $soloSuper, true)) return false;
     if ($rol === 'nomina') return defined('ROL_NOMINA_ARCHIVOS') && in_array($pagina, ROL_NOMINA_ARCHIVOS, true);
     if ($rol !== 'admin' && in_array($pagina, $soloAdmin, true)) return false;

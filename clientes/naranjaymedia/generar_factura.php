@@ -54,7 +54,8 @@ if ($get_receptor_id)
 // Gastos pagados por la empresa que se le cobran al cliente (p. ej. su hosting): aviso al elegir el cliente
 require_once '../../includes/gastos_cobrar.php';
 $gastosCobrar = [];
-foreach (gastosPorCobrar($pdo, (int)$cliente_id) as $gc) $gastosCobrar[(int)$gc['cobrar_receptor_id']][] = ['id' => (int)$gc['id'], 'fecha' => $gc['fecha'], 'descripcion' => $gc['descripcion'], 'monto' => (float)$gc['monto']];
+foreach (gastosPorCobrar($pdo, (int)$cliente_id) as $gc) $gastosCobrar[(int)$gc['cobrar_receptor_id']][] = ['id' => (int)$gc['id'], 'fecha' => $gc['fecha'], 'descripcion' => $gc['descripcion'], 'monto' => (float)$gc['monto'],
+    'pct' => $gc['comision_pct'] !== null ? (float)$gc['comision_pct'] : null, 'precio' => $gc['comision_pct'] !== null ? round((float)$gc['monto'] * (1 + (float)$gc['comision_pct'] / 100), 2) : null];
 require_once '../../includes/templates/header.php';
 ?>
 
@@ -478,7 +479,7 @@ require_once '../../includes/templates/header.php';
         const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         document.getElementById('listaGastosCobrar').innerHTML = lista.map(g => `<div class="form-check">
             <input class="form-check-input" type="checkbox" name="gastos_cobrar[]" value="${g.id}" id="gc${g.id}">
-            <label class="form-check-label" for="gc${g.id}">${esc(g.descripcion)} · ${g.fecha.split('-').reverse().join('/')} · <strong>L ${g.monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></label></div>`).join('');
+            <label class="form-check-label" for="gc${g.id}">${esc(g.descripcion)} · ${g.fecha.split('-').reverse().join('/')} · costo <strong>L ${g.monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>${g.precio !== null ? ` → cobrar <strong>L ${g.precio.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> (+${g.pct} %)` : ''}</label></div>`).join('');
     }
     if (document.getElementById('receptor_id').value) pintarGastosCobrar(document.getElementById('receptor_id').value);
 

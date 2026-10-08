@@ -6,6 +6,7 @@ require_once '../../includes/functions.php';
 require_once '../../includes/contrato_plan.php';
 require_once '../../includes/proyeccion_gastos.php';
 require_once '../../includes/cuentas.php';
+require_once '../../includes/licencias.php';
 require_once '../../includes/templates/header.php';
 
 $cliente_id = (int)(USUARIO_ROL === 'superadmin'
@@ -192,6 +193,11 @@ for ($offset = 0; $offset < 12; $offset++) {
 
     $ing_real = $egr_real = null;
 
+    // Licencias que se le cobran a clientes: el precio con comisión en el mes de su renovación
+    foreach (licenciasDisponible($pdo) ? licenciasIngresosMes($pdo, (int)$cliente_id, $anio, $mes) : [] as $li) {
+        $ing_estandar += $li['monto'];
+        $ing_detalle[] = $li + ['tipo' => 'licencia'];
+    }
     $ing_cxc = $offset === 0 ? $cxcMes : 0.0;   // lo pendiente de cobro se espera en el mes actual
     if ($offset === 0) $ing_detalle = array_merge($ing_detalle, $cxcDetalle);
     $ing_total = $ing_estandar + $ing_periodico + $ing_recibo + $ing_cxc;
