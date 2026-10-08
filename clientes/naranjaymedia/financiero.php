@@ -1042,41 +1042,7 @@ for ($m = 1; $m <= 12; $m++) {
                         <?php endfor; ?>
                         <td class="text-end text-muted small">L <?= number_format($tot_ext, 0) ?></td>
                     </tr>
-                    <!-- Únicos -->
-                    <tr class="tr-sub tr-egr">
-                        <td class="ps-4" style="color:#7c3aed;font-size:.75rem">
-                            ↳ 📌 De esos, pagos únicos
-                            <span title="Los mismos gastos de arriba (fijos + variables + extraordinarios), vistos por frecuencia: los que no se repiten (tarjeta, impuestos, compras…). No se suman otra vez al total."
-                                style="font-size:.63rem;background:#ede9fe;color:#7c3aed;padding:1px 5px;border-radius:4px;margin-left:3px;font-weight:600;cursor:help">ya incluidos arriba</span>
-                        </td>
-                        <?php $tot_uni = 0;
-                        for ($m = 1; $m <= 12; $m++): $v = (float)($egr_por_mes[$m]['unicos'] ?? 0);
-                            $tot_uni += $v; ?>
-                            <td class="text-end" style="color:#7c3aed;font-size:.77rem">
-                                <?= $v > 0 ? number_format($v, 0) : '' ?>
-                            </td>
-                        <?php endfor; ?>
-                        <td class="text-end small fw-semibold" style="color:#7c3aed">L <?= number_format($tot_uni, 0) ?>
-                        </td>
-                    </tr>
-                    <!-- Anuales -->
-                    <tr class="tr-sub tr-egr">
-                        <td class="ps-4" style="color:#0891b2;font-size:.75rem">
-                            ↳ 📆 De esos, anuales
-                            <span
-                                style="font-size:.63rem;background:#e0f2fe;color:#0891b2;padding:1px 5px;border-radius:4px;margin-left:3px;font-weight:600">1
-                                vez/año</span>
-                        </td>
-                        <?php $tot_anu = 0;
-                        for ($m = 1; $m <= 12; $m++): $v = (float)($egr_por_mes[$m]['anuales'] ?? 0);
-                            $tot_anu += $v; ?>
-                            <td class="text-end" style="color:#0891b2;font-size:.77rem">
-                                <?= $v > 0 ? number_format($v, 0) : '' ?>
-                            </td>
-                        <?php endfor; ?>
-                        <td class="text-end small fw-semibold" style="color:#0891b2">L <?= number_format($tot_anu, 0) ?>
-                        </td>
-                    </tr>
+                    <!-- «Únicos» y «Anuales» se quitaron: eran los mismos gastos de arriba vistos por frecuencia y confundían (parecían sumarse aparte) -->
                     <tr <!-- ↳ Desglose por categoría -->
                         <?php foreach ($egr_cat_info as $cid => $cat):
                             $cat_anual_t = 0;
