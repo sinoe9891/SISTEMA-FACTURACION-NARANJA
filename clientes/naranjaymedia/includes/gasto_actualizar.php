@@ -196,7 +196,7 @@ try {
         $pdo->prepare($sqlUpd)->execute(array_merge($paramsUpd, [$gasto_id, $cid]));
         // Gasto ↔ anticipo a proveedor (los abonos a capital y las compras de activos se manejan en Activos y préstamos)
         $nat = $_POST['naturaleza'] ?? '';
-        if (in_array($nat, ['gasto', 'anticipo'], true) && in_array($gastoActual['naturaleza'] ?? 'gasto', ['gasto', 'anticipo'], true))
+        if (in_array($nat, ['gasto', 'anticipo', 'isv'], true) && in_array($gastoActual['naturaleza'] ?? 'gasto', ['gasto', 'anticipo', 'isv'], true))
             $pdo->prepare("UPDATE gastos SET naturaleza = ? WHERE id = ? AND cliente_id = ?")->execute([$nat, $gasto_id, $cid]);
         // Si pasó de pendiente a pagado y es recurrente, programar el período siguiente
         // (con los datos ya editados: monto, día de pago, vencimiento, etc.)

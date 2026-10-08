@@ -951,8 +951,8 @@ $total  = count($gastos);
                                         style="font-size:9px"><?= ucfirst($g['frecuencia']) ?></span>
                                 <?php endif; ?>
                                 <?php $natG = $g['naturaleza'] ?? 'gasto'; if ($natG !== 'gasto'): ?>
-                                    <span class="badge border" style="font-size:9px;background:#eef2ff;color:#3730a3" title="<?= $natG === 'anticipo' ? 'Dinero a favor: cuando llegue la factura del proveedor, edítalo y cambia la naturaleza a «Gasto del período».' : 'No resta en el Estado de resultados.' ?>">
-                                        <?= ['capital' => 'Abono a capital (no es gasto)', 'activo' => 'Compra de activo (se deprecia)', 'anticipo' => 'Anticipo a proveedor'][$natG] ?? $natG ?></span>
+                                    <span class="badge border" style="font-size:9px;background:#eef2ff;color:#3730a3" title="<?= $natG === 'anticipo' ? 'Dinero a favor: cuando llegue la factura del proveedor, edítalo y cambia la naturaleza a «Gasto del período».' : ($natG === 'isv' ? 'ISV cobrado a los clientes que se entrega al SAR: no se contó como ingreso, así que tampoco resta como gasto. Multas, intereses y honorarios van aparte como gasto.' : 'No resta en el Estado de resultados.') ?>">
+                                        <?= ['capital' => 'Abono a capital (no es gasto)', 'activo' => 'Compra de activo (se deprecia)', 'anticipo' => 'Anticipo a proveedor', 'isv' => 'Pago de ISV (no es gasto)'][$natG] ?? $natG ?></span>
                                 <?php endif; ?>
                             </td>
                             <td><span class="tipo-badge <?= $tCls ?>"><?= $tLbl ?></span></td>
@@ -1062,6 +1062,7 @@ $total  = count($gastos);
                             <select name="naturaleza" id="g_nat" class="mf-select">
                                 <option value="gasto">Gasto del período</option>
                                 <option value="anticipo">Anticipo a proveedor (a favor hasta recibir su factura)</option>
+                                <option value="isv">Pago de ISV al SAR (impuesto cobrado a clientes: no es gasto)</option>
                             </select>
                             <small class="text-muted d-none" id="g_nat_info" style="font-size:.72rem"></small>
                         </div>

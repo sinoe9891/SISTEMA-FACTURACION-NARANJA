@@ -19,7 +19,7 @@ const ACTIVO_CATEGORIAS = [
     'edificio'       => ['Edificios e instalaciones', 240],
     'otro'           => ['Otros activos', 60],
 ];
-const GASTO_NATURALEZAS = ['gasto' => 'Gasto', 'capital' => 'Abono a capital de préstamo', 'activo' => 'Compra de activo fijo', 'anticipo' => 'Anticipo a proveedor'];
+const GASTO_NATURALEZAS = ['gasto' => 'Gasto', 'capital' => 'Abono a capital de préstamo', 'activo' => 'Compra de activo fijo', 'anticipo' => 'Anticipo a proveedor', 'isv' => 'Pago de ISV al SAR (no es gasto)'];
 
 function activosDisponible(PDO $pdo): bool
 {

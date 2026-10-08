@@ -161,8 +161,10 @@ try {
     }
 
     // Anticipo a proveedor: dinero a favor hasta que llegue su factura (no resta en resultados)
-    if (($_POST['naturaleza'] ?? '') === 'anticipo' && $pdo->query("SHOW COLUMNS FROM gastos LIKE 'naturaleza'")->fetchColumn())
-        $pdo->prepare("UPDATE gastos SET naturaleza = 'anticipo' WHERE id IN (" . implode(',', array_map('intval', $ids_creados)) . ") AND cliente_id = ?")->execute([$cid]);
+    // Pago de ISV al SAR: impuesto cobrado a los clientes, tampoco resta en resultados
+    $natPost = $_POST['naturaleza'] ?? '';
+    if (in_array($natPost, ['anticipo', 'isv'], true) && $pdo->query("SHOW COLUMNS FROM gastos LIKE 'naturaleza'")->fetchColumn())
+        $pdo->prepare("UPDATE gastos SET naturaleza = ? WHERE id IN (" . implode(',', array_map('intval', $ids_creados)) . ") AND cliente_id = ?")->execute([$natPost, $cid]);
 
     $pdo->commit();
 
