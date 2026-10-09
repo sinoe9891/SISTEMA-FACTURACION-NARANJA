@@ -41,7 +41,7 @@ require_once '../../includes/templates/config_tabs.php';
                 <p class="text-muted">Aún no hay tasa guardada.</p>
             <?php endif; ?>
             <button class="btn btn-outline-primary btn-sm mt-3" id="btnActualizarTasa"><i class="bi bi-arrow-clockwise me-1"></i>Actualizar ahora</button>
-            <div class="form-text">Se actualiza sola una vez al día, a la medianoche de Honduras (cron propio: cron/tasa_dolar.php). Si el BCH no responde, reintenta una vez a las 6:00 am y mientras tanto usa la tasa de referencia.</div>
+            <div class="form-text">Se actualiza sola una vez al día, a la medianoche de Honduras (cron propio: cron/tasa_dolar.php). Si el BCH no responde, reintenta cada hora hasta lograrlo y mientras tanto se mantiene su última tasa oficial (no cambia a la de referencia).</div>
         </div>
     </div>
     <div class="col-lg-6">

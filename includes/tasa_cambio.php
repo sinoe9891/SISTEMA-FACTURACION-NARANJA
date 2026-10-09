@@ -38,10 +38,10 @@ function tasaGuardarClaveBch(PDO $pdo, int $cid, string $clave): void
         ->execute([$cid, $clave === '' ? null : correoCifrar($clave)]);
 }
 
-function tasaHttp(string $url, array $headers = []): array
+function tasaHttp(string $url, array $headers = [], int $espera = 15): array
 {
     $c = curl_init($url);
-    curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_HTTPHEADER => $headers, CURLOPT_FOLLOWLOCATION => true]);
+    curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $espera, CURLOPT_CONNECTTIMEOUT => min(15, $espera), CURLOPT_HTTPHEADER => $headers, CURLOPT_FOLLOWLOCATION => true]);
     $b = curl_exec($c);
     $code = (int)curl_getinfo($c, CURLINFO_HTTP_CODE);
     $err = curl_error($c);
@@ -67,7 +67,8 @@ function tasaDesdeBch(string $clave): array
     $ids = ['compra' => 619, 'venta' => 620];
     $out = [];
     foreach ($ids as $k => $id) {
-        $cifras = tasaHttp(TASA_BCH_BASE . '/indicadores/' . rawurlencode((string)$id) . '/cifras?formato=Json&reciente=5', $h);
+        // El BCH a veces tarda (de madrugada no respondió en 15 s): se le dan 40 s
+        $cifras = tasaHttp(TASA_BCH_BASE . '/indicadores/' . rawurlencode((string)$id) . '/cifras?formato=Json&reciente=5', $h, 40);
         usort($cifras, fn($a, $b) => strcmp((string)($b['Fecha'] ?? $b['fecha'] ?? ''), (string)($a['Fecha'] ?? $a['fecha'] ?? '')));
         $u = $cifras[0] ?? null;
         if (!$u) throw new Exception("El BCH no devolvió cifras de $k.");
@@ -101,6 +102,14 @@ function tasaActualizar(PDO $pdo, int $cid): array
             return tasaUltima($pdo);
         } catch (Throwable $e) {
             $errBch = $e->getMessage();
+        }
+        // Si el BCH no responde, se sigue usando su última tasa oficial (de los últimos 10 días) en vez de cambiar a la
+        // de referencia: así compra y venta no «saltan» a otro valor. El cron vuelve a intentar cada hora.
+        $st = $pdo->prepare("SELECT * FROM tasas_cambio WHERE fuente = 'BCH' AND fecha <= ? AND fecha >= ? - INTERVAL 10 DAY ORDER BY fecha DESC LIMIT 1");
+        $st->execute([date('Y-m-d'), date('Y-m-d')]);
+        if ($u = $st->fetch(PDO::FETCH_ASSOC)) {
+            $u['aviso'] = "No se pudo consultar el BCH ($errBch); se mantiene la tasa oficial del " . date('d/m/Y', strtotime($u['fecha'])) . " y se reintenta en una hora.";
+            return $u;
         }
     }
     $t = tasaDesdeReferencia();
