@@ -1198,6 +1198,16 @@ unset($__v);
 
                 <!-- ── POR FECHA ── -->
                 <div class="tab-pane fade" id="tab-fecha" role="tabpanel">
+                    <?php
+                    // «Por fecha»: datos propios del rango (no cambian los reportes del año)
+                    $nt = ['Q1 (Ene–Mar)', 'Q2 (Abr–Jun)', 'Q3 (Jul–Sep)', 'Q4 (Oct–Dic)'];
+                    $ns = ['H1 (Ene–Jun)', 'H2 (Jul–Dic)'];
+                    $fila = fn($r, $label) => ['label' => $label, 'f' => (int)$r['facturas'], 's' => (float)$r['subtotal'], 'isv' => (float)$r['isv'], 't' => (float)$r['total']];
+                    $f_trim_tabla = array_map(fn($r) => $fila($r, $nt[(int)$r['trimestre'] - 1] ?? 'Q' . $r['trimestre']), $fecha_trimestrales);
+                    $f_sem_tabla = array_map(fn($r) => $fila($r, $ns[(int)$r['semestre'] - 1] ?? 'H' . $r['semestre']), $fecha_semestrales);
+                    $f_trim_sub = array_column($f_trim_tabla, 's'); $f_trim_isv = array_column($f_trim_tabla, 'isv'); $f_trim_total = array_sum(array_column($f_trim_tabla, 't'));
+                    $f_sem_sub = array_column($f_sem_tabla, 's'); $f_sem_isv = array_column($f_sem_tabla, 'isv'); $f_sem_total = array_column($f_sem_tabla, 't');
+                    ?>
                     <form method="POST" id="form-por-fecha" class="mb-4">
                         <!-- Preservar params GET actuales -->
                         <?php foreach ($_GET as $k => $v): ?>
@@ -1208,12 +1218,12 @@ unset($__v);
                             <div class="col-12 col-sm-auto">
                                 <label class="form-label small fw-semibold mb-1">Desde</label>
                                 <input type="date" name="fecha_desde_rep" class="form-control form-control-sm"
-                                       value="<?= htmlspecialchars($fecha_desde_rep ?? '') ?>" required>
+                                       value="<?= htmlspecialchars($rep_desde) ?>" required>
                             </div>
                             <div class="col-12 col-sm-auto">
                                 <label class="form-label small fw-semibold mb-1">Hasta</label>
                                 <input type="date" name="fecha_hasta_rep" class="form-control form-control-sm"
-                                       value="<?= htmlspecialchars($fecha_hasta_rep ?? '') ?>" required>
+                                       value="<?= htmlspecialchars($rep_hasta) ?>" required>
                             </div>
                             <div class="col-12 col-sm-auto">
                                 <button class="btn btn-primary btn-sm" type="submit">
@@ -1222,17 +1232,16 @@ unset($__v);
                                 <?php if ($usar_rango_rep): ?>
                                 <a href="?anio_reporte=<?= $anio_reporte ?>&active_tab_rep=tab-fecha&clear_fecha_rep=1"
                                    class="btn btn-outline-secondary btn-sm ms-1">
-                                    <i class="bi bi-x-lg me-1"></i>Limpiar
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Año actual
                                 </a>
                                 <?php endif; ?>
                             </div>
                         </div>
                     </form>
 
-                    <?php if ($usar_rango_rep): ?>
-                    <div class="alert alert-info py-2 small mb-3">
+                                        <div class="alert alert-info py-2 small mb-3">
                         <i class="bi bi-info-circle me-1"></i>
-                        Período: <strong><?= htmlspecialchars($rep_desde) ?></strong> al <strong><?= htmlspecialchars($rep_hasta) ?></strong>
+                        <?= $usar_rango_rep ? '' : 'Del año actual a la fecha · ' ?>Período: <strong><?= htmlspecialchars($rep_desde) ?></strong> al <strong><?= htmlspecialchars($rep_hasta) ?></strong>
                     </div>
 
                     <div id="cap-fecha" style="background:#fff;padding:1rem;border-radius:12px">
@@ -1240,7 +1249,7 @@ unset($__v);
                         <small class="text-muted d-block mb-3"><?= htmlspecialchars($datos['cliente_nombre'] ?? '') ?></small>
 
                         <!-- Trimestral del rango -->
-                        <?php if (!empty($datos_trimestrales)): ?>
+                        <?php if (!empty($fecha_trimestrales)): ?>
                         <p class="fw-semibold small text-secondary mb-1"><i class="bi bi-calendar3-range me-1"></i>Desglose trimestral</p>
                         <div class="table-responsive mb-4">
                             <table class="table table-sm table-bordered mb-0 align-middle" style="font-size:.855rem">
@@ -1257,7 +1266,7 @@ unset($__v);
                                 <tbody>
                                 <?php
                                 $prev_tf = null;
-                                foreach ($trimestres_tabla as $row):
+                                foreach ($f_trim_tabla as $row):
                                     $vt = ($prev_tf !== null && $prev_tf != 0)
                                         ? round((($row['t'] - $prev_tf) / $prev_tf) * 100, 1) : null;
                                 ?>
@@ -1279,10 +1288,10 @@ unset($__v);
                                 <tfoot class="table-light">
                                     <tr>
                                         <th>Total</th>
-                                        <th class="text-center"><?= array_sum(array_column($trimestres_tabla, 'f')) ?></th>
-                                        <th class="text-end">L <?= number_format(array_sum($trimestres_subtotal), 2) ?></th>
-                                        <th class="text-end">L <?= number_format(array_sum($trimestres_isv), 2) ?></th>
-                                        <th class="text-end">L <?= number_format($trim_total_anio, 2) ?></th>
+                                        <th class="text-center"><?= array_sum(array_column($f_trim_tabla, 'f')) ?></th>
+                                        <th class="text-end">L <?= number_format(array_sum($f_trim_sub), 2) ?></th>
+                                        <th class="text-end">L <?= number_format(array_sum($f_trim_isv), 2) ?></th>
+                                        <th class="text-end">L <?= number_format($f_trim_total, 2) ?></th>
                                         <th></th>
                                     </tr>
                                 </tfoot>
@@ -1291,7 +1300,7 @@ unset($__v);
                         <?php endif; ?>
 
                         <!-- Semestral del rango -->
-                        <?php if (!empty($datos_semestrales)): ?>
+                        <?php if (!empty($fecha_semestrales)): ?>
                         <p class="fw-semibold small text-secondary mb-1"><i class="bi bi-calendar-month me-1"></i>Desglose semestral</p>
                         <div class="table-responsive">
                             <table class="table table-sm table-bordered mb-0 align-middle" style="font-size:.855rem">
@@ -1308,7 +1317,7 @@ unset($__v);
                                 <tbody>
                                 <?php
                                 $prev_sf = null;
-                                foreach ($semestres_tabla as $row):
+                                foreach ($f_sem_tabla as $row):
                                     $vs = ($prev_sf !== null && $prev_sf != 0)
                                         ? round((($row['t'] - $prev_sf) / $prev_sf) * 100, 1) : null;
                                 ?>
@@ -1330,10 +1339,10 @@ unset($__v);
                                 <tfoot class="table-light">
                                     <tr>
                                         <th>Total</th>
-                                        <th class="text-center"><?= array_sum(array_column($semestres_tabla, 'f')) ?></th>
-                                        <th class="text-end">L <?= number_format(array_sum($semestres_subtotal), 2) ?></th>
-                                        <th class="text-end">L <?= number_format(array_sum($semestres_isv), 2) ?></th>
-                                        <th class="text-end">L <?= number_format(array_sum($semestres_total), 2) ?></th>
+                                        <th class="text-center"><?= array_sum(array_column($f_sem_tabla, 'f')) ?></th>
+                                        <th class="text-end">L <?= number_format(array_sum($f_sem_sub), 2) ?></th>
+                                        <th class="text-end">L <?= number_format(array_sum($f_sem_isv), 2) ?></th>
+                                        <th class="text-end">L <?= number_format(array_sum($f_sem_total), 2) ?></th>
                                         <th></th>
                                     </tr>
                                 </tfoot>
@@ -1341,7 +1350,7 @@ unset($__v);
                         </div>
                         <?php endif; ?>
 
-                        <?php if (empty($datos_trimestrales) && empty($datos_semestrales)): ?>
+                        <?php if (empty($fecha_trimestrales) && empty($fecha_semestrales)): ?>
                         <div class="alert alert-info py-2 small">Sin facturas en ese rango de fechas.</div>
                         <?php endif; ?>
                     </div>
@@ -1351,13 +1360,6 @@ unset($__v);
                             <i class="bi bi-download me-1"></i>Exportar JPG
                         </button>
                     </div>
-
-                    <?php else: ?>
-                    <div class="text-center text-muted py-4">
-                        <i class="bi bi-calendar-range fs-2 d-block mb-2 opacity-50"></i>
-                        Selecciona un rango de fechas y presiona <strong>Filtrar</strong> para ver el reporte.
-                    </div>
-                    <?php endif; ?>
                 </div><!-- /tab-fecha -->
 
                 <!-- ── COMPARATIVO ── -->
@@ -1900,7 +1902,14 @@ unset($__v);
             if (pane) pane.classList.add('show', 'active');
             if (btn)  { btn.classList.add('active'); btn.setAttribute('aria-selected', 'true'); }
             if (inpActive) inpActive.value = tabId;
+            repAnioVisible(tabId);
         }
+        // El año de arriba solo aplica a Trimestral y Semestral (Por fecha, Por año y Comparativo tienen sus filtros)
+        function repAnioVisible(tabId) {
+            const f = document.getElementById('form-rep');
+            if (f) f.style.visibility = ['tab-trim', 'tab-sem'].includes(tabId) ? '' : 'hidden';
+        }
+        window.repAnioVisible = repAnioVisible;
 
         // Restaurar tab que PHP indica
         if (savedTab) activarTab(savedTab);
@@ -1913,6 +1922,7 @@ unset($__v);
             const tabId = btn.getAttribute('data-bs-target').replace('#', '');
             const inp = document.getElementById('inp-active-tab-rep');
             if (inp) inp.value = tabId;
+            window.repAnioVisible?.(tabId);
             try { const u = new URL(location.href); u.searchParams.set('active_tab_rep', tabId); u.searchParams.delete('clear_fecha_rep'); history.replaceState(null, '', u); } catch (err) {}
         });
     })();

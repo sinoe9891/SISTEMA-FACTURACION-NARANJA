@@ -543,10 +543,13 @@ $active_tab_rep = in_array($_GET['active_tab_rep'] ?? '', $tabs_validos)
     ? $_GET['active_tab_rep']
     : 'tab-trim';
 
-// Si hay rango → úsalo; si no → año completo seleccionado
+// Trimestral y Semestral: siempre el año elegido. «Por fecha»: el rango elegido o, si no hay, del 1 de enero a hoy.
 $usar_rango_rep = ($fecha_desde_rep !== null || $fecha_hasta_rep !== null);
-$rep_desde = $fecha_desde_rep ?? "{$anio_reporte}-01-01";
-$rep_hasta = $fecha_hasta_rep ?? "{$anio_reporte}-12-31";
+$rep_desde = $fecha_desde_rep ?? date('Y-01-01');
+$rep_hasta = $fecha_hasta_rep ?? date('Y-m-d');
+if ($rep_desde > $rep_hasta) [$rep_desde, $rep_hasta] = [$rep_hasta, $rep_desde];
+$anio_desde = "{$anio_reporte}-01-01";
+$anio_hasta = "{$anio_reporte}-12-31";
 
 $stmtTrimestral = $pdo->prepare("
     SELECT
@@ -563,8 +566,10 @@ $stmtTrimestral = $pdo->prepare("
     GROUP BY trimestre
     ORDER BY trimestre
 ");
-$stmtTrimestral->execute([$cliente_id, $establecimiento_activo, $rep_desde, $rep_hasta]);
+$stmtTrimestral->execute([$cliente_id, $establecimiento_activo, $anio_desde, $anio_hasta]);
 $datos_trimestrales = $stmtTrimestral->fetchAll(PDO::FETCH_ASSOC);
+$stmtTrimestral->execute([$cliente_id, $establecimiento_activo, $rep_desde, $rep_hasta]);
+$fecha_trimestrales = $stmtTrimestral->fetchAll(PDO::FETCH_ASSOC);
 
 $stmtSemestral = $pdo->prepare("
     SELECT
@@ -581,8 +586,10 @@ $stmtSemestral = $pdo->prepare("
     GROUP BY semestre
     ORDER BY semestre
 ");
-$stmtSemestral->execute([$cliente_id, $establecimiento_activo, $rep_desde, $rep_hasta]);
+$stmtSemestral->execute([$cliente_id, $establecimiento_activo, $anio_desde, $anio_hasta]);
 $datos_semestrales = $stmtSemestral->fetchAll(PDO::FETCH_ASSOC);
+$stmtSemestral->execute([$cliente_id, $establecimiento_activo, $rep_desde, $rep_hasta]);
+$fecha_semestrales = $stmtSemestral->fetchAll(PDO::FETCH_ASSOC);
 
 $stmtAnualReporte = $pdo->prepare("
     SELECT

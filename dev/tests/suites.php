@@ -2529,9 +2529,15 @@ suite('Dashboard: reportes periódicos sin recargar, selector de trimestre/semes
     check('al activar la pestaña solo se tocan las principales (no las sub-pestañas del comparativo)', str_contains($r['body'], "#tabsReportesContent > .tab-pane"));
     // «Por fecha» por POST: guarda el rango y vuelve con esa pestaña
     $p = $a->post('dashboard', ['fecha_desde_rep' => '2026-04-01', 'fecha_hasta_rep' => '2026-06-30']);
+    // Independiente: el rango de «Por fecha» no cambia el Trimestral del año elegido
+    $sinRango = $a->get('dashboard', ['anio_reporte' => 2026, 'clear_fecha_rep' => 1]);
+    $a->post('dashboard', ['fecha_desde_rep' => '2026-04-01', 'fecha_hasta_rep' => '2026-06-30']);
+    $conRango = $a->get('dashboard', ['anio_reporte' => 2026]);
+    $trim = fn($h) => preg_match('#<table id="tabla-trim".*?</table>#s', $h, $m) ? $m[0] : '';
+    check('«Por fecha» es independiente: el Trimestral del año no cambia', $trim($sinRango['body']) !== '' && $trim($sinRango['body']) === $trim($conRango['body']));
     check('«Por fecha» redirige a la pestaña con el rango', $p['code'] === 302 && str_contains((string)$p['loc'], 'active_tab_rep=tab-fecha'), $p['code'] . ' ' . $p['loc']);
     $r = $a->get('dashboard', ['active_tab_rep' => 'tab-fecha', 'clear_fecha_rep' => 1]);
-    check('«Limpiar» quita el rango', sinErroresPhp($r['body']) && !str_contains($r['body'], 'Período: <strong>2026-04-01'));
+    check('«Año actual» quita el rango y vuelve del 1 de enero a hoy', sinErroresPhp($r['body']) && !str_contains($r['body'], 'Período: <strong>2026-04-01') && str_contains($r['body'], 'Del año actual a la fecha') && str_contains($r['body'], 'value="' . date('Y') . '-01-01"') && str_contains($r['body'], 'value="' . date('Y-m-d') . '"'));
 });
 
 require __DIR__ . '/cobros_lista_adjuntos.php';
