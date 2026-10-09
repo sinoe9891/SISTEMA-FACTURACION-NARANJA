@@ -46,6 +46,7 @@ function tasaHttp(string $url, array $headers = []): array
     $code = (int)curl_getinfo($c, CURLINFO_HTTP_CODE);
     $err = curl_error($c);
     curl_close($c);
+    if (in_array($code, [401, 403], true)) throw new Exception("la llave fue rechazada ($code): revisa que sea la llave principal vigente y que la suscripción esté activa en el portal del BCH.");
     if ($b === false || $code >= 400) throw new Exception("La fuente respondió " . ($code ?: 'sin conexión') . ($err ? " ($err)" : '') . '.');
     $j = json_decode((string)$b, true);
     if (!is_array($j)) throw new Exception("Respuesta inesperada de la fuente.");
@@ -53,22 +54,16 @@ function tasaHttp(string $url, array $headers = []): array
 }
 
 /**
- * BCH: busca los indicadores de tipo de cambio de referencia (compra y venta) y trae su último valor.
+ * BCH: trae el último valor del tipo de cambio nominal de compra (indicador 619) y de venta (620).
  * Devuelve ['fecha', 'compra', 'venta'].
  */
 function tasaDesdeBch(string $clave): array
 {
     // La llave va solo en encabezados (nunca en la URL): «clave» (el que usa la Web-API del BCH) y el estándar de Azure API Management
     $h = ['clave: ' . $clave, 'Ocp-Apim-Subscription-Key: ' . $clave, 'Accept: application/json'];
-    $lista = tasaHttp(TASA_BCH_BASE . '/indicadores?formato=Json', $h);
-    $ids = ['compra' => null, 'venta' => null];
-    foreach ($lista as $ind) {
-        $nombre = mb_strtolower(($ind['Nombre'] ?? $ind['nombre'] ?? '') . ' ' . ($ind['Descripcion'] ?? $ind['descripcion'] ?? ''));
-        if (!str_contains($nombre, 'tipo de cambio') || !str_contains($nombre, 'referencia')) continue;
-        if (str_contains($nombre, 'dólar') === false && str_contains($nombre, 'dolar') === false && str_contains($nombre, 'us') === false) continue;
-        foreach (['compra', 'venta'] as $k) if ($ids[$k] === null && str_contains($nombre, $k)) $ids[$k] = $ind['Id'] ?? $ind['id'] ?? null;
-    }
-    if (!$ids['compra'] || !$ids['venta']) throw new Exception("No se encontraron los indicadores de compra y venta en la API del BCH.");
+    // Indicadores oficiales del catálogo del BCH (Catalogo_Indicadores_v1.xlsx, grupo EC-TCN-01):
+    // 619 «Tipo de Cambio Nominal - Compra» y 620 «Tipo de Cambio Nominal - Venta»
+    $ids = ['compra' => 619, 'venta' => 620];
     $out = [];
     foreach ($ids as $k => $id) {
         $cifras = tasaHttp(TASA_BCH_BASE . '/indicadores/' . rawurlencode((string)$id) . '/cifras?formato=Json&reciente=5', $h);
