@@ -32,6 +32,7 @@ $__twTs = strtotime($twTasa['fecha']);
     </div>
     <div class="text-end fw-bold mt-2 app-tasa-res">LPS 0.00</div>
     <div class="small text-muted text-end app-tasa-nota">a la compra (L<?= number_format($__twCompra, 4) ?>)</div>
+    <div class="small text-muted border-top mt-2 pt-2"><i class="bi bi-info-circle me-1"></i>Pagar con tarjeta o comprar dólares → <strong>venta</strong>. Recibir dólares y cambiarlos → <strong>compra</strong>.</div>
 </div>
 <script>
 (function () {

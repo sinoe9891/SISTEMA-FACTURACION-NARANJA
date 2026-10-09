@@ -63,6 +63,36 @@ require_once '../../includes/templates/config_tabs.php';
         </div>
     </div>
 </div>
+<?php if ($tasa):
+    $__c = (float)($tasa['compra'] ?: $tasa['referencia']); $__v = (float)($tasa['venta'] ?: $tasa['referencia']);
+    $__L = fn($x) => 'L ' . number_format($x, 2);
+    $__ej = [
+        ['bi-credit-card', 'Pagas con tarjeta una suscripción en dólares', 'Adobe Creative Cloud: USD 779.88', 779.88 * $__v, 'Venta', 'El banco te vende los dólares para pagar: te cobra a la venta.'],
+        ['bi-credit-card-2-front', 'Pagas una compra en una tienda de EE. UU. con la tarjeta', 'Equipo o boletos: USD 250.00', 250 * $__v, 'Venta', 'Igual que arriba: lo que pagas en dólares se te carga en lempiras a la venta (más comisiones de la tarjeta, si las hay).'],
+        ['bi-cash-coin', 'Un cliente te paga en dólares y los cambias a lempiras', 'Cliente del extranjero: USD 500.00', 500 * $__c, 'Compra', 'Tú le vendes los dólares al banco: te paga a la compra.'],
+        ['bi-arrow-left-right', 'Necesitas dólares y los compras con lempiras', 'Para pagar un proveedor: L 10,000.00', $__v ? 10000 / $__v : 0, 'Venta', 'El banco te vende los dólares: divides entre la venta. Resultado en dólares.'],
+    ];
+?>
+<div class="app-card mt-3">
+    <div class="app-card-header"><span><i class="bi bi-lightbulb me-1"></i> Ejemplos con la tasa de hoy</span><span class="small text-muted">Compra L <?= number_format($__c, 4) ?> · Venta L <?= number_format($__v, 4) ?></span></div>
+    <div class="table-responsive">
+        <table class="table app-table mb-0 align-middle">
+            <thead><tr><th>Situación</th><th>Ejemplo</th><th>Tasa que se usa</th><th class="app-num">Resultado</th></tr></thead>
+            <tbody>
+            <?php foreach ($__ej as [$__ic, $__sit, $__ejm, $__res, $__usa, $__por]): ?>
+                <tr><td><i class="bi <?= $__ic ?> me-1 text-primary"></i><?= $__sit ?><div class="small text-muted"><?= $__por ?></div></td>
+                    <td class="small"><?= $__ejm ?></td>
+                    <td><span class="badge <?= $__usa === 'Venta' ? 'bg-warning text-dark' : 'bg-success' ?>"><?= $__usa ?></span></td>
+                    <td class="app-num fw-semibold"><?= str_starts_with($__ejm, 'Para pagar') ? 'USD ' . number_format($__res, 2) : $__L($__res) ?></td></tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <div class="app-card-body small text-muted border-top">
+        <strong>Regla fácil:</strong> si <strong>pagas o compras dólares</strong> (tarjeta, suscripciones, proveedores del extranjero) se usa la <strong>venta</strong>; si <strong>recibes dólares</strong> y los cambias a lempiras, la <strong>compra</strong>. En el sistema: las licencias en dólares se calculan a la <strong>venta</strong> y los saldos de cuentas en dólares (Bancos y Balance) a la <strong>compra</strong>.
+    </div>
+</div>
+<?php unset($__c, $__v, $__L, $__ej); endif; ?>
 <?php endif; ?>
 
 <script>

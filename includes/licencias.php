@@ -19,13 +19,21 @@ function licenciasDisponible(PDO $pdo): bool
     return $ok;
 }
 
-/** Tasa del dólar para licencias cobradas en USD (0 si no hay). */
+/**
+ * Tasa del dólar para licencias en USD (0 si no hay): la VENTA del BCH, porque al pagar con tarjeta en dólares
+ * el banco te vende esos dólares. Sin BCH, la de referencia (o la última usada en Bancos).
+ */
 function licenciaTasa(PDO $pdo, int $cid): float
 {
     static $t = [];
     if (!isset($t[$cid])) {
-        require_once __DIR__ . '/estados_financieros.php';
-        $t[$cid] = (float)efTasaReciente($pdo, $cid);
+        require_once __DIR__ . '/tasa_cambio.php';
+        $u = tasaDisponible($pdo) ? tasaUltima($pdo) : null;
+        $t[$cid] = $u ? (float)($u['venta'] ?: $u['referencia'] ?: 0) : 0.0;
+        if ($t[$cid] <= 0) {
+            require_once __DIR__ . '/estados_financieros.php';
+            $t[$cid] = (float)efTasaReciente($pdo, $cid);
+        }
     }
     return $t[$cid];
 }
