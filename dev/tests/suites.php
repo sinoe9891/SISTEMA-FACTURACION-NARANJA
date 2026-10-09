@@ -2519,5 +2519,20 @@ suite('Gastos: selección con casillas y exportación (Excel y ZIP con comproban
     check('facturador: puede bajar el ZIP pero sin bouchers', in_array('gastos.xlsx', $nombres, true) && !preg_grep('#^bouchers/#', $nombres), implode(', ', $nombres));
 });
 
+suite('Dashboard: reportes periódicos sin recargar, selector de trimestre/semestre y años del comparativo', function () {
+    $a = login('qa.admin@local.test');
+    $r = $a->get('dashboard', ['active_tab_rep' => 'tab-comp']);
+    check('carga sin errores y trae los datos de los gráficos en la sección', sinErroresPhp($r['body']) && preg_match('#<script type="application/json" id="rep-graficos">(.*?)</script>#s', $r['body'], $m) && is_array($d = json_decode($m[1], true)) && isset($d['trim'], $d['sem'], $d['anual'], $d['compTrim'], $d['compSem']) && $d['tab'] === 'tab-comp', errorPhp($r['body']));
+    check('el año ya no recarga la página (sin submit en el select)', !str_contains($r['body'], 'onchange="this.form.submit()"') && str_contains($r['body'], 'id="sel-anio-reporte"'));
+    check('selector opcional de trimestre y de semestre', str_contains($r['body'], 'data-tabla="tabla-trim"') || !str_contains($r['body'], 'id="tabla-trim"'));
+    check('comparativo: casillas para elegir los años', !str_contains($r['body'], 'id="tab-comp"') || str_contains($r['body'], 'rep-comp-anio') || substr_count($r['body'], 'data-anio=') === 0);
+    check('al activar la pestaña solo se tocan las principales (no las sub-pestañas del comparativo)', str_contains($r['body'], "#tabsReportesContent > .tab-pane"));
+    // «Por fecha» por POST: guarda el rango y vuelve con esa pestaña
+    $p = $a->post('dashboard', ['fecha_desde_rep' => '2026-04-01', 'fecha_hasta_rep' => '2026-06-30']);
+    check('«Por fecha» redirige a la pestaña con el rango', $p['code'] === 302 && str_contains((string)$p['loc'], 'active_tab_rep=tab-fecha'), $p['code'] . ' ' . $p['loc']);
+    $r = $a->get('dashboard', ['active_tab_rep' => 'tab-fecha', 'clear_fecha_rep' => 1]);
+    check('«Limpiar» quita el rango', sinErroresPhp($r['body']) && !str_contains($r['body'], 'Período: <strong>2026-04-01'));
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

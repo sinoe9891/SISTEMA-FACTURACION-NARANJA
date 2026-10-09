@@ -906,7 +906,7 @@ unset($__v);
 
                     <label class="form-label mb-0 small fw-semibold" for="sel-anio-reporte">Año:</label>
                     <select id="sel-anio-reporte" name="anio_reporte" class="form-select form-select-sm"
-                            style="width:auto" onchange="this.form.submit()">
+                            style="width:auto">
                         <?php
                         $anio_min = !empty($datos_anuales_reporte) ? (int)$datos_anuales_reporte[0]['anio'] : (int)date('Y') - 3;
                         $anio_max = (int)date('Y');
@@ -955,10 +955,16 @@ unset($__v);
                         <div id="cap-trim" class="reporte-captura" style="background:#fff;padding:1rem;border-radius:12px">
                             <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
                                 <div>
-                                    <h6 class="mb-0 fw-bold text-dark">Reporte Trimestral <?= $anio_reporte ?></h6>
+                                    <h6 class="mb-0 fw-bold text-dark">Reporte Trimestral <?= $anio_reporte ?><span id="rep-trim-sub"></span></h6>
                                     <small
                                         class="text-muted"><?= htmlspecialchars($datos['cliente_nombre'] ?? '') ?></small>
                                 </div>
+                                <?php if (count($trimestres_tabla) > 1): ?>
+                                    <select class="form-select form-select-sm rep-periodo ms-auto" style="width:auto" data-tabla="tabla-trim" data-grafico="grafTrim" data-titulo="rep-trim-sub" aria-label="Trimestre">
+                                        <option value="">Todos los trimestres</option>
+                                        <?php foreach ($trimestres_tabla as $row): ?><option value="<?= htmlspecialchars(strtok($row['label'], ' ')) ?>"><?= htmlspecialchars($row['label']) ?></option><?php endforeach; ?>
+                                    </select>
+                                <?php endif; ?>
                                 <?php if ($trim_total_anio > 0): ?>
                                     <div class="d-flex gap-3 flex-wrap">
                                         <span class="badge bg-primary-subtle text-primary-emphasis px-3 py-2">Total año:
@@ -971,7 +977,7 @@ unset($__v);
                             <?php if (!empty($datos_trimestrales)): ?>
                                 <canvas id="grafTrim" height="100" class="mb-3"></canvas>
                                 <div class="table-responsive">
-                                    <table class="table table-sm table-bordered mb-0 align-middle" style="font-size:.855rem">
+                                    <table id="tabla-trim" class="table table-sm table-bordered mb-0 align-middle" style="font-size:.855rem">
                                         <thead class="table-light">
                                             <tr>
                                                 <th>Trimestre</th>
@@ -991,7 +997,7 @@ unset($__v);
                                                     $var_trim = round((($row['t'] - $prev_trim_total) / $prev_trim_total) * 100, 1);
                                                 }
                                             ?>
-                                                <tr>
+                                                <tr data-k="<?= htmlspecialchars(strtok($row['label'], ' ')) ?>">
                                                     <td><?= htmlspecialchars($row['label']) ?></td>
                                                     <td class="text-center"><?= $row['f'] ?></td>
                                                     <td class="text-end">L <?= number_format($row['s'], 2) ?></td>
@@ -1042,15 +1048,21 @@ unset($__v);
                         <div id="cap-sem" class="reporte-captura" style="background:#fff;padding:1rem;border-radius:12px">
                             <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
                                 <div>
-                                    <h6 class="mb-0 fw-bold text-dark">Reporte Semestral <?= $anio_reporte ?></h6>
+                                    <h6 class="mb-0 fw-bold text-dark">Reporte Semestral <?= $anio_reporte ?><span id="rep-sem-sub"></span></h6>
                                     <small
                                         class="text-muted"><?= htmlspecialchars($datos['cliente_nombre'] ?? '') ?></small>
                                 </div>
+                                <?php if (count($semestres_tabla) > 1): ?>
+                                    <select class="form-select form-select-sm rep-periodo" style="width:auto" data-tabla="tabla-sem" data-grafico="grafSem" data-titulo="rep-sem-sub" aria-label="Semestre">
+                                        <option value="">Ambos semestres</option>
+                                        <?php foreach ($semestres_tabla as $row): ?><option value="<?= htmlspecialchars(strtok($row['label'], ' ')) ?>"><?= htmlspecialchars($row['label']) ?></option><?php endforeach; ?>
+                                    </select>
+                                <?php endif; ?>
                             </div>
                             <?php if (!empty($datos_semestrales)): ?>
                                 <canvas id="grafSem" height="100" class="mb-3"></canvas>
                                 <div class="table-responsive">
-                                    <table class="table table-sm table-bordered mb-0 align-middle" style="font-size:.855rem">
+                                    <table id="tabla-sem" class="table table-sm table-bordered mb-0 align-middle" style="font-size:.855rem">
                                         <thead class="table-light">
                                             <tr>
                                                 <th>Semestre</th>
@@ -1070,7 +1082,7 @@ unset($__v);
                                                     $var_sem = round((($row['t'] - $prev_sem_total) / $prev_sem_total) * 100, 1);
                                                 }
                                             ?>
-                                                <tr>
+                                                <tr data-k="<?= htmlspecialchars(strtok($row['label'], ' ')) ?>">
                                                     <td><?= htmlspecialchars($row['label']) ?></td>
                                                     <td class="text-center"><?= $row['f'] ?></td>
                                                     <td class="text-end">L <?= number_format($row['s'], 2) ?></td>
@@ -1385,11 +1397,23 @@ unset($__v);
                         <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
                             <div>
                                 <h6 class="mb-0 fw-bold text-dark">Comparativo por Año</h6>
-                                <small class="text-muted"><?= htmlspecialchars($datos['cliente_nombre'] ?? '') ?> · Histórico <?= implode(', ', array_map('strval', $anios_disponibles)) ?></small>
+                                <small class="text-muted"><?= htmlspecialchars($datos['cliente_nombre'] ?? '') ?> · <span id="rep-comp-hist">Histórico <?= implode(', ', array_map('strval', $anios_disponibles)) ?></span></small>
                             </div>
                         </div>
 
                         <?php if (!empty($anios_disponibles)): ?>
+
+                        <!-- Años a comparar (opcional): la variación es entre los dos últimos marcados -->
+                        <?php if (count($anios_disponibles) > 1): ?>
+                        <div class="d-flex flex-wrap align-items-center gap-2 mb-3" id="rep-comp-anios">
+                            <span class="small fw-semibold text-muted">Años:</span>
+                            <?php foreach ($anios_disponibles as $ay): ?>
+                                <input type="checkbox" class="btn-check rep-comp-anio" id="rca-<?= $ay ?>" value="<?= $ay ?>" checked autocomplete="off">
+                                <label class="btn btn-sm btn-outline-primary py-0 px-2" for="rca-<?= $ay ?>"><?= $ay ?></label>
+                            <?php endforeach; ?>
+                            <button type="button" class="btn btn-sm btn-link py-0 px-1" id="rca-todos">Todos</button>
+                        </div>
+                        <?php endif; ?>
 
                         <!-- Sub-tabs: Trimestral / Semestral -->
                         <ul class="nav nav-pills nav-sm mb-3 gap-1" id="pillsComp" role="tablist">
@@ -1416,9 +1440,9 @@ unset($__v);
                                             <tr>
                                                 <th>Trimestre</th>
                                                 <?php foreach ($anios_disponibles as $ay): ?>
-                                                <th class="text-end"><?= $ay ?></th>
+                                                <th class="text-end" data-anio="<?= $ay ?>"><?= $ay ?></th>
                                                 <?php endforeach; ?>
-                                                <th class="text-end text-muted small">Var. último año</th>
+                                                <th class="text-end text-muted small rep-var-tit">Var. último año</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1432,9 +1456,9 @@ unset($__v);
                                             <?php foreach ($anios_disponibles as $idx => $ay):
                                                 $val = $comp_trim_by[$ay][$q]['total'] ?? null;
                                             ?>
-                                            <td class="text-end"><?= $val !== null ? 'L '.number_format($val,2) : '<span class="text-muted">—</span>' ?></td>
+                                            <td class="text-end" data-anio="<?= $ay ?>" data-v="<?= $val !== null ? (float)$val : '' ?>"><?= $val !== null ? 'L '.number_format($val,2) : '<span class="text-muted">—</span>' ?></td>
                                             <?php $prev_total = $val; endforeach; ?>
-                                            <td class="text-end small">
+                                            <td class="text-end small rep-var">
                                                 <?php
                                                 // Crecimiento: penúltimo → último año
                                                 if (count($anios_disponibles) >= 2) {
@@ -1466,9 +1490,9 @@ unset($__v);
                                                 <?php foreach ($anios_disponibles as $ay):
                                                     $tot_ay = array_sum(array_map(fn($q) => $comp_trim_by[$ay][$q]['total'] ?? 0, [1,2,3,4]));
                                                 ?>
-                                                <th class="text-end">L <?= number_format($tot_ay, 2) ?></th>
+                                                <th class="text-end" data-anio="<?= $ay ?>" data-v="<?= (float)$tot_ay ?>">L <?= number_format($tot_ay, 2) ?></th>
                                                 <?php endforeach; ?>
-                                                <th class="text-end small">
+                                                <th class="text-end small rep-var">
                                                 <?php if (count($anios_disponibles) >= 2):
                                                     $ay_p = $anios_disponibles[count($anios_disponibles)-2];
                                                     $ay_c = $anios_disponibles[count($anios_disponibles)-1];
@@ -1495,9 +1519,9 @@ unset($__v);
                                             <tr>
                                                 <th>Semestre</th>
                                                 <?php foreach ($anios_disponibles as $ay): ?>
-                                                <th class="text-end"><?= $ay ?></th>
+                                                <th class="text-end" data-anio="<?= $ay ?>"><?= $ay ?></th>
                                                 <?php endforeach; ?>
-                                                <th class="text-end text-muted small">Var. último año</th>
+                                                <th class="text-end text-muted small rep-var-tit">Var. último año</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1510,9 +1534,9 @@ unset($__v);
                                             <?php foreach ($anios_disponibles as $ay):
                                                 $val = $comp_sem_by[$ay][$h]['total'] ?? null;
                                             ?>
-                                            <td class="text-end"><?= $val !== null ? 'L '.number_format($val,2) : '<span class="text-muted">—</span>' ?></td>
+                                            <td class="text-end" data-anio="<?= $ay ?>" data-v="<?= $val !== null ? (float)$val : '' ?>"><?= $val !== null ? 'L '.number_format($val,2) : '<span class="text-muted">—</span>' ?></td>
                                             <?php endforeach; ?>
-                                            <td class="text-end small">
+                                            <td class="text-end small rep-var">
                                                 <?php
                                                 if (count($anios_disponibles) >= 2) {
                                                     $ay_prev = $anios_disponibles[count($anios_disponibles)-2];
@@ -1538,9 +1562,9 @@ unset($__v);
                                                 <?php foreach ($anios_disponibles as $ay):
                                                     $tot_ay = array_sum(array_map(fn($h) => $comp_sem_by[$ay][$h]['total'] ?? 0, [1,2]));
                                                 ?>
-                                                <th class="text-end">L <?= number_format($tot_ay, 2) ?></th>
+                                                <th class="text-end" data-anio="<?= $ay ?>" data-v="<?= (float)$tot_ay ?>">L <?= number_format($tot_ay, 2) ?></th>
                                                 <?php endforeach; ?>
-                                                <th class="text-end small">
+                                                <th class="text-end small rep-var">
                                                 <?php if (count($anios_disponibles) >= 2):
                                                     $ay_p = $anios_disponibles[count($anios_disponibles)-2];
                                                     $ay_c = $anios_disponibles[count($anios_disponibles)-1];
@@ -1574,6 +1598,54 @@ unset($__v);
                 </div><!-- /tab-comp -->
 
                 </div><!-- /tab-content -->
+                <?php
+    // Preparar datos comparativo para JS
+    $anios_js = array_values($anios_disponibles);
+    $colores_js_bg  = $colores_comp_bg;
+    $colores_js_brd = $colores_comp_brd;
+
+    // Comparativo trimestral: datasets = un dataset por año
+    $comp_trim_datasets_js = [];
+    foreach ($anios_js as $idx => $ay) {
+        $data_q = [];
+        for ($q = 1; $q <= 4; $q++) {
+            $data_q[] = $comp_trim_by[$ay][$q]['total'] ?? 0;
+        }
+        $comp_trim_datasets_js[] = [
+            'label'           => (string)$ay,
+            'backgroundColor' => $colores_js_bg[$idx % count($colores_js_bg)],
+            'borderColor'     => $colores_js_brd[$idx % count($colores_js_brd)],
+            'borderWidth'     => 1,
+            'data'            => $data_q,
+        ];
+    }
+
+    // Comparativo semestral
+    $comp_sem_datasets_js = [];
+    foreach ($anios_js as $idx => $ay) {
+        $data_h = [];
+        for ($h = 1; $h <= 2; $h++) {
+            $data_h[] = $comp_sem_by[$ay][$h]['total'] ?? 0;
+        }
+        $comp_sem_datasets_js[] = [
+            'label'           => (string)$ay,
+            'backgroundColor' => $colores_js_bg[$idx % count($colores_js_bg)],
+            'borderColor'     => $colores_js_brd[$idx % count($colores_js_brd)],
+            'borderWidth'     => 1,
+            'data'            => $data_h,
+        ];
+    }
+    
+                $rep_graficos = [
+                    'trim' => ['labels' => $trimestres_labels, 'subtotal' => $trimestres_subtotal, 'isv' => $trimestres_isv, 'total' => $trimestres_total],
+                    'sem' => ['labels' => $semestres_labels, 'subtotal' => $semestres_subtotal, 'isv' => $semestres_isv, 'total' => $semestres_total],
+                    'anual' => ['labels' => $anuales_labels, 'subtotal' => $anuales_subtotal, 'isv' => $anuales_isv, 'total' => $anuales_total],
+                    'compTrim' => $comp_trim_datasets_js,
+                    'compSem' => $comp_sem_datasets_js,
+                    'tab' => $active_tab_rep,
+                ];
+                ?>
+                <script type="application/json" id="rep-graficos"><?= json_encode($rep_graficos, JSON_HEX_TAG | JSON_HEX_AMP) ?></script>
             </div>
         </div>
         <!-- ── fin reportes periódicos ── -->
@@ -1766,180 +1838,48 @@ unset($__v);
         }
     });
 
-    // Trimestral
-    const ctxTrim = document.getElementById('grafTrim')?.getContext('2d');
-    if (ctxTrim) {
-        new Chart(ctxTrim, {
-            type: 'bar',
-            data: {
-                labels: <?= json_encode($trimestres_labels) ?>,
-                datasets: [{
-                        label: 'Subtotal',
-                        backgroundColor: COLORES_REP.subtotal,
-                        data: <?= json_encode($trimestres_subtotal) ?>
-                    },
-                    {
-                        label: 'ISV',
-                        backgroundColor: COLORES_REP.isv,
-                        data: <?= json_encode($trimestres_isv) ?>
-                    },
-                    {
-                        label: 'Total',
-                        backgroundColor: COLORES_REP.total,
-                        data: <?= json_encode($trimestres_total) ?>
-                    },
-                ]
-            },
-            options: OPTS_REP(true)
-        });
-    }
-
-    // Semestral
-    const ctxSem = document.getElementById('grafSem')?.getContext('2d');
-    if (ctxSem) {
-        new Chart(ctxSem, {
-            type: 'bar',
-            data: {
-                labels: <?= json_encode($semestres_labels) ?>,
-                datasets: [{
-                        label: 'Subtotal',
-                        backgroundColor: COLORES_REP.subtotal,
-                        data: <?= json_encode($semestres_subtotal) ?>
-                    },
-                    {
-                        label: 'ISV',
-                        backgroundColor: COLORES_REP.isv,
-                        data: <?= json_encode($semestres_isv) ?>
-                    },
-                    {
-                        label: 'Total',
-                        backgroundColor: COLORES_REP.total,
-                        data: <?= json_encode($semestres_total) ?>
-                    },
-                ]
-            },
-            options: OPTS_REP(true)
-        });
-    }
-
-    // Anual histórico
-    const ctxAnualRep = document.getElementById('grafAnualRep')?.getContext('2d');
-    if (ctxAnualRep) {
-        new Chart(ctxAnualRep, {
-            type: 'bar',
-            data: {
-                labels: <?= json_encode($anuales_labels) ?>,
-                datasets: [{
-                        label: 'Subtotal',
-                        backgroundColor: COLORES_REP.subtotal,
-                        data: <?= json_encode($anuales_subtotal) ?>
-                    },
-                    {
-                        label: 'ISV',
-                        backgroundColor: COLORES_REP.isv,
-                        data: <?= json_encode($anuales_isv) ?>
-                    },
-                    {
-                        label: 'Total',
-                        backgroundColor: COLORES_REP.total,
-                        data: <?= json_encode($anuales_total) ?>
-                    },
-                ]
-            },
-            options: OPTS_REP(true)
-        });
-    }
-
-    // ── Gráficos Comparativos (multi-año) ────────────────────────────────────────
-    <?php
-    // Preparar datos comparativo para JS
-    $anios_js = array_values($anios_disponibles);
-    $colores_js_bg  = $colores_comp_bg;
-    $colores_js_brd = $colores_comp_brd;
-
-    // Comparativo trimestral: datasets = un dataset por año
-    $comp_trim_datasets_js = [];
-    foreach ($anios_js as $idx => $ay) {
-        $data_q = [];
-        for ($q = 1; $q <= 4; $q++) {
-            $data_q[] = $comp_trim_by[$ay][$q]['total'] ?? 0;
-        }
-        $comp_trim_datasets_js[] = [
-            'label'           => (string)$ay,
-            'backgroundColor' => $colores_js_bg[$idx % count($colores_js_bg)],
-            'borderColor'     => $colores_js_brd[$idx % count($colores_js_brd)],
-            'borderWidth'     => 1,
-            'data'            => $data_q,
-        ];
-    }
-
-    // Comparativo semestral
-    $comp_sem_datasets_js = [];
-    foreach ($anios_js as $idx => $ay) {
-        $data_h = [];
-        for ($h = 1; $h <= 2; $h++) {
-            $data_h[] = $comp_sem_by[$ay][$h]['total'] ?? 0;
-        }
-        $comp_sem_datasets_js[] = [
-            'label'           => (string)$ay,
-            'backgroundColor' => $colores_js_bg[$idx % count($colores_js_bg)],
-            'borderColor'     => $colores_js_brd[$idx % count($colores_js_brd)],
-            'borderWidth'     => 1,
-            'data'            => $data_h,
-        ];
-    }
-    ?>
-    const ctxCompTrim = document.getElementById('grafCompTrim')?.getContext('2d');
-    if (ctxCompTrim) {
-        new Chart(ctxCompTrim, {
-            type: 'bar',
-            data: {
-                labels: ['Q1 Ene–Mar', 'Q2 Abr–Jun', 'Q3 Jul–Sep', 'Q4 Oct–Dic'],
-                datasets: <?= json_encode($comp_trim_datasets_js) ?>
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: 'top' },
-                    title: { display: true, text: 'Total facturado por trimestre — comparativo anual' }
-                },
-                scales: {
-                    x: { stacked: false },
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Lempiras' },
-                        ticks: { callback: v => 'L ' + v.toLocaleString() }
-                    }
+    // Trimestral, semestral, anual y comparativos: se dibujan desde #rep-graficos (y se redibujan al filtrar sin recargar)
+    window.__repCharts = window.__repCharts || {};
+    function repGraficos() {
+        const el = document.getElementById('rep-graficos');
+        if (!el) return;
+        const d = JSON.parse(el.textContent);
+        Object.values(window.__repCharts).forEach(c => c.destroy());
+        window.__repCharts = {};
+        const barras = (id, g) => {
+            const c = document.getElementById(id);
+            if (!c || !g.labels.length) return;
+            window.__repCharts[id] = new Chart(c.getContext('2d'), {
+                type: 'bar',
+                data: { labels: g.labels, datasets: [
+                    { label: 'Subtotal', backgroundColor: COLORES_REP.subtotal, data: g.subtotal },
+                    { label: 'ISV', backgroundColor: COLORES_REP.isv, data: g.isv },
+                    { label: 'Total', backgroundColor: COLORES_REP.total, data: g.total },
+                ] },
+                options: OPTS_REP(true)
+            });
+            window.__repCharts[id].$orig = JSON.parse(JSON.stringify(g));   // para el selector de trimestre/semestre
+        };
+        barras('grafTrim', d.trim);
+        barras('grafSem', d.sem);
+        barras('grafAnualRep', d.anual);
+        const comp = (id, labels, datasets, titulo) => {
+            const c = document.getElementById(id);
+            if (!c) return;
+            window.__repCharts[id] = new Chart(c.getContext('2d'), {
+                type: 'bar',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { position: 'top' }, title: { display: true, text: titulo } },
+                    scales: { x: { stacked: false }, y: { beginAtZero: true, title: { display: true, text: 'Lempiras' }, ticks: { callback: v => 'L ' + v.toLocaleString() } } }
                 }
-            }
-        });
+            });
+        };
+        comp('grafCompTrim', ['Q1 Ene–Mar', 'Q2 Abr–Jun', 'Q3 Jul–Sep', 'Q4 Oct–Dic'], d.compTrim, 'Total facturado por trimestre — comparativo anual');
+        comp('grafCompSem', ['H1 Ene–Jun', 'H2 Jul–Dic'], d.compSem, 'Total facturado por semestre — comparativo anual');
     }
-
-    const ctxCompSem = document.getElementById('grafCompSem')?.getContext('2d');
-    if (ctxCompSem) {
-        new Chart(ctxCompSem, {
-            type: 'bar',
-            data: {
-                labels: ['H1 Ene–Jun', 'H2 Jul–Dic'],
-                datasets: <?= json_encode($comp_sem_datasets_js) ?>
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: 'top' },
-                    title: { display: true, text: 'Total facturado por semestre — comparativo anual' }
-                },
-                scales: {
-                    x: { stacked: false },
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Lempiras' },
-                        ticks: { callback: v => 'L ' + v.toLocaleString() }
-                    }
-                }
-            }
-        });
-    }
+    repGraficos();
 
     // ── Activación del tab activo en Reportes Periódicos ─────────────────────────
     (() => {
@@ -1948,7 +1888,7 @@ unset($__v);
 
         // Activar tab usando manipulación directa del DOM (evita timing issues con Bootstrap)
         function activarTab(tabId) {
-            document.querySelectorAll('#tabsReportesContent .tab-pane').forEach(p => {
+            document.querySelectorAll('#tabsReportesContent > .tab-pane').forEach(p => {
                 p.classList.remove('show', 'active');
             });
             document.querySelectorAll('#tabsReportes .nav-link').forEach(b => {
@@ -1964,13 +1904,119 @@ unset($__v);
 
         // Restaurar tab que PHP indica
         if (savedTab) activarTab(savedTab);
+        window.repActivarTab = activarTab;
 
-        // Al cambiar tab manualmente → actualizar hidden input del form GET (año)
-        document.querySelectorAll('#tabsReportes [data-bs-toggle="tab"]').forEach(btn => {
-            btn.addEventListener('click', e => {
-                const tabId = btn.getAttribute('data-bs-target').replace('#', '');
-                if (inpActive) inpActive.value = tabId;
+        // Al cambiar tab manualmente → recordar en el form del año y en la URL (sin recargar)
+        document.addEventListener('click', e => {
+            const btn = e.target.closest('#tabsReportes [data-bs-toggle="tab"]');
+            if (!btn) return;
+            const tabId = btn.getAttribute('data-bs-target').replace('#', '');
+            const inp = document.getElementById('inp-active-tab-rep');
+            if (inp) inp.value = tabId;
+            try { const u = new URL(location.href); u.searchParams.set('active_tab_rep', tabId); u.searchParams.delete('clear_fecha_rep'); history.replaceState(null, '', u); } catch (err) {}
+        });
+    })();
+
+    // ── Reportes sin recargar: año, «Por fecha» y «Limpiar» traen solo esta sección ──
+    (() => {
+        let pedido = 0;
+        const cargar = async (url, opciones = {}) => {
+            const sec = document.getElementById('seccion-reportes-periodicos');
+            const yo = ++pedido;
+            sec?.style.setProperty('opacity', '.5');
+            try {
+                const r = await fetch(url, { credentials: 'same-origin', ...opciones });
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+                if (yo !== pedido) return;
+                const nueva = doc.getElementById('seccion-reportes-periodicos');
+                if (!nueva) throw new Error('sin sección');
+                document.getElementById('seccion-reportes-periodicos').replaceWith(nueva);
+                const final = new URL(r.url || url, location.href);
+                final.searchParams.delete('clear_fecha_rep');
+                history.replaceState(null, '', final);
+                repGraficos();
+                const d = JSON.parse(document.getElementById('rep-graficos')?.textContent || '{}');
+                if (d.tab && window.repActivarTab) window.repActivarTab(d.tab);
+            } catch (e) {
+                location.href = url;   // si algo falla, se carga la página normal
+            } finally {
+                document.getElementById('seccion-reportes-periodicos')?.style.removeProperty('opacity');
+            }
+        };
+        document.addEventListener('change', e => {
+            if (e.target.id !== 'sel-anio-reporte') return;
+            const f = e.target.form;
+            cargar(location.pathname + '?' + new URLSearchParams(new FormData(f)).toString());
+        });
+        document.addEventListener('submit', e => {
+            if (e.target.id !== 'form-por-fecha') return;
+            e.preventDefault();
+            // POST → el servidor guarda el rango y redirige a la vista con la pestaña «Por fecha»
+            cargar(location.pathname + location.search, { method: 'POST', body: new FormData(e.target) });
+        });
+        document.addEventListener('click', e => {
+            const a = e.target.closest('#tab-fecha a[href*="clear_fecha_rep"]');
+            if (!a) return;
+            e.preventDefault();
+            cargar(a.href);
+        });
+
+        // Comparativo: años a mostrar (columnas, gráfico y variación entre los dos últimos marcados)
+        const compAnios = () => {
+            const marc = Array.from(document.querySelectorAll('.rep-comp-anio:checked')).map(c => c.value);
+            const cap = document.getElementById('cap-comp');
+            if (!cap) return;
+            cap.querySelectorAll('[data-anio]').forEach(c => c.style.display = marc.includes(c.dataset.anio) ? '' : 'none');
+            const [ap, ac] = marc.slice(-2);
+            cap.querySelectorAll('.rep-var-tit').forEach(t => t.textContent = marc.length >= 2 ? `Var. ${ap} → ${ac}` : 'Var. último año');
+            cap.querySelectorAll('tr').forEach(tr => {
+                const v = tr.querySelector('.rep-var');
+                if (!v) return;
+                const val = a => { const c = tr.querySelector(`[data-anio="${a}"]`); return c && c.dataset.v !== '' ? +c.dataset.v : null; };
+                const p = marc.length >= 2 ? val(ap) : null, c = marc.length >= 2 ? val(ac) : null;
+                if (p === null || c === null || p === 0) { v.innerHTML = '<span class="text-muted">—</span>'; return; }
+                const pct = Math.round((c - p) / p * 1000) / 10;
+                v.innerHTML = pct > 0 ? `<span class="text-success fw-semibold">↑ ${pct}%</span>` : pct < 0 ? `<span class="text-danger fw-semibold">↓ ${Math.abs(pct)}%</span>` : '<span class="text-muted">= 0%</span>';
             });
+            const h = document.getElementById('rep-comp-hist');
+            if (h) h.textContent = (marc.length === document.querySelectorAll('.rep-comp-anio').length ? 'Histórico ' : 'Años ') + marc.join(', ');
+            ['grafCompTrim', 'grafCompSem'].forEach(id => {
+                const ch = window.__repCharts[id];
+                if (!ch) return;
+                ch.data.datasets.forEach((ds, i) => ch.setDatasetVisibility(i, marc.includes(String(ds.label))));
+                ch.update();
+            });
+        };
+        document.addEventListener('change', e => {
+            if (!e.target.classList.contains('rep-comp-anio')) return;
+            if (!document.querySelector('.rep-comp-anio:checked')) e.target.checked = true;   // al menos un año
+            compAnios();
+        });
+        document.addEventListener('click', e => {
+            if (e.target.id !== 'rca-todos') return;
+            document.querySelectorAll('.rep-comp-anio').forEach(c => c.checked = true);
+            compAnios();
+        });
+
+        // Selector opcional de trimestre / semestre: filtra la tabla y el gráfico en el momento
+        document.addEventListener('change', e => {
+            const sel = e.target.closest('.rep-periodo');
+            if (!sel) return;
+            const tabla = document.getElementById(sel.dataset.tabla), v = sel.value;
+            tabla?.querySelectorAll('tbody tr[data-k]').forEach(tr => tr.style.display = !v || tr.dataset.k === v ? '' : 'none');
+            const pie = tabla?.querySelector('tfoot');
+            if (pie) pie.style.display = v ? 'none' : '';
+            const ch = window.__repCharts[sel.dataset.grafico];
+            if (ch && ch.$orig) {
+                const o = ch.$orig, idx = v ? o.labels.findIndex(l => l.startsWith(v + ' ')) : -1;
+                const tomar = arr => idx >= 0 ? [arr[idx]] : arr.slice();
+                ch.data.labels = tomar(o.labels);
+                ['subtotal', 'isv', 'total'].forEach((k, n) => ch.data.datasets[n].data = tomar(o[k]));
+                ch.update();
+            }
+            const sub = document.getElementById(sel.dataset.titulo);
+            if (sub) sub.textContent = v ? ' — ' + sel.options[sel.selectedIndex].text : '';
         });
     })();
 
