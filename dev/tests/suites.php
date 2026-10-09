@@ -2474,7 +2474,14 @@ suite('Gastos: selección con casillas y exportación (Excel y ZIP con comproban
     $a = login('qa.admin@local.test');
     $r = $a->get('gastos', ['vista' => 'anual', 'anio' => 2026]);
     check('la lista trae casillas, «seleccionar todos» y la barra de exportación', sinErroresPhp($r['body']) && str_contains($r['body'], 'id="gsSelTodos"') && str_contains($r['body'], 'class="form-check-input gs-check"') && str_contains($r['body'], 'id="gsExpZip"') && str_contains($r['body'], 'gastos-exportar.js'), errorPhp($r['body']));
-    check('la fila del total ocupa la columna nueva', str_contains($r['body'], 'colspan="6" class="text-end fw-bold small pe-3">TOTAL:'));
+    check('la fila del total ocupa la columna nueva y sigue al filtro', str_contains($r['body'], 'colspan="6" class="text-end fw-bold small pe-3"><span id="gsTotalPieTxt">TOTAL (') && str_contains($r['body'], 'id="gsTotalPie"'));
+    // Con filtro de categoría (del servidor) el total es la suma de lo listado, no la del período completo
+    $cat = (int)$pdo->query("SELECT categoria_id FROM gastos WHERE cliente_id = 2 AND YEAR(fecha) = 2026 AND categoria_id IS NOT NULL GROUP BY categoria_id ORDER BY COUNT(*) LIMIT 1")->fetchColumn();
+    if ($cat) {
+        $esp = (float)$pdo->query("SELECT COALESCE(SUM(monto), 0) FROM gastos WHERE cliente_id = 2 AND YEAR(fecha) = 2026 AND categoria_id = $cat AND estado <> 'anulado'")->fetchColumn();
+        $rc = $a->get('gastos', ['vista' => 'anual', 'anio' => 2026, 'cat' => $cat]);
+        check('con filtro de categoría el total del pie es solo esa categoría', preg_match('#id="gsTotalPie"[^>]*>L ([\d,\.]+)#', $rc['body'], $m) && abs((float)str_replace(',', '', $m[1]) - $esp) < 0.01, ($m[1] ?? '?') . ' vs ' . $esp);
+    }
     $ids = $pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND estado = 'pagado' AND archivo_adjunto <> '' ORDER BY id DESC LIMIT 3")->fetchAll(PDO::FETCH_COLUMN);
     // En la base de pruebas los archivos no existen: se crea uno temporal para el primero
     $arch = basename((string)$pdo->query("SELECT archivo_adjunto FROM gastos WHERE id = " . (int)$ids[0])->fetchColumn());

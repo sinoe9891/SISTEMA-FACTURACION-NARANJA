@@ -756,7 +756,7 @@ $total  = count($gastos);
             <div>
                 <div class="gs-stat-val" style="font-size:.9rem;">L <?= number_format((float)$kpi['total_mes'], 2) ?>
                 </div>
-                <div class="gs-stat-lbl">Total (<?= (int)$kpi['total_registros'] ?> reg.)</div>
+                <div class="gs-stat-lbl" title="Todo el período, sin filtros de categoría, tipo o búsqueda">Total del período (<?= (int)$kpi['total_registros'] ?> reg.)</div>
             </div>
         </div>
         <div class="gs-stat">
@@ -1050,8 +1050,9 @@ $total  = count($gastos);
                 <?php if ($total > 0): ?>
                     <tfoot class="table-light">
                         <tr>
-                            <td colspan="6" class="text-end fw-bold small pe-3">TOTAL:</td>
-                            <td class="fw-bold" style="color:#d97706;">L <?= number_format((float)$kpi['total_mes'], 2) ?>
+                            <?php $totalLista = array_sum(array_map(fn($g) => ($g['estado'] ?? '') === 'anulado' ? 0 : (float)$g['monto'], $gastos)); ?>
+                            <td colspan="6" class="text-end fw-bold small pe-3"><span id="gsTotalPieTxt">TOTAL (<?= $total ?> gasto<?= $total === 1 ? '' : 's' ?>)</span>:</td>
+                            <td class="fw-bold text-nowrap" style="color:#d97706;" id="gsTotalPie" title="Suma de los gastos que muestra el filtro (sin los anulados)">L <?= number_format($totalLista, 2) ?>
                             </td>
                             <td colspan="2"></td>
                         </tr>
@@ -1481,6 +1482,14 @@ $total  = count($gastos);
                 });
             }
             $badge.textContent = `${total} gasto${total!==1?'s':''}`;
+            // Total del pie: lo que deja ver el filtro (todas las páginas), sin anulados
+            const $tp = document.getElementById('gsTotalPie'), $tt = document.getElementById('gsTotalPieTxt');
+            if ($tp) {
+                const sum = rows.reduce((t, r) => t + (r.dataset.estado === 'anulado' ? 0 : +r.dataset.monto || 0), 0);
+                $tp.textContent = 'L ' + sum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const anul = rows.filter(r => r.dataset.estado === 'anulado').length;
+                $tt.textContent = `TOTAL (${total} gasto${total !== 1 ? 's' : ''}${anul ? `, sin ${anul} anulado${anul !== 1 ? 's' : ''}` : ''})`;
+            }
             if ($sf) $sf.textContent = total;
             $info.textContent = total === 0 ? 'Sin resultados' : `Mostrando ${s+1}–${e} de ${total}`;
             buildPg(page, totPg);
