@@ -46,6 +46,7 @@ function tasaHttp(string $url, array $headers = []): array
     $code = (int)curl_getinfo($c, CURLINFO_HTTP_CODE);
     $err = curl_error($c);
     curl_close($c);
+    if ($code === 429) throw new Exception("se alcanzó el límite de consultas del BCH (429): se usa la tasa de referencia y se reintenta más tarde.");
     if (in_array($code, [401, 403], true)) throw new Exception("la llave fue rechazada ($code): revisa que sea la llave principal vigente y que la suscripción esté activa en el portal del BCH.");
     if ($b === false || $code >= 400) throw new Exception("La fuente respondió " . ($code ?: 'sin conexión') . ($err ? " ($err)" : '') . '.');
     $j = json_decode((string)$b, true);
