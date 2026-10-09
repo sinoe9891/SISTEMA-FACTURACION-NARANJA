@@ -2583,5 +2583,17 @@ suite('Dashboard: reportes periódicos sin recargar, selector de trimestre/semes
     check('«Año actual» quita el rango y vuelve del 1 de enero a hoy', sinErroresPhp($r['body']) && !str_contains($r['body'], 'Período: <strong>2026-04-01') && str_contains($r['body'], 'Del año actual a la fecha') && str_contains($r['body'], 'value="' . date('Y') . '-01-01"') && str_contains($r['body'], 'value="' . date('Y-m-d') . '"'));
 });
 
+suite('Dashboard: facturas no declaradas con sus correlativos y enlace al historial', function () {
+    $pdo = db();
+    $a = login('qa.admin@local.test');
+    $n = (int)$pdo->query("SELECT COUNT(*) FROM facturas WHERE cliente_id = 2 AND establecimiento_id = 1 AND estado = 'emitida' AND estado_declarada = 0 AND fecha_emision < '" . date('Y-m-01') . "'")->fetchColumn();
+    $r = $a->get('dashboard');
+    check('el dashboard carga', sinErroresPhp($r['body']), errorPhp($r['body']));
+    check('si hay atrasadas, lista sus correlativos con enlace al historial (con su CAI)', $n === 0 || (str_contains($r['body'], 'db-no-decl') && preg_match('#href="lista_facturas\?cai_id=\d+&buscar=[0-9-]+" target="_blank"#', $r['body'])), (string)$n);
+    $f = $pdo->query("SELECT correlativo, cai_id FROM facturas WHERE cliente_id = 2 AND establecimiento_id = 1 AND estado = 'emitida' ORDER BY id LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $l = $a->get('lista_facturas', ['cai_id' => $f['cai_id'], 'buscar' => $f['correlativo']]);
+    check('el historial abre con ese CAI y busca la factura', sinErroresPhp($l['body']) && str_contains($l['body'], "get('buscar')") && str_contains($l['body'], 'data-search="' . strtolower($f['correlativo'])), errorPhp($l['body']));
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

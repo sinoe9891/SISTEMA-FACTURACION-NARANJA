@@ -1602,6 +1602,24 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 </div>
 
 <script>
+	// ?buscar=000-002-01-00000153 (desde el aviso de facturas no declaradas): la busca y la resalta
+	window.addEventListener('load', () => {
+		const b = (new URLSearchParams(location.search).get('buscar') || '').trim();
+		const s = document.getElementById('fhSearch');
+		if (!b || !s) return;
+		s.value = b;
+		s.dispatchEvent(new Event('input'));
+		setTimeout(() => {
+			const fila = Array.from(document.querySelectorAll('#fhBody tr')).find(tr => tr.style.display !== 'none' && (tr.dataset.search || '').includes(b.toLowerCase()));
+			if (fila) { fila.classList.add('fh-encontrada'); fila.scrollIntoView({ block: 'center' }); }
+			else if (window.Swal) Swal.fire('No aparece con este filtro', 'Revisa el CAI y las fechas del filtro: la factura ' + b + ' no está en la lista actual.', 'info');
+		}, 450);
+	});
+</script>
+<style>
+	#fhBody tr.fh-encontrada td { background: #fef9c3 !important; }
+</style>
+<script>
 	// Tabla: búsqueda, orden, paginación y selección. Se vuelve a iniciar cada vez que los filtros reemplazan la tabla.
 	function fhInitTabla() {
 		let query = '',

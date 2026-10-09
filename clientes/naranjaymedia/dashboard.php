@@ -431,9 +431,27 @@ unset($__v);
                             declaradas</span></div>
                     <div class="card-body px-4 py-3 text-<?= $color_alerta ?>">
                         <?php if (($cant_no_declaradas ?? 0) > 0): ?>
-                            <div class="mb-1"><strong><?= (int)$cant_no_declaradas ?></strong> facturas atrasadas</div>
+                            <div class="mb-1"><strong><?= (int)$cant_no_declaradas ?></strong> factura<?= (int)$cant_no_declaradas === 1 ? '' : 's' ?> atrasada<?= (int)$cant_no_declaradas === 1 ? '' : 's' ?></div>
                             <div class="mb-1">ISV pendiente: <strong>L <?= number_format($isv_pendiente ?? 0, 2) ?></strong>
                             </div>
+                            <?php if (!empty($lista_no_declaradas)): ?>
+                                <!-- Cuáles son: al hacer clic se abren en el historial (con su CAI) para identificarlas -->
+                                <ul class="list-unstyled small mb-1 db-no-decl">
+                                    <?php foreach (array_slice($lista_no_declaradas, 0, 8) as $nd):
+                                        $ndOtroAnio = (int)substr($nd['fecha'], 0, 4) < (int)date('Y');
+                                        $ndOtroCai = !(int)$nd['cai_activo']; ?>
+                                        <li class="d-flex flex-wrap align-items-center gap-1 py-1 border-bottom">
+                                            <a href="lista_facturas?cai_id=<?= (int)$nd['cai_id'] ?>&buscar=<?= urlencode($nd['correlativo']) ?>" target="_blank" rel="noopener" class="fw-semibold text-decoration-none" title="Buscarla en el historial de facturas (otra pestaña)">
+                                                <?= htmlspecialchars(substr($nd['correlativo'], -8)) ?> <i class="bi bi-box-arrow-up-right" style="font-size:.7rem"></i></a>
+                                            <span class="text-muted"><?= date('d/m/Y', strtotime($nd['fecha'])) ?></span>
+                                            <?php if ($ndOtroAnio): ?><span class="badge bg-danger-subtle text-danger-emphasis">Año <?= substr($nd['fecha'], 0, 4) ?></span><?php endif; ?>
+                                            <?php if ($ndOtroCai): ?><span class="badge bg-secondary-subtle text-secondary-emphasis" title="De un CAI anterior (talonario o rango ya cerrado)">Otro CAI</span><?php endif; ?>
+                                            <span class="ms-auto text-muted">ISV L <?= number_format((float)$nd['isv'], 2) ?></span>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                                <?php if (count($lista_no_declaradas) > 8): ?><div class="small text-muted">y <?= (int)$cant_no_declaradas - 8 ?> más…</div><?php endif; ?>
+                            <?php endif; ?>
                             <?php if (!empty($texto_meses)): ?><div class="small text-muted"><?= $texto_meses ?></div>
                             <?php endif; ?>
                         <?php else: ?>

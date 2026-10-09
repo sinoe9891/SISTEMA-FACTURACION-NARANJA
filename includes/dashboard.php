@@ -221,6 +221,23 @@ $no_declaradas = $stmtNoDeclaradas->fetch(PDO::FETCH_ASSOC);
 $cant_no_declaradas = (int)$no_declaradas['cantidad'];
 $isv_pendiente = (float)$no_declaradas['isv_pendiente'];
 
+// Cuáles son (para buscarlas): correlativo, fecha, ISV y si son de otro año o de otro CAI (la lista de facturas abre el CAI activo)
+$stmtNoDeclLista = $pdo->prepare("
+	SELECT f.id, f.correlativo, DATE(f.fecha_emision) AS fecha, (f.isv_15 + f.isv_18) AS isv, f.cai_id
+	FROM facturas f
+	WHERE f.cliente_id = ? AND f.establecimiento_id = ? AND f.estado = 'emitida' AND f.estado_declarada = 0 AND f.fecha_emision < ?
+	ORDER BY f.fecha_emision, f.correlativo
+	LIMIT 50
+");
+$stmtNoDeclLista->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual]);
+$lista_no_declaradas = $stmtNoDeclLista->fetchAll(PDO::FETCH_ASSOC);
+// El CAI que abre la lista de facturas por defecto (el vigente más reciente): las de otro CAI se marcan
+$stmtCaiVig = $pdo->prepare("SELECT id FROM cai_rangos WHERE cliente_id = ? AND establecimiento_id = ? AND CURDATE() <= fecha_limite ORDER BY fecha_recepcion DESC LIMIT 1");
+$stmtCaiVig->execute([$cliente_id, $establecimiento_activo]);
+$cai_vigente_id = (int)$stmtCaiVig->fetchColumn();
+foreach ($lista_no_declaradas as &$__nd) $__nd['cai_activo'] = (int)$__nd['cai_id'] === $cai_vigente_id ? 1 : 0;
+unset($__nd);
+
 /// ==============================
 /// Pendientes de pago (facturas emitidas no pagadas)
 /// ==============================
