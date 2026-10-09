@@ -273,6 +273,13 @@ $total  = count($gastos);
         border: 1px solid #fde68a;
     }
 
+    .gs-export { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .6rem .9rem; margin-bottom: .75rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    .gs-export.activo { background: #eff6ff; border-color: #bfdbfe; }
+    .gs-export-txt { font-size: .85rem; color: var(--text-muted); }
+    .gs-export.activo .gs-export-txt { color: #1e40af; font-weight: 600; }
+    .gs-export-btns { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .gs-table .gs-sel { width: 34px; text-align: center; padding-left: .6rem; padding-right: .2rem; }
+    .gs-table tr.gs-marcada td { background: #eff6ff; }
     .gs-toolbar {
         display: flex;
         align-items: center;
@@ -893,6 +900,16 @@ $total  = count($gastos);
         </select>
     </div>
 
+    <!-- Selección y exportación: con casillas marcadas, sobre esas; sin marcar, sobre todos los del filtro -->
+    <div class="gs-export" id="gsExport">
+        <span class="gs-export-txt" id="gsExportTxt">Exportar los gastos del filtro</span>
+        <div class="gs-export-btns">
+            <button type="button" class="btn btn-sm btn-primary" id="gsExpZip"><i class="bi bi-file-earmark-zip me-1"></i>Descargar ZIP</button>
+            <button type="button" class="btn btn-sm btn-outline-success" id="gsExpXlsx"><i class="bi bi-file-earmark-excel me-1"></i>Excel</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="gsExpLimpiar"><i class="bi bi-x-lg me-1"></i>Quitar selección</button>
+        </div>
+    </div>
+
     <!-- Tabla -->
     <div id="gsZonaTabla">
     <div class="gs-card">
@@ -905,6 +922,7 @@ $total  = count($gastos);
             <table class="gs-table" id="gsTable">
                 <thead>
                     <tr>
+                        <th class="gs-sel" style="cursor:default;width:34px"><input type="checkbox" class="form-check-input" id="gsSelTodos" title="Seleccionar todos los del filtro (todas las páginas)" aria-label="Seleccionar todos"></th>
                         <th data-col="0" title="Número de gasto">N.º<i class="bi bi-arrow-up sort-icon"></i></th>
                         <th data-col="1"><i class="bi bi-calendar3 me-1"></i>Fecha<i
                                 class="bi bi-arrow-up sort-icon"></i></th>
@@ -936,7 +954,8 @@ $total  = count($gastos);
                     ?>
                         <tr data-search="<?= htmlspecialchars($src) ?>"
                             data-tipo="<?= htmlspecialchars($g['tipo'] ?? '') ?>"
-                            data-estado="<?= htmlspecialchars($est) ?>">
+                            data-estado="<?= htmlspecialchars($est) ?>" data-id="<?= (int)$g['id'] ?>" data-monto="<?= (float)($g['monto'] ?? 0) ?>" data-comp="<?= empty($g['archivo_adjunto']) ? 0 : 1 ?>">
+                            <td class="gs-sel"><input type="checkbox" class="form-check-input gs-check" value="<?= (int)$g['id'] ?>" aria-label="Seleccionar gasto #<?= (int)$g['id'] ?>"></td>
                             <td data-sort="<?= str_pad((string)(int)$g['id'], 10, '0', STR_PAD_LEFT) ?>" style="white-space:nowrap;font-size:.8rem;color:#94a3b8;font-weight:700;">#<?= (int)$g['id'] ?></td>
                             <td data-col="fecha" data-sort="<?= htmlspecialchars((string)$g['fecha']) ?>" style="white-space:nowrap;font-size:.83rem;color:#64748b;font-weight:600;">
                                 <?= date('d/m/Y', strtotime($g['fecha'])) ?>
@@ -1031,7 +1050,7 @@ $total  = count($gastos);
                 <?php if ($total > 0): ?>
                     <tfoot class="table-light">
                         <tr>
-                            <td colspan="5" class="text-end fw-bold small pe-3">TOTAL:</td>
+                            <td colspan="6" class="text-end fw-bold small pe-3">TOTAL:</td>
                             <td class="fw-bold" style="color:#d97706;">L <?= number_format((float)$kpi['total_mes'], 2) ?>
                             </td>
                             <td colspan="2"></td>
@@ -1419,7 +1438,7 @@ $total  = count($gastos);
         const hl = (t, q) => !q ? t : t.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'),
             '<mark class="gs-highlight">$1</mark>');
         const colTxt = (r, i) => {
-            const td = r.querySelectorAll('td')[i];
+            const td = r.querySelectorAll('td')[i + 1];   // +1: la primera es la casilla
             return td ? (td.dataset.sort || td.dataset.original || td.textContent).trim().toLowerCase() : '';   // data-sort: número y fecha ordenan bien
         };
         const filtered = () => allRows.filter(r => {
@@ -1535,6 +1554,7 @@ $total  = count($gastos);
         updIcons();
         render();
         return {
+            filtrados: () => filtered(),
             recargar() {   // después de traer los datos de otro mes/filtro sin recargar la página
                 allRows = Array.from(document.querySelectorAll('#gsBody tr'));
                 sortCol = -1; page = 1;
@@ -1815,6 +1835,60 @@ $total  = count($gastos);
         })();
     });
 
+
+    /* ══ SELECCIÓN Y EXPORTACIÓN (ZIP con Excel, comprobantes y bouchers; o solo Excel) ══ */
+    (() => {
+        const puedeBouchers = <?= in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true) ? 'true' : 'false' ?>;
+        const $bar = document.getElementById('gsExport'), $txt = document.getElementById('gsExportTxt'), $limpiar = document.getElementById('gsExpLimpiar');
+        const L = n => 'L ' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const marcadas = () => Array.from(document.querySelectorAll('#gsBody .gs-check:checked')).map(c => c.closest('tr'));
+        // Con casillas: esas. Sin casillas: todos los que deja ver el filtro (todas las páginas).
+        const objetivo = () => { const m = marcadas(); return m.length ? m : gsTabla.filtrados(); };
+        const suma = rows => rows.reduce((t, r) => t + (r.dataset.estado === 'anulado' ? 0 : +r.dataset.monto || 0), 0);
+        const pintar = () => {
+            const m = marcadas(), f = gsTabla.filtrados();
+            document.querySelectorAll('#gsBody tr[data-id]').forEach(r => r.classList.toggle('gs-marcada', !!r.querySelector('.gs-check:checked')));
+            $bar.classList.toggle('activo', m.length > 0);
+            $limpiar.classList.toggle('d-none', !m.length);
+            $txt.textContent = m.length
+                ? `${m.length} gasto${m.length !== 1 ? 's' : ''} seleccionado${m.length !== 1 ? 's' : ''} · ${L(suma(m))}`
+                : `Sin selección: se exportan los ${f.length} gasto${f.length !== 1 ? 's' : ''} del filtro · ${L(suma(f))}`;
+            const t = document.getElementById('gsSelTodos');
+            if (t) { const enF = f.filter(r => r.querySelector('.gs-check:checked')).length; t.checked = f.length > 0 && enF === f.length; t.indeterminate = enF > 0 && enF < f.length; }
+        };
+        document.addEventListener('change', e => {
+            if (e.target.matches('#gsBody .gs-check')) pintar();
+            if (e.target.id === 'gsSelTodos') { gsTabla.filtrados().forEach(r => { const c = r.querySelector('.gs-check'); if (c) c.checked = e.target.checked; }); pintar(); }
+        });
+        $limpiar.addEventListener('click', () => { document.querySelectorAll('#gsBody .gs-check:checked').forEach(c => c.checked = false); pintar(); });
+        // Repintar cuando cambia la búsqueda, los filtros o se traen datos de otro período
+        ['gsSearch', 'gsFiltroTipo', 'gsFiltroEstado'].forEach(id => document.getElementById(id)?.addEventListener(id === 'gsSearch' ? 'input' : 'change', () => setTimeout(pintar, 220)));
+        new MutationObserver(() => pintar()).observe(document.getElementById('gsZonaTabla').parentNode, { childList: true });
+        document.getElementById('gsExpXlsx').addEventListener('click', () => {
+            const ids = objetivo().map(r => r.dataset.id);
+            if (!ids.length) return Swal.fire('Sin gastos', 'No hay gastos para exportar con este filtro.', 'info');
+            location.href = 'gastos_exportar.php?xlsx=' + ids.join(',');
+        });
+        document.getElementById('gsExpZip').addEventListener('click', async () => {
+            const rows = objetivo(), ids = rows.map(r => r.dataset.id);
+            if (!ids.length) return Swal.fire('Sin gastos', 'No hay gastos para exportar con este filtro.', 'info');
+            const conComp = rows.filter(r => r.dataset.comp === '1').length, pagados = rows.filter(r => r.dataset.estado === 'pagado').length;
+            const r = await Swal.fire({
+                title: `Descargar ${ids.length} gasto${ids.length !== 1 ? 's' : ''} en ZIP`,
+                html: `<div class="text-start small">
+                        <div class="mb-2"><i class="bi bi-check2 text-success me-1"></i>Excel con el detalle y el total (${L(suma(rows))})</div>
+                        <div class="mb-2"><i class="bi bi-check2 text-success me-1"></i>Comprobantes adjuntos: <strong>${conComp}</strong> de ${ids.length}</div>
+                        ${puedeBouchers ? `<div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="gsExpBouchers" ${pagados ? '' : 'disabled'}>
+                            <label class="form-check-label" for="gsExpBouchers">Incluir también los bouchers en PDF (${pagados} pagado${pagados !== 1 ? 's' : ''}; tarda un poco más)</label></div>` : ''}
+                       </div>`,
+                showCancelButton: true, confirmButtonText: '<i class="bi bi-download me-1"></i>Descargar', cancelButtonText: 'Cancelar',
+                preConfirm: () => ({ bouchers: !!document.getElementById('gsExpBouchers')?.checked }),
+            });
+            if (r.isConfirmed) gastosExportarZip(ids, r.value.bouchers);
+        });
+        pintar();
+    })();
+
     /* ══ FILTROS SIN RECARGAR: al cambiar un select se traen los datos y se actualiza la tabla ══ */
     (() => {
         const form = document.getElementById('gsFiltros');
@@ -1845,5 +1919,6 @@ $total  = count($gastos);
     })();
 </script>
 
+<script src="../../clientes/js/gastos-exportar.js?v=<?= @filemtime(__DIR__ . '/../js/gastos-exportar.js') ?>"></script>
 <script src="../../clientes/js/nomina-pago.js?v=<?= @filemtime(__DIR__ . '/../js/nomina-pago.js') ?>"></script>
 <?php require_once '../../includes/templates/footer.php'; ?>

@@ -120,7 +120,7 @@ define('USUARIO_ROL', $usuario['rol']);
  */
 const ROL_NOMINA_ARCHIVOS = [
     // Páginas
-    'colaboradores', 'colaborador_ver', 'colaborador_reporte', 'colaborador_recibo_pdf', 'pagos_nomina', 'pagos_nomina_exportar',
+    'colaboradores', 'colaborador_ver', 'colaborador_reporte', 'colaborador_recibo_pdf', 'pagos_nomina', 'pagos_nomina_exportar', 'gastos_exportar',
     'gasto_archivo', 'gasto_ver', 'movimiento_archivo', 'logout', 'seleccionar_establecimiento',
     'cuentas_pagar', 'gastos', 'categorias_gastos', 'bancos', 'banco_cuenta', 'cheques', 'tarjetas',
     // Acciones (clientes/<empresa>/includes/)

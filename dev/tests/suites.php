@@ -2469,5 +2469,48 @@ suite('Resumen diario de pendientes a gerencia (cron + Configuración → Correo
     $pdo->exec("DELETE FROM correos_enviados WHERE id = $idQa");
 });
 
+suite('Gastos: selección con casillas y exportación (Excel y ZIP con comprobantes y bouchers)', function () {
+    $pdo = db();
+    $a = login('qa.admin@local.test');
+    $r = $a->get('gastos', ['vista' => 'anual', 'anio' => 2026]);
+    check('la lista trae casillas, «seleccionar todos» y la barra de exportación', sinErroresPhp($r['body']) && str_contains($r['body'], 'id="gsSelTodos"') && str_contains($r['body'], 'class="form-check-input gs-check"') && str_contains($r['body'], 'id="gsExpZip"') && str_contains($r['body'], 'gastos-exportar.js'), errorPhp($r['body']));
+    check('la fila del total ocupa la columna nueva', str_contains($r['body'], 'colspan="6" class="text-end fw-bold small pe-3">TOTAL:'));
+    $ids = $pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND estado = 'pagado' AND archivo_adjunto <> '' ORDER BY id DESC LIMIT 3")->fetchAll(PDO::FETCH_COLUMN);
+    // En la base de pruebas los archivos no existen: se crea uno temporal para el primero
+    $arch = basename((string)$pdo->query("SELECT archivo_adjunto FROM gastos WHERE id = " . (int)$ids[0])->fetchColumn());
+    $tmpComp = UPLOADS . '/gastos/' . $arch;
+    $creado = !is_file($tmpComp) && file_put_contents($tmpComp, "\xFF\xD8\xFF\xE0QA") !== false;
+    $ids[] = (int)$pdo->query("SELECT id FROM gastos WHERE cliente_id = 2 AND (archivo_adjunto IS NULL OR archivo_adjunto = '') ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $ids = array_values(array_filter(array_map('intval', $ids)));
+    $x = $a->get('gastos_exportar.php', ['xlsx' => implode(',', $ids)]);
+    check('Excel: descarga un .xlsx válido', $x['code'] === 200 && str_starts_with($x['body'], "PK") && str_contains($x['head'], 'spreadsheetml'), substr($x['body'], 0, 200));
+    $ini = $a->post('gastos_exportar.php', ['accion' => 'iniciar', 'ids' => implode(',', $ids), 'bouchers' => 1]);
+    check('ZIP: inicia con los gastos de la empresa', !empty($ini['json']['token']) && $ini['json']['total'] === count($ids), $ini['body']);
+    $tok = $ini['json']['token'] ?? '';
+    $e = ['hechos' => 0, 'total' => 1];
+    for ($i = 0; $i < 10 && $e['hechos'] < $e['total']; $i++) $e = $a->post('gastos_exportar.php', ['accion' => 'paso', 'token' => $tok])['json'] ?? ['hechos' => 1, 'total' => 0];
+    $z = $a->get('gastos_exportar.php', ['descargar' => $tok]);
+    $tmp = tempnam(sys_get_temp_dir(), 'gx');
+    file_put_contents($tmp, $z['body']);
+    $zip = new ZipArchive();
+    $nombres = [];
+    if ($zip->open($tmp) === true) { for ($k = 0; $k < $zip->numFiles; $k++) $nombres[] = $zip->getNameIndex($k); $zip->close(); }
+    @unlink($tmp);
+    check('ZIP: trae gastos.xlsx y LEEME.txt', in_array('gastos.xlsx', $nombres, true) && in_array('LEEME.txt', $nombres, true), implode(', ', $nombres));
+    check('ZIP: comprobantes con N.º_fecha_descripción', count(preg_grep('#^comprobantes/\d{4}_\d{4}-\d{2}-\d{2}_#', $nombres)) >= 1, implode(', ', $nombres));
+    check('ZIP: bouchers de los pagados', count(preg_grep('#^bouchers/.+\.pdf$#', $nombres)) >= 1, implode(', ', $nombres));
+    if ($creado) @unlink($tmpComp);
+    check('ZIP: los temporales se borran al descargar', !is_dir(sys_get_temp_dir() . '/gastos_export/' . $tok));
+    $otra = (int)$pdo->query("SELECT id FROM gastos WHERE cliente_id <> 2 LIMIT 1")->fetchColumn();
+    if ($otra) { $r = $a->post('gastos_exportar.php', ['accion' => 'iniciar', 'ids' => (string)$otra]); check('no exporta gastos de otra empresa', !empty($r['json']) && empty($r['json']['success']), $r['body']); }
+    $f = login('qa.facturador@local.test');
+    $ini = $f->post('gastos_exportar.php', ['accion' => 'iniciar', 'ids' => (string)$ids[0], 'bouchers' => 1]);
+    $e = $f->post('gastos_exportar.php', ['accion' => 'paso', 'token' => $ini['json']['token'] ?? '']);
+    $z = $f->get('gastos_exportar.php', ['descargar' => $ini['json']['token'] ?? '']);
+    $tmp = tempnam(sys_get_temp_dir(), 'gx'); file_put_contents($tmp, $z['body']);
+    $nombres = []; if ($zip->open($tmp) === true) { for ($k = 0; $k < $zip->numFiles; $k++) $nombres[] = $zip->getNameIndex($k); $zip->close(); } @unlink($tmp);
+    check('facturador: puede bajar el ZIP pero sin bouchers', in_array('gastos.xlsx', $nombres, true) && !preg_grep('#^bouchers/#', $nombres), implode(', ', $nombres));
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';
