@@ -3,9 +3,11 @@
 //   POST accion=guardar       → configuración SMTP (admin)
 //   POST accion=probar        → correo de prueba a "para" (admin)
 //   POST accion=enviar_pago   → aviso de pago al colaborador (gasto_id) (admin/facturador)
+//   POST accion=pendientes_guardar | pendientes_vista | pendientes_probar → resumen diario de pendientes a gerencia (admin)
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 require_once '../../../includes/correo_pagos.php';
+require_once '../../../includes/aviso_pendientes.php';
 header('Content-Type: application/json; charset=utf-8');
 
 try {
@@ -39,6 +41,23 @@ try {
             if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador', 'nomina'], true)) throw new Exception("No tienes permiso para enviar avisos.");
             $para = correoNotificarPago($pdo, $cid, (int)($_POST['gasto_id'] ?? 0), $uid);
             echo json_encode(['success' => true, 'message' => "Aviso de pago enviado a: $para"], JSON_UNESCAPED_UNICODE);
+            break;
+
+        case 'pendientes_guardar':
+            if (!$esAdmin) throw new Exception("Solo un administrador puede configurar el resumen.");
+            avisoPendientesGuardar($pdo, $cid, $_POST);
+            echo json_encode(['success' => true, 'message' => 'Resumen diario guardado.'], JSON_UNESCAPED_UNICODE);
+            break;
+
+        case 'pendientes_vista':
+            if (!$esAdmin) throw new Exception("Solo un administrador puede ver el resumen.");
+            echo json_encode(['success' => true] + avisoPendientesVista($pdo, $cid), JSON_UNESCAPED_UNICODE);
+            break;
+
+        case 'pendientes_probar':
+            if (!$esAdmin) throw new Exception("Solo un administrador puede enviar el resumen.");
+            [$para, $n] = avisoPendientesEnviar($pdo, $cid, $uid, true);
+            echo json_encode(['success' => true, 'message' => "Resumen ($n pendiente" . ($n === 1 ? '' : 's') . ") enviado a: $para"], JSON_UNESCAPED_UNICODE);
             break;
 
         default:

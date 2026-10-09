@@ -4,6 +4,7 @@ $titulo = 'Correo (SMTP)';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/correo.php';
+require_once '../../includes/aviso_pendientes.php';
 
 if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) {
     header('Location: dashboard');
@@ -36,7 +37,9 @@ if ($instalado) {
     $st->execute([$cid]);
     $log = $st->fetchAll(PDO::FETCH_ASSOC);
 }
-$tipos = ['prueba' => 'Prueba', 'pago_colaborador' => 'Aviso de pago', 'cobro' => 'Cobro', 'cobro_prueba' => 'Cobro (prueba)'];
+$tipos = ['prueba' => 'Prueba', 'pago_colaborador' => 'Aviso de pago', 'cobro' => 'Cobro', 'cobro_prueba' => 'Cobro (prueba)',
+          'resumen_pendientes' => 'Resumen a gerencia', 'resumen_pendientes_prueba' => 'Resumen a gerencia (prueba)', 'documento_vencido' => 'Documento vencido', 'documento_por_vencer' => 'Documento por vencer'];
+$hayResumen = $instalado && avisoPendientesDisponible($pdo);
 $rutaCron = realpath(__DIR__ . '/../../cron/tareas.php') ?: dirname(__DIR__, 2) . '/cron/tareas.php';
 
 require_once '../../includes/templates/header.php';
@@ -153,6 +156,35 @@ require_once '../../includes/templates/config_tabs.php';
                         </div>
                     </div>
                 </div>
+                <?php if ($p === 'facturacion' && $hayResumen):
+                    $rv = $c['v']; ?>
+                    <form class="app-card mb-3 form-resumen" novalidate>
+                        <div class="app-card-header"><span><i class="bi bi-clipboard-check me-1"></i> Resumen diario a gerencia</span>
+                            <span class="app-badge <?= (int)($rv['aviso_pendientes_auto'] ?? 1) ? 'app-badge-success' : 'app-badge-muted' ?>"><?= (int)($rv['aviso_pendientes_auto'] ?? 1) ? 'Activo' : 'Apagado' ?></span></div>
+                        <div class="app-card-body small">
+                            <input type="hidden" name="accion" value="pendientes_guardar">
+                            <p class="mb-2">Un correo interno con lo que ya tocaba y está pendiente: <strong>contratos sin facturar</strong> (pasó el día de pago), <strong>facturas sin enviar</strong> al cliente, <strong>facturas vencidas</strong> sin pagar y <strong>gastos por cobrar</strong> al cliente. Solo se envía si hay algo pendiente.</p>
+                            <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="aviso_pendientes_auto" id="res-auto" value="1" <?= (int)($rv['aviso_pendientes_auto'] ?? 1) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="res-auto">Enviar automáticamente</label></div>
+                            <div class="d-flex flex-wrap gap-2 mb-2">
+                                <select class="form-select form-select-sm" name="aviso_pendientes_dias" style="width:auto" aria-label="Frecuencia">
+                                    <?php foreach (AVISO_PENDIENTES_DIAS as $k => $t): ?><option value="<?= $k ?>" <?= ($rv['aviso_pendientes_dias'] ?? 'habiles') === $k ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?>
+                                </select>
+                                <select class="form-select form-select-sm" name="aviso_pendientes_hora" style="width:auto" aria-label="Hora">
+                                    <?php for ($h = 5; $h <= 20; $h++): ?><option value="<?= $h ?>" <?= (int)($rv['aviso_pendientes_hora'] ?? 8) === $h ? 'selected' : '' ?>>a las <?= date('g:i a', mktime($h, 0)) ?></option><?php endfor; ?>
+                                </select>
+                            </div>
+                            <label class="form-label mb-1" for="res-para">Enviar a</label>
+                            <input class="form-control form-control-sm" id="res-para" name="aviso_pendientes_para" value="<?= $v('aviso_pendientes_para') ?>" placeholder="<?= $v('responder_a') ?: 'gerencia@…, administracion@…' ?>">
+                            <div class="form-text mb-2">Vacío = los de «Responder a». Varios separados por coma.</div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-save me-1"></i> Guardar</button>
+                                <button class="btn btn-sm btn-outline-secondary btn-resumen-ver" type="button"><i class="bi bi-eye me-1"></i> Vista previa</button>
+                                <button class="btn btn-sm btn-outline-primary btn-resumen-probar" type="button" <?= $c['tieneClave'] ? '' : 'disabled' ?>><i class="bi bi-send me-1"></i> Enviar ahora</button>
+                            </div>
+                        </div>
+                    </form>
+                <?php endif; ?>
                 <?php if ($p === 'facturacion'): ?>
                     <div class="app-card mb-3">
                         <div class="app-card-header"><span><i class="bi bi-calendar-check me-1"></i> Cobros por correo</span></div>
@@ -165,7 +197,7 @@ require_once '../../includes/templates/config_tabs.php';
                 <div class="app-card">
                     <div class="app-card-header"><span><i class="bi bi-clock me-1"></i> Envíos automáticos (cron)</span></div>
                     <div class="app-card-body small">
-                        <p class="mb-2">Un solo trabajo de cron, <strong>cada 5 minutos</strong> (<code>*/5 * * * *</code>), envía los avisos de pago y los cobros programados:</p>
+                        <p class="mb-2">Un solo trabajo de cron, <strong>cada 5 minutos</strong> (<code>*/5 * * * *</code>), envía los avisos de pago, los cobros programados y el resumen a gerencia:</p>
                         <pre class="bg-light border rounded p-2 mb-2" style="white-space:pre-wrap;font-size:11.5px">/usr/local/bin/php <?= htmlspecialchars($rutaCron) ?> &gt;&gt; <?= htmlspecialchars(dirname(dirname(dirname($rutaCron)))) ?>/tareas.log 2&gt;&amp;1</pre>
                         <p class="mb-0 text-muted">Hora del sistema: <strong><?= date('d/m/Y g:i a') ?></strong> (Honduras).</p>
                     </div>
@@ -231,6 +263,34 @@ require_once '../../includes/templates/config_tabs.php';
         post(new FormData(f)).then(d => Swal.fire({ icon: 'success', title: d.message }).then(() => recargarEn(f.elements.perfil.value)))
             .catch(err => Swal.fire('No se pudo guardar', err.message, 'error')).finally(() => b.disabled = false);
     }));
+    document.querySelectorAll('.form-resumen').forEach(f => {
+        f.addEventListener('submit', e => {
+            e.preventDefault();
+            const b = f.querySelector('[type=submit]'); b.disabled = true;
+            post(new FormData(f)).then(d => Swal.fire({ icon: 'success', title: d.message }).then(() => recargarEn('facturacion')))
+                .catch(err => Swal.fire('No se pudo guardar', err.message, 'error')).finally(() => b.disabled = false);
+        });
+        f.querySelector('.btn-resumen-ver').addEventListener('click', () => {
+            const fd = new FormData(); fd.append('accion', 'pendientes_vista');
+            Swal.fire({ title: 'Armando el resumen…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            post(fd).then(d => {
+                const fr = document.createElement('iframe');
+                fr.style.cssText = 'width:100%;height:65vh;border:1px solid #e2e8f0;border-radius:8px;background:#f1f5f9';
+                fr.srcdoc = d.html;
+                Swal.fire({ title: d.total ? d.total + ' pendiente' + (d.total === 1 ? '' : 's') : 'Todo al día', width: 760, html: fr, confirmButtonText: 'Cerrar',
+                    footer: '<span class="small text-muted">Asunto: ' + d.asunto.replace(/</g, '&lt;') + '<br>Para: ' + (d.para || '(sin destinatarios)').replace(/</g, '&lt;') + (d.total ? '' : '<br>Sin pendientes no se envía automáticamente.') + '</span>' });
+            }).catch(err => Swal.fire('No se pudo armar', err.message, 'error'));
+        });
+        f.querySelector('.btn-resumen-probar').addEventListener('click', () => {
+            Swal.fire({ title: '¿Enviar el resumen ahora?', text: 'Se envía a los destinatarios guardados, marcado como prueba (no cuenta como el envío del día).', icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' })
+                .then(r => {
+                    if (!r.isConfirmed) return;
+                    const fd = new FormData(); fd.append('accion', 'pendientes_probar');
+                    Swal.fire({ title: 'Enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                    post(fd).then(d => Swal.fire({ icon: 'success', title: d.message })).catch(err => Swal.fire('No se pudo enviar', err.message, 'error'));
+                });
+        });
+    });
     document.querySelectorAll('.btn-probar').forEach(b => b.addEventListener('click', () => {
         const para = b.parentElement.querySelector('.para-prueba').value.trim();
         if (!para) return Swal.fire('Indica un correo', 'Escribe a qué correo enviar la prueba.', 'info');

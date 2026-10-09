@@ -2423,5 +2423,51 @@ suite('Configuración con pestañas y Tasa del dólar (BCH)', function () {
     check('facturador: no entra a Tasa del dólar', $r['code'] === 302 || !str_contains($r['body'], 'formClave'));
 });
 
+suite('Resumen diario de pendientes a gerencia (cron + Configuración → Correo)', function () {
+    require_once __DIR__ . '/../../includes/aviso_pendientes.php';
+    $pdo = db();
+    check('la migración está instalada', avisoPendientesDisponible($pdo));
+    check('frecuencia: hábiles de lunes a viernes, lunes solo lunes, diario siempre',
+        avisoPendientesTocaHoy('habiles', 5) && !avisoPendientesTocaHoy('habiles', 6) && avisoPendientesTocaHoy('lunes', 1) && !avisoPendientesTocaHoy('lunes', 2) && avisoPendientesTocaHoy('diario', 7));
+    check('el día de pago no se pasa del último día del mes', avisoPendientesDiaPago(2026, 2, 30) === '2026-02-28' && avisoPendientesDiaPago(2026, 10, 15) === '2026-10-15');
+    $d = avisoPendientesDatos($pdo, 2);
+    $hoy = date('Y-m-d');
+    check('sin enviar: solo emitidas antes de hoy y no enviadas', !array_filter($d['sin_enviar'], fn($r) => $r['emision'] >= $hoy
+        || (int)$pdo->query("SELECT enviada_receptor FROM facturas WHERE id = " . (int)$r['id'])->fetchColumn()));
+    check('vencidas: con saldo, ya vencidas y no pagadas', !array_filter($d['vencidas'], fn($r) => $r['saldo'] <= 0 || $r['vence'] >= $hoy
+        || (int)$pdo->query("SELECT pagada FROM facturas WHERE id = " . (int)$r['id'])->fetchColumn() && $r['saldo'] >= $r['total']));
+    check('sin facturar: el día de pago ya llegó', !array_filter($d['sin_facturar'], fn($r) => $r['fecha'] > $hoy));
+    [$asunto, $html] = avisoPendientesCorreo($d, ['alias' => 'QA'], [], 'https://x.test/clientes/qa/');
+    check('el correo trae asunto con el resumen y enlaces al sistema', str_starts_with($asunto, 'Pendientes de facturación al ') && (avisoPendientesTotal($d) === 0 || str_contains($html, 'https://x.test/clientes/qa/')));
+    [$a0] = avisoPendientesCorreo(['sin_facturar' => [], 'sin_enviar' => [], 'vencidas' => [], 'por_cobrar' => []], [], [], '');
+    check('sin pendientes dice «todo al día»', str_contains($a0, 'todo al día'));
+
+    $a = login('qa.admin@local.test');
+    $r = $a->get('configuracion_correo', ['tab' => 'facturacion']);
+    check('Configuración → Correo muestra la tarjeta del resumen', sinErroresPhp($r['body']) && str_contains($r['body'], 'Resumen diario a gerencia'), errorPhp($r['body']));
+    $antes = $pdo->query("SELECT aviso_pendientes_auto, aviso_pendientes_hora, aviso_pendientes_dias, aviso_pendientes_para FROM configuracion_correo WHERE cliente_id = " . 2 . " AND perfil = 'facturacion'")->fetch(PDO::FETCH_ASSOC);
+    $r = $a->post('includes/correo_accion.php', ['accion' => 'pendientes_guardar', 'aviso_pendientes_para' => 'no-es-correo', 'aviso_pendientes_hora' => 9]);
+    check('rechaza un destinatario inválido', str_contains($r['body'], 'Correo inválido'), $r['body']);
+    $r = $a->post('includes/correo_accion.php', ['accion' => 'pendientes_guardar', 'aviso_pendientes_auto' => 1, 'aviso_pendientes_para' => 'a@qa.test; b@qa.test', 'aviso_pendientes_hora' => 9, 'aviso_pendientes_dias' => 'lunes']);
+    $g = $pdo->query("SELECT aviso_pendientes_hora, aviso_pendientes_dias, aviso_pendientes_para FROM configuracion_correo WHERE cliente_id = " . 2 . " AND perfil = 'facturacion'")->fetch(PDO::FETCH_ASSOC);
+    check('guarda hora, frecuencia y destinatarios', str_contains($r['body'], '"success":true') && $g == ['aviso_pendientes_hora' => 9, 'aviso_pendientes_dias' => 'lunes', 'aviso_pendientes_para' => 'a@qa.test, b@qa.test'], $r['body'] . json_encode($g));
+    $r = $a->post('includes/correo_accion.php', ['accion' => 'pendientes_vista']);
+    $j = json_decode($r['body'], true);
+    check('vista previa devuelve el HTML y los destinatarios', !empty($j['success']) && str_contains($j['html'] ?? '', '<!doctype html>') && ($j['para'] ?? '') === 'a@qa.test, b@qa.test', substr($r['body'], 0, 200));
+    if ($antes) $pdo->prepare("UPDATE configuracion_correo SET aviso_pendientes_auto = ?, aviso_pendientes_hora = ?, aviso_pendientes_dias = ?, aviso_pendientes_para = ? WHERE cliente_id = ? AND perfil = 'facturacion'")
+        ->execute([...array_values($antes), 2]);
+    $f = login('qa.facturador@local.test');
+    $r = $f->post('includes/correo_accion.php', ['accion' => 'pendientes_vista']);
+    check('facturador: no puede ver ni cambiar el resumen', str_contains($r['body'], '"success":false'), $r['body']);
+    // Ya enviado hoy: el cron no lo repite
+    $pdo->prepare("INSERT INTO correos_enviados (cliente_id, tipo, destinatario, asunto, estado, creado_en) VALUES (?, 'resumen_pendientes', 'qa@qa.test', 'QA', 'enviado', NOW())")->execute([2]);
+    $idQa = (int)$pdo->lastInsertId();
+    $n = (int)$pdo->query("SELECT COUNT(*) FROM correos_enviados WHERE tipo = 'resumen_pendientes'")->fetchColumn();
+    require_once __DIR__ . '/../../includes/cron_tareas.php';
+    cronAvisoPendientes($pdo, fn($m) => null);
+    check('el cron no repite el resumen el mismo día', (int)$pdo->query("SELECT COUNT(*) FROM correos_enviados WHERE tipo = 'resumen_pendientes'")->fetchColumn() === $n);
+    $pdo->exec("DELETE FROM correos_enviados WHERE id = $idQa");
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

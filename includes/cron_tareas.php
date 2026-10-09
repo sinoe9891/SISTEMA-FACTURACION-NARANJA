@@ -3,13 +3,15 @@
  * cron_tareas.php — Tareas automáticas que corre cron/tareas.php:
  *   1) Aviso de pago a colaboradores el día del pago (cuenta «nomina»).
  *   2) Cobros por correo programados (cuenta «facturacion»).
- *   3) Tasa del dólar del día.
- *   4) Aviso de documentos de la empresa por vencer (7 días) y vencidos (cuenta «facturacion»).
+ *   3) Aviso de documentos de la empresa por vencer (7 días) y vencidos (cuenta «facturacion»).
+ *   4) Resumen diario a gerencia de lo pendiente: contratos sin facturar, facturas sin enviar y vencidas (cuenta «facturacion»).
+ * La tasa del dólar va en su propio cron (cron/tasa_dolar.php).
  */
 require_once __DIR__ . '/correo_pagos.php';
 require_once __DIR__ . '/cobros.php';
 require_once __DIR__ . '/tasa_cambio.php';
 require_once __DIR__ . '/documentos.php';
+require_once __DIR__ . '/aviso_pendientes.php';
 
 /**
  * Avisos de pago pendientes, desde la hora configurada, sin repetir los ya enviados.
@@ -88,6 +90,32 @@ function cronDocumentosVencimiento(PDO $pdo, callable $log): void
             $log("Aviso «{$asunto}» enviado a $para");
         } catch (Throwable $ex) {
             $log("Documento #{$d['id']}: " . $ex->getMessage());
+        }
+    }
+}
+
+/**
+ * Resumen de pendientes a gerencia: una vez al día (según la frecuencia) desde la hora configurada, solo si hay algo
+ * pendiente. Si falla, lo reintenta en la siguiente vuelta (hasta 3 veces en el día).
+ */
+function cronAvisoPendientes(PDO $pdo, callable $log): void
+{
+    if (!avisoPendientesDisponible($pdo)) return;
+    $cfgs = $pdo->query("SELECT cliente_id, aviso_pendientes_hora, aviso_pendientes_dias FROM configuracion_correo
+                         WHERE activo = 1 AND aviso_pendientes_auto = 1" . (correoTienePerfiles($pdo) ? " AND perfil = 'facturacion'" : ""))->fetchAll(PDO::FETCH_ASSOC);
+    $cuenta = $pdo->prepare("SELECT SUM(estado = 'enviado'), SUM(estado = 'error') FROM correos_enviados WHERE cliente_id = ? AND tipo = 'resumen_pendientes' AND DATE(creado_en) = CURDATE()");
+    foreach ($cfgs as $c) {
+        $cid = (int)$c['cliente_id'];
+        if ((int)date('G') < (int)$c['aviso_pendientes_hora'] || !avisoPendientesTocaHoy((string)$c['aviso_pendientes_dias'])) continue;
+        $cuenta->execute([$cid]);
+        [$ok, $err] = array_map('intval', $cuenta->fetch(PDO::FETCH_NUM));
+        if ($ok || $err >= 3) continue;
+        if (!avisoPendientesTotal(avisoPendientesDatos($pdo, $cid))) continue;   // todo al día: no se envía
+        try {
+            [$para, $n] = avisoPendientesEnviar($pdo, $cid);
+            $log("Resumen de pendientes ($n) enviado a $para");
+        } catch (Throwable $e) {
+            $log("Resumen de pendientes: " . $e->getMessage());
         }
     }
 }
