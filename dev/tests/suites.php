@@ -2595,5 +2595,29 @@ suite('Dashboard: facturas no declaradas con sus correlativos y enlace al histor
     check('el historial abre con ese CAI y busca la factura', sinErroresPhp($l['body']) && str_contains($l['body'], "get('buscar')") && str_contains($l['body'], 'data-search="' . strtolower($f['correlativo'])), errorPhp($l['body']));
 });
 
+suite('Permisos: cada interruptor se guarda al confirmarlo y queda en la bitácora', function () {
+    $pdo = db();
+    $pdo->exec("DELETE FROM permisos_menu");
+    $antes = (int)$pdo->query("SELECT COUNT(*) FROM permisos_bitacora")->fetchColumn();
+    $s = login('qa.super@local.test', 1, 2);
+    $p = $s->get('configuracion_permisos');
+    check('los interruptores piden confirmación (datos del rol y la opción) y hay bitácora', str_contains($p['body'], 'class="form-check-input perm-toggle"') && str_contains($p['body'], 'data-rol-nombre="Facturador"') && str_contains($p['body'], 'id="perm-bitacora"'));
+    $r = $s->post('configuracion_permisos', ['accion' => 'cambiar', 'rol' => 'facturador', 'pagina' => 'licencias', 'permitido' => 1]);
+    check('encender: se guarda al momento', ($r['json']['success'] ?? false) && (int)$pdo->query("SELECT permitido FROM permisos_menu WHERE rol = 'facturador' AND pagina = 'licencias'")->fetchColumn() === 1, $r['body']);
+    $b = $pdo->query("SELECT * FROM permisos_bitacora ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    check('bitácora: quién, rol, opción, antes y después', (int)$pdo->query("SELECT COUNT(*) FROM permisos_bitacora")->fetchColumn() === $antes + 1 && $b['rol'] === 'facturador' && $b['pagina'] === 'licencias' && (int)$b['antes'] === 0 && (int)$b['despues'] === 1 && (int)$b['usuario_id'] > 0);
+    $s->post('configuracion_permisos', ['accion' => 'cambiar', 'rol' => 'facturador', 'pagina' => 'licencias', 'permitido' => 1]);
+    check('repetir el mismo valor no duplica la bitácora', (int)$pdo->query("SELECT COUNT(*) FROM permisos_bitacora")->fetchColumn() === $antes + 1);
+    $r = $s->post('configuracion_permisos', ['accion' => 'cambiar', 'rol' => 'admin', 'pagina' => 'empresas', 'permitido' => 1]);
+    check('las fijas no se pueden cambiar', ($r['json']['success'] ?? true) === false);
+    $p = $s->get('configuracion_permisos');
+    check('la bitácora se ve en la página', str_contains($p['body'], 'Bitácora de permisos') && str_contains($p['body'], 'Licencias'));
+    $a = login('qa.admin@local.test');
+    $r = $a->post('configuracion_permisos', ['accion' => 'cambiar', 'rol' => 'facturador', 'pagina' => 'usuarios', 'permitido' => 1]);
+    check('un admin no puede cambiar permisos', !(int)$pdo->query("SELECT COUNT(*) FROM permisos_menu WHERE rol = 'facturador' AND pagina = 'usuarios'")->fetchColumn());
+    $pdo->exec("DELETE FROM permisos_menu");
+    $pdo->exec("DELETE FROM permisos_bitacora WHERE id > $antes");
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

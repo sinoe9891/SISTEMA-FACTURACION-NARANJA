@@ -158,3 +158,31 @@ function permisoScriptBloqueado(PDO $pdo, string $script): ?string
     foreach ($opciones as $o) if (permisoMenu($pdo, USUARIO_ROL, $o)) return null;
     return $opciones[0];
 }
+
+/** Guarda un interruptor y lo deja en la bitácora (si cambió). Devuelve true si cambió. */
+function permisoGuardar(PDO $pdo, string $rol, string $pagina, bool $permitido, int $usuario): bool
+{
+    if (!isset(PERMISOS_ROLES[$rol]) || !permisoConfigurable($pagina)) throw new Exception("Esa opción no se puede cambiar.");
+    $antes = permisoMenu($pdo, $rol, $pagina);
+    $pdo->prepare("INSERT INTO permisos_menu (rol, pagina, permitido, actualizado_por) VALUES (?, ?, ?, ?)
+                   ON DUPLICATE KEY UPDATE permitido = VALUES(permitido), actualizado_por = VALUES(actualizado_por)")
+        ->execute([$rol, $pagina, $permitido ? 1 : 0, $usuario]);
+    if ($antes === $permitido) return false;
+    try {
+        $pdo->prepare("INSERT INTO permisos_bitacora (rol, pagina, antes, despues, usuario_id, ip) VALUES (?, ?, ?, ?, ?, ?)")
+            ->execute([$rol, $pagina, $antes ? 1 : 0, $permitido ? 1 : 0, $usuario, substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45)]);
+    } catch (Throwable $e) {
+        // sin la tabla de bitácora el cambio igual se guarda
+    }
+    return true;
+}
+
+/** Últimos cambios de permisos (con el nombre de quien los hizo). */
+function permisosBitacora(PDO $pdo, int $limite = 100): array
+{
+    try {
+        return $pdo->query("SELECT b.*, u.nombre AS usuario FROM permisos_bitacora b LEFT JOIN usuarios u ON u.id = b.usuario_id ORDER BY b.id DESC LIMIT " . max(1, $limite))->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        return [];
+    }
+}
