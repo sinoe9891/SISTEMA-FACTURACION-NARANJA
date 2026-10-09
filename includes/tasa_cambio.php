@@ -58,7 +58,8 @@ function tasaHttp(string $url, array $headers = []): array
  */
 function tasaDesdeBch(string $clave): array
 {
-    $h = ['Ocp-Apim-Subscription-Key: ' . $clave, 'Accept: application/json'];
+    // La llave va solo en encabezados (nunca en la URL): «clave» (el que usa la Web-API del BCH) y el estándar de Azure API Management
+    $h = ['clave: ' . $clave, 'Ocp-Apim-Subscription-Key: ' . $clave, 'Accept: application/json'];
     $lista = tasaHttp(TASA_BCH_BASE . '/indicadores?formato=Json', $h);
     $ids = ['compra' => null, 'venta' => null];
     foreach ($lista as $ind) {
