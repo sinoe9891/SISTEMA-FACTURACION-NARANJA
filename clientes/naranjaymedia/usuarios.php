@@ -9,7 +9,7 @@ $es_superadmin = ($rol_actual === 'superadmin');
 $es_admin      = ($rol_actual === 'admin');
 
 // Solo admin y superadmin pueden ver esta página
-if (!in_array($rol_actual, ['admin', 'superadmin'])) {
+if (!permisoPuede($pdo, 'usuarios')) {
     require_once '../../includes/templates/header.php';
     echo "<script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
     <script>document.addEventListener('DOMContentLoaded',()=>Swal.fire('Acceso denegado','Solo administradores pueden ver esta sección.','error').then(()=>window.location.href='dashboard'));</script>";
@@ -890,7 +890,7 @@ require_once '../../includes/templates/header.php';
                         if ($isSuperAdmin || $isSelf) {
                             $canDelete = false;
                             $lockReason = $isSelf ? 'No puedes eliminarte a ti mismo' : 'El superadmin no puede eliminarse';
-                        } elseif ($es_admin && $isAdmin) {
+                        } elseif (!$es_superadmin && $isAdmin) {
                             $canDelete  = false;
                             $lockReason = 'Solo superadmin puede eliminar administradores';
                         } else {

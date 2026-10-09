@@ -11,7 +11,7 @@ header('Content-Type: application/json; charset=utf-8');
 $destino = null;
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception("Método no permitido.");
-    if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) throw new Exception("Solo un administrador puede registrar aportes de socios.");
+    if (!permisoPuede($pdo, 'socios')) throw new Exception("Tu rol no tiene acceso a Socios.");
     $cid = (int)cliente_actual();
     if (!$cid) throw new Exception("Empresa no identificada.");
     if (!sociosDisponible($pdo)) throw new Exception("Falta instalar el registro de socios.");

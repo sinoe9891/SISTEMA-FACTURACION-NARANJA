@@ -9,7 +9,7 @@ $stmt = $pdo->prepare("SELECT rol, cliente_id FROM usuarios WHERE id = ?");
 $stmt->execute([$usuario_id]);
 $usuario = $stmt->fetch();
 
-if (!$usuario || !in_array($usuario['rol'], ['admin', 'superadmin'])) {
+if (!$usuario || !permisoPuede($pdo, 'configuracion_mensajes')) {
 	echo "<script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
 	<script>Swal.fire('Acceso denegado','Solo administradores pueden acceder.','error').then(()=>window.location.href='./dashboard');</script>";
 	exit;

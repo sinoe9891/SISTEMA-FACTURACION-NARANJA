@@ -6,7 +6,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/nomina_pagos.php';
 require_once '../../includes/correo.php';
 
-if (!puedeNomina()) {
+if (!permisoPuede($pdo, 'pagos_nomina')) {
     header('Location: dashboard');
     exit;
 }

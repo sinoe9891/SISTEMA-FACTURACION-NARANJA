@@ -1374,3 +1374,7 @@ body.app-login .app-login-wrap { flex: 1; min-height: 0; }
 	.app-fx-panel { top: calc(100% + 6px); left: 12px; right: 12px; width: auto; max-width: none; transform: none; animation: none; }
 	.app-fx-panel::before { display: none; }
 }
+
+/* Interruptores (toggles): mano al pasar el mouse; los bloqueados, no */
+.form-switch .form-check-input, .form-switch .form-check-label { cursor: pointer; }
+.form-switch .form-check-input:disabled, .form-switch .form-check-input:disabled ~ .form-check-label { cursor: not-allowed; }

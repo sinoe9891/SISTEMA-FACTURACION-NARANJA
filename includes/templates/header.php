@@ -199,7 +199,7 @@ $primerNombre = explode(' ', USUARIO_NOMBRE)[0];
 					<div class="dropdown-menu dropdown-menu-end p-3 shadow app-tasa-pop">
 						<div class="fw-semibold mb-2"><i class="bi bi-calculator me-1"></i>Tipo de cambio</div>
 						<?php $twTasa = $__tasaTop; $twId = 'tasaTop'; require __DIR__ . '/tasa_widget.php'; unset($twTasa, $twId); ?>
-						<?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?><div class="border-top mt-2 pt-2 text-end"><a class="small" href="configuracion_tasa"><i class="bi bi-gear me-1"></i>Configurar (clave del BCH)</a></div><?php endif; ?>
+						<?php if (permisoPuede($pdo, 'configuracion_tasa')): ?><div class="border-top mt-2 pt-2 text-end"><a class="small" href="configuracion_tasa"><i class="bi bi-gear me-1"></i>Configurar (clave del BCH)</a></div><?php endif; ?>
 					</div>
 				</div>
 			<?php endif; unset($__tasaTop, $__esBch, $__txt, $__tit, $__tag, $__corto); ?>

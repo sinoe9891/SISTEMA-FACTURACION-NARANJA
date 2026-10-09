@@ -4,7 +4,7 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/firmantes.php';
 
-if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) {
+if (!permisoPuede($pdo, 'configuracion_firmas')) {
     header('Location: dashboard');
     exit;
 }

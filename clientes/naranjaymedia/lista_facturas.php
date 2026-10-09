@@ -1457,7 +1457,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 							class="bi bi-file-earmark-pdf"></i> Descargar PDFs</button>
 					<button type="button" id="fhBulkXlsxBtn" class="btn-fa btn-fa-view"><i
 							class="bi bi-file-earmark-excel"></i> Descargar XLSX</button>
-					<?php if ($esAdmin): ?><button type="button" id="fhBulkCorreoBtn" class="btn-fa btn-fa-view" title="Abre «Cobros por correo» con estas facturas como PDF adjunto"><i
+					<?php if (permisoPuede($pdo, 'cobros_programados')): ?><button type="button" id="fhBulkCorreoBtn" class="btn-fa btn-fa-view" title="Abre «Cobros por correo» con estas facturas como PDF adjunto"><i
 							class="bi bi-send"></i> Enviar por correo</button><?php endif; ?>
 					<button type="button" id="fhBulkMensajeBtn" class="btn-fa btn-fa-edit"><i
 							class="bi bi-envelope-fill"></i> Redactar correo</button>

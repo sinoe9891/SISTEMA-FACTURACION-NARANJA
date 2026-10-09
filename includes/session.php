@@ -132,16 +132,31 @@ const ROL_NOMINA_ARCHIVOS = [
     'tarjeta_guardar', 'tarjeta_actualizar', 'tarjeta_eliminar', 'banco_accion',
     'colaborador_salario',
 ];
-if (USUARIO_ROL === 'nomina' && !in_array(basename($_SERVER['SCRIPT_NAME'] ?? '', '.php'), ROL_NOMINA_ARCHIVOS, true)) {
-    $__esAccion = str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/includes/') || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET';
+// Permisos por rol (Configuración → Permisos): cada página y acción pertenece a una opción del menú; si el rol la
+// tiene apagada, no se abre. El rol Nómina, además, solo entra a lo suyo (ROL_NOMINA_ARCHIVOS) o a lo que se le encienda.
+require_once __DIR__ . '/permisos.php';
+$__script = basename($_SERVER['SCRIPT_NAME'] ?? '', '.php');
+$__falta = permisoScriptBloqueado($pdo, $__script);
+$__nominaFuera = USUARIO_ROL === 'nomina' && !in_array($__script, ROL_NOMINA_ARCHIVOS, true) && !permisoScriptConocido($__script);
+if ($__falta !== null || $__nominaFuera) {
+    $__esAccion = str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/includes/') || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET'
+        || ($__falta !== null && !in_array($__script, PERMISOS_PAGINAS, true) && !in_array($__script, PERMISOS_VISTAS, true) && !isset(PERMISOS_CONFIG[$__script]));
     if ($__esAccion) {
         http_response_code(403);
         header('Content-Type: application/json; charset=utf-8');
-        exit(json_encode(['success' => false, 'error' => 'Tu rol (Nómina) no tiene acceso a esta acción.'], JSON_UNESCAPED_UNICODE));
+        exit(json_encode(['success' => false, 'error' => 'Tu rol no tiene acceso a esta sección. Pídele al administrador que la habilite en Permisos.'], JSON_UNESCAPED_UNICODE));
     }
-    header('Location: colaboradores');
+    // A la primera opción que sí puede ver
+    // (Nómina no tiene Inicio: va a Colaboradores o a la primera opción encendida)
+    $__destino = 'dashboard';
+    if (USUARIO_ROL === 'nomina') {
+        $__destino = 'logout';
+        foreach (array_merge(['colaboradores'], PERMISOS_PAGINAS) as $__p) if ($__p !== $__script && permisoMenu($pdo, 'nomina', $__p)) { $__destino = $__p; break; }
+    }
+    header('Location: ' . $__destino);
     exit;
 }
+unset($__script, $__falta, $__nominaFuera);
 
 /** ¿El gasto es un pago a colaborador (sueldo, bono, viático o pago adicional)? */
 function esGastoNomina(string $descripcion): bool

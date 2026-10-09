@@ -1751,7 +1751,7 @@ suite('Permisos por rol (menú)', function () {
     $s = login('qa.super@local.test', 1, 2);
     $r = $s->get('configuracion_permisos');
     check('el superadmin ve la página de permisos', $r['code'] === 200 && str_contains($r['body'], 'value="facturador|gastos"') && sinErroresPhp($r['body']), errorPhp($r['body']));
-    check('no ofrece habilitar lo que el rol no puede usar', !str_contains($r['body'], 'value="facturador|usuarios"') && !str_contains($r['body'], 'value="nomina|lista_facturas"'));
+    check('todas las opciones tienen interruptor (salvo las fijas del superadmin)', str_contains($r['body'], 'value="facturador|usuarios"') && str_contains($r['body'], 'value="nomina|lista_facturas"') && str_contains($r['body'], 'value="lector|configuracion_correo"') && !str_contains($r['body'], 'value="admin|empresas"') && !str_contains($r['body'], 'value="admin|respaldos"'));
     // Apagar «Gastos» para el facturador (el resto encendido)
     preg_match_all('/name="pares\[\]" value="([^"]+)"/', $r['body'], $m);
     $ver = array_values(array_filter($m[1], fn($p) => $p !== 'facturador|gastos'));
@@ -1765,10 +1765,53 @@ suite('Permisos por rol (menú)', function () {
     check('y si abre Gastos directo lo redirige', in_array($g['code'], [301, 302], true));
     check('el admin sigue viendo Gastos', str_contains(login('qa.admin@local.test')->get('dashboard')['body'], 'href="gastos"'));
     check('un admin no entra a la configuración de permisos', in_array(login('qa.admin@local.test')->get('configuracion_permisos')['code'], [301, 302], true));
-    $r = $s->req('POST', $s->base . 'configuracion_permisos', http_build_query(['pares' => ['facturador|usuarios', 'nomina|lista_facturas'], 'ver' => ['facturador|usuarios', 'nomina|lista_facturas']]));
-    check('no se puede habilitar por la fuerza lo que el código prohíbe', !(int)$pdo->query("SELECT COUNT(*) FROM permisos_menu WHERE (rol = 'facturador' AND pagina = 'usuarios') OR (rol = 'nomina' AND pagina = 'lista_facturas')")->fetchColumn());
+    $r = $s->req('POST', $s->base . 'configuracion_permisos', http_build_query(['pares' => ['admin|empresas', 'facturador|respaldos', 'lector|configuracion_permisos'], 'ver' => ['admin|empresas', 'facturador|respaldos', 'lector|configuracion_permisos']]));
+    check('las fijas no se pueden encender por la fuerza', !(int)$pdo->query("SELECT COUNT(*) FROM permisos_menu WHERE pagina IN ('empresas', 'respaldos', 'configuracion_permisos', 'seleccionar_cliente')")->fetchColumn());
     $pdo->exec("DELETE FROM permisos_menu");
     check('al quitar las reglas todo vuelve a como estaba', str_contains(login('qa.facturador@local.test')->get('dashboard')['body'], 'href="gastos"'));
+});
+
+suite('Permisos: el superadmin enciende y apaga lo que ve cada rol (páginas y sus acciones)', function () {
+    $pdo = db();
+    $pdo->exec("DELETE FROM permisos_menu");
+    if (!$pdo->query("SELECT COUNT(*) FROM usuarios WHERE correo = 'qa.nomina@local.test'")->fetchColumn()) {
+        $pdo->prepare("INSERT INTO usuarios (cliente_id, nombre, correo, clave, rol, estado, creado_en) VALUES (2, 'QA Nómina', 'qa.nomina@local.test', ?, 'nomina', 'activo', NOW())")->execute([password_hash(QA_PASS, PASSWORD_DEFAULT)]);
+        $pdo->prepare("INSERT INTO usuario_establecimientos (usuario_id, establecimiento_id) SELECT ?, establecimiento_id FROM usuario_establecimientos ue JOIN usuarios u ON u.id = ue.usuario_id WHERE u.correo = 'qa.admin@local.test'")->execute([(int)$pdo->lastInsertId()]);
+    }
+    $s = login('qa.super@local.test', 1, 2);
+    $guardar = function (array $cambios) use ($s, $pdo) {
+        $r = $s->get('configuracion_permisos');
+        preg_match_all('/name="pares\[\]" value="([^"]+)"/', $r['body'], $m);
+        preg_match_all('/name="ver\[\]" value="([^"]+)" checked/', $r['body'], $on);
+        $ver = array_flip($on[1]);
+        foreach ($cambios as $par => $v) { if ($v) $ver[$par] = 1; else unset($ver[$par]); }
+        return $s->req('POST', $s->base . 'configuracion_permisos', http_build_query(['pares' => $m[1], 'ver' => array_keys($ver)]));
+    };
+    // Encender para el facturador lo que antes era solo de administradores
+    $guardar(['facturador|usuarios' => 1, 'facturador|cobros_programados' => 1, 'facturador|configuracion_correo' => 1, 'nomina|lista_facturas' => 1]);
+    $f = login('qa.facturador@local.test');
+    $d = $f->get('dashboard');
+    check('facturador: con Usuarios y Cobros por correo encendidos los ve en el menú', str_contains($d['body'], 'href="usuarios"') && str_contains($d['body'], 'href="cobros_programados"') && str_contains($d['body'], 'href="configuracion"'));
+    $u = $f->get('usuarios');
+    check('facturador: abre Usuarios', $u['code'] === 200 && sinErroresPhp($u['body']), $u['code'] . errorPhp($u['body']));
+    $r = $f->post('includes/usuario_guardar.php', ['nombre' => 'QA no', 'correo' => 'qa.noadmin' . time() . '@local.test', 'clave' => 'Clave1234!', 'rol' => 'admin', 'estado' => 'activo']);
+    check('facturador con Usuarios: no puede crear administradores', str_contains($r['body'], 'Solo el superadmin puede crear administradores'), $r['body']);
+    check('facturador: abre Cobros por correo y Configuración → Correo', $f->get('cobros_programados')['code'] === 200 && $f->get('configuracion_correo')['code'] === 200);
+    $c = $f->get('configuracion');
+    check('facturador: «Configuración» abre la pestaña que tiene encendida (Correo)', in_array($c['code'], [301, 302], true) && str_contains((string)$c['loc'], 'configuracion_correo'), $c['loc']);
+    check('facturador: lo que sigue apagado no se abre (Licencias)', in_array($f->get('licencias')['code'], [301, 302], true) && ($f->post('includes/licencia_accion.php', ['accion' => 'x'])['json']['success'] ?? true) === false);
+    $n = login('qa.nomina@local.test');
+    $l = $n->get('lista_facturas');
+    check('nómina: con Historial de facturas encendido lo abre y lo ve en el menú', $l['code'] === 200 && str_contains($l['body'], 'href="lista_facturas"'), $l['code'] . ' ' . $l['loc']);
+    // Apagar para el admin
+    $guardar(['admin|licencias' => 0, 'nomina|gastos' => 0]);
+    $a = login('qa.admin@local.test');
+    check('admin: con Licencias apagado no la ve ni la abre, y su acción responde 403', !str_contains($a->get('dashboard')['body'], 'href="licencias"') && in_array($a->get('licencias')['code'], [301, 302], true)
+        && $a->post('includes/licencia_accion.php', ['accion' => 'x'])['code'] === 403);
+    $n = login('qa.nomina@local.test');
+    check('nómina: con Gastos apagado, guardar un gasto responde 403', $n->post('includes/gasto_guardar.php', ['descripcion' => 'x'])['code'] === 403 && in_array($n->get('gastos')['code'], [301, 302], true));
+    $pdo->exec("DELETE FROM permisos_menu");
+    check('sin reglas: el facturador vuelve a no ver Usuarios y el admin ve Licencias', !str_contains(login('qa.facturador@local.test')->get('dashboard')['body'], 'href="usuarios"') && str_contains(login('qa.admin@local.test')->get('dashboard')['body'], 'href="licencias"'));
 });
 
 suite('Ver gasto: comprobante en cualquier carpeta', function () {

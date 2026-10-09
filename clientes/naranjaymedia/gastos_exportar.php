@@ -103,7 +103,7 @@ function gexpBorrar(string $d): void
 try {
     $cid = (int)cliente_actual();
     if (!$cid) throw new Exception("Empresa no identificada.");
-    $puedeBouchers = in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true);
+    $puedeBouchers = permisoPuede($pdo, 'bouchers');
     @set_time_limit(120);
 
     // Solo el Excel

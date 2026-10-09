@@ -9,7 +9,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/bouchers.php';
 require_once '../../vendor/autoload.php';
 
-if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true)) { http_response_code(403); exit('No autorizado.'); }
+if (!permisoPuede($pdo, 'bouchers') && !permisoPuede($pdo, 'pagos_nomina')) { http_response_code(403); exit('No autorizado.'); }
 $cid = (int)cliente_actual();
 @set_time_limit(300);
 $ctx = boucherContexto($pdo, $cid, __DIR__ . '/includes/uploads');

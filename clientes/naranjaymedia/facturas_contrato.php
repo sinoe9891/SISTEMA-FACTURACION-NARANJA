@@ -59,7 +59,7 @@ $variasEmpresas = count($porEmpresa) > 1;
 // ── Abonos (cuentas por cobrar): cuánto se ha pagado de cada factura ─────────
 $hayAbonos = cxcDisponible($pdo);
 $puedeCobrar = in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true);
-$puedeCorreo = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);   // «Cobros por correo» es solo de administradores
+$puedeCorreo = permisoPuede($pdo, 'cobros_programados');   // «Cobros por correo» es solo de administradores
 $abonadoPor = [];
 if ($hayAbonos && $facturas) {
     $ids = array_map('intval', array_column($facturas, 'id'));

@@ -12,7 +12,9 @@ try {
     // Nómina y gastos registra movimientos, transferencias y cheques; las cuentas y las anulaciones son de administradores
     $accionPedida = $_POST['accion'] ?? '';
     $soloAdmin = ['cuenta_guardar', 'cuenta_estado', 'predeterminar', 'anular_movimiento', 'cheque_anular', 'tasa_clave'];
-    if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true) && (USUARIO_ROL !== 'nomina' || in_array($accionPedida, $soloAdmin, true)))
+    if ($accionPedida === 'tasa_clave' || str_starts_with($accionPedida, 'tasa_')) {
+        if (!permisoPuede($pdo, 'configuracion_tasa')) throw new Exception("Tu rol no tiene acceso a Tasa del dólar.");
+    } elseif (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true) && (USUARIO_ROL !== 'nomina' || in_array($accionPedida, $soloAdmin, true)))
         throw new Exception("Solo un administrador puede " . (in_array($accionPedida, $soloAdmin, true) ? 'administrar las cuentas o anular operaciones' : 'registrar operaciones bancarias') . ".");
     if (!bancosDisponible($pdo)) throw new Exception("El módulo de bancos no está instalado (falta sql/migraciones/2026-10-03_bancos.sql).");
     $cid = cliente_actual();

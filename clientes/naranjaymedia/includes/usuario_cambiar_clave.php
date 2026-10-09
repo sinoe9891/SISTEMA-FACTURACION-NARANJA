@@ -7,7 +7,7 @@ header('Content-Type: application/json');
 $rol_actual          = USUARIO_ROL;
 $usuario_id_logueado = (int)($_SESSION['usuario_id'] ?? 0);
 
-if (!in_array($rol_actual, ['admin', 'superadmin'])) {
+if (!permisoPuede($pdo, 'usuarios')) {   // Configuración → Permisos
     echo json_encode(['success' => false, 'error' => 'Sin permisos.']);
     exit;
 }
@@ -21,7 +21,7 @@ if (!$id || strlen($clave) < 6) {
 }
 
 // Admin: solo puede cambiar clave de usuarios de su cliente
-if ($rol_actual === 'admin') {
+if ($rol_actual !== 'superadmin') {   // admin u otro rol con Usuarios encendido: solo su empresa
     $stmtMe = $pdo->prepare("SELECT cliente_id FROM usuarios WHERE id = ?");
     $stmtMe->execute([$usuario_id_logueado]);
     $me = $stmtMe->fetch();
@@ -37,6 +37,10 @@ if ($rol_actual === 'admin') {
     }
     if ($target['rol'] === 'superadmin') {
         echo json_encode(['success' => false, 'error' => 'No puedes cambiar la clave de un superadmin.']);
+        exit;
+    }
+    if ($rol_actual !== 'admin' && $target['rol'] === 'admin') {
+        echo json_encode(['success' => false, 'error' => 'Solo un administrador puede cambiar la clave de otro administrador.']);
         exit;
     }
 }

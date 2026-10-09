@@ -4,7 +4,7 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/bouchers.php';
 
-if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true)) {
+if (!permisoPuede($pdo, 'bouchers')) {
     header('Location: dashboard');
     exit;
 }

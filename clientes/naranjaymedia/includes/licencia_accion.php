@@ -10,7 +10,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception("Método no permitido.");
-    if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) throw new Exception("Solo un administrador puede manejar licencias.");
+    if (!permisoPuede($pdo, 'licencias')) throw new Exception("Tu rol no tiene acceso a Licencias.");
     $cid = (int)cliente_actual();
     if (!$cid || !licenciasDisponible($pdo)) throw new Exception("Falta instalar el módulo de licencias.");
     $accion = $_POST['accion'] ?? '';

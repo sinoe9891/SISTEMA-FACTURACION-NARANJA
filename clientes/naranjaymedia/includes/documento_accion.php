@@ -8,7 +8,7 @@ require_once '../../../includes/session.php';
 require_once '../../../includes/documentos.php';
 
 try {
-    if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) throw new Exception("Solo un administrador puede ver o cambiar los documentos de la empresa.");
+    if (!permisoPuede($pdo, 'configuracion_documentos') && !permisoPuede($pdo, 'cobros_programados')) throw new Exception("Tu rol no tiene acceso a los documentos de la empresa.");
     if (!docsDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-09_documentos_empresa.sql.");
     $cid = (int)cliente_actual();
     if (!$cid) throw new Exception("Empresa no identificada.");

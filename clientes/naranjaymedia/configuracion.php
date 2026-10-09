@@ -3,8 +3,8 @@
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/respaldos.php';
-if (in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) $destino = 'configuracion_cai';
-elseif (function_exists('respaldoPuede') && respaldoPuede()) $destino = 'respaldos';
-else $destino = 'dashboard';
+$destino = 'dashboard';
+foreach (array_keys(PERMISOS_CONFIG) as $p) if (permisoPuede($pdo, $p)) { $destino = $p; break; }
+if ($destino === 'dashboard' && function_exists('respaldoPuede') && respaldoPuede()) $destino = 'respaldos';
 header('Location: ' . $destino);
 exit;

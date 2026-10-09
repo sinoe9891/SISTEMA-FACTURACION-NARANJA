@@ -6,7 +6,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/socios.php';
 require_once '../../includes/bancos.php';
 
-if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) {
+if (!permisoPuede($pdo, 'socios')) {
     header('Location: dashboard');
     exit;
 }

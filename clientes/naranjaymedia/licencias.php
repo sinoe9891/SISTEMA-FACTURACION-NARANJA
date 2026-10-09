@@ -5,7 +5,7 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/licencias.php';
 
-if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) {
+if (!permisoPuede($pdo, 'licencias')) {
     header('Location: dashboard');
     exit;
 }

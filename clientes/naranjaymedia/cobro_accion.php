@@ -39,7 +39,7 @@ function cobroPdfFactura(int $facturaId): string
 
 try {
     if (!cobrosDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-04_cobros_programados.sql.");
-    if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) throw new Exception("Solo un administrador puede programar cobros.");
+    if (!permisoPuede($pdo, 'cobros_programados')) throw new Exception("Tu rol no tiene acceso a Cobros por correo.");
     $cid = cliente_actual();
     if (!$cid) throw new Exception("Empresa no identificada.");
     $uid = (int)USUARIO_ID;

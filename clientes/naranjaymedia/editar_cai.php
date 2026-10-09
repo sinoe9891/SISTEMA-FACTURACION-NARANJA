@@ -22,7 +22,7 @@ if (!$datos) die("Usuario inválido.");
 $cliente_id = $datos['cliente_id'];
 $rol        = $datos['rol'];
 
-if (!in_array($rol, ['admin', 'superadmin'])) die("No tienes permisos para editar CAI.");
+if (!permisoPuede($pdo, 'configuracion_cai')) die("No tienes permisos para editar CAI.");
 
 if ($rol === 'superadmin') {
     $stmtCAI = $pdo->prepare("SELECT * FROM cai_rangos WHERE id = ?");

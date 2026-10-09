@@ -6,7 +6,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/correo.php';
 require_once '../../includes/aviso_pendientes.php';
 
-if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) {
+if (!permisoPuede($pdo, 'configuracion_correo')) {
     header('Location: dashboard');
     exit;
 }

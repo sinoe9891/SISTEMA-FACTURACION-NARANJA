@@ -6,7 +6,7 @@ require_once '../../includes/session.php';
 require_once '../../includes/correo.php';
 require_once '../../includes/tasa_cambio.php';
 
-if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) {
+if (!permisoPuede($pdo, 'configuracion_tasa')) {
     header('Location: dashboard');
     exit;
 }

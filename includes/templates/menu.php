@@ -44,14 +44,14 @@ $menuLateral = [
 	// Ciclo del ingreso: facturar (arriba) → contratos → cobrar
 	'Cobros' => array_values(array_filter([
 		['cuentas_cobrar', 'bi-cash-coin', 'Cuentas por cobrar', ['estado_cuenta']],
-		$__menuEsAdmin ? ['cobros_programados', 'bi-send-check', 'Cobros por correo', []] : null,
+		['cobros_programados', 'bi-send-check', 'Cobros por correo', ['nuevo_cobro']],
 	])),
 	// Ciclo del egreso: pagar → boucher → banco
 	'Pagos y gastos' => array_values(array_filter([
 		['cuentas_pagar', 'bi-calendar-check', 'Cuentas por pagar', []],
 		['gastos', 'bi-wallet2', 'Gastos', ['gasto_ver']],
-		$__menuEsAdmin ? ['licencias', 'bi-key', 'Licencias', []] : null,
-		$__menuEsAdmin ? ['bouchers', 'bi-receipt-cutoff', 'Bouchers', []] : null,
+		['licencias', 'bi-key', 'Licencias', []],
+		['bouchers', 'bi-receipt-cutoff', 'Bouchers', []],
 		['categorias_gastos', 'bi-tags', 'Categorías de gastos', []],
 	])),
 	'Bancos' => array_values(array_filter([
@@ -59,7 +59,7 @@ $menuLateral = [
 		['cheques', 'bi-journal-check', 'Cheques', []],
 		['tarjetas', 'bi-credit-card', 'Tarjetas', []],
 		['activos', 'bi-pc-display', 'Activos y préstamos', []],
-		$__menuEsAdmin ? ['socios', 'bi-person-badge', 'Socios: aportes y retiros', []] : null,
+		['socios', 'bi-person-badge', 'Socios: aportes y retiros', []],
 	])),
 	'Reportes' => [
 		['financiero', 'bi-graph-up', 'Estado de resultados', []],
@@ -70,7 +70,6 @@ $menuLateral = [
 	'Personal' => array_values(array_filter([
 		['colaboradores', 'bi-people', 'Colaboradores', ['colaborador_ver', 'colaborador_reporte']],
 		['pagos_nomina', 'bi-cash-stack', 'Pagos de nómina', []],
-		USUARIO_ROL === 'nomina' ? ['bouchers', 'bi-receipt-cutoff', 'Bouchers', []] : null,
 	])),
 	// Se usa al facturar: por eso va antes de Ventas e Inventario
 	'Catálogo' => [
@@ -86,12 +85,12 @@ $menuLateral = [
 		['inventario', 'bi-boxes', 'Existencias', ['inventario_kardex', 'inventario_reportes'], $__menuPorReponer],
 		['inventario_traslados', 'bi-truck', 'Traslados', []],
 	],
-	// Solo administradores: esas páginas rechazan a facturador/lector
-	// Configuración: una sola opción con pestañas (config_tabs.php); Usuarios aparte
-	'Configuración' => array_values(array_filter([
-		($__menuEsAdmin || (function_exists('respaldoPuede') && respaldoPuede())) ? ['configuracion', 'bi-gear', 'Configuración', ['configuracion_cai', 'crear_cai', 'editar_cai', 'configuracion_mensajes', 'configuracion_correo', 'configuracion_firmas', 'configuracion_documentos', 'configuracion_tasa', 'respaldos', 'configuracion_permisos']] : null,
-		$__menuEsAdmin ? ['usuarios', 'bi-person-gear', 'Usuarios', []] : null,
-	])),
+	// Configuración: una sola opción con pestañas (config_tabs.php), visible si el rol tiene alguna pestaña; Usuarios aparte.
+	// Qué ve cada rol lo decide Configuración → Permisos (abajo se quitan las opciones apagadas).
+	'Configuración' => [
+		['configuracion', 'bi-gear', 'Configuración', ['configuracion_cai', 'crear_cai', 'editar_cai', 'configuracion_mensajes', 'configuracion_correo', 'configuracion_firmas', 'configuracion_documentos', 'configuracion_tasa', 'respaldos', 'configuracion_permisos']],
+		['usuarios', 'bi-person-gear', 'Usuarios', []],
+	],
 	// Solo superadmin: administración de la plataforma multiempresa
 	'Plataforma' => $es_superadmin ? [
 		['empresas', 'bi-buildings', 'Empresas', []],
@@ -99,11 +98,8 @@ $menuLateral = [
 	] : [],
 ];
 
-// Rol Nómina y gastos: Personal, Pagos y gastos y Bancos (session.php bloquea el resto)
-if (USUARIO_ROL === 'nomina') {
-	$menuLateral = ['Personal' => $menuLateral['Personal'], 'Pagos y gastos' => $menuLateral['Pagos y gastos'], 'Bancos' => $menuLateral['Bancos']];
-	foreach ($menuLateral as $__s => $__items) $menuLateral[$__s] = array_values(array_filter($__items, fn($it) => in_array($it[0], ROL_NOMINA_ARCHIVOS, true)));
-}
+// Rol Nómina y gastos: no tiene Inicio (session.php lo manda a Colaboradores)
+if (USUARIO_ROL === 'nomina') $menuLateral[''] = [];
 
 // Permisos por rol (Configuración → Permisos por rol): se ocultan las opciones desactivadas para este rol
 // y, si se abre una de sus páginas directamente, se redirige a la primera opción permitida. «Inicio» siempre se ve.
@@ -112,7 +108,7 @@ if (USUARIO_ROL !== 'superadmin') {
 	foreach ($menuLateral as $__menuSec => $__menuItems) {
 		foreach ($__menuItems as $__menuK => $__menuIt) {
 			if ($__menuIt[0] === 'dashboard' || permisoMenu($pdo, USUARIO_ROL, $__menuIt[0])) continue;
-			if ($__menuIt[0] === $paginaActual || in_array($paginaActual, $__menuIt[3], true)) $__menuBloqueada = true;
+			if ($__menuIt[0] === $paginaActual || ($__menuIt[0] !== 'configuracion' && in_array($paginaActual, $__menuIt[3], true))) $__menuBloqueada = true;
 			unset($menuLateral[$__menuSec][$__menuK]);
 		}
 		$menuLateral[$__menuSec] = array_values($menuLateral[$__menuSec]);

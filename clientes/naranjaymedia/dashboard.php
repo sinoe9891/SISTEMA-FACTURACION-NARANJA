@@ -274,7 +274,7 @@ unset($__v);
     <?php endif; ?>
     <?php // Documentos de la empresa por vencer (30 días) o vencidos: semáforo por días que faltan
     require_once '../../includes/documentos.php';
-    $docsAviso = in_array(USUARIO_ROL, ['admin', 'superadmin'], true) ? array_filter(docsLista($pdo, (int)cliente_actual()), fn($d) => in_array($d['estado'], ['vencido', 'por_vencer'], true)) : [];
+    $docsAviso = permisoPuede($pdo, 'configuracion_documentos') ? array_filter(docsLista($pdo, (int)cliente_actual()), fn($d) => in_array($d['estado'], ['vencido', 'por_vencer'], true)) : [];
     if ($docsAviso): ?>
         <div class="db-card mb-3"><div class="card-body py-2 px-3 d-flex flex-wrap align-items-center gap-2 small">
             <span class="fw-semibold"><i class="bi bi-folder-check me-1"></i>Documentos de la empresa:</span>
@@ -287,7 +287,7 @@ unset($__v);
     <?php if (($facturas_restantes ?? 999999) <= (defined('ALERTA_FACTURAS_RESTANTES') ? ALERTA_FACTURAS_RESTANTES : 0) && ($total_facturas ?? 0) > 0): ?>
         <div class="alert alert-warning d-flex align-items-center gap-3 mb-3 rounded-3">
             <i class="bi bi-exclamation-triangle-fill fs-5"></i>
-            <div><strong>¡Atención! Estás por agotar tu rango de facturación:</strong> quedan <strong><?= (int)$facturas_restantes ?></strong> correlativo(s) disponibles.<?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?> <a href="configuracion_cai" class="alert-link">Ver rangos CAI</a><?php else: ?> Avisa al administrador.<?php endif; ?></div>
+            <div><strong>¡Atención! Estás por agotar tu rango de facturación:</strong> quedan <strong><?= (int)$facturas_restantes ?></strong> correlativo(s) disponibles.<?php if (permisoPuede($pdo, 'configuracion_cai')): ?> <a href="configuracion_cai" class="alert-link">Ver rangos CAI</a><?php else: ?> Avisa al administrador.<?php endif; ?></div>
         </div>
     <?php endif; ?>
 

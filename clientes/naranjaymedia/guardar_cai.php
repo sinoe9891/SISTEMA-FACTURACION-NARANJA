@@ -8,7 +8,7 @@ try {
         throw new Exception("Método no permitido.");
     }
 
-    if (!in_array(USUARIO_ROL, ['admin', 'superadmin'])) {
+    if (!permisoPuede($pdo, 'configuracion_cai')) {
         throw new Exception("No tienes permisos para crear un CAI.");
     }
 

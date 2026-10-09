@@ -6,7 +6,7 @@ header('Content-Type: application/json');
 
 $rol_actual = USUARIO_ROL;
 
-if (!in_array($rol_actual, ['admin', 'superadmin'])) {
+if (!permisoPuede($pdo, 'usuarios')) {   // Configuración → Permisos
     echo json_encode(['success' => false, 'error' => 'Sin permisos.']);
     exit;
 }
@@ -36,7 +36,7 @@ if ($rol === 'superadmin') {
 }
 
 // Admin: forzar su propio cliente y no puede crear admin
-if ($rol_actual === 'admin') {
+if ($rol_actual !== 'superadmin') {   // admin u otro rol con Usuarios encendido: solo su empresa
     $stmtMe = $pdo->prepare("SELECT cliente_id FROM usuarios WHERE id = ?");
     $stmtMe->execute([$_SESSION['usuario_id']]);
     $me = $stmtMe->fetch();

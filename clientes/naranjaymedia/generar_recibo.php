@@ -534,7 +534,7 @@ $meses_es = [
             .then(d => {
                 if (d.success) {
                     // Después de emitirlo: ver el PDF o enviarlo al cliente por correo (Cobros por correo)
-                    const puedeCorreo = <?= in_array(USUARIO_ROL, ['admin', 'superadmin'], true) ? 'true' : 'false' ?>;
+                    const puedeCorreo = <?= permisoPuede($pdo, 'cobros_programados') ? 'true' : 'false' ?>;
                     Swal.fire({
                         icon: 'success',
                         title: '¡Recibo emitido!',

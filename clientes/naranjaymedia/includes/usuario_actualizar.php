@@ -6,7 +6,7 @@ header('Content-Type: application/json');
 
 $rol_actual = USUARIO_ROL;
 
-if (!in_array($rol_actual, ['admin', 'superadmin'])) {
+if (!permisoPuede($pdo, 'usuarios')) {   // Configuración → Permisos
     echo json_encode(['success' => false, 'error' => 'Sin permisos.']);
     exit;
 }
@@ -53,7 +53,7 @@ if ($oldRol !== 'superadmin' && $rol === 'superadmin') {
 }
 
 // Admin: solo puede editar usuarios de su propio cliente, no puede crear admin
-if ($rol_actual === 'admin') {
+if ($rol_actual !== 'superadmin') {   // admin u otro rol con Usuarios encendido: solo su empresa
     $stmtMe = $pdo->prepare("SELECT cliente_id FROM usuarios WHERE id = ?");
     $stmtMe->execute([$_SESSION['usuario_id']]);
     $me = $stmtMe->fetch();
@@ -65,6 +65,11 @@ if ($rol_actual === 'admin') {
     // No puede editar usuarios de otro cliente
     if ((int)$oldUser['cliente_id'] !== $mi_cliente) {
         echo json_encode(['success' => false, 'error' => 'No puedes editar usuarios de otro cliente.']);
+        exit;
+    }
+    // Un rol que no es admin no edita administradores
+    if ($rol_actual !== 'admin' && $oldRol === 'admin') {
+        echo json_encode(['success' => false, 'error' => 'Solo un administrador puede editar a otro administrador.']);
         exit;
     }
     // No puede asignar rol admin

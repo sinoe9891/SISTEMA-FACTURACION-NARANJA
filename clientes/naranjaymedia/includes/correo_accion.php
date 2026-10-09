@@ -15,7 +15,7 @@ try {
     if (!correoDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-04_correo.sql.");
     $cid = cliente_actual();
     if (!$cid) throw new Exception("Empresa no identificada.");
-    $esAdmin = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);
+    $esAdmin = permisoPuede($pdo, 'configuracion_correo');   // configurar la cuenta, pruebas y el resumen a gerencia
     $uid = (int)USUARIO_ID;
 
     switch ($_POST['accion'] ?? '') {

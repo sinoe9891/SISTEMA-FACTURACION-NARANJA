@@ -6,7 +6,7 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/cobros.php';
 
-if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) {
+if (!permisoPuede($pdo, 'cobros_programados')) {
     header('Location: dashboard');
     exit;
 }

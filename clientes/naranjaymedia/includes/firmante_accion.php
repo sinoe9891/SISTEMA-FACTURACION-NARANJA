@@ -9,7 +9,7 @@ require_once '../../../includes/firmantes.php';
 const FIRMANTE_DIR = __DIR__ . '/uploads/firmas/';
 
 try {
-    if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) throw new Exception("Solo un administrador configura los firmantes.");
+    if (!permisoPuede($pdo, 'configuracion_firmas')) throw new Exception("Tu rol no tiene acceso a Firmas.");
     if (!firmantesDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-06_firmantes_concepto.sql.");
     $cid = (int)cliente_actual();
     $rol = (string)($_REQUEST['firma'] ?? $_REQUEST['rol'] ?? '');

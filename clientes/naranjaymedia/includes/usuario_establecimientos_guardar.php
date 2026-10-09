@@ -7,7 +7,7 @@ header('Content-Type: application/json');
 $rol_actual          = USUARIO_ROL;
 $usuario_id_logueado = (int)($_SESSION['usuario_id'] ?? 0);
 
-if (!in_array($rol_actual, ['admin', 'superadmin'])) {
+if (!permisoPuede($pdo, 'usuarios')) {   // Configuración → Permisos
     echo json_encode(['success' => false, 'error' => 'Sin permisos.']);
     exit;
 }
@@ -22,7 +22,7 @@ if (!$usuario_id) {
 }
 
 // Admin: solo puede gestionar establecimientos de usuarios de su cliente
-if ($rol_actual === 'admin') {
+if ($rol_actual !== 'superadmin') {   // admin u otro rol con Usuarios encendido: solo su empresa
     $stmtMe = $pdo->prepare("SELECT cliente_id FROM usuarios WHERE id = ?");
     $stmtMe->execute([$usuario_id_logueado]);
     $me = $stmtMe->fetch();

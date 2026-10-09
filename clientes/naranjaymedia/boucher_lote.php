@@ -22,7 +22,7 @@ function loteDir(string $token): string
 }
 
 try {
-    if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true)) throw new Exception("No autorizado.");
+    if (!permisoPuede($pdo, 'bouchers') && !permisoPuede($pdo, 'pagos_nomina')) throw new Exception("No autorizado.");
     $cid = (int)cliente_actual();
     @set_time_limit(120);
 

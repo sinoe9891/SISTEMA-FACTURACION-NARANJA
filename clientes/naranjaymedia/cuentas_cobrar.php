@@ -8,7 +8,7 @@ require_once '../../includes/contrato_plan.php';
 $cid = cliente_actual();
 $instalado = cxcDisponible($pdo);
 $puedeCobrar = in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true);
-$puedeCorreo = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);   // «Cobros por correo» es solo de administradores
+$puedeCorreo = permisoPuede($pdo, 'cobros_programados');   // «Cobros por correo» es solo de administradores
 $facturas = $instalado && $cid ? cxcFacturasPendientes($pdo, $cid) : [];
 $cuentasHnl = ($instalado && bancosDisponible($pdo)) ? array_values(array_filter(bancoCuentas($pdo, $cid, true), fn($c) => $c['moneda'] === 'HNL')) : [];
 
