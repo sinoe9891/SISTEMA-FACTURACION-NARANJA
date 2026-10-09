@@ -3,6 +3,7 @@ require_once '../../includes/sesion_inicio.php';
 iniciarSesionSegura();
 require_once '../../includes/db.php';
 require_once '../../includes/intentos.php';
+require_once '../../includes/tasa_cambio.php';
 
 if (isset($_SESSION['usuario_id'])) {
     header('Location: ./dashboard');
@@ -198,6 +199,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 
 <body class="app-login">
+    <?php // Tipo de cambio del día (público: el BCH lo publica) con convertidor
+    $tasaLogin = null;
+    try { $tasaLogin = tasaDisponible($pdo) ? tasaUltima($pdo) : null; } catch (Throwable $e) { $tasaLogin = null; }
+    ?>
+    <?php if ($tasaLogin):
+        $tlBch = $tasaLogin['fuente'] === 'BCH';
+        $tlC = (float)($tlBch ? $tasaLogin['compra'] : $tasaLogin['referencia']);
+        $tlV = (float)($tlBch ? $tasaLogin['venta'] : $tasaLogin['referencia']);
+        $tlMeses = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        $tlTs = strtotime($tasaLogin['fecha']); ?>
+    <!-- Franja del tipo de cambio (como en la banca en línea): al hacer clic se despliega el convertidor -->
+    <div class="app-fx-barra">
+        <button type="button" class="app-fx-toggle" id="fxToggle" aria-expanded="false" aria-controls="fxPanel">
+            <i class="bi bi-currency-exchange"></i><span class="app-fx-tit">Tipo de cambio</span><i class="bi bi-chevron-down app-fx-flecha"></i>
+        </button>
+        <div class="app-fx-valores">
+            <span class="d-none d-sm-inline app-fx-mon">Dólar:</span>
+            <span>Compra <b>L<?= number_format($tlC, 4) ?></b></span>
+            <span>Venta <b>L<?= number_format($tlV, 4) ?></b></span>
+            <?php if ($tlBch): ?><span class="app-fx-bch d-none d-md-inline">BCH</span><?php endif; ?>
+        </div>
+        <div class="app-fx-panel" id="fxPanel" hidden>
+            <div class="app-fx-panel-head">
+                <span><?= (int)date('j', $tlTs) ?> de <?= $tlMeses[(int)date('n', $tlTs)] ?>, <?= date('Y', $tlTs) ?> · <?= $tlBch ? 'Banco Central de Honduras' : 'Tasa de referencia' ?></span>
+                <button type="button" class="app-fx-cerrar" id="fxCerrar" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="app-fx-cv">
+                <div><span>Compra</span><strong>L<?= number_format($tlC, 4) ?></strong></div>
+                <div><span>Venta</span><strong>L<?= number_format($tlV, 4) ?></strong></div>
+            </div>
+            <div id="fxConv" data-compra="<?= $tlC ?>" data-venta="<?= $tlV ?>">
+                <div class="app-fx-modo" role="group" aria-label="Sentido de la conversión">
+                    <button type="button" class="active" data-modo="usd">US$ → L</button>
+                    <button type="button" data-modo="hnl">L → US$</button>
+                </div>
+                <label class="app-fx-campo">
+                    <span class="app-fx-moneda" id="fxDe">US$</span>
+                    <input type="number" id="fxMonto" min="0" step="0.01" inputmode="decimal" placeholder="0.00" aria-label="Monto a convertir">
+                </label>
+                <div class="app-fx-res"><span id="fxRes">L 0.00</span><small id="fxNota">a la compra</small></div>
+            </div>
+            <p class="app-fx-pista"><i class="bi bi-info-circle"></i> Recibes dólares → <b>compra</b>. Pagas con tarjeta o compras dólares → <b>venta</b>.</p>
+        </div>
+    </div>
+    <?php endif; ?>
     <main class="app-login-wrap">
         <div class="app-login-card">
             <div class="text-center mb-4">
@@ -241,10 +287,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </button>
             </form>
         </div>
+        </div>
         <p class="app-login-pie">© <?= date('Y') ?> · Sistema de Facturación · Naranja &amp; Media</p>
     </main>
 
     <script>
+        // Franja del tipo de cambio: abrir/cerrar el panel y convertir
+        (function () {
+            var t = document.getElementById('fxToggle'), p = document.getElementById('fxPanel'); if (!t || !p) return;
+            function abrir(si) { p.hidden = !si; t.setAttribute('aria-expanded', si ? 'true' : 'false'); t.classList.toggle('abierto', si); if (si) setTimeout(function () { document.getElementById('fxMonto').focus(); }, 30); }
+            t.addEventListener('click', function (e) { e.stopPropagation(); abrir(p.hidden); });
+            document.getElementById('fxCerrar').addEventListener('click', function () { abrir(false); t.focus(); });
+            document.addEventListener('click', function (e) { if (!p.hidden && !p.contains(e.target)) abrir(false); });
+            document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !p.hidden) { abrir(false); t.focus(); } });
+        })();
+        (function () {
+            var c = document.getElementById('fxConv'); if (!c) return;
+            var compra = +c.dataset.compra, venta = +c.dataset.venta, modo = 'usd';
+            var inp = document.getElementById('fxMonto'), res = document.getElementById('fxRes'), nota = document.getElementById('fxNota'), de = document.getElementById('fxDe');
+            var fmt = function (n) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+            function calc() {
+                var m = parseFloat(inp.value) || 0;
+                if (modo === 'usd') { res.textContent = 'L ' + fmt(m * compra); nota.textContent = 'a la compra (L ' + compra.toFixed(4) + ')'; de.textContent = 'US$'; }
+                else { res.textContent = 'US$ ' + fmt(venta ? m / venta : 0); nota.textContent = 'a la venta (L ' + venta.toFixed(4) + ')'; de.textContent = 'L'; }
+            }
+            c.querySelectorAll('[data-modo]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    modo = b.dataset.modo;
+                    c.querySelectorAll('[data-modo]').forEach(function (x) { x.classList.toggle('active', x === b); });
+                    calc(); inp.focus();
+                });
+            });
+            inp.addEventListener('input', calc);
+            calc();
+        })();
         (function () {
             var clave = document.getElementById('clave');
             var btnVer = document.getElementById('verClave');
