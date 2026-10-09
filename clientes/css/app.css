@@ -1327,4 +1327,9 @@ button.app-stat:disabled { cursor: default; opacity: .6; transform: none; box-sh
 /* Tasa del dólar en la barra superior */
 .app-topbar-tasa { align-items: center; gap: .3rem; padding: .25rem .6rem; border: 1px solid var(--bs-border-color, #e2e8f0); border-radius: 999px; font-size: .78rem; font-weight: 600; color: #047857; background: #ecfdf5; text-decoration: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .app-topbar-tasa:hover { background: #d1fae5; color: #065f46; }
-.app-topbar-tasa small { font-size: .65rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.app-topbar-tasa small { font-size: .65rem; font-weight: 700; color: #64748b; text-transform: uppercase; margin-left: .2rem; }
+button.app-topbar-tasa { cursor: pointer; }
+.app-tasa-pop { width: 290px; max-width: calc(100vw - 24px); }
+.app-tasa-cv { display: grid; grid-template-columns: 1fr 1fr; text-align: center; }
+.app-tasa-cv > div + div { border-left: 1px solid var(--bs-border-color, #e2e8f0); }
+.app-tasa-conv { display: flex; align-items: center; gap: .5rem; }

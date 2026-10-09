@@ -193,9 +193,15 @@ $primerNombre = explode(' ', USUARIO_NOMBRE)[0];
 				$__esBch = $__tasaTop['fuente'] === 'BCH';
 				$__txt = $__esBch ? 'C ' . number_format((float)$__tasaTop['compra'], 2) . ' · V ' . number_format((float)$__tasaTop['venta'], 2) : 'L ' . number_format((float)$__tasaTop['referencia'], 2);
 				$__tit = ($__esBch ? 'Dólar oficial del BCH' : 'Dólar: tasa de referencia del mercado (sin clave del BCH)') . ' al ' . date('d/m/Y', strtotime($__tasaTop['fecha']));
-				$__tag = in_array(USUARIO_ROL, ['admin', 'superadmin'], true) ? 'a href="configuracion_tasa"' : 'span'; ?>
-				<?php $__corto = 'L ' . number_format((float)($__esBch ? $__tasaTop['venta'] : $__tasaTop['referencia']), 2); ?>
-				<<?= $__tag ?> class="app-topbar-tasa" title="<?= htmlspecialchars($__tit) ?>"><i class="bi bi-currency-dollar"></i><span class="d-none d-md-inline"><?= $__txt ?></span><span class="d-md-none"><?= $__corto ?></span><small class="d-none d-sm-inline"><?= $__esBch ? 'BCH' : 'ref.' ?></small></<?= explode(' ', $__tag)[0] ?>>
+				$__corto = 'L ' . number_format((float)($__esBch ? $__tasaTop['venta'] : $__tasaTop['referencia']), 2); ?>
+				<div class="dropdown">
+					<button type="button" class="app-topbar-tasa" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="<?= htmlspecialchars($__tit) ?>"><i class="bi bi-currency-dollar"></i><span class="d-none d-md-inline"><?= $__txt ?></span><span class="d-md-none"><?= $__corto ?></span><small class="d-none d-sm-inline"><?= $__esBch ? 'BCH' : 'ref.' ?></small><i class="bi bi-chevron-down ms-1" style="font-size:.65rem"></i></button>
+					<div class="dropdown-menu dropdown-menu-end p-3 shadow app-tasa-pop">
+						<div class="fw-semibold mb-2"><i class="bi bi-calculator me-1"></i>Tipo de cambio</div>
+						<?php $twTasa = $__tasaTop; $twId = 'tasaTop'; require __DIR__ . '/tasa_widget.php'; unset($twTasa, $twId); ?>
+						<?php if (in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?><div class="border-top mt-2 pt-2 text-end"><a class="small" href="configuracion_tasa"><i class="bi bi-gear me-1"></i>Configurar (clave del BCH)</a></div><?php endif; ?>
+					</div>
+				</div>
 			<?php endif; unset($__tasaTop, $__esBch, $__txt, $__tit, $__tag, $__corto); ?>
 			<span class="app-topbar-greet"><?= $saludo ?> <?= $emoji ?>, <strong><?= htmlspecialchars($primerNombre) ?></strong>!</span>
 			<span class="app-avatar d-lg-none" title="<?= htmlspecialchars(USUARIO_NOMBRE) ?>"><?= htmlspecialchars(mb_strtoupper(mb_substr(USUARIO_NOMBRE, 0, 1))) ?></span>

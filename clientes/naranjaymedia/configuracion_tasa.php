@@ -36,13 +36,7 @@ require_once '../../includes/templates/config_tabs.php';
     <div class="col-lg-6">
         <div class="app-card app-card-body h-100">
             <h6 class="fw-semibold mb-2">Tasa del día</h6>
-            <?php if ($tasa): ?>
-                <div class="mb-1"><span class="badge <?= $tasa['fuente'] === 'BCH' ? 'bg-success' : 'bg-secondary' ?>"><?= $tasa['fuente'] === 'BCH' ? 'Banco Central (oficial)' : 'Referencia del mercado' ?></span> <span class="text-muted small">al <?= date('d/m/Y', strtotime($tasa['fecha'])) ?></span></div>
-                <?php if ($tasa['fuente'] === 'BCH'): ?>
-                    <div class="fs-5">Compra <strong>L <?= number_format((float)$tasa['compra'], 4) ?></strong> · Venta <strong>L <?= number_format((float)$tasa['venta'], 4) ?></strong></div>
-                <?php else: ?>
-                    <div class="fs-5"><strong>L <?= number_format((float)$tasa['referencia'], 4) ?></strong> por dólar</div>
-                <?php endif; ?>
+            <?php if ($tasa): $twTasa = $tasa; $twId = 'tasaCfg'; require __DIR__ . '/../../includes/templates/tasa_widget.php'; unset($twTasa, $twId); ?>
             <?php else: ?>
                 <p class="text-muted">Aún no hay tasa guardada.</p>
             <?php endif; ?>
