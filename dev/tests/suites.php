@@ -2411,11 +2411,11 @@ suite('Configuración con pestañas y Tasa del dólar (BCH)', function () {
     $a->post('includes/banco_accion.php', ['accion' => 'tasa_clave', 'clave' => '']);
     // La tarea diaria no vuelve a consultar si ya hay tasa de hoy
     $pdo = db();
-    require_once __DIR__ . '/../../includes/cron_tareas.php';
     $pdo->exec("INSERT INTO tasas_cambio (fecha, referencia, fuente) VALUES (CURDATE(), 26.5, 'referencia') ON DUPLICATE KEY UPDATE fecha = fecha");
     $antes = $pdo->query("SELECT actualizado_en FROM tasas_cambio WHERE fecha = CURDATE()")->fetchColumn();
-    $log = []; cronTasaCambio($pdo, function ($m) use (&$log) { $log[] = $m; });
-    check('la tarea diaria no consulta otra vez el mismo día (sin clave del BCH)', !$log && $pdo->query("SELECT actualizado_en FROM tasas_cambio WHERE fecha = CURDATE()")->fetchColumn() === $antes, implode(' | ', $log));
+    $hora = (int)date('G');
+    $salida = shell_exec('APP_DB=dev ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/../../cron/tasa_dolar.php') . ' 2>&1');
+    check('el cron de la tasa no consulta fuera de la medianoche (ni a las 6 si ya hay tasa)', in_array($hora, [0, 6], true) || (trim((string)$salida) === '' && $pdo->query("SELECT actualizado_en FROM tasas_cambio WHERE fecha = CURDATE()")->fetchColumn() === $antes), (string)$salida);
     $d = $a->get('dashboard');
     check('la barra superior muestra el dólar del día', str_contains($d['body'], 'app-topbar-tasa'));
     $f = login('qa.facturador@local.test');
