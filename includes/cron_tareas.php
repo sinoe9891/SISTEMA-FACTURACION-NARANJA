@@ -14,13 +14,19 @@ require_once __DIR__ . '/documentos.php';
 /** Tasa del dólar del día (una vez al día, desde las 9 a. m., cuando el BCH ya publicó). */
 function cronTasaCambio(PDO $pdo, callable $log): void
 {
-    if (!tasaDisponible($pdo) || (int)date('G') < 9) return;
-    $hoy = $pdo->query("SELECT fuente FROM tasas_cambio WHERE fecha = CURDATE()")->fetchColumn();
-    if ($hoy === 'BCH') return;
+    // Una consulta al día desde las 00:00 (el cron corre cada 5 minutos: solo la primera vez del día consulta).
+    // Si el BCH falló y quedó la tasa de referencia, se reintenta como mucho cada 3 horas y solo hasta las 3 pm.
+    if (!tasaDisponible($pdo)) return;
+    $hoy = $pdo->query("SELECT fuente, actualizado_en FROM tasas_cambio WHERE fecha = CURDATE()")->fetch(PDO::FETCH_ASSOC);
+    if ($hoy && $hoy['fuente'] === 'BCH') return;
     $cid = (int)($pdo->query("SELECT cliente_id FROM configuracion_api WHERE bch_clave_cifrada IS NOT NULL LIMIT 1")->fetchColumn() ?: 0);
-    if ($hoy && !$cid) return;   // ya hay referencia de hoy y no hay clave del BCH
+    if ($hoy) {
+        if (!$cid) return;   // ya hay referencia de hoy y no hay clave del BCH
+        if ((int)date('G') >= 15 || time() - strtotime((string)$hoy['actualizado_en']) < 3 * 3600) return;
+    }
     try {
         $t = tasaActualizar($pdo, $cid);
+        $pdo->exec("UPDATE tasas_cambio SET actualizado_en = NOW() WHERE fecha = CURDATE()");   // marca el intento (para no reintentar seguido)
         $log("Tasa del dólar: " . ($t['fuente'] === 'BCH' ? "compra {$t['compra']} · venta {$t['venta']} (BCH)" : "referencia {$t['referencia']}") . (isset($t['aviso']) ? " · {$t['aviso']}" : ''));
     } catch (Throwable $e) {
         $log("Tasa del dólar: " . $e->getMessage());

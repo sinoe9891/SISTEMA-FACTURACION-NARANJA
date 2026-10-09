@@ -1323,3 +1323,8 @@ button.app-stat:disabled { cursor: default; opacity: .6; transform: none; box-sh
 .app-tabs-linea .nav-link:hover { color: var(--bs-primary, #e4550d); background: var(--bs-tertiary-bg, #f8fafc); }
 .app-tabs-linea .nav-link.active { color: var(--bs-primary, #e4550d); border-bottom-color: currentColor; }
 .app-tabs-linea .nav-link:focus-visible { outline: 2px solid var(--bs-primary, #e4550d); outline-offset: -4px; }
+
+/* Tasa del dólar en la barra superior */
+.app-topbar-tasa { align-items: center; gap: .3rem; padding: .25rem .6rem; border: 1px solid var(--bs-border-color, #e2e8f0); border-radius: 999px; font-size: .78rem; font-weight: 600; color: #047857; background: #ecfdf5; text-decoration: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.app-topbar-tasa:hover { background: #d1fae5; color: #065f46; }
+.app-topbar-tasa small { font-size: .65rem; font-weight: 700; color: #64748b; text-transform: uppercase; }

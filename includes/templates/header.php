@@ -186,6 +186,17 @@ $primerNombre = explode(' ', USUARIO_NOMBRE)[0];
 		<div class="app-topbar-title"><?= htmlspecialchars($tituloActual) ?></div>
 
 		<div class="ms-auto d-flex align-items-center gap-3">
+			<?php // Tasa del dólar del día (BCH: compra y venta; si no, referencia). Clic → Configuración → Tasa del dólar
+			$__tasaTop = null;
+			try { require_once __DIR__ . '/../tasa_cambio.php'; $__tasaTop = tasaUltima($pdo); } catch (Throwable $e) { $__tasaTop = null; }
+			if ($__tasaTop):
+				$__esBch = $__tasaTop['fuente'] === 'BCH';
+				$__txt = $__esBch ? 'C ' . number_format((float)$__tasaTop['compra'], 2) . ' · V ' . number_format((float)$__tasaTop['venta'], 2) : 'L ' . number_format((float)$__tasaTop['referencia'], 2);
+				$__tit = ($__esBch ? 'Dólar oficial del BCH' : 'Dólar: tasa de referencia del mercado (sin clave del BCH)') . ' al ' . date('d/m/Y', strtotime($__tasaTop['fecha']));
+				$__tag = in_array(USUARIO_ROL, ['admin', 'superadmin'], true) ? 'a href="configuracion_tasa"' : 'span'; ?>
+				<?php $__corto = 'L ' . number_format((float)($__esBch ? $__tasaTop['venta'] : $__tasaTop['referencia']), 2); ?>
+				<<?= $__tag ?> class="app-topbar-tasa" title="<?= htmlspecialchars($__tit) ?>"><i class="bi bi-currency-dollar"></i><span class="d-none d-md-inline"><?= $__txt ?></span><span class="d-md-none"><?= $__corto ?></span><small class="d-none d-sm-inline"><?= $__esBch ? 'BCH' : 'ref.' ?></small></<?= explode(' ', $__tag)[0] ?>>
+			<?php endif; unset($__tasaTop, $__esBch, $__txt, $__tit, $__tag, $__corto); ?>
 			<span class="app-topbar-greet"><?= $saludo ?> <?= $emoji ?>, <strong><?= htmlspecialchars($primerNombre) ?></strong>!</span>
 			<span class="app-avatar d-lg-none" title="<?= htmlspecialchars(USUARIO_NOMBRE) ?>"><?= htmlspecialchars(mb_strtoupper(mb_substr(USUARIO_NOMBRE, 0, 1))) ?></span>
 		</div>

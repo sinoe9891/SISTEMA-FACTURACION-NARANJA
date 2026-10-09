@@ -33,7 +33,7 @@ suite('Login y páginas', function () use ($PAGINAS) {
                 check('facturador: el menú no muestra opciones solo de admin', !preg_match('#href="(usuarios|configuracion_cai|configuracion_mensajes)"#', $r['body']));
             }
             if ($rol === 'admin' && $p === 'dashboard') {
-                check('admin: el menú sí muestra Configuración CAI y Usuarios', str_contains($r['body'], 'href="configuracion_cai"') && str_contains($r['body'], 'href="usuarios"'));
+                check('admin: el menú sí muestra Configuración y Usuarios', str_contains($r['body'], 'href="configuracion"') && str_contains($r['body'], 'href="usuarios"'));
             }
             $okPag = $r['code'] === 200 && sinErroresPhp($r['body']);
             check("$rol: $p carga sin errores", $okPag, "código {$r['code']} " . errorPhp($r['body']));
@@ -2388,7 +2388,7 @@ suite('Facturas: el contrato no se liga solo (una pauta o un extra puede pasar d
     check('una factura sin contrato elegido queda sin contrato aunque pase de la mensualidad', $id && $pdo->query("SELECT contrato_id FROM facturas WHERE id = $id")->fetchColumn() === null, $r['body']);
     $nf = $c->get('generar_factura', ['receptor_id' => $k['receptor_id']]);
     check('Nueva factura pregunta si es la mensualidad (no la elige sola)', str_contains($nf['body'], '¿Es la mensualidad del contrato?') && !str_contains($nf['body'], 'if (cts.length === 1)') && sinErroresPhp($nf['body']), errorPhp($nf['body']));
-    if ($id) { $pdo->exec("DELETE FROM factura_items_receptor WHERE factura_id = $id"); $pdo->exec("DELETE FROM facturas WHERE id = $id"); }
+    if ($id) { $pdo->exec("DELETE FROM factura_items_receptor WHERE factura_id = $id"); $pdo->exec("DELETE FROM facturas WHERE id = $id"); $pdo->exec("UPDATE cai_rangos SET correlativo_actual = correlativo_actual - 1 WHERE id = " . (int)$cai['id'] . " AND correlativo_actual > 0"); }   // devuelve el número usado
 });
 
 suite('Configuración con pestañas y Tasa del dólar (BCH)', function () {
@@ -2403,6 +2403,21 @@ suite('Configuración con pestañas y Tasa del dólar (BCH)', function () {
     check('el menú tiene una sola «Configuración» y «Usuarios» aparte', str_contains($d['body'], 'href="configuracion"') && str_contains($d['body'], 'href="usuarios"') && !str_contains($d['body'], 'href="configuracion_mensajes"'));
     $t = $a->get('configuracion_tasa');
     check('Tasa del dólar no muestra la clave guardada', !preg_match('#value="[0-9a-f]{32}"#', $t['body']));
+    // Llave inventada (solo en la base de pruebas): se muestra enmascarada para identificarla, nunca completa
+    $falsa = 'abcd' . str_repeat('0', 24) . 'wxyz';
+    $a->post('includes/banco_accion.php', ['accion' => 'tasa_clave', 'clave' => $falsa]);
+    $t = $a->get('configuracion_tasa');
+    check('la llave guardada se ve como abcd••••••••wxyz (no completa)', str_contains($t['body'], 'abcd••••••••wxyz') && !str_contains($t['body'], $falsa), substr(strip_tags($t['body']), 0, 0));
+    $a->post('includes/banco_accion.php', ['accion' => 'tasa_clave', 'clave' => '']);
+    // La tarea diaria no vuelve a consultar si ya hay tasa de hoy
+    $pdo = db();
+    require_once __DIR__ . '/../../includes/cron_tareas.php';
+    $pdo->exec("INSERT INTO tasas_cambio (fecha, referencia, fuente) VALUES (CURDATE(), 26.5, 'referencia') ON DUPLICATE KEY UPDATE fecha = fecha");
+    $antes = $pdo->query("SELECT actualizado_en FROM tasas_cambio WHERE fecha = CURDATE()")->fetchColumn();
+    $log = []; cronTasaCambio($pdo, function ($m) use (&$log) { $log[] = $m; });
+    check('la tarea diaria no consulta otra vez el mismo día (sin clave del BCH)', !$log && $pdo->query("SELECT actualizado_en FROM tasas_cambio WHERE fecha = CURDATE()")->fetchColumn() === $antes, implode(' | ', $log));
+    $d = $a->get('dashboard');
+    check('la barra superior muestra el dólar del día', str_contains($d['body'], 'app-topbar-tasa'));
     $f = login('qa.facturador@local.test');
     $r = $f->get('configuracion_tasa');
     check('facturador: no entra a Tasa del dólar', $r['code'] === 302 || !str_contains($r['body'], 'formClave'));

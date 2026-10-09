@@ -12,7 +12,11 @@ if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) {
 }
 $cid = (int)cliente_actual();
 $instalado = tasaDisponible($pdo);
-$tieneClave = $instalado && tasaClaveBch($pdo, $cid) !== '';
+$claveActual = $instalado ? tasaClaveBch($pdo, $cid) : '';
+$tieneClave = $claveActual !== '';
+// Para identificar qué llave se pegó: primeros 4 y últimos 4 caracteres
+$claveMascara = $tieneClave ? (strlen($claveActual) > 10 ? substr($claveActual, 0, 4) . '••••••••' . substr($claveActual, -4) : '••••••••') : '';
+unset($claveActual);
 $tasa = $instalado ? tasaUltima($pdo) : null;
 
 require_once '../../includes/templates/header.php';
@@ -43,13 +47,13 @@ require_once '../../includes/templates/config_tabs.php';
                 <p class="text-muted">Aún no hay tasa guardada.</p>
             <?php endif; ?>
             <button class="btn btn-outline-primary btn-sm mt-3" id="btnActualizarTasa"><i class="bi bi-arrow-clockwise me-1"></i>Actualizar ahora</button>
-            <div class="form-text">Se actualiza sola cada día.</div>
+            <div class="form-text">Se actualiza sola una vez al día, desde las 12:00 de la noche. Si el BCH no responde, reintenta cada 3 horas hasta las 3 pm y mientras tanto usa la tasa de referencia.</div>
         </div>
     </div>
     <div class="col-lg-6">
         <div class="app-card app-card-body h-100">
             <h6 class="fw-semibold mb-2">Clave de la Web-API del BCH</h6>
-            <p class="small mb-2">Estado: <?= $tieneClave ? '<span class="text-success fw-semibold"><i class="bi bi-check-circle me-1"></i>Clave guardada</span> (no se muestra por seguridad)' : '<span class="text-muted">Sin clave: se usa la tasa de referencia</span>' ?></p>
+            <p class="small mb-2">Estado: <?= $tieneClave ? '<span class="text-success fw-semibold"><i class="bi bi-check-circle me-1"></i>Clave guardada</span> <code class="ms-1">' . htmlspecialchars($claveMascara) . '</code>' : '<span class="text-muted">Sin clave: se usa la tasa de referencia</span>' ?></p>
             <ol class="small text-muted ps-3 mb-3">
                 <li>Entra a <a href="https://bchapi-am.developer.azure-api.net" target="_blank" rel="noopener">bchapi-am.developer.azure-api.net</a> → <strong>Perfil</strong>.</li>
                 <li>En <strong>Suscripciones</strong>, copia la <strong>Llave principal</strong> (dale «Mostrar»).</li>

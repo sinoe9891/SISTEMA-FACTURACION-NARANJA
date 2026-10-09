@@ -100,7 +100,7 @@ function tasaActualizar(PDO $pdo, int $cid): array
             $t = tasaDesdeBch($clave);
             $pdo->prepare("INSERT INTO tasas_cambio (fecha, compra, venta, referencia, fuente) VALUES (?, ?, ?, ?, 'BCH')
                            ON DUPLICATE KEY UPDATE compra = VALUES(compra), venta = VALUES(venta), referencia = VALUES(referencia), fuente = 'BCH'")
-                ->execute([$t['fecha'], $t['compra'], $t['venta'], round(($t['compra'] + $t['venta']) / 2, 4)]);
+                ->execute([date('Y-m-d'), $t['compra'], $t['venta'], round(($t['compra'] + $t['venta']) / 2, 4)]);   // la vigente hoy (aunque el BCH la haya publicado ayer)
             return tasaUltima($pdo);
         } catch (Throwable $e) {
             $errBch = $e->getMessage();
@@ -110,7 +110,7 @@ function tasaActualizar(PDO $pdo, int $cid): array
     // No pisa una tasa del BCH del mismo día
     $pdo->prepare("INSERT INTO tasas_cambio (fecha, referencia, fuente) VALUES (?, ?, 'referencia')
                    ON DUPLICATE KEY UPDATE referencia = IF(fuente = 'BCH', referencia, VALUES(referencia))")
-        ->execute([$t['fecha'], $t['referencia']]);
+        ->execute([date('Y-m-d'), $t['referencia']]);   // con la fecha de hoy: la fuente fecha su última actualización (a veces la de ayer) y así no se reconsulta cada 5 minutos
     $u = tasaUltima($pdo);
     if ($errBch) $u['aviso'] = "No se pudo usar el BCH ($errBch); se usó la tasa de referencia.";
     return $u;
