@@ -693,6 +693,9 @@ $total_clientes = count($clientes);
 			<option value="25">25 / pág</option>
 			<option value="50">50 / pág</option>
 			<option value="100">100 / pág</option>
+			<option value="200">200 / pág</option>
+			<option value="300">300 / pág</option>
+			<option value="100000">Todas</option>
 		</select>
 	</div>
 
@@ -819,7 +822,7 @@ $total_clientes = count($clientes);
 			return [...rows].sort((a, b) => {
 				const va = colText(a, sortCol),
 					vb = colText(b, sortCol);
-				return sortDir === 'asc' ? va.localeCompare(vb, 'es') : vb.localeCompare(va, 'es');
+				return sortDir === 'asc' ? tablaComparar(va, vb) : tablaComparar(vb, va);
 			});
 		}
 
@@ -954,9 +957,12 @@ $total_clientes = count($clientes);
 
 		$perPage.addEventListener('change', () => {
 			perPage = parseInt($perPage.value, 10);
+			try { localStorage.setItem('porPagina:' + location.pathname, $perPage.value); } catch (e) {}
 			page = 1;
 			render();
 		});
+		// Recordar cuántas por página (en este navegador)
+		try { const g = localStorage.getItem('porPagina:' + location.pathname); if (g && $perPage.querySelector(`option[value="${g}"]`)) { $perPage.value = g; perPage = parseInt(g); } } catch (e) {}
 
 		/* ── Delete confirm (SweetAlert2) ── */
 		window.cfConfirmarElim = (e, form) => {

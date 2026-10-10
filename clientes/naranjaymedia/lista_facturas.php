@@ -1660,7 +1660,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		const comparar = (a, b) => {
 			const na = parseFloat(a), nb = parseFloat(b);
 			if (a !== '' && b !== '' && !isNaN(na) && !isNaN(nb) && /^-?[\d.]+$/.test(a) && /^-?[\d.]+$/.test(b)) return na - nb;   // números como números
-			return a.localeCompare(b, 'es', { numeric: true });
+			return tablaComparar(a, b);
 		};
 		const filtered = () => {
 			const base = !query ? allRows : allRows.filter(r => r.dataset.search.includes(query.toLowerCase()));

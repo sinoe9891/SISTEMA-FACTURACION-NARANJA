@@ -843,6 +843,10 @@ require_once '../../includes/templates/header.php';
             <option value="10" selected>10/pág</option>
             <option value="25">25/pág</option>
             <option value="50">50/pág</option>
+            <option value="100">100/pág</option>
+            <option value="200">200/pág</option>
+            <option value="300">300/pág</option>
+            <option value="100000">Todas</option>
         </select>
     </div>
 
@@ -1158,7 +1162,7 @@ require_once '../../includes/templates/header.php';
             return [...base].sort((a, b) => {
                 const va = colTxt(a, sortCol),
                     vb = colTxt(b, sortCol);
-                return sortDir === 'asc' ? va.localeCompare(vb, 'es') : vb.localeCompare(va, 'es');
+                return sortDir === 'asc' ? tablaComparar(va, vb) : tablaComparar(vb, va);
             });
         }
 
@@ -1259,9 +1263,12 @@ require_once '../../includes/templates/header.php';
         });
         $pp.addEventListener('change', () => {
             perPage = parseInt($pp.value);
+            try { localStorage.setItem('porPagina:' + location.pathname, $pp.value); } catch (e) {}
             page = 1;
             render();
         });
+        // Recordar cuántas por página (en este navegador)
+        try { const g = localStorage.getItem('porPagina:' + location.pathname); if (g && $pp.querySelector(`option[value="${g}"]`)) { $pp.value = g; perPage = parseInt(g); } } catch (e) {}
         updIcons();
         render();
     })();

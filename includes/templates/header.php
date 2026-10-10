@@ -156,6 +156,19 @@ $primerNombre = explode(' ', USUARIO_NOMBRE)[0];
 	<link rel="stylesheet" href="../../clientes/css/app.css?v=<?= @filemtime($__cssDir . 'app.css') ?>">
 	<script>
 		window.APP_BASE = "<?= rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\') ?>";
+		// Orden de las tablas: montos («l 1,234.56», «7,000») como número y fechas dd/mm/aaaa como fecha; lo demás como texto
+		window.tablaComparar = function (a, b) {
+			const val = t => {
+				t = String(t ?? '').trim().toLowerCase();
+				let m = t.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+				if (m) return m[3] + '-' + m[2] + '-' + m[1];
+				m = t.replace(/^(l|lps|usd|\$)\.?\s*/, '').match(/^-?[\d,]+(\.\d+)?$/);
+				return m ? parseFloat(m[0].replace(/,/g, '')) : t;
+			};
+			const x = val(a), y = val(b);
+			if (typeof x === 'number' && typeof y === 'number') return x - y;
+			return String(x).localeCompare(String(y), 'es', { numeric: true });
+		};
 	</script>
 </head>
 
