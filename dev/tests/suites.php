@@ -2619,5 +2619,15 @@ suite('Permisos: cada interruptor se guarda al confirmarlo y queda en la bitáco
     $pdo->exec("DELETE FROM permisos_bitacora WHERE id > $antes");
 });
 
+suite('Dashboard: próximas fechas de cobro con programados, 5 días y Cargar más', function () {
+    $a = login('qa.admin@local.test');
+    $r = $a->get('dashboard');
+    check('carga sin errores', sinErroresPhp($r['body']), errorPhp($r['body']));
+    $ocultas = substr_count($r['body'], 'class="pc-mas d-none"');
+    check('si hay más de los próximos 5 días, aparece «Cargar más» con la cantidad', $ocultas === 0 || (str_contains($r['body'], 'id="pcCargarMas"') && str_contains($r['body'], 'Cargar más (' . $ocultas . ')') && str_contains($r['body'], 'id="pcVerMenos"')));
+    $hayProg = (int)db()->query("SELECT COUNT(*) FROM cobros_programados WHERE cliente_id = 2 AND prueba = 0 AND estado IN ('programado','enviando')")->fetchColumn();
+    check('los cobros por correo programados se marcan como en la lista de facturas', !$hayProg || str_contains($r['body'], 'app-envio app-envio-programado') || !str_contains($r['body'], 'Próximas Fechas de'));
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

@@ -788,4 +788,19 @@ try {
 }
 $contratos_proximos_pagos = array_merge($contratos_dashboard, $planFilas);
 usort($contratos_proximos_pagos, fn($a, $b) => (int)$a['dias_para_pago'] <=> (int)$b['dias_para_pago']);
-$contratos_proximos_pagos = array_slice($contratos_proximos_pagos, 0, 8);
+$contratos_proximos_pagos = array_slice($contratos_proximos_pagos, 0, 60);   // el dashboard muestra 5 días y el resto con «Cargar más»
+
+// Cobros por correo programados (como en la lista de facturas): por factura y, si la fila aún no tiene factura, por cliente
+$cobros_prog_factura = $cobros_prog_receptor = [];
+try {
+	$stCp = $pdo->prepare("SELECT c.id, c.receptor_id, c.programado_para, x.factura_id FROM cobros_programados c
+	                       LEFT JOIN cobros_programados_facturas x ON x.cobro_id = c.id
+	                       WHERE c.cliente_id = ? AND c.prueba = 0 AND c.estado IN ('programado', 'enviando') ORDER BY c.programado_para");
+	$stCp->execute([$cliente_id]);
+	foreach ($stCp->fetchAll(PDO::FETCH_ASSOC) as $cp) {
+		if ($cp['factura_id']) $cobros_prog_factura[(int)$cp['factura_id']] ??= $cp['programado_para'];
+		if ($cp['receptor_id']) $cobros_prog_receptor[(int)$cp['receptor_id']] ??= $cp['programado_para'];
+	}
+} catch (Throwable $e) {
+	// sin el módulo de cobros por correo
+}

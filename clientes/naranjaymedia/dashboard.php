@@ -534,7 +534,7 @@ unset($__v);
             <div class="db-card">
                 <div class="db-card-header">
                     <span class="db-card-title"><i class="bi bi-calendar-check-fill me-2 text-primary"></i>Próximas Fechas de
-                        Cobro</span>
+                        Cobro <small class="text-muted fw-normal">· próximos 5 días</small></span>
                     <a href="contratos" class="btn btn-sm btn-outline-primary">Ver todos <i
                             class="bi bi-arrow-right ms-1"></i></a>
                 </div>
@@ -552,13 +552,20 @@ unset($__v);
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($contratos_proximos_pagos as $p):
+                                <?php
+                                $mesCortoDb = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+                                $pcMas = 0;
+                                foreach ($contratos_proximos_pagos as $pcIdx => $p):
                                     $dias = (int)$p['dias_para_pago'];
+                                    // Se ven los de los próximos 5 días (y los vencidos); el resto con «Cargar más»
+                                    $pcOculta = $dias > 5 && $pcIdx >= 3;
+                                    if ($pcOculta) $pcMas++;
+                                    $pcProg = !empty($p['factura_pendiente_id']) ? ($cobros_prog_factura[(int)$p['factura_pendiente_id']] ?? null) : ($cobros_prog_receptor[(int)$p['receptor_id']] ?? null);
                                     $bCls = $dias <= 3 ? 'bg-danger' : ($dias <= 7 ? 'bg-warning text-dark' : ($dias <= 15 ? 'bg-info' : 'bg-secondary'));
                                     $ico = $dias <= 3 ? '🔴' : ($dias <= 7 ? '🟡' : ($dias <= 15 ? '🔵' : '⚪'));
                                     $esPlan = !empty($p['plan_linea']);
                                 ?>
-                                    <tr>
+                                    <tr class="<?= $pcOculta ? 'pc-mas d-none' : '' ?>">
                                         <td>
                                             <div class="fw-semibold"><?= htmlspecialchars($p['receptor_nombre']) ?></div>
                                             <?php if ($p['receptor_tel']): ?><small
@@ -581,6 +588,9 @@ unset($__v);
                                         <td class="text-center">
                                             <div class="fw-semibold small"><?= htmlspecialchars($p['proxima_fecha_pago']) ?></div>
                                             <small class="text-muted"><?= $esPlan ? 'Plan de pagos' : 'Día ' . (int)$p['dia_pago'] ?></small>
+                                            <?php if ($pcProg): $pcT = strtotime($pcProg); ?>
+                                                <div><a href="cobros_programados" class="app-envio app-envio-programado" title="Envío por correo programado para el <?= date('d/m/Y g:i a', $pcT) ?>"><i class="bi bi-envelope"></i><i class="bi bi-clock"></i> Programado <?= (int)date('j', $pcT) . ' ' . $mesCortoDb[(int)date('n', $pcT)] ?></a></div>
+                                            <?php endif; ?>
                                         </td>
                                         <td class="text-center"><span class="badge <?= $bCls ?>"><?= $ico ?>
                                                 <?= $dias === 0 ? '¡Hoy!' : ($dias < 0 ? 'Vencido ' . -$dias . 'd' : $dias . 'd') ?></span></td>
@@ -607,6 +617,20 @@ unset($__v);
                             </tbody>
                         </table>
                     </div>
+                    <?php if ($pcMas): ?>
+                        <div class="d-flex justify-content-center gap-2 py-2 border-top">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="pcCargarMas"><i class="bi bi-chevron-down me-1"></i>Cargar más (<?= $pcMas ?>)</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="pcVerMenos"><i class="bi bi-chevron-up me-1"></i>Ver menos</button>
+                        </div>
+                        <script>
+                        (() => {
+                            const mas = document.getElementById('pcCargarMas'), menos = document.getElementById('pcVerMenos');
+                            const filas = () => document.querySelectorAll('tr.pc-mas');
+                            mas.addEventListener('click', () => { filas().forEach(f => f.classList.remove('d-none')); mas.classList.add('d-none'); menos.classList.remove('d-none'); });
+                            menos.addEventListener('click', () => { filas().forEach(f => f.classList.add('d-none')); menos.classList.add('d-none'); mas.classList.remove('d-none'); mas.closest('.db-card').scrollIntoView({ block: 'nearest' }); });
+                        })();
+                        </script>
+                    <?php endif; ?>
                 </div>
             </div>
         <?php endif; ?>
