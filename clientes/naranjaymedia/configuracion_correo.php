@@ -111,9 +111,9 @@ require_once '../../includes/templates/config_tabs.php';
                         <div class="col-md-6"><label class="form-label">Correo del remitente *</label><input class="form-control" type="email" name="remitente_email" value="<?= $v('remitente_email') ?>" required></div>
                         <div class="col-md-6"><label class="form-label">Nombre del remitente</label><input class="form-control" name="remitente_nombre" value="<?= $v('remitente_nombre') ?>"></div>
                         <div class="col-md-6"><label class="form-label">Responder a</label><input class="form-control" type="text" inputmode="email" name="responder_a" value="<?= $v('responder_a') ?>" placeholder="gerencia@…, administracion@…">
-                            <div class="form-text">Adonde llegan las respuestas; se muestran en el correo. Varios separados por coma.</div></div>
+                            <div class="form-text">Adonde llegan las respuestas; se muestran en el correo. Además reciben <strong>copia oculta</strong> de cada envío de lunes a viernes (sábado y domingo no, por no ser días hábiles). Varios separados por coma.</div></div>
                         <div class="col-md-6"><label class="form-label">Copia oculta (archivo)</label><input class="form-control" type="text" inputmode="email" name="copia_oculta" value="<?= $v('copia_oculta') ?>" placeholder="opcional (varios separados por coma)">
-                            <div class="form-text">Recibe una copia de cada envío.</div></div>
+                            <div class="form-text">Correos adicionales que reciben copia de cada envío (además de «Responder a»), de lunes a viernes.</div></div>
                         <div class="col-md-6"><label class="form-label">Logo para los correos (PNG o JPG)</label><input class="form-control" name="logo_url" value="<?= $v('logo_url') ?>" placeholder="https://…/logo.png">
                             <div class="form-text">Gmail y Outlook no muestran logos SVG.</div></div>
                         <div class="col-md-6"><label class="form-label">Enlace del logo y del pie</label><input class="form-control" name="enlace_url" value="<?= $v('enlace_url') ?>" placeholder="https://…"></div>

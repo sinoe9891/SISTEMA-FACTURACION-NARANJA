@@ -139,6 +139,23 @@ function correoPieAutomatico(array $cfg, callable $e): string
         . ($links ? ' o escribir a ' . $links : '') . '.';
 }
 
+/**
+ * Copia oculta de cada envío: los correos de «Responder a» y los de «Copia oculta» de la cuenta (los de Configuración),
+ * solo en días hábiles (lunes a viernes, hora de Honduras); sábado y domingo no se manda copia.
+ * No repite a quien ya va en Para o CC.
+ */
+function correoCopiaOculta(array $cfg, array $yaVan = [], ?int $diaSemana = null): array
+{
+    if (($diaSemana ?? (int)date('N')) >= 6) return [];
+    $ya = array_map('strtolower', $yaVan);
+    $out = [];
+    foreach (array_merge(correoLista((string)($cfg['responder_a'] ?? '')), correoLista((string)($cfg['copia_oculta'] ?? ''))) as $m) {
+        if (!filter_var($m, FILTER_VALIDATE_EMAIL) || in_array(strtolower($m), $ya, true) || in_array(strtolower($m), array_map('strtolower', $out), true)) continue;
+        $out[] = $m;
+    }
+    return $out;
+}
+
 /** "a@x.com; b@y.com" → ['a@x.com', 'b@y.com'] */
 function correoLista(string $t): array
 {
@@ -168,8 +185,9 @@ function correoEnviar(PDO $pdo, int $cid, string $para, string $asunto, string $
         foreach (array_merge($paraLista, $ccLista) as $m) if (!filter_var($m, FILTER_VALIDATE_EMAIL)) throw new Exception("Correo inválido: $m");
         $smtp = new SmtpCliente($cfg['host'], (int)$cfg['puerto'], $cfg['seguridad'], $cfg['usuario'],
             preg_replace('/\s+/', '', correoDescifrar($cfg['clave_cifrada'])), !empty($cfg['verificar_ssl']));
+        $bcc = correoCopiaOculta($cfg, array_merge($paraLista, $ccLista));
         $smtp->enviar($cfg['remitente_email'], (string)($cfg['remitente_nombre'] ?? ''), $para, $asunto, $html, $texto, $adjuntos,
-            $cfg['responder_a'] ?: null, $cfg['copia_oculta'] ?: null, implode(', ', $ccLista));
+            $cfg['responder_a'] ?: null, $bcc ? implode(', ', $bcc) : null, implode(', ', $ccLista));
         correoRegistrar($pdo, $cid, $tipo, $refId, $para, $asunto, true, null, $usuario);
         return true;
     } catch (Throwable $e) {

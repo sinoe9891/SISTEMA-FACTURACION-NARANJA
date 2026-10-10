@@ -173,7 +173,7 @@ require_once '../../includes/templates/header.php';
                     <div id="cDocs" class="d-flex flex-wrap gap-2"></div><div class="form-text">El correo mencionará automáticamente los documentos seleccionados en un párrafo de respaldo administrativo y tributario (excepto en envío de recibos). Puedes revisarlo en Vista previa.</div>
                 </div>
                 <div class="col-md-6"><label class="form-label">3. Para *</label><input class="form-control" name="para" id="cPara" placeholder="correo@cliente.com, otro@cliente.com" required><div class="form-text">Puedes agregar o cambiar destinatarios. Separa varios correos con coma; se guardan para este envío programado.</div></div>
-                <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="cCc" placeholder="opcional"><div class="form-text" id="cCcInfo">Se llena con los correos de «Responder a» de la cuenta Facturación y los contactos del cliente marcados «Copiar en cobros». Puedes editarlo; varios separados por coma.</div></div>
+                <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="cCc" placeholder="opcional"><div class="form-text" id="cCcInfo">Se llena con los contactos del cliente marcados «Copiar en cobros» (el cliente los ve). Nosotros (los correos de Configuración) recibimos <strong>copia oculta</strong> automática de lunes a viernes. Varios separados por coma.</div></div>
                 <div class="col-12"><label class="form-label d-flex justify-content-between">4. Asunto y mensaje *
                     <a href="#" id="btnGenerar" class="small fw-normal"><i class="bi bi-magic"></i> Generar con la plantilla</a></label>
                     <input class="form-control mb-2" name="asunto" id="cAsunto" required>
@@ -181,7 +181,8 @@ require_once '../../includes/templates/header.php';
                     <div class="form-text">Plantillas en <a href="configuracion_mensajes">Mensajes y cuentas de pago</a>. Se agregan el logo, el pie con los correos de respuesta y los PDF.</div></div>
                 <div class="col-md-5"><label class="form-label">5. Fecha y hora de envío</label>
                     <input class="form-control" type="datetime-local" name="programado_para" value="<?= $manana ?>">
-                    <div class="form-text">Hora de Honduras. Ahora son las <?= date('g:i a') ?>.</div></div>
+                    <div class="form-text">Hora de Honduras. Ahora son las <?= date('g:i a') ?>.</div>
+                    <div class="small text-warning-emphasis aviso-finde d-none mt-1"></div></div>
                 <div class="col-md-7 d-flex flex-wrap align-items-end gap-2 justify-content-md-end">
                     <button type="button" class="btn btn-outline-dark" id="btnPrevia"><i class="bi bi-window me-1"></i>Vista previa</button>
                     <div class="input-group" style="max-width:340px">
@@ -270,7 +271,7 @@ require_once '../../includes/templates/header.php';
                     <div class="col-md-6"><label class="form-label">Para *</label><input class="form-control" name="para" id="ePara" required><div class="form-text">Varios separados por coma.</div></div>
                     <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="eCc"></div>
                     <div class="col-md-8"><label class="form-label">Asunto *</label><input class="form-control" name="asunto" id="eAsunto" maxlength="255" required></div>
-                    <div class="col-md-4"><label class="form-label">Envío (hora de Honduras)</label><input class="form-control" type="datetime-local" name="programado_para" id="eFecha" required></div>
+                    <div class="col-md-4"><label class="form-label">Envío (hora de Honduras)</label><input class="form-control" type="datetime-local" name="programado_para" id="eFecha" required><div class="small text-warning-emphasis aviso-finde d-none mt-1"></div></div>
             <div class="col-12 border-top border-bottom py-2 my-2">
                 <input type="hidden" name="actualizar_documentos" value="1">
                 <label class="form-label"><i class="bi bi-paperclip"></i> Documentos de la empresa a adjuntar</label>
@@ -483,8 +484,8 @@ require_once '../../includes/templates/header.php';
 
     // CC: contactos generales del cliente + los del proyecto/contrato de las facturas marcadas.
     // Si el usuario escribe en el campo, ya no se reemplaza automáticamente.
-    // Siempre en copia: los correos de «Responder a» de la cuenta Facturación (Configuración → Correo)
-    const ccBase = <?= json_encode(array_values(array_filter(correoLista((string)($cfgFact['responder_a'] ?? ''))))) ?>;
+    // Los correos de Configuración (Responder a / Copia oculta) ya reciben copia oculta automática en días hábiles: no van en CC
+    const ccBase = [];
     let contactos = [], ccManual = false;
     const $cc = document.getElementById('cCc');
     $cc?.addEventListener('input', () => ccManual = true);
@@ -603,10 +604,22 @@ require_once '../../includes/templates/header.php';
         if (b.dataset.accion === 'enviar_ya') Swal.fire({ title: 'Enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         accion(fd);
     });
+    // Sábado o domingo: se envía igual al cliente, pero nosotros no recibimos copia (no es día hábil)
+    function avisoFinde(inp) {
+        const av = inp?.parentElement?.querySelector('.aviso-finde');
+        if (!av) return;
+        const d = inp.value ? new Date(inp.value) : null;
+        const finde = d && !isNaN(d) && (d.getDay() === 0 || d.getDay() === 6);
+        av.classList.toggle('d-none', !finde);
+        if (finde) av.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Es ${d.getDay() === 6 ? 'sábado' : 'domingo'}: el correo le llega al cliente, pero <strong>no recibiremos copia</strong> por no ser día hábil.`;
+    }
+    document.addEventListener('input', e => { if (e.target.matches('input[type="datetime-local"]')) avisoFinde(e.target); });
+    document.addEventListener('change', e => { if (e.target.matches('input[type="datetime-local"]')) avisoFinde(e.target); });
+    document.querySelectorAll('input[name="programado_para"]').forEach(avisoFinde);
     document.addEventListener('click', async ev => {
         const b = ev.target.closest('.btn-reprogramar');
         if (!b) return;
-        const r = await Swal.fire({ title: 'Nueva fecha y hora', html: `<input type="datetime-local" id="nuevaFecha" class="form-control" value="${b.dataset.fecha}"><div class="small text-muted mt-2">Hora de Honduras</div>`,
+        const r = await Swal.fire({ title: 'Nueva fecha y hora', html: `<input type="datetime-local" id="nuevaFecha" class="form-control" value="${b.dataset.fecha}"><div class="small text-muted mt-2">Hora de Honduras</div><div class="small text-warning-emphasis aviso-finde d-none mt-1"></div>`, didOpen: () => avisoFinde(document.getElementById('nuevaFecha')),
             showCancelButton: true, confirmButtonText: 'Reprogramar', cancelButtonText: 'Cancelar', preConfirm: () => document.getElementById('nuevaFecha').value });
         if (!r.isConfirmed) return;
         const fd = new FormData(); fd.append('accion', 'reprogramar'); fd.append('id', b.dataset.id); fd.append('programado_para', r.value);
@@ -687,7 +700,7 @@ require_once '../../includes/templates/header.php';
             document.getElementById('ePara').value = c.para;
             document.getElementById('eCc').value = c.cc || '';
             document.getElementById('eAsunto').value = c.asunto;
-            document.getElementById('eFecha').value = c.programado_para.slice(0, 16).replace(' ', 'T');
+            document.getElementById('eFecha').value = c.programado_para.slice(0, 16).replace(' ', 'T'); avisoFinde(document.getElementById('eFecha'));
             setMensaje('eMensaje', c.mensaje_html.replace(/\r?\n/g, ''));
             actualizarParrafoDocumentos('eMensaje', 'eDocs', c.tipo);
             bootstrap.Modal.getOrCreateInstance(document.getElementById('mEditar')).show();

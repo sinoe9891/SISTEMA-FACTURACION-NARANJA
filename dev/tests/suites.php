@@ -1265,7 +1265,7 @@ suite('Cobros por correo programados', function () {
     check('el enlace antiguo con cliente redirige a Nuevo cobro', $old['code'] === 302 && str_contains((string)($old['loc'] ?? ''), 'nuevo_cobro?receptor_id=' . $rid), $old['code'] . ' ' . ($old['loc'] ?? ''));
     $r = $c->get('nuevo_cobro', ['receptor_id' => $rid]);
     check('la página de cobros carga', $r['code'] === 200 && sinErroresPhp($r['body']), errorPhp($r['body']));
-    check('la copia (CC) trae los correos de «Responder a» de Facturación', str_contains($r['body'], 'const ccBase = ["gerencia@ejemplo.test","administracion@ejemplo.test"]'));
+    check('el CC ya no lleva los correos de Configuración (van en copia oculta automática)', str_contains($r['body'], 'const ccBase = [];') && str_contains($r['body'], 'copia oculta'));
     $msg = $c->postJson('procesar_accion_factura.php', ['accion' => 'generar_mensaje', 'factura_ids' => $ids, 'tipo' => 'saldo_pendiente']);
     check('genera asunto y mensaje con la plantilla', ($msg['json']['success'] ?? false) && ($msg['json']['asunto'] ?? '') !== '', substr($msg['body'], 0, 200));
     $pv = $c->post('cobro_accion.php', ['accion' => 'previsualizar', 'receptor_id' => $rid, 'factura_ids[0]' => $ids[0] ?? 0, 'asunto' => 'X', 'mensaje_html' => '<p>Hola <strong>QA previa</strong></p><ol><li>uno</li></ol><script>x</script>']);
@@ -2637,6 +2637,16 @@ suite('Tablas: al ordenar por columna las filas se mueven; lista de facturas con
     $l = login('qa.admin@local.test')->get('lista_facturas');
     check('lista de facturas: 100, 200, 300 y Todas por página', str_contains($l['body'], '<option value="300">300/pág</option>') && str_contains($l['body'], '>Todas</option>'));
     check('lista de facturas: la fecha y el correlativo ordenan con su valor real', str_contains($l['body'], "querySelectorAll('td')[i + 1]") && preg_match('#data-col="fecha" data-sort-val="\d{4}-\d{2}-\d{2}#', $l['body']));
+});
+
+suite('Correo: copia oculta a los correos de Configuración en días hábiles; aviso de fin de semana al programar', function () {
+    require_once __DIR__ . '/../../includes/correo.php';
+    $cfg = ['responder_a' => 'gerencia@x.test, administracion@x.test', 'copia_oculta' => 'archivo@x.test, gerencia@x.test'];
+    check('lunes a viernes: copia a «Responder a» y «Copia oculta», sin repetir', correoCopiaOculta($cfg, ['cliente@y.test'], 3) === ['gerencia@x.test', 'administracion@x.test', 'archivo@x.test']);
+    check('no se copia a quien ya va en Para o CC', correoCopiaOculta($cfg, ['Gerencia@x.test'], 1) === ['administracion@x.test', 'archivo@x.test']);
+    check('sábado y domingo: sin copia', correoCopiaOculta($cfg, [], 6) === [] && correoCopiaOculta($cfg, [], 7) === []);
+    $r = login('qa.admin@local.test')->get('cobros_programados');
+    check('al programar un envío en fin de semana se avisa que no recibiremos copia', sinErroresPhp($r['body']) && str_contains($r['body'], 'aviso-finde') && str_contains($r['body'], 'no recibiremos copia'), errorPhp($r['body']));
 });
 
 require __DIR__ . '/cobros_lista_adjuntos.php';
