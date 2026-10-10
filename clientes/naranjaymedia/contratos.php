@@ -1429,6 +1429,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
             const s = (page - 1) * perPage,
                 e = Math.min(s + perPage, total);
             allRows.forEach(r => r.style.display = 'none');
+            rows.forEach(r => r.parentNode && r.parentNode.appendChild(r));   // el orden elegido se ve en la tabla (antes solo se calculaba)
             if (total === 0) {
                 $empty.style.display = 'block';
                 $sub.textContent = query ? `Sin resultados para "${query}".` : 'No hay contratos.';

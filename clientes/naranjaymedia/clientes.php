@@ -850,6 +850,7 @@ $total_clientes = count($clientes);
 			const slice = filtered.slice(start, end);
 
 			allRows.forEach(r => r.style.display = 'none');
+			filtered.forEach(r => r.parentNode && r.parentNode.appendChild(r));   // el orden elegido se ve en la tabla (antes solo se calculaba)
 
 			if (total === 0) {
 				$empty.style.display = 'block';

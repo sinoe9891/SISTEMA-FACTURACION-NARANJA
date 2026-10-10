@@ -1623,6 +1623,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
             const s = (page - 1) * perPage,
                 e = Math.min(s + perPage, total);
             allRows.forEach(r => r.style.display = 'none');
+            rows.forEach(r => r.parentNode && r.parentNode.appendChild(r));   // el orden elegido se ve en la tabla (antes solo se calculaba)
             if (!total) {
                 $empty.style.display = 'block';
                 $sub.textContent = query ? `Sin resultados para "${query}".` : 'No hay colaboradores.';

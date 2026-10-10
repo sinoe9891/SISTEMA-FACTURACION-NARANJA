@@ -2629,5 +2629,15 @@ suite('Dashboard: próximas fechas de cobro con programados, 5 días y Cargar m�
     check('los cobros por correo programados se marcan como en la lista de facturas', !$hayProg || str_contains($r['body'], 'app-envio app-envio-programado') || !str_contains($r['body'], 'Próximas Fechas de'));
 });
 
+suite('Tablas: al ordenar por columna las filas se mueven; lista de facturas con 100/200/300/Todas', function () {
+    foreach (['gastos', 'configuracion_cai', 'productos_clientes', 'usuarios', 'clientes', 'colaboradores', 'lista_facturas', 'contratos'] as $pg) {
+        $src = file_get_contents(__DIR__ . '/../../clientes/naranjaymedia/' . $pg . '.php');
+        check("$pg: el orden reacomoda las filas", str_contains($src, '.forEach(r => r.parentNode && r.parentNode.appendChild(r));'));
+    }
+    $l = login('qa.admin@local.test')->get('lista_facturas');
+    check('lista de facturas: 100, 200, 300 y Todas por página', str_contains($l['body'], '<option value="300">300/pág</option>') && str_contains($l['body'], '>Todas</option>'));
+    check('lista de facturas: la fecha y el correlativo ordenan con su valor real', str_contains($l['body'], "querySelectorAll('td')[i + 1]") && preg_match('#data-col="fecha" data-sort-val="\d{4}-\d{2}-\d{2}#', $l['body']));
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

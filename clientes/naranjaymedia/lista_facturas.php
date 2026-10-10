@@ -1444,6 +1444,10 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					<option value="10" selected>10/pág</option>
 					<option value="25">25/pág</option>
 					<option value="50">50/pág</option>
+					<option value="100">100/pág</option>
+					<option value="200">200/pág</option>
+					<option value="300">300/pág</option>
+					<option value="100000">Todas</option>
 				</select>
 				<span class="fh-result-badge" id="fhBadge"><?= $total_facturas ?> registros</span>
 			</div>
@@ -1506,7 +1510,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 							data-search="<?= strtolower(htmlspecialchars($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision'])))) ?>">
 							<td class="fh-select-col"><input type="checkbox" class="fh-row-check fh-row-select"
 									data-factura-id="<?= $f['id'] ?>" data-receptor-id="<?= (int)$f['receptor_id'] ?>" data-estado="<?= htmlspecialchars($f['estado']) ?>"></td>
-							<td><span class="corr-mono" data-col="corr"><?= htmlspecialchars($f['correlativo']) ?></span>
+							<td data-sort-val="<?= htmlspecialchars($f['correlativo']) ?>"><span class="corr-mono" data-col="corr"><?= htmlspecialchars($f['correlativo']) ?></span>
 								<?php if ($ev = $enviosCorreo[$f['id']] ?? null):
 									$mesCorto = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 									$evFecha = fn($t) => (int)date('j', $t) . ' ' . $mesCorto[(int)date('n', $t)];
@@ -1522,7 +1526,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 									<a href="cobros_programados" class="app-envio app-envio-<?= $evTxt[0] ?>" title="<?= htmlspecialchars($evTxt[4]) ?>"><i class="bi <?= $evTxt[1] ?>"></i><?php if ($evTxt[2]): ?><i class="bi <?= $evTxt[2] ?>"></i><?php endif; ?> <?= $evTxt[3] ?></a>
 								<?php endif; ?>
 							</td>
-							<td data-col="fecha"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
+							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
 							<td data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></td>
 							<td data-col="total" data-sort-val="<?= $f['total'] ?>"><strong>L
 									<?= number_format($f['total'], 2) ?></strong></td>
@@ -1648,10 +1652,15 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		const headers = document.querySelectorAll('#fhTable thead th[data-col]');
 		const hl = (t, q) => !q ? t : t.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, `gi`),
 			'<mark class="fh-highlight">$1</mark>');
+		// +1: la primera celda es la casilla de selección. data-sort-val manda (fecha AAAA-MM-DD, total numérico, correlativo sin las etiquetas de envío)
 		const colTxt = (r, i) => {
-			const td = r.querySelectorAll('td')[i];
-			return td ? (td.dataset.original || td.getAttribute('data-sort-val') || td.textContent).trim()
-				.toLowerCase() : '';
+			const td = r.querySelectorAll('td')[i + 1];
+			return td ? (td.getAttribute('data-sort-val') ?? td.dataset.original ?? td.textContent).trim().toLowerCase() : '';
+		};
+		const comparar = (a, b) => {
+			const na = parseFloat(a), nb = parseFloat(b);
+			if (a !== '' && b !== '' && !isNaN(na) && !isNaN(nb) && /^-?[\d.]+$/.test(a) && /^-?[\d.]+$/.test(b)) return na - nb;   // números como números
+			return a.localeCompare(b, 'es', { numeric: true });
 		};
 		const filtered = () => {
 			const base = !query ? allRows : allRows.filter(r => r.dataset.search.includes(query.toLowerCase()));
@@ -1659,7 +1668,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			return [...base].sort((a, b) => {
 				const va = colTxt(a, sortCol),
 					vb = colTxt(b, sortCol);
-				return sortDir === 'asc' ? va.localeCompare(vb, 'es') : vb.localeCompare(va, 'es');
+				return sortDir === 'asc' ? comparar(va, vb) : comparar(vb, va);
 			});
 		};
 		const updIcons = () => headers.forEach(th => {
@@ -1688,6 +1697,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			const s = (page - 1) * perPage,
 				e = Math.min(s + perPage, total);
 			allRows.forEach(r => r.style.display = 'none');
+			rows.forEach(r => r.parentNode && r.parentNode.appendChild(r));   // el orden elegido se ve en la tabla (antes solo se calculaba)
 			if (total === 0) {
 				$empty.style.display = 'block';
 				$sub.textContent = query ? `Sin resultados para "${query}".` : 'No hay facturas en este rango.';
@@ -1767,8 +1777,11 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		$pp.addEventListener('change', () => {
 			perPage = parseInt($pp.value);
 			page = 1;
+			try { localStorage.setItem('fhPorPagina', $pp.value); } catch (e) {}
 			render();
 		});
+		// Recordar cuántas por página (en este navegador)
+		try { const g = localStorage.getItem('fhPorPagina'); if (g && $pp.querySelector(`option[value="${g}"]`)) { $pp.value = g; perPage = parseInt(g); } } catch (e) {}
 		rowCheckboxes.forEach(cb => cb.addEventListener('change', () => {
 			const id = cb.dataset.facturaId;
 			if (cb.checked) selectedIds.add(id);
