@@ -2704,5 +2704,32 @@ suite('Respaldos: archivos subidos (ZIP) y restaurar base y archivos', function 
     check('la página muestra archivos, restaurar y la bitácora', sinErroresPhp($p['body']) && str_contains($p['body'], 'btn-restaurar-arch') && str_contains($p['body'], 'btn-restaurar') && str_contains($p['body'], 'Base restaurada'), errorPhp($p['body']));
 });
 
+suite('Respaldos: si la restauración falla a medias, vuelve sola al estado anterior', function () {
+    require_once __DIR__ . '/../../includes/respaldos.php';
+    $pdo = db();
+    $s = login('qa.super@local.test', 1, 2);
+    $s->post('includes/respaldo_accion.php', ['accion' => 'crear']);
+    $buena = respaldoLista(false)[0]['archivo'];
+    // Copia «rota»: válida e íntegra, pero con una sentencia que falla después de varias tablas ya recreadas
+    $sql = gzdecode(file_get_contents(respaldoDir() . $buena));
+    $pos = strpos($sql, "\n-- ----------------------------------------\n-- Tabla", (int)(strlen($sql) * 0.5));
+    $sql = substr($sql, 0, $pos) . "\nINSERT INTO `qa_tabla_que_no_existe` VALUES (1);\n" . substr($sql, $pos);
+    $rota = 'respaldo_2020-01-01_' . date('His') . '.sql.gz';
+    file_put_contents(respaldoDir() . $rota, gzencode($sql));
+    file_put_contents(respaldoDir() . $rota . '.json', json_encode(['archivo' => $rota, 'creado' => '2020-01-01 00:00:00', 'sha256' => hash_file('sha256', respaldoDir() . $rota),
+        'base' => $pdo->query("SELECT DATABASE()")->fetchColumn(), 'tablas' => substr_count($sql, 'CREATE TABLE'), 'origen' => 'manual']));
+    $antes = (string)$pdo->query("SELECT nombre FROM clientes_saas WHERE id = 2")->fetchColumn();
+    $pdo->exec("UPDATE clientes_saas SET nombre = 'QA ESTADO ACTUAL' WHERE id = 2");
+    $r = $s->post('includes/respaldo_accion.php', ['accion' => 'restaurar', 'archivo' => $rota, 'confirmacion' => 'RESTAURAR']);
+    check('avisa que falló y que volvió solo al estado anterior', empty($r['json']['success']) && str_contains($r['body'], 'volvió automáticamente al estado anterior'), $r['body']);
+    $pdo = db();
+    check('la base quedó exactamente como estaba antes de intentar', $pdo->query("SELECT nombre FROM clientes_saas WHERE id = 2")->fetchColumn() === 'QA ESTADO ACTUAL');
+    check('no quedan tablas a medias (todas las del respaldo existen)', (int)$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'")->fetchColumn() >= substr_count($sql, 'CREATE TABLE'));
+    $ev = array_column(respaldoBitacora(10), 'evento');
+    check('la bitácora registra el error y la vuelta automática', in_array('restauracion_error', $ev, true) && in_array('reversion_automatica', $ev, true));
+    $pdo->prepare("UPDATE clientes_saas SET nombre = ? WHERE id = 2")->execute([$antes]);
+    @unlink(respaldoDir() . $rota); @unlink(respaldoDir() . $rota . '.json');
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

@@ -36,6 +36,7 @@ $eventos = [
     'acceso_denegado' => ['Acceso denegado', 'warning', 'bi-person-x'],
     'archivos_creado' => ['Respaldo de archivos', 'success', 'bi-folder-plus'], 'archivos_restaurado' => ['Archivos restaurados', 'warning', 'bi-folder-symlink'],
     'restaurado' => ['Base restaurada', 'warning', 'bi-arrow-counterclockwise'], 'restauracion_error' => ['Error al restaurar', 'danger', 'bi-exclamation-octagon'],
+    'reversion_automatica' => ['Vuelta automática al estado anterior', 'info', 'bi-life-preserver'], 'reversion_fallida' => ['No se pudo volver al estado anterior', 'danger', 'bi-x-octagon'],
 ];
 
 require_once '../../includes/templates/header.php';
@@ -172,7 +173,7 @@ require_once '../../includes/templates/config_tabs.php';
             </ul>
             <h6 class="fw-semibold"><i class="bi bi-arrow-counterclockwise me-1"></i> Cómo restaurar</h6>
             <ul class="mb-0 ps-3">
-                <li><strong>Base de datos</strong> (solo superadmin): botón <i class="bi bi-arrow-counterclockwise"></i> de la copia. <strong>Reemplaza todas las tablas de todas las empresas</strong> con lo de esa fecha; antes se guarda automáticamente el estado actual («Antes de restaurar») para poder deshacerlo. Las bitácoras se conservan completas (no vuelven a la fecha del respaldo) y la de Respaldos está fuera de la base.</li>
+                <li><strong>Base de datos</strong> (solo superadmin): botón <i class="bi bi-arrow-counterclockwise"></i> de la copia. <strong>Reemplaza todas las tablas de todas las empresas</strong> con lo de esa fecha; antes se guarda automáticamente el estado actual («Antes de restaurar») para poder deshacerlo. Las bitácoras se conservan completas (no vuelven a la fecha del respaldo) y la de Respaldos está fuera de la base. <strong>Si la restauración falla a medias, el sistema vuelve solo al estado anterior.</strong></li>
                 <li><strong>Archivos</strong> (solo superadmin): botón <i class="bi bi-folder-symlink"></i>. Recupera los que faltan o, si eliges, también reemplaza los que cambiaron. <strong>Nunca borra</strong> archivos.</li>
                 <li>Fuera del sistema: importar el <code>.sql.gz</code> en phpMyAdmin y descomprimir el <code>.zip</code> en la carpeta del sitio.</li>
             </ul>

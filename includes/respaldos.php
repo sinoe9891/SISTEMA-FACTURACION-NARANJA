@@ -340,9 +340,69 @@ function respaldoArchivosRestaurar(string $archivo, bool $reemplazar, ?int $usua
     return $r;
 }
 
+/** Ejecuta un volcado .sql.gz sentencia por sentencia. Devuelve cuántas ejecutó. */
+function respaldoEjecutarSql(PDO $pdo, string $rutaGz): int
+{
+    $gz = gzopen($rutaGz, 'rb');
+    if (!$gz) throw new Exception("No se pudo abrir el respaldo.");
+    $n = 0;
+    $buf = '';
+    try {
+        while (($linea = gzgets($gz, 1 << 22)) !== false) {
+            if ($buf === '' && (str_starts_with($linea, '-- ') || trim($linea) === '')) continue;
+            $buf .= $linea;
+            // El volcado termina cada sentencia con «;» al final de la línea (los saltos dentro de los textos van escapados)
+            if (str_ends_with(rtrim($linea, "\r\n"), ';') && str_ends_with($linea, "\n")) {
+                $pdo->exec($buf);
+                $n++;
+                $buf = '';
+            }
+        }
+        if (trim($buf) !== '') { $pdo->exec($buf); $n++; }
+    } finally {
+        gzclose($gz);
+        $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+    }
+    return $n;
+}
+
+/** Copia en memoria de las bitácoras de la base (para devolverlas después de restaurar). */
+function respaldoGuardarBitacoras(PDO $pdo): array
+{
+    $out = [];
+    foreach (RESPALDO_BITACORAS as $t) {
+        if (!$pdo->query("SHOW TABLES LIKE " . $pdo->quote($t))->fetchColumn()) continue;
+        $out[$t] = ['create' => $pdo->query("SHOW CREATE TABLE `$t`")->fetch(PDO::FETCH_NUM)[1], 'filas' => $pdo->query("SELECT * FROM `$t`")->fetchAll(PDO::FETCH_ASSOC)];
+    }
+    return $out;
+}
+
+/** Devuelve a la base las filas de bitácora que falten. Devuelve cuántas agregó. */
+function respaldoDevolverBitacoras(PDO $pdo, array $bitacoras): int
+{
+    $n = 0;
+    foreach ($bitacoras as $t => $b) {
+        if (!$pdo->query("SHOW TABLES LIKE " . $pdo->quote($t))->fetchColumn()) $pdo->exec($b['create']);   // el respaldo era anterior a la tabla
+        $cols = array_column($pdo->query("SHOW COLUMNS FROM `$t`")->fetchAll(PDO::FETCH_ASSOC), 'Field');
+        foreach (array_chunk($b['filas'], 200) as $lote) {
+            $c = array_values(array_intersect(array_keys($lote[0]), $cols));
+            $st = $pdo->prepare("INSERT IGNORE INTO `$t` (`" . implode('`,`', $c) . "`) VALUES " . implode(',', array_fill(0, count($lote), '(' . implode(',', array_fill(0, count($c), '?')) . ')')));
+            $vals = [];
+            foreach ($lote as $f) foreach ($c as $k) $vals[] = $f[$k];
+            $st->execute($vals);
+            $n += $st->rowCount();
+        }
+    }
+    return $n;
+}
+
 /**
  * Restaura la base de datos completa desde una copia .sql.gz (solo superadmin; lo controla quien llama).
- * Antes crea un respaldo del estado actual («antes de restaurar») para poder deshacerlo.
+ *  1. Comprueba la copia (huella y volcado completo) y que sea de esta misma base.
+ *  2. Respalda el estado actual («antes de restaurar») y guarda las bitácoras.
+ *  3. Restaura y devuelve las bitácoras.
+ *  4. Si algo falla a medias, VUELVE SOLA al estado anterior con la copia del paso 2 (MySQL no puede deshacer
+ *     DROP/CREATE TABLE con una transacción, por eso se hace con esa copia) y avisa.
  */
 function respaldoRestaurar(PDO $pdo, string $archivo, ?int $usuario = null): array
 {
@@ -358,46 +418,24 @@ function respaldoRestaurar(PDO $pdo, string $archivo, ?int $usuario = null): arr
     if (!copy($ruta, $tmp)) throw new Exception("No se pudo preparar la restauración.");
     try {
         $seguridad = respaldoCrear($pdo, 'antes_de_restaurar', $usuario);
-        // Las bitácoras se guardan antes y se devuelven después: lo auditado nunca se pierde con una restauración
-        $bitacoras = [];
-        foreach (RESPALDO_BITACORAS as $t) {
-            if (!$pdo->query("SHOW TABLES LIKE " . $pdo->quote($t))->fetchColumn()) continue;
-            $bitacoras[$t] = ['create' => $pdo->query("SHOW CREATE TABLE `$t`")->fetch(PDO::FETCH_NUM)[1], 'filas' => $pdo->query("SELECT * FROM `$t`")->fetchAll(PDO::FETCH_ASSOC)];
-        }
-        $gz = gzopen($tmp, 'rb');
-        if (!$gz) throw new Exception("No se pudo abrir el respaldo.");
-        $sentencias = 0;
-        $buf = '';
-        while (($linea = gzgets($gz, 1 << 22)) !== false) {
-            if ($buf === '' && (str_starts_with($linea, '-- ') || trim($linea) === '')) continue;
-            $buf .= $linea;
-            // El volcado termina cada sentencia con «;» al final de la línea (los saltos dentro de los textos van escapados)
-            if (str_ends_with(rtrim($linea, "\r\n"), ';') && str_ends_with($linea, "\n")) {
-                $pdo->exec($buf);
-                $sentencias++;
-                $buf = '';
+        $bitacoras = respaldoGuardarBitacoras($pdo);
+        try {
+            $sentencias = respaldoEjecutarSql($pdo, $tmp);
+            $conservadas = respaldoDevolverBitacoras($pdo, $bitacoras);
+        } catch (Throwable $e) {
+            $motivo = mb_substr($e->getMessage(), 0, 300);
+            respaldoLog('restauracion_error', ['archivo' => $archivo, 'detalle' => $motivo]);
+            // Vuelta automática al estado de antes
+            try {
+                respaldoEjecutarSql($pdo, respaldoRuta($seguridad['archivo']));
+                respaldoDevolverBitacoras($pdo, $bitacoras);
+                respaldoLog('reversion_automatica', ['archivo' => $seguridad['archivo'], 'motivo' => 'falló la restauración de ' . $archivo]);
+            } catch (Throwable $e2) {
+                respaldoLog('reversion_fallida', ['archivo' => $seguridad['archivo'], 'detalle' => mb_substr($e2->getMessage(), 0, 300)]);
+                throw new Exception("La restauración falló ($motivo) y no se pudo volver sola al estado anterior. Restaura a mano la copia «Antes de restaurar» {$seguridad['archivo']}.");
             }
+            throw new Exception("La restauración falló ($motivo). El sistema volvió automáticamente al estado anterior: no se perdió nada.");
         }
-        gzclose($gz);
-        if (trim($buf) !== '') $pdo->exec($buf);
-        $conservadas = 0;
-        foreach ($bitacoras as $t => $b) {
-            if (!$pdo->query("SHOW TABLES LIKE " . $pdo->quote($t))->fetchColumn()) $pdo->exec($b['create']);   // el respaldo era anterior a la tabla
-            $cols = array_column($pdo->query("SHOW COLUMNS FROM `$t`")->fetchAll(PDO::FETCH_ASSOC), 'Field');
-            foreach (array_chunk($b['filas'], 200) as $lote) {
-                $c = array_values(array_intersect(array_keys($lote[0]), $cols));
-                $sql = "INSERT IGNORE INTO `$t` (`" . implode('`,`', $c) . "`) VALUES " . implode(',', array_fill(0, count($lote), '(' . implode(',', array_fill(0, count($c), '?')) . ')'));
-                $vals = [];
-                foreach ($lote as $f) foreach ($c as $k) $vals[] = $f[$k];
-                $st = $pdo->prepare($sql);
-                $st->execute($vals);
-                $conservadas += $st->rowCount();
-            }
-        }
-        $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
-    } catch (Throwable $e) {
-        respaldoLog('restauracion_error', ['archivo' => $archivo, 'detalle' => mb_substr($e->getMessage(), 0, 300)]);
-        throw new Exception("La restauración falló: " . $e->getMessage() . (isset($seguridad) ? " Puedes volver al estado anterior con el respaldo {$seguridad['archivo']}." : ''));
     } finally {
         @unlink($tmp);
     }
