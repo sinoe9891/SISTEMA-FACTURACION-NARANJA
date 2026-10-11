@@ -12,8 +12,16 @@ require __DIR__ . '/../includes/db.php';          // fija America/Tegucigalpa y 
 require __DIR__ . '/../includes/cron_tareas.php';
 
 // Un solo proceso a la vez
-$lock = fopen(sys_get_temp_dir() . '/facturacion_tareas.lock', 'c');
-if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) exit("Ya hay una ejecución en curso.\n");
+$lockRuta = sys_get_temp_dir() . '/facturacion_tareas.lock';
+$lock = fopen($lockRuta, 'c+');
+if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
+    // Con la hora y desde cuándo corre la anterior, para saber qué tarea tardó
+    $desde = trim((string)@file_get_contents($lockRuta));
+    exit('[' . date('Y-m-d H:i') . '] Ya hay una ejecución en curso' . ($desde ? " (empezó $desde)" : '') . ".\n");
+}
+ftruncate($lock, 0);
+fwrite($lock, date('Y-m-d H:i:s'));
+fflush($lock);
 
 $log = fn(string $m) => print('[' . date('Y-m-d H:i') . "] $m\n");
 cronAvisosPago($pdo, $log);

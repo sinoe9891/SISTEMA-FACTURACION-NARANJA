@@ -203,3 +203,182 @@ function respaldoProbar(string $archivo): array
     respaldoLog('verificado', ['archivo' => $archivo, 'resultado' => $ok ? 'correcto' : 'con problemas']);
     return ['ok' => $ok, 'huella' => $hashOk, 'completo' => $completo, 'tablas' => $creates, 'mb_sql' => round($bytes / 1048576, 2)];
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ARCHIVOS: comprobantes, firmas, documentos, PDF de cobros… (clientes/<empresa>/includes/uploads)
+ * Un .zip diario (cron) o a pedido, con huella SHA-256, en la misma carpeta privada. Se guardan las 3 más recientes.
+ * Restaurar nunca borra: recupera los que faltan o, si se pide, también reemplaza los que cambiaron.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+const RESPALDO_ARCHIVOS_COPIAS = 3;
+const RESPALDO_ARCHIVOS_PATRON = '/^archivos_\d{4}-\d{2}-\d{2}_\d{6}\.zip$/';
+
+/** Carpetas de archivos subidos de cada empresa, relativas a la raíz del sistema. */
+function respaldoCarpetasArchivos(): array
+{
+    $raiz = dirname(__DIR__);
+    $out = [];
+    foreach (glob($raiz . '/clientes/*/includes/uploads', GLOB_ONLYDIR) ?: [] as $d) $out[] = substr($d, strlen($raiz) + 1);
+    return $out;
+}
+
+/** ¿Ruta válida dentro de un ZIP de archivos? (nada fuera de clientes/<empresa>/includes/uploads/) */
+function respaldoArchivoEntradaValida(string $n): bool
+{
+    return (bool)preg_match('#^clientes/[a-z0-9_-]+/includes/uploads/[^\x00]+$#i', $n) && !preg_match('#(^|/)\.\.(/|$)#', $n) && !str_ends_with($n, '/');
+}
+
+function respaldoArchivosCrear(string $origen, ?int $usuario = null): array
+{
+    @set_time_limit(900);
+    if (!class_exists('ZipArchive')) throw new Exception("El servidor no tiene ZipArchive para respaldar archivos.");
+    $dir = respaldoDir();
+    $raiz = dirname(__DIR__) . '/';
+    while (is_file($dir . ($nombre = 'archivos_' . date('Y-m-d_His') . '.zip'))) sleep(1);
+    $tmp = $dir . '.' . $nombre . '.tmp';
+    $ini = microtime(true);
+    $zip = new ZipArchive();
+    if ($zip->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) throw new Exception("No se pudo crear el respaldo de archivos.");
+    $n = $bytesOrig = 0;
+    foreach (respaldoCarpetasArchivos() as $carpeta) {
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($raiz . $carpeta, FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $f) {
+            if (!$f->isFile()) continue;
+            $rel = substr($f->getPathname(), strlen($raiz));
+            $zip->addFile($f->getPathname(), $rel);
+            // Imágenes y PDF ya vienen comprimidos: se guardan tal cual (más rápido)
+            if (preg_match('/\.(jpe?g|png|webp|gif|pdf|zip|gz)$/i', $rel)) $zip->setCompressionName($rel, ZipArchive::CM_STORE);
+            $n++;
+            $bytesOrig += $f->getSize();
+        }
+    }
+    $zip->setArchiveComment('Respaldo de archivos ' . date('Y-m-d H:i:s') . " (hora de Honduras) · $n archivos");
+    if (!$zip->close()) { @unlink($tmp); respaldoLog('error', ['origen' => $origen, 'detalle' => 'no se pudo cerrar el ZIP de archivos']); throw new Exception("No se pudo guardar el respaldo de archivos (¿disco lleno?)."); }
+    $final = $dir . $nombre;
+    if (!rename($tmp, $final)) { @unlink($tmp); throw new Exception("No se pudo guardar el respaldo de archivos."); }
+    @chmod($final, 0600);
+    $meta = ['archivo' => $nombre, 'tipo' => 'archivos', 'creado' => date('Y-m-d H:i:s'), 'bytes' => filesize($final), 'sha256' => hash_file('sha256', $final),
+             'archivos' => $n, 'bytes_originales' => $bytesOrig, 'segundos' => round(microtime(true) - $ini, 1), 'origen' => $origen, 'usuario' => $usuario];
+    file_put_contents($final . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    @chmod($final . '.json', 0600);
+    respaldoLog('archivos_creado', ['archivo' => $nombre, 'origen' => $origen, 'bytes' => $meta['bytes'], 'archivos' => $n, 'sha256' => $meta['sha256']]);
+    // Retención propia (3 copias)
+    foreach (array_slice(array_column(respaldoArchivosLista(false), 'archivo'), RESPALDO_ARCHIVOS_COPIAS) as $a) {
+        @unlink($dir . $a);
+        @unlink($dir . $a . '.json');
+        respaldoLog('eliminado', ['archivo' => $a, 'motivo' => 'retención de ' . RESPALDO_ARCHIVOS_COPIAS . ' copias de archivos']);
+    }
+    return $meta;
+}
+
+function respaldoArchivosLista(bool $verificar = true): array
+{
+    $dir = respaldoDir();
+    $out = [];
+    foreach (glob($dir . 'archivos_*.zip') ?: [] as $ruta) {
+        $a = basename($ruta);
+        if (!preg_match(RESPALDO_ARCHIVOS_PATRON, $a)) continue;
+        $meta = is_file($ruta . '.json') ? (json_decode((string)file_get_contents($ruta . '.json'), true) ?: []) : [];
+        $meta += ['archivo' => $a, 'creado' => date('Y-m-d H:i:s', filemtime($ruta)), 'sha256' => null, 'archivos' => null, 'origen' => '—'];
+        $meta['bytes'] = filesize($ruta);
+        if ($verificar) $meta['integro'] = $meta['sha256'] ? hash_equals($meta['sha256'], hash_file('sha256', $ruta)) : null;
+        $out[] = $meta;
+    }
+    usort($out, fn($x, $y) => strcmp($y['archivo'], $x['archivo']));
+    return $out;
+}
+
+/** Ruta de un respaldo de base o de archivos (valida el nombre). */
+function respaldoRutaCualquiera(string $archivo): string
+{
+    if (preg_match(RESPALDO_ARCHIVOS_PATRON, $archivo)) {
+        $ruta = respaldoDir() . $archivo;
+        if (!is_file($ruta)) throw new Exception("El respaldo ya no existe.");
+        return $ruta;
+    }
+    return respaldoRuta($archivo);
+}
+
+/**
+ * Restaura archivos desde un ZIP. $reemplazar = false: solo los que faltan; true: también reemplaza los que cambiaron.
+ * Nunca borra archivos que no estén en el respaldo.
+ */
+function respaldoArchivosRestaurar(string $archivo, bool $reemplazar, ?int $usuario = null): array
+{
+    @set_time_limit(900);
+    $ruta = respaldoRutaCualquiera($archivo);
+    if (!preg_match(RESPALDO_ARCHIVOS_PATRON, $archivo)) throw new Exception("No es un respaldo de archivos.");
+    $meta = is_file($ruta . '.json') ? (json_decode((string)file_get_contents($ruta . '.json'), true) ?: []) : [];
+    if (!empty($meta['sha256']) && !hash_equals($meta['sha256'], hash_file('sha256', $ruta))) throw new Exception("El respaldo está dañado (la huella SHA-256 no coincide); no se restaura.");
+    $zip = new ZipArchive();
+    if ($zip->open($ruta) !== true) throw new Exception("No se pudo abrir el respaldo de archivos.");
+    $raiz = dirname(__DIR__) . '/';
+    $restaurados = $iguales = $omitidos = $rechazados = 0;
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $st = $zip->statIndex($i);
+        $n = $st['name'];
+        if (!respaldoArchivoEntradaValida($n)) { $rechazados++; continue; }
+        $dest = $raiz . $n;
+        if (is_file($dest)) {
+            if (filesize($dest) === (int)$st['size'] && hash_file('crc32b', $dest) === sprintf('%08x', $st['crc'])) { $iguales++; continue; }
+            if (!$reemplazar) { $omitidos++; continue; }
+        }
+        if (!is_dir(dirname($dest)) && !@mkdir(dirname($dest), 0755, true)) { $rechazados++; continue; }
+        $in = $zip->getStream($n);
+        if (!$in) { $rechazados++; continue; }
+        $out = fopen($dest . '.restaurando', 'wb');
+        stream_copy_to_stream($in, $out);
+        fclose($in);
+        fclose($out);
+        rename($dest . '.restaurando', $dest);
+        $restaurados++;
+    }
+    $zip->close();
+    $r = ['restaurados' => $restaurados, 'iguales' => $iguales, 'omitidos' => $omitidos, 'rechazados' => $rechazados];
+    respaldoLog('archivos_restaurado', ['archivo' => $archivo, 'modo' => $reemplazar ? 'reemplazar' : 'solo faltantes'] + $r);
+    return $r;
+}
+
+/**
+ * Restaura la base de datos completa desde una copia .sql.gz (solo superadmin; lo controla quien llama).
+ * Antes crea un respaldo del estado actual («antes de restaurar») para poder deshacerlo.
+ */
+function respaldoRestaurar(PDO $pdo, string $archivo, ?int $usuario = null): array
+{
+    @set_time_limit(900);
+    $prueba = respaldoProbar($archivo);
+    if (!$prueba['ok']) throw new Exception("El respaldo no pasó la prueba de integridad; no se restaura.");
+    $ruta = respaldoRuta($archivo);
+    $meta = is_file($ruta . '.json') ? (json_decode((string)file_get_contents($ruta . '.json'), true) ?: []) : [];
+    $base = (string)$pdo->query("SELECT DATABASE()")->fetchColumn();
+    if (!empty($meta['base']) && $meta['base'] !== $base) throw new Exception("Ese respaldo es de la base «{$meta['base']}» y estás en «{$base}»; no se restaura.");
+    // Copia de trabajo: la retención del respaldo de seguridad podría borrar el original si es el más antiguo
+    $tmp = respaldoDir() . '.restaurar_' . bin2hex(random_bytes(6)) . '.sql.gz';
+    if (!copy($ruta, $tmp)) throw new Exception("No se pudo preparar la restauración.");
+    try {
+        $seguridad = respaldoCrear($pdo, 'antes_de_restaurar', $usuario);
+        $gz = gzopen($tmp, 'rb');
+        if (!$gz) throw new Exception("No se pudo abrir el respaldo.");
+        $sentencias = 0;
+        $buf = '';
+        while (($linea = gzgets($gz, 1 << 22)) !== false) {
+            if ($buf === '' && (str_starts_with($linea, '-- ') || trim($linea) === '')) continue;
+            $buf .= $linea;
+            // El volcado termina cada sentencia con «;» al final de la línea (los saltos dentro de los textos van escapados)
+            if (str_ends_with(rtrim($linea, "\r\n"), ';') && str_ends_with($linea, "\n")) {
+                $pdo->exec($buf);
+                $sentencias++;
+                $buf = '';
+            }
+        }
+        gzclose($gz);
+        if (trim($buf) !== '') $pdo->exec($buf);
+        $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+    } catch (Throwable $e) {
+        respaldoLog('restauracion_error', ['archivo' => $archivo, 'detalle' => mb_substr($e->getMessage(), 0, 300)]);
+        throw new Exception("La restauración falló: " . $e->getMessage() . (isset($seguridad) ? " Puedes volver al estado anterior con el respaldo {$seguridad['archivo']}." : ''));
+    } finally {
+        @unlink($tmp);
+    }
+    respaldoLog('restaurado', ['archivo' => $archivo, 'sentencias' => $sentencias, 'respaldo_previo' => $seguridad['archivo']]);
+    return ['sentencias' => $sentencias, 'respaldo_previo' => $seguridad['archivo'], 'tablas' => $prueba['tablas']];
+}

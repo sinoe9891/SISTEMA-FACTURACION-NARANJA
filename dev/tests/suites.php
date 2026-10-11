@@ -2648,5 +2648,57 @@ suite('Correo: copia oculta siempre a los correos de Configuración; al programa
     check('al programar un envío en fin de semana se avisa que no recibiremos copia', sinErroresPhp($r['body']) && str_contains($r['body'], 'aviso-finde') && str_contains($r['body'], 'se recomienda programarlo de lunes a viernes'), errorPhp($r['body']));
 });
 
+suite('Respaldos: archivos subidos (ZIP) y restaurar base y archivos', function () {
+    require_once __DIR__ . '/../../includes/respaldos.php';
+    $pdo = db();
+    $s = login('qa.super@local.test', 1, 2);
+    // Archivos: un archivo de prueba en uploads, respaldo, se borra y se recupera
+    $prueba = UPLOADS . '/gastos/qa_respaldo_' . time() . '.txt';
+    file_put_contents($prueba, 'contenido original');
+    $r = $s->post('includes/respaldo_accion.php', ['accion' => 'crear_archivos']);
+    check('crea el respaldo de archivos', !empty($r['json']['success']), $r['body']);
+    $zip = respaldoArchivosLista()[0] ?? null;
+    check('el ZIP tiene huella íntegra y cuenta los archivos', $zip && $zip['integro'] === true && (int)$zip['archivos'] > 0);
+    $z = new ZipArchive(); $z->open(respaldoDir() . $zip['archivo']);
+    $rel = 'clientes/naranjaymedia/includes/uploads/gastos/' . basename($prueba);
+    check('incluye los archivos con su ruta dentro del sitio', $z->locateName($rel) !== false); $z->close();
+    unlink($prueba);
+    file_put_contents(dirname($prueba) . '/qa_no_tocar.txt', 'nuevo');
+    $r = $s->post('includes/respaldo_accion.php', ['accion' => 'restaurar_archivos', 'archivo' => $zip['archivo'], 'modo' => 'faltantes']);
+    check('restaurar archivos recupera el que faltaba', !empty($r['json']['success']) && is_file($prueba) && file_get_contents($prueba) === 'contenido original', $r['body']);
+    check('restaurar no borra archivos que no están en el respaldo', is_file(dirname($prueba) . '/qa_no_tocar.txt'));
+    file_put_contents($prueba, 'cambiado');
+    $s->post('includes/respaldo_accion.php', ['accion' => 'restaurar_archivos', 'archivo' => $zip['archivo'], 'modo' => 'faltantes']);
+    check('«solo faltantes» no pisa los que cambiaron', file_get_contents($prueba) === 'cambiado');
+    $s->post('includes/respaldo_accion.php', ['accion' => 'restaurar_archivos', 'archivo' => $zip['archivo'], 'modo' => 'reemplazar']);
+    check('«reemplazar» devuelve la versión del respaldo', file_get_contents($prueba) === 'contenido original');
+    @unlink($prueba); @unlink(dirname($prueba) . '/qa_no_tocar.txt');
+    check('rutas fuera de uploads no son válidas en un ZIP', !respaldoArchivoEntradaValida('clientes/naranjaymedia/includes/uploads/../../config.php') && !respaldoArchivoEntradaValida('includes/db.php'));
+    // Solo los primeros bytes (el ZIP puede pesar decenas de MB)
+    $inicio = '';
+    $ch = curl_init($s->base . 'includes/respaldo_accion.php?descargar=' . urlencode($zip['archivo']));
+    curl_setopt_array($ch, [CURLOPT_COOKIEFILE => $s->jar, CURLOPT_WRITEFUNCTION => function ($c, $d) use (&$inicio) { $inicio .= $d; return strlen($inicio) > 1024 ? -1 : strlen($d); }]);
+    curl_exec($ch);
+    $codigo = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    check('se descarga el ZIP', $codigo === 200 && str_starts_with($inicio, 'PK'), (string)$codigo);
+    // Base: se respalda, se cambia algo y se restaura
+    $r = $s->post('includes/respaldo_accion.php', ['accion' => 'crear']);
+    $bd = respaldoLista(false)[0]['archivo'];
+    $antes = (string)$pdo->query("SELECT nombre FROM clientes_saas WHERE id = 2")->fetchColumn();
+    $pdo->exec("UPDATE clientes_saas SET nombre = 'QA CAMBIO TEMPORAL' WHERE id = 2");
+    $a = login('qa.admin@local.test');
+    $r = $a->post('includes/respaldo_accion.php', ['accion' => 'restaurar', 'archivo' => $bd, 'confirmacion' => 'RESTAURAR']);
+    check('un admin no puede restaurar la base', empty($r['json']['success']));
+    $r = $s->post('includes/respaldo_accion.php', ['accion' => 'restaurar', 'archivo' => $bd, 'confirmacion' => 'restaurar']);
+    check('sin escribir RESTAURAR no se restaura', empty($r['json']['success']) && $pdo->query("SELECT nombre FROM clientes_saas WHERE id = 2")->fetchColumn() === 'QA CAMBIO TEMPORAL');
+    $r = $s->post('includes/respaldo_accion.php', ['accion' => 'restaurar', 'archivo' => $bd, 'confirmacion' => 'RESTAURAR']);
+    check('restaura la base a como estaba', !empty($r['json']['success']) && db()->query("SELECT nombre FROM clientes_saas WHERE id = 2")->fetchColumn() === $antes, $r['body']);
+    $prev = array_values(array_filter(respaldoLista(false), fn($c) => ($c['origen'] ?? '') === 'antes_de_restaurar'));
+    check('antes de restaurar guarda el estado actual para deshacer', (bool)$prev);
+    $p = $s->get('respaldos');
+    check('la página muestra archivos, restaurar y la bitácora', sinErroresPhp($p['body']) && str_contains($p['body'], 'btn-restaurar-arch') && str_contains($p['body'], 'btn-restaurar') && str_contains($p['body'], 'Base restaurada'), errorPhp($p['body']));
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';
