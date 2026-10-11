@@ -40,12 +40,15 @@ if (!$contrato) {
 $stmtF = $pdo->prepare("
     SELECT f.*, rf.nombre AS empresa_factura,
            COALESCE(f.periodo_mes,  MONTH(f.fecha_emision)) AS periodo_mes_ef,
-           COALESCE(f.periodo_anio, YEAR(f.fecha_emision))  AS periodo_anio_ef
+           COALESCE(f.periodo_anio, YEAR(f.fecha_emision))  AS periodo_anio_ef,
+           -- ¿Trae la mensualidad? (el producto del contrato o uno con el mismo nombre, p. ej. el código viejo del servicio)
+           EXISTS (SELECT 1 FROM factura_items_receptor fi LEFT JOIN productos_clientes pi ON pi.id = fi.producto_id
+                   WHERE fi.factura_id = f.id AND (fi.producto_id = ? OR pi.nombre = (SELECT nombre FROM productos_clientes WHERE id = ?))) AS es_mensualidad
     FROM facturas f LEFT JOIN clientes_factura rf ON rf.id = f.receptor_id
     WHERE f.contrato_id=? AND f.cliente_id=? AND f.estado='emitida'
     ORDER BY f.fecha_emision DESC, f.id DESC
 ");
-$stmtF->execute([$contrato_id, $cliente_id]);
+$stmtF->execute([(int)($contrato['producto_id'] ?? 0), (int)($contrato['producto_id'] ?? 0), $contrato_id, $cliente_id]);
 $facturas = $stmtF->fetchAll(PDO::FETCH_ASSOC);
 // Contrato con varias empresas (rotativo): a cuál se le facturó cada mes y cuánto a cada una
 $porEmpresa = [];
@@ -117,11 +120,17 @@ while ($cursor <= $fechaRef) {
     $cursor->modify('+1 month');
 }
 
+// Qué factura cubre cada mes: la que dice su mes (periodo) o, si no lo dice, la que trae la mensualidad (por su fecha).
+// Las que no traen la mensualidad ni dicen mes son «extras» (sitio web, hosting, pautas…) y no cuentan como mes cobrado.
 $mesesConFactura = [];
+$facturasMes = [];   // 'AAAA-M' => [facturas]
+$extras = [];
 foreach ($facturas as $f) {
+    if ($f['periodo_mes'] === null && !(int)$f['es_mensualidad']) { $extras[] = $f; continue; }
     $pm = (int)($f['periodo_mes_ef']  ?? (int)substr($f['fecha_emision'], 5, 2));
     $pa = (int)($f['periodo_anio_ef'] ?? (int)substr($f['fecha_emision'], 0, 4));
     $mesesConFactura[$pa . '-' . $pm] = true;
+    $facturasMes[$pa . '-' . $pm][] = $f;
 }
 // Contrato «sin factura»: se cobra con recibo; los meses cobrados son los que tienen recibo
 $esRecibo = $tipo_ct === 'sin_factura';
@@ -565,6 +574,12 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
         background: #d1fae5;
         color: #065f46;
         border: 1px solid #6ee7b7;
+    }
+
+    .mes-chip.porcobrar {
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fcd34d;
     }
 
     .mes-chip.pend {
@@ -1275,9 +1290,10 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
             <div class="fc-card-hdr">
                 <span class="fc-card-title"><i class="bi bi-calendar2-week text-secondary"></i> Calendario de Cobros</span>
                 <div class="d-flex gap-2 flex-wrap">
-                    <span class="mes-chip ok"><i class="bi bi-check-circle-fill" style="font-size:9px"></i>Cobrado</span>
+                    <span class="mes-chip ok"><i class="bi bi-check-circle-fill" style="font-size:9px"></i>Pagado</span>
+                    <span class="mes-chip porcobrar"><i class="bi bi-hourglass-split" style="font-size:9px"></i>Facturado sin pagar</span>
                     <span class="mes-chip pend" style="opacity:.85"><i class="bi bi-x-circle-fill"
-                            style="font-size:9px"></i>Sin cobrar <small>(clic para regularizar)</small></span>
+                            style="font-size:9px"></i>Sin factura <small>(clic para regularizar)</small></span>
                     <span class="mes-chip actual"><i class="bi bi-clock-fill" style="font-size:9px"></i>Mes actual</span>
                 </div>
             </div>
@@ -1288,16 +1304,18 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                             <i class="bi bi-calendar me-1"></i><?= $anio ?>
                             <span class="ms-2 fw-normal text-muted">
                                 (<?= count(array_filter($meses, fn($m) => isset($mesesConFactura[$m]))) ?>/<?= count($meses) ?>
-                                cobrados)
+                                facturados · <?= count(array_filter($meses, fn($m) => isset($facturasMes[$m]) && array_sum(array_column($facturasMes[$m], 'saldo')) <= 0.004)) ?> pagados)
                             </span>
                         </div>
                         <div class="d-flex flex-wrap gap-2">
                             <?php foreach ($meses as $mes):
                                 [$a, $m] = explode('-', $mes);
                                 $tieneF = isset($mesesConFactura[$mes]);
-                                $esAct  = ($mes === date('Y-m'));
-                                $cls    = $esAct ? 'actual' : ($tieneF ? 'ok' : 'pend');
-                                $ico    = $esAct ? 'bi-clock-fill' : ($tieneF ? 'bi-check-circle-fill' : 'bi-x-circle-fill');
+                                $esAct  = ($mes === $keyActual);
+                                $fm     = $facturasMes[$mes] ?? [];
+                                $saldoMes = array_sum(array_column($fm, 'saldo'));
+                                $cls    = $tieneF ? ($saldoMes > 0.004 ? 'porcobrar' : 'ok') : ($esAct ? 'actual' : 'pend');
+                                $ico    = ['ok' => 'bi-check-circle-fill', 'porcobrar' => 'bi-hourglass-split', 'actual' => 'bi-clock-fill', 'pend' => 'bi-x-circle-fill'][$cls];
                                 // Para rotativo: calcular qué cliente le toca este mes
                                 $turnoLabel = '';
                                 $turnoFull  = '';
@@ -1323,6 +1341,16 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                                 <?= htmlspecialchars($turnoLabel) ?></span><?php endif; ?>
                                         <i class="bi bi-plus-circle-fill" style="font-size:9px;opacity:.7"></i>
                                     </span>
+                                <?php elseif ($fm): $f0 = $fm[0];
+                                    // Empresa a la que REALMENTE se le facturó (en rotativo puede no ser la del turno)
+                                    $empF = trim((string)($f0['empresa_factura'] ?? ''));
+                                    $empCorta = $empF !== '' ? explode(' ', preg_replace('/^(INVERSIONES|ESTACIÓN DE SERVICIOS)\s+/u', '', $empF))[0] : '';
+                                    $tit = implode(' · ', array_map(fn($x) => 'Factura ' . $x['correlativo'] . ' — ' . ($x['empresa_factura'] ?? '') . ' — L ' . number_format((float)$x['total'], 2) . ($x['saldo'] > 0.004 ? ' (saldo L ' . number_format($x['saldo'], 2) . ')' : ' (pagada)'), $fm)); ?>
+                                    <a href="ver_factura?id=<?= (int)$f0['id'] ?>" target="_blank" class="mes-chip <?= $cls ?> text-decoration-none" title="<?= htmlspecialchars($tit) ?>">
+                                        <i class="bi <?= $ico ?>" style="font-size:9px"></i>
+                                        <?= $meses_es[(int)$m] ?>
+                                        <span style="opacity:.75;font-size:9px">· <?= htmlspecialchars(substr($f0['correlativo'], -3)) ?><?= $variasEmpresas && $empCorta ? ' ' . htmlspecialchars(mb_convert_case(mb_strtolower($empCorta), MB_CASE_TITLE)) : '' ?><?= count($fm) > 1 ? ' +' . (count($fm) - 1) : '' ?></span>
+                                    </a>
                                 <?php else: ?>
                                     <span class="mes-chip <?= $cls ?>">
                                         <i class="bi <?= $ico ?>" style="font-size:9px"></i>
@@ -1335,6 +1363,19 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                         </div>
                     </div>
                 <?php endforeach; ?>
+                <?php if ($extras): ?>
+                    <div class="border-top pt-3">
+                        <div class="anio-lbl"><i class="bi bi-plus-square me-1"></i>Extras del contrato <span class="ms-2 fw-normal text-muted">(no son mensualidad: sitio web, hosting, pautas, etc.)</span></div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <?php foreach (array_reverse($extras) as $x): ?>
+                                <a href="ver_factura?id=<?= (int)$x['id'] ?>" target="_blank" class="mes-chip <?= $x['saldo'] > 0.004 ? 'porcobrar' : 'ok' ?> text-decoration-none" title="<?= htmlspecialchars('Factura ' . $x['correlativo'] . ' — ' . ($x['empresa_factura'] ?? '') . ' — L ' . number_format((float)$x['total'], 2)) ?>">
+                                    <i class="bi <?= $x['saldo'] > 0.004 ? 'bi-hourglass-split' : 'bi-check-circle-fill' ?>" style="font-size:9px"></i>
+                                    <?= date('d/m/Y', strtotime($x['fecha_emision'])) ?> <span style="opacity:.75;font-size:9px">· <?= htmlspecialchars(substr($x['correlativo'], -3)) ?> · L <?= number_format((float)$x['total'], 2) ?></span>
+                                </a>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
     <?php endif; ?>

@@ -2731,5 +2731,16 @@ suite('Respaldos: si la restauración falla a medias, vuelve sola al estado ante
     @unlink(respaldoDir() . $rota); @unlink(respaldoDir() . $rota . '.json');
 });
 
+suite('Contrato: calendario con pagado / facturado sin pagar / sin factura, factura y empresa por mes, y extras aparte', function () {
+    $pdo = db();
+    $k = $pdo->query("SELECT c.id FROM contratos c WHERE c.cliente_id = 2 AND c.tipo_contrato <> 'proyecto' AND EXISTS (SELECT 1 FROM facturas f WHERE f.contrato_id = c.id AND f.estado = 'emitida') AND NOT EXISTS (SELECT 1 FROM contratos_plan p WHERE p.contrato_id = c.id) LIMIT 1")->fetchColumn();
+    if (!$k) { check('hay un contrato con facturas para probar', false); return; }
+    $r = login('qa.admin@local.test')->get('facturas_contrato', ['contrato_id' => $k]);
+    check('la ficha carga', sinErroresPhp($r['body']), errorPhp($r['body']));
+    check('la leyenda distingue pagado, facturado sin pagar y sin factura', str_contains($r['body'], '>Pagado</span>') && str_contains($r['body'], 'Facturado sin pagar') && str_contains($r['body'], 'Sin factura'));
+    check('cada mes facturado enlaza a su factura', (bool)preg_match('#<a href="ver_factura\?id=\d+" target="_blank" class="mes-chip (ok|porcobrar)#', $r['body']));
+    check('el año dice cuántos meses están facturados y cuántos pagados', (bool)preg_match('#facturados · \d+ pagados#', $r['body']));
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';
