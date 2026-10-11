@@ -58,7 +58,7 @@ try {
             if (USUARIO_ROL !== 'superadmin') throw new Exception("Solo el superadmin puede restaurar la base de datos.");
             if (trim((string)($_POST['confirmacion'] ?? '')) !== 'RESTAURAR') throw new Exception("Escribe RESTAURAR para confirmar.");
             $r = respaldoRestaurar($pdo, (string)($_POST['archivo'] ?? ''), (int)USUARIO_ID);
-            echo json_encode(['success' => true, 'message' => "Base restaurada ({$r['tablas']} tablas). Antes se guardó el estado anterior en {$r['respaldo_previo']} por si necesitas deshacerlo."], JSON_UNESCAPED_UNICODE);
+            echo json_encode(['success' => true, 'message' => "Base restaurada ({$r['tablas']} tablas). Antes se guardó el estado anterior en {$r['respaldo_previo']} por si necesitas deshacerlo. Las bitácoras se conservaron completas ({$r['bitacora_conservada']} registros posteriores al respaldo)."], JSON_UNESCAPED_UNICODE);
             break;
         case 'restaurar_archivos':
             if (USUARIO_ROL !== 'superadmin') throw new Exception("Solo el superadmin puede restaurar archivos.");

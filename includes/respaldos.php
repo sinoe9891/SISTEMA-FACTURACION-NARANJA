@@ -210,6 +210,8 @@ function respaldoProbar(string $archivo): array
  * Restaurar nunca borra: recupera los que faltan o, si se pide, también reemplaza los que cambiaron.
  * ══════════════════════════════════════════════════════════════════════════════════════════════ */
 const RESPALDO_ARCHIVOS_COPIAS = 3;
+/** Bitácoras que viven en la base: al restaurar se conservan completas (no vuelven a la fecha del respaldo). */
+const RESPALDO_BITACORAS = ['permisos_bitacora', 'bitacora_facturas', 'correos_enviados', 'login_intentos'];
 const RESPALDO_ARCHIVOS_PATRON = '/^archivos_\d{4}-\d{2}-\d{2}_\d{6}\.zip$/';
 
 /** Carpetas de archivos subidos de cada empresa, relativas a la raíz del sistema. */
@@ -356,6 +358,12 @@ function respaldoRestaurar(PDO $pdo, string $archivo, ?int $usuario = null): arr
     if (!copy($ruta, $tmp)) throw new Exception("No se pudo preparar la restauración.");
     try {
         $seguridad = respaldoCrear($pdo, 'antes_de_restaurar', $usuario);
+        // Las bitácoras se guardan antes y se devuelven después: lo auditado nunca se pierde con una restauración
+        $bitacoras = [];
+        foreach (RESPALDO_BITACORAS as $t) {
+            if (!$pdo->query("SHOW TABLES LIKE " . $pdo->quote($t))->fetchColumn()) continue;
+            $bitacoras[$t] = ['create' => $pdo->query("SHOW CREATE TABLE `$t`")->fetch(PDO::FETCH_NUM)[1], 'filas' => $pdo->query("SELECT * FROM `$t`")->fetchAll(PDO::FETCH_ASSOC)];
+        }
         $gz = gzopen($tmp, 'rb');
         if (!$gz) throw new Exception("No se pudo abrir el respaldo.");
         $sentencias = 0;
@@ -372,6 +380,20 @@ function respaldoRestaurar(PDO $pdo, string $archivo, ?int $usuario = null): arr
         }
         gzclose($gz);
         if (trim($buf) !== '') $pdo->exec($buf);
+        $conservadas = 0;
+        foreach ($bitacoras as $t => $b) {
+            if (!$pdo->query("SHOW TABLES LIKE " . $pdo->quote($t))->fetchColumn()) $pdo->exec($b['create']);   // el respaldo era anterior a la tabla
+            $cols = array_column($pdo->query("SHOW COLUMNS FROM `$t`")->fetchAll(PDO::FETCH_ASSOC), 'Field');
+            foreach (array_chunk($b['filas'], 200) as $lote) {
+                $c = array_values(array_intersect(array_keys($lote[0]), $cols));
+                $sql = "INSERT IGNORE INTO `$t` (`" . implode('`,`', $c) . "`) VALUES " . implode(',', array_fill(0, count($lote), '(' . implode(',', array_fill(0, count($c), '?')) . ')'));
+                $vals = [];
+                foreach ($lote as $f) foreach ($c as $k) $vals[] = $f[$k];
+                $st = $pdo->prepare($sql);
+                $st->execute($vals);
+                $conservadas += $st->rowCount();
+            }
+        }
         $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
     } catch (Throwable $e) {
         respaldoLog('restauracion_error', ['archivo' => $archivo, 'detalle' => mb_substr($e->getMessage(), 0, 300)]);
@@ -379,6 +401,6 @@ function respaldoRestaurar(PDO $pdo, string $archivo, ?int $usuario = null): arr
     } finally {
         @unlink($tmp);
     }
-    respaldoLog('restaurado', ['archivo' => $archivo, 'sentencias' => $sentencias, 'respaldo_previo' => $seguridad['archivo']]);
-    return ['sentencias' => $sentencias, 'respaldo_previo' => $seguridad['archivo'], 'tablas' => $prueba['tablas']];
+    respaldoLog('restaurado', ['archivo' => $archivo, 'sentencias' => $sentencias, 'respaldo_previo' => $seguridad['archivo'], 'bitacora_conservada' => $conservadas]);
+    return ['sentencias' => $sentencias, 'respaldo_previo' => $seguridad['archivo'], 'tablas' => $prueba['tablas'], 'bitacora_conservada' => $conservadas];
 }

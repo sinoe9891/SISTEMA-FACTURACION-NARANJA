@@ -172,7 +172,7 @@ require_once '../../includes/templates/config_tabs.php';
             </ul>
             <h6 class="fw-semibold"><i class="bi bi-arrow-counterclockwise me-1"></i> Cómo restaurar</h6>
             <ul class="mb-0 ps-3">
-                <li><strong>Base de datos</strong> (solo superadmin): botón <i class="bi bi-arrow-counterclockwise"></i> de la copia. <strong>Reemplaza todas las tablas de todas las empresas</strong> con lo de esa fecha; antes se guarda automáticamente el estado actual («Antes de restaurar») para poder deshacerlo.</li>
+                <li><strong>Base de datos</strong> (solo superadmin): botón <i class="bi bi-arrow-counterclockwise"></i> de la copia. <strong>Reemplaza todas las tablas de todas las empresas</strong> con lo de esa fecha; antes se guarda automáticamente el estado actual («Antes de restaurar») para poder deshacerlo. Las bitácoras se conservan completas (no vuelven a la fecha del respaldo) y la de Respaldos está fuera de la base.</li>
                 <li><strong>Archivos</strong> (solo superadmin): botón <i class="bi bi-folder-symlink"></i>. Recupera los que faltan o, si eliges, también reemplaza los que cambiaron. <strong>Nunca borra</strong> archivos.</li>
                 <li>Fuera del sistema: importar el <code>.sql.gz</code> en phpMyAdmin y descomprimir el <code>.zip</code> en la carpeta del sitio.</li>
             </ul>
@@ -202,7 +202,7 @@ require_once '../../includes/templates/config_tabs.php';
     document.querySelectorAll('.btn-restaurar').forEach(b => b.addEventListener('click', async () => {
         const r = await Swal.fire({
             icon: 'warning', title: 'Restaurar la base de datos',
-            html: `Toda la información de <strong>todas las empresas</strong> volverá a como estaba el <strong>${b.dataset.fecha}</strong>. Lo registrado después se perderá.<br><br>Antes se guardará una copia del estado actual para poder deshacerlo.<br><br>Escribe <strong>RESTAURAR</strong> para confirmar:`,
+            html: `Toda la información de <strong>todas las empresas</strong> volverá a como estaba el <strong>${b.dataset.fecha}</strong>. Lo registrado después se perderá.<br><br>Antes se guardará una copia del estado actual para poder deshacerlo. Las bitácoras (permisos, correos enviados, facturas e inicios de sesión) se conservan completas.<br><br>Escribe <strong>RESTAURAR</strong> para confirmar:`,
             input: 'text', inputPlaceholder: 'RESTAURAR', showCancelButton: true, confirmButtonText: 'Restaurar', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc2626',
             preConfirm: v => v.trim() === 'RESTAURAR' || Swal.showValidationMessage('Escribe RESTAURAR (en mayúsculas).'),
         });

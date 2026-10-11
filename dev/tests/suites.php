@@ -2687,6 +2687,8 @@ suite('Respaldos: archivos subidos (ZIP) y restaurar base y archivos', function 
     $bd = respaldoLista(false)[0]['archivo'];
     $antes = (string)$pdo->query("SELECT nombre FROM clientes_saas WHERE id = 2")->fetchColumn();
     $pdo->exec("UPDATE clientes_saas SET nombre = 'QA CAMBIO TEMPORAL' WHERE id = 2");
+    $pdo->prepare("INSERT INTO permisos_bitacora (rol, pagina, antes, despues, usuario_id, ip) VALUES ('lector', 'qa_despues_del_respaldo', 0, 1, NULL, 'qa')")->execute();
+    $idBit = (int)$pdo->lastInsertId();
     $a = login('qa.admin@local.test');
     $r = $a->post('includes/respaldo_accion.php', ['accion' => 'restaurar', 'archivo' => $bd, 'confirmacion' => 'RESTAURAR']);
     check('un admin no puede restaurar la base', empty($r['json']['success']));
@@ -2694,6 +2696,8 @@ suite('Respaldos: archivos subidos (ZIP) y restaurar base y archivos', function 
     check('sin escribir RESTAURAR no se restaura', empty($r['json']['success']) && $pdo->query("SELECT nombre FROM clientes_saas WHERE id = 2")->fetchColumn() === 'QA CAMBIO TEMPORAL');
     $r = $s->post('includes/respaldo_accion.php', ['accion' => 'restaurar', 'archivo' => $bd, 'confirmacion' => 'RESTAURAR']);
     check('restaura la base a como estaba', !empty($r['json']['success']) && db()->query("SELECT nombre FROM clientes_saas WHERE id = 2")->fetchColumn() === $antes, $r['body']);
+    check('la bitácora registrada después del respaldo se conserva al restaurar', (int)db()->query("SELECT COUNT(*) FROM permisos_bitacora WHERE id = $idBit AND pagina = 'qa_despues_del_respaldo'")->fetchColumn() === 1);
+    db()->exec("DELETE FROM permisos_bitacora WHERE id = $idBit");
     $prev = array_values(array_filter(respaldoLista(false), fn($c) => ($c['origen'] ?? '') === 'antes_de_restaurar'));
     check('antes de restaurar guarda el estado actual para deshacer', (bool)$prev);
     $p = $s->get('respaldos');
