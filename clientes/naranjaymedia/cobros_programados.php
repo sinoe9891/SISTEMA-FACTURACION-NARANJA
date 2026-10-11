@@ -173,7 +173,7 @@ require_once '../../includes/templates/header.php';
                     <div id="cDocs" class="d-flex flex-wrap gap-2"></div><div class="form-text">El correo mencionará automáticamente los documentos seleccionados en un párrafo de respaldo administrativo y tributario (excepto en envío de recibos). Puedes revisarlo en Vista previa.</div>
                 </div>
                 <div class="col-md-6"><label class="form-label">3. Para *</label><input class="form-control" name="para" id="cPara" placeholder="correo@cliente.com, otro@cliente.com" required><div class="form-text">Puedes agregar o cambiar destinatarios. Separa varios correos con coma; se guardan para este envío programado.</div></div>
-                <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="cCc" placeholder="opcional"><div class="form-text" id="cCcInfo">Se llena con los contactos del cliente marcados «Copiar en cobros» (el cliente los ve). Nosotros (los correos de Configuración) recibimos <strong>copia oculta</strong> automática de lunes a viernes. Varios separados por coma.</div></div>
+                <div class="col-md-6"><label class="form-label">Con copia (CC)</label><input class="form-control" name="cc" id="cCc" placeholder="opcional"><div class="form-text" id="cCcInfo">Se llena con los contactos del cliente marcados «Copiar en cobros» (el cliente los ve). Nosotros (los correos de Configuración) recibimos <strong>copia oculta</strong> automática de cada envío. Varios separados por coma.</div></div>
                 <div class="col-12"><label class="form-label d-flex justify-content-between">4. Asunto y mensaje *
                     <a href="#" id="btnGenerar" class="small fw-normal"><i class="bi bi-magic"></i> Generar con la plantilla</a></label>
                     <input class="form-control mb-2" name="asunto" id="cAsunto" required>
@@ -604,14 +604,14 @@ require_once '../../includes/templates/header.php';
         if (b.dataset.accion === 'enviar_ya') Swal.fire({ title: 'Enviando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         accion(fd);
     });
-    // Sábado o domingo: se envía igual al cliente, pero nosotros no recibimos copia (no es día hábil)
+    // Sábado o domingo: se envía igual (y recibimos copia), pero se recomienda programar en días hábiles
     function avisoFinde(inp) {
         const av = inp?.parentElement?.querySelector('.aviso-finde');
         if (!av) return;
         const d = inp.value ? new Date(inp.value) : null;
         const finde = d && !isNaN(d) && (d.getDay() === 0 || d.getDay() === 6);
         av.classList.toggle('d-none', !finde);
-        if (finde) av.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Es ${d.getDay() === 6 ? 'sábado' : 'domingo'}: el correo le llega al cliente, pero <strong>no recibiremos copia</strong> por no ser día hábil.`;
+        if (finde) av.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Es ${d.getDay() === 6 ? 'sábado' : 'domingo'}: no es día hábil. Se enviará igual, pero <strong>se recomienda programarlo de lunes a viernes</strong>, cuando el cliente y nosotros lo revisamos.`;
     }
     document.addEventListener('input', e => { if (e.target.matches('input[type="datetime-local"]')) avisoFinde(e.target); });
     document.addEventListener('change', e => { if (e.target.matches('input[type="datetime-local"]')) avisoFinde(e.target); });

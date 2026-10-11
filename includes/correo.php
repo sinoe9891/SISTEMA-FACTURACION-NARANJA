@@ -140,13 +140,11 @@ function correoPieAutomatico(array $cfg, callable $e): string
 }
 
 /**
- * Copia oculta de cada envío: los correos de «Responder a» y los de «Copia oculta» de la cuenta (los de Configuración),
- * solo en días hábiles (lunes a viernes, hora de Honduras); sábado y domingo no se manda copia.
- * No repite a quien ya va en Para o CC.
+ * Copia oculta de cada envío, todos los días: los correos de «Responder a» y los de «Copia oculta» de la cuenta
+ * (los de Configuración). No repite a quien ya va en Para o CC.
  */
-function correoCopiaOculta(array $cfg, array $yaVan = [], ?int $diaSemana = null): array
+function correoCopiaOculta(array $cfg, array $yaVan = []): array
 {
-    if (($diaSemana ?? (int)date('N')) >= 6) return [];
     $ya = array_map('strtolower', $yaVan);
     $out = [];
     foreach (array_merge(correoLista((string)($cfg['responder_a'] ?? '')), correoLista((string)($cfg['copia_oculta'] ?? ''))) as $m) {

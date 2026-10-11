@@ -2639,14 +2639,13 @@ suite('Tablas: al ordenar por columna las filas se mueven; lista de facturas con
     check('lista de facturas: la fecha y el correlativo ordenan con su valor real', str_contains($l['body'], "querySelectorAll('td')[i + 1]") && preg_match('#data-col="fecha" data-sort-val="\d{4}-\d{2}-\d{2}#', $l['body']));
 });
 
-suite('Correo: copia oculta a los correos de Configuración en días hábiles; aviso de fin de semana al programar', function () {
+suite('Correo: copia oculta siempre a los correos de Configuración; al programar en fin de semana se recomienda día hábil', function () {
     require_once __DIR__ . '/../../includes/correo.php';
     $cfg = ['responder_a' => 'gerencia@x.test, administracion@x.test', 'copia_oculta' => 'archivo@x.test, gerencia@x.test'];
-    check('lunes a viernes: copia a «Responder a» y «Copia oculta», sin repetir', correoCopiaOculta($cfg, ['cliente@y.test'], 3) === ['gerencia@x.test', 'administracion@x.test', 'archivo@x.test']);
-    check('no se copia a quien ya va en Para o CC', correoCopiaOculta($cfg, ['Gerencia@x.test'], 1) === ['administracion@x.test', 'archivo@x.test']);
-    check('sábado y domingo: sin copia', correoCopiaOculta($cfg, [], 6) === [] && correoCopiaOculta($cfg, [], 7) === []);
+    check('siempre copia a «Responder a» y «Copia oculta», sin repetir (también fin de semana)', correoCopiaOculta($cfg, ['cliente@y.test']) === ['gerencia@x.test', 'administracion@x.test', 'archivo@x.test']);
+    check('no se copia a quien ya va en Para o CC', correoCopiaOculta($cfg, ['Gerencia@x.test']) === ['administracion@x.test', 'archivo@x.test']);
     $r = login('qa.admin@local.test')->get('cobros_programados');
-    check('al programar un envío en fin de semana se avisa que no recibiremos copia', sinErroresPhp($r['body']) && str_contains($r['body'], 'aviso-finde') && str_contains($r['body'], 'no recibiremos copia'), errorPhp($r['body']));
+    check('al programar un envío en fin de semana se avisa que no recibiremos copia', sinErroresPhp($r['body']) && str_contains($r['body'], 'aviso-finde') && str_contains($r['body'], 'se recomienda programarlo de lunes a viernes'), errorPhp($r['body']));
 });
 
 require __DIR__ . '/cobros_lista_adjuntos.php';
