@@ -16,6 +16,9 @@ if ($instalado) {
     catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('licencias.php: ' . $e->getMessage()); }
 }
 $lista = $instalado ? licenciasLista($pdo, $cid) : [];
+// Empresas de un mismo contrato rotativo (p. ej. Texaco): la licencia se le cobra a cualquiera de ellas
+require_once '../../includes/gastos_cobrar.php';
+$gruposLic = gastosGruposReceptores($pdo, (int)$cid);
 $tasa = $instalado ? licenciaTasa($pdo, $cid) : 0;
 $st = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cliente_id = ? ORDER BY nombre");
 $st->execute([$cid]);
@@ -73,7 +76,8 @@ require_once '../../includes/templates/header.php';
                     <tr class="<?= $act ? '' : 'text-muted' ?>">
                         <td><div class="fw-semibold"><?= htmlspecialchars($l['nombre']) ?><?= $act ? '' : ' <span class="badge bg-light text-secondary border">Inactiva</span>' ?></div>
                             <div class="small text-muted"><?= htmlspecialchars(trim(($l['proveedor'] ?? '') . ($l['categoria'] ? ' · ' . $l['categoria'] : ''), ' ·')) ?></div></td>
-                        <td><?= $l['receptor_id'] ? '<i class="bi bi-person me-1"></i>' . htmlspecialchars((string)$l['cliente_nombre']) . ' <span class="small text-muted">(+' . $fmtPct($l['comision_pct']) . ')</span>' : '<span class="text-muted">Empresa</span>' ?></td>
+                        <td><?= $l['receptor_id'] ? '<i class="bi bi-person me-1"></i>' . htmlspecialchars((string)$l['cliente_nombre']) . ' <span class="small text-muted">(+' . $fmtPct($l['comision_pct']) . ')</span>'
+                            . (count($gruposLic[(int)$l['receptor_id']] ?? []) > 1 ? '<div class="small text-muted" title="Se le cobra en la factura de cualquiera de las empresas de su contrato rotativo"><i class="bi bi-diagram-3 me-1"></i>o cualquiera de sus ' . count($gruposLic[(int)$l['receptor_id']]) . ' empresas</div>' : '') : '<span class="text-muted">Empresa</span>' ?></td>
                         <td><?= LICENCIA_FRECUENCIAS[$l['frecuencia']] ?? $l['frecuencia'] ?></td>
                         <td class="app-num"><?= $l['moneda'] === 'USD' ? 'USD ' . number_format((float)$l['costo'], 2) . '<div class="small text-muted">' . $L($costoL) . '</div>' : $L($l['costo']) ?></td>
                         <td class="app-num"><?= $l['receptor_id'] ? '<span class="fw-semibold">' . $L(licenciaPrecio($costoL, (float)$l['comision_pct'])) . '</span>' : '<span class="text-muted">—</span>' ?></td>

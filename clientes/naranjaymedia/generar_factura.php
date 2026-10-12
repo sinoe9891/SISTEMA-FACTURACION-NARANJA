@@ -54,8 +54,13 @@ if ($get_receptor_id)
 // Gastos pagados por la empresa que se le cobran al cliente (p. ej. su hosting): aviso al elegir el cliente
 require_once '../../includes/gastos_cobrar.php';
 $gastosCobrar = [];
-foreach (gastosPorCobrar($pdo, (int)$cliente_id) as $gc) $gastosCobrar[(int)$gc['cobrar_receptor_id']][] = ['id' => (int)$gc['id'], 'fecha' => $gc['fecha'], 'descripcion' => $gc['descripcion'], 'monto' => (float)$gc['monto'],
-    'pct' => $gc['comision_pct'] !== null ? (float)$gc['comision_pct'] : null, 'precio' => $gc['comision_pct'] !== null ? round((float)$gc['monto'] * (1 + (float)$gc['comision_pct'] / 100), 2) : null];
+// Empresas de un mismo contrato rotativo (p. ej. las 3 de Texaco): el aviso sale al facturar a cualquiera de ellas
+$gruposGc = gastosGruposReceptores($pdo, (int)$cliente_id);
+foreach (gastosPorCobrar($pdo, (int)$cliente_id) as $gc) {
+    $fila = ['id' => (int)$gc['id'], 'fecha' => $gc['fecha'], 'descripcion' => $gc['descripcion'] . (count($gruposGc[(int)$gc['cobrar_receptor_id']] ?? []) > 1 ? ' · a nombre de ' . $gc['cliente'] : ''), 'monto' => (float)$gc['monto'],
+        'pct' => $gc['comision_pct'] !== null ? (float)$gc['comision_pct'] : null, 'precio' => $gc['comision_pct'] !== null ? round((float)$gc['monto'] * (1 + (float)$gc['comision_pct'] / 100), 2) : null];
+    foreach ($gruposGc[(int)$gc['cobrar_receptor_id']] ?? [(int)$gc['cobrar_receptor_id']] as $rid) $gastosCobrar[$rid][] = $fila;
+}
 require_once '../../includes/templates/header.php';
 ?>
 

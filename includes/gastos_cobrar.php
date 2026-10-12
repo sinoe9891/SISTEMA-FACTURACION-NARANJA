@@ -35,13 +35,48 @@ function gastosPorCobrar(PDO $pdo, int $cid, int $receptorId = 0): array
     return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
-/** Marca gastos como cobrados en una factura (solo los del mismo cliente de la factura y aún sin factura). */
+/**
+ * Empresas que se facturan como un mismo cliente: las de un contrato rotativo activo (p. ej. Texaco Valeriano:
+ * Vista Hermosa, Colonial y David Valeriano). receptor_id => [receptor_id, …] (incluido él mismo).
+ */
+function gastosGruposReceptores(PDO $pdo, int $cid): array
+{
+    $grupos = [];
+    try {
+        $st = $pdo->prepare("SELECT c.id, c.receptor_id AS principal, r.receptor_id FROM contratos c
+                             LEFT JOIN contratos_clientes_rotativos r ON r.contrato_id = c.id
+                             WHERE c.cliente_id = ? AND c.tipo_contrato = 'rotativo' AND c.estado = 'activo'");
+        $st->execute([$cid]);
+        $porContrato = [];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $porContrato[$r['id']][(int)$r['principal']] = true;
+            if ($r['receptor_id']) $porContrato[$r['id']][(int)$r['receptor_id']] = true;
+        }
+        foreach ($porContrato as $miembros) {
+            $ids = array_keys($miembros);
+            foreach ($ids as $rid) $grupos[$rid] = array_values(array_unique(array_merge($grupos[$rid] ?? [$rid], $ids)));
+        }
+    } catch (Throwable $e) {
+        // sin contratos rotativos
+    }
+    return $grupos;
+}
+
+/** El receptor y las demás empresas de su mismo contrato rotativo. */
+function gastosGrupoDe(PDO $pdo, int $cid, int $receptorId): array
+{
+    return gastosGruposReceptores($pdo, $cid)[$receptorId] ?? [$receptorId];
+}
+
+/** Marca gastos como cobrados en una factura (del mismo cliente de la factura —o de su grupo rotativo— y aún sin factura). */
 function gastosMarcarCobrados(PDO $pdo, int $cid, array $ids, int $facturaId, int $receptorId): int
 {
     $ids = array_values(array_filter(array_map('intval', $ids)));
     if (!$ids || !gastosCobrarDisponible($pdo)) return 0;
+    $grupo = gastosGrupoDe($pdo, $cid, $receptorId);
     $in = implode(',', array_fill(0, count($ids), '?'));
-    $st = $pdo->prepare("UPDATE gastos SET cobrado_factura_id = ? WHERE cliente_id = ? AND cobrar_receptor_id = ? AND cobrado_factura_id IS NULL AND id IN ($in)");
-    $st->execute(array_merge([$facturaId, $cid, $receptorId], $ids));
+    $inG = implode(',', array_fill(0, count($grupo), '?'));
+    $st = $pdo->prepare("UPDATE gastos SET cobrado_factura_id = ? WHERE cliente_id = ? AND cobrar_receptor_id IN ($inG) AND cobrado_factura_id IS NULL AND id IN ($in)");
+    $st->execute(array_merge([$facturaId, $cid], $grupo, $ids));
     return $st->rowCount();
 }

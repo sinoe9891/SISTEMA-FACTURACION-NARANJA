@@ -2742,5 +2742,27 @@ suite('Contrato: calendario con pagado / facturado sin pagar / sin factura, fact
     check('el año dice cuántos meses están facturados y cuántos pagados', (bool)preg_match('#facturados · \d+ pagados#', $r['body']));
 });
 
+suite('Gastos por cobrar y licencias: un contrato rotativo cuenta como un solo cliente (cualquiera de sus empresas)', function () {
+    require_once __DIR__ . '/../../includes/gastos_cobrar.php';
+    $pdo = db();
+    $k = $pdo->query("SELECT c.id, c.receptor_id FROM contratos c WHERE c.cliente_id = 2 AND c.tipo_contrato = 'rotativo' AND c.estado = 'activo' AND EXISTS (SELECT 1 FROM contratos_clientes_rotativos r WHERE r.contrato_id = c.id AND r.receptor_id <> c.receptor_id) LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if (!$k) { check('hay un contrato rotativo con varias empresas en pruebas', true); return; }
+    $otra = (int)$pdo->query("SELECT receptor_id FROM contratos_clientes_rotativos WHERE contrato_id = {$k['id']} AND receptor_id <> {$k['receptor_id']} LIMIT 1")->fetchColumn();
+    $g = gastosGrupoDe($pdo, 2, (int)$k['receptor_id']);
+    check('las empresas del contrato rotativo forman un grupo', in_array($otra, $g, true) && in_array((int)$k['receptor_id'], gastosGrupoDe($pdo, 2, $otra), true));
+    check('un cliente sin contrato rotativo es su propio grupo', gastosGrupoDe($pdo, 2, 999999) === [999999]);
+    // Un gasto a nombre de una empresa se ofrece y se marca cobrado en la factura de otra del grupo
+    $pdo->prepare("INSERT INTO gastos (cliente_id, descripcion, monto, fecha, frecuencia, tipo, naturaleza, metodo_pago, estado, usuario_id, cobrar_receptor_id) VALUES (2, 'QA hosting grupo', 100, CURDATE(), 'unico', 'variable', 'gasto', 'tarjeta', 'pagado', 1, ?)")->execute([$k['receptor_id']]);
+    $gid = (int)$pdo->lastInsertId();
+    $r = login('qa.admin@local.test')->get('generar_factura');
+    preg_match('#const GASTOS_COBRAR = (.*?);\n#', $r['body'], $m);
+    $d = json_decode($m[1] ?? '{}', true);
+    check('Nueva factura ofrece el gasto al elegir otra empresa del grupo', in_array($gid, array_column($d[$otra] ?? [], 'id'), true));
+    $fid = (int)$pdo->query("SELECT id FROM facturas WHERE cliente_id = 2 ORDER BY id DESC LIMIT 1")->fetchColumn();
+    check('se marca cobrado en la factura de otra empresa del grupo', gastosMarcarCobrados($pdo, 2, [$gid], $fid, $otra) === 1);
+    check('pero no en la de un cliente ajeno', (function () use ($pdo, $gid) { $pdo->exec("UPDATE gastos SET cobrado_factura_id = NULL WHERE id = $gid"); return gastosMarcarCobrados($pdo, 2, [$gid], 1, 999999) === 0; })());
+    $pdo->exec("DELETE FROM gastos WHERE id = $gid");
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';
