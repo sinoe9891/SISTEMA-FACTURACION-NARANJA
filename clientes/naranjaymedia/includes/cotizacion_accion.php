@@ -57,6 +57,10 @@ try {
             if (!in_array($nuevo, ['borrador', 'enviada', 'aceptada', 'rechazada'], true)) throw new Exception("Estado no válido.");
             if ($c['estado'] === 'facturada') throw new Exception("La cotización ya se facturó.");
             $pdo->prepare("UPDATE cotizaciones SET estado = ? WHERE id = ? AND cliente_id = ?")->execute([$nuevo, $id, $cid]);
+            // Enviada por otro medio (WhatsApp, en persona…): queda registrado cuándo y por dónde, sin mandar correo
+            $medio = mb_substr(trim((string)($_POST['medio'] ?? '')), 0, 100);
+            if ($nuevo === 'enviada' && $medio !== '')
+                $pdo->prepare("UPDATE cotizaciones SET enviada_en = NOW(), enviada_a = ? WHERE id = ? AND cliente_id = ?")->execute(['Por ' . $medio, $id, $cid]);
             echo json_encode(['success' => true, 'message' => 'Cotización ' . $c['numero'] . ': ' . mb_strtolower(COTIZACION_ESTADOS[$nuevo][0]) . '.'], JSON_UNESCAPED_UNICODE);
             break;
 

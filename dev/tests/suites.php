@@ -2935,6 +2935,9 @@ suite('Cotizaciones: crear con alta rápida de cliente y producto, PDF, correo, 
     check('la vista del correo lleva el resumen y limpia código peligroso', str_contains($v['json']['html'] ?? '', 'L 805.00') && !str_contains($v['json']['html'] ?? '', '<script'));
     $e = $c->post('includes/cotizacion_accion.php', ['accion' => 'enviar', 'id' => $id, 'para' => '', 'asunto' => 'x']);
     check('no envía sin destinatario', !($e['json']['success'] ?? true));
+    $w = $c->post('includes/cotizacion_accion.php', ['accion' => 'estado', 'id' => $id, 'estado' => 'enviada', 'medio' => 'WhatsApp']);
+    $cw = $pdo->query("SELECT estado, enviada_a, enviada_en FROM cotizaciones WHERE id = $id")->fetch(PDO::FETCH_ASSOC);
+    check('se marca enviada por WhatsApp sin mandar correo', ($w['json']['success'] ?? false) && $cw['estado'] === 'enviada' && $cw['enviada_a'] === 'Por WhatsApp' && $cw['enviada_en']);
     $s = $c->post('includes/cotizacion_accion.php', ['accion' => 'estado', 'id' => $id, 'estado' => 'aceptada']);
     check('se marca aceptada', ($s['json']['success'] ?? false) && $pdo->query("SELECT estado FROM cotizaciones WHERE id = $id")->fetchColumn() === 'aceptada');
     $d = $c->post('includes/cotizacion_accion.php', ['accion' => 'duplicar', 'id' => $id]);

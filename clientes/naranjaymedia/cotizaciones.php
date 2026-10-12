@@ -100,6 +100,7 @@ require_once '../../includes/templates/header.php';
                                         <ul class="dropdown-menu dropdown-menu-end">
                                             <?php if ($c['estado'] !== 'facturada'): ?>
                                                 <li><a class="dropdown-item" href="cotizacion_editar?id=<?= (int)$c['id'] ?>"><i class="bi bi-pencil me-2"></i>Editar</a></li>
+                                                <?php if ($c['estado'] === 'borrador'): ?><li><a class="dropdown-item cot-enviada" href="#" data-id="<?= (int)$c['id'] ?>"><i class="bi bi-whatsapp me-2 text-success"></i>Marcar como enviada (WhatsApp u otro)</a></li><?php endif; ?>
                                                 <li><a class="dropdown-item cot-estado" href="#" data-id="<?= (int)$c['id'] ?>" data-estado="aceptada"><i class="bi bi-hand-thumbs-up me-2 text-success"></i>Marcar aceptada</a></li>
                                                 <li><a class="dropdown-item cot-estado" href="#" data-id="<?= (int)$c['id'] ?>" data-estado="rechazada"><i class="bi bi-hand-thumbs-down me-2 text-danger"></i>Marcar rechazada</a></li>
                                                 <?php if ($c['estado'] !== 'borrador'): ?><li><a class="dropdown-item cot-estado" href="#" data-id="<?= (int)$c['id'] ?>" data-estado="<?= $c['enviada_en'] ? 'enviada' : 'borrador' ?>"><i class="bi bi-arrow-counterclockwise me-2"></i>Quitar respuesta</a></li><?php endif; ?>
@@ -270,6 +271,17 @@ ListaVinetas(document.getElementById('cfgCondiciones'), { placeholderTitulo: 'Ej
     document.querySelectorAll('.cot-filtro-rapido').forEach(a => a.addEventListener('click', e => { e.preventDefault(); estado.value = estado.value === a.dataset.estado ? '' : a.dataset.estado; tabla.refrescar(); }));
 
     document.addEventListener('click', async e => {
+        const envOtro = e.target.closest('.cot-enviada');
+        if (envOtro) {
+            e.preventDefault();
+            const r = await Swal.fire({ title: 'Marcar como enviada', text: '¿Por qué medio se la enviaste al cliente? No se manda ningún correo.', input: 'select',
+                inputOptions: { 'WhatsApp': 'WhatsApp', 'en persona': 'En persona', 'mensaje de texto': 'Mensaje de texto', 'otro medio': 'Otro medio' }, inputValue: 'WhatsApp',
+                showCancelButton: true, confirmButtonText: 'Marcar enviada', cancelButtonText: 'Cancelar' });
+            if (!r.isConfirmed) return;
+            try { await post(fd({ accion: 'estado', id: envOtro.dataset.id, estado: 'enviada', medio: r.value })); location.reload(); }
+            catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+            return;
+        }
         const est = e.target.closest('.cot-estado'), dup = e.target.closest('.cot-duplicar'), del = e.target.closest('.cot-eliminar'), env = e.target.closest('.cot-enviar');
         try {
             if (est) { e.preventDefault(); await post(fd({ accion: 'estado', id: est.dataset.id, estado: est.dataset.estado })); location.reload(); }
