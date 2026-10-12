@@ -324,8 +324,8 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
         table.v td { padding: 0 0 1px; vertical-align: top; line-height: 1.3; }
         table.v td.b { color: #e8590c; font-weight: bold; width: 14px; }
         .notas { margin-top: 10px; font-size: 10px; color: #374151; }
-        .firma { margin-top: 34px; position: relative; }
-        .firma .img { height: 78px; width: 300px; text-align: center; }
+        .firma { margin-top: 50px; position: relative; }
+        .firma .img { height: 78px; width: 300px; text-align: center; margin-bottom: -18px; }
         .firma .img img { max-height: 75px; max-width: 300px; }
         .firma .linea { border-top: 1.2px solid #111827; width: 300px; padding-top: 5px; font-size: 10px; line-height: 1.45; color: #4b5563; }
         .firma .linea b { color: #111827; }
