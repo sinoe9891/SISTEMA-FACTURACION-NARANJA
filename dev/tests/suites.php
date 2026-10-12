@@ -2972,3 +2972,31 @@ suite('Sello de la empresa: se sube en Firmas y sale en facturas y cotizaciones'
     $q = $c->post('includes/firmante_accion.php', ['accion' => 'sello_quitar']);
     check('se puede quitar', ($q['json']['success'] ?? false) && $pdo->query("SELECT sello FROM clientes_saas WHERE id = 2")->fetchColumn() === null);
 });
+
+suite('Cotizaciones: categorías con su Incluye y sus Condiciones', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $nom = 'QA Impresión ' . time();
+    $g = $c->post('includes/cotizacion_accion.php', ['accion' => 'categoria_guardar', 'nombre' => $nom, 'icono' => 'bi-printer', 'vigencia_dias' => 10,
+        'incluye' => "Una prueba digital para aprobación", 'condiciones' => "Forma de pago: 50 % y 50 %"]);
+    $kid = (int)($g['json']['id'] ?? 0);
+    check('se crea la categoría', $kid > 0, $g['body']);
+    $d = $c->post('includes/cotizacion_accion.php', ['accion' => 'categoria_guardar', 'nombre' => $nom]);
+    check('no se repite el nombre', !($d['json']['success'] ?? true));
+    $l = $c->get('cotizaciones');
+    check('la lista tiene Categorías, el filtro y la categoría nueva', sinErroresPhp($l['body']) && str_contains($l['body'], 'id="mCategorias"') && str_contains($l['body'], 'id="cotCategoria"') && str_contains($l['body'], htmlspecialchars($nom)), errorPhp($l['body']));
+    $e = $c->get('cotizacion_editar');
+    check('la cotización nueva ofrece la categoría con sus textos', sinErroresPhp($e['body']) && str_contains($e['body'], 'class="btn btn-sm btn-outline-secondary c-cat" data-id="' . $kid . '"') && str_contains($e['body'], 'Una prueba digital para aprobación'), errorPhp($e['body']));
+    $rec = (int)$pdo->query("SELECT id FROM clientes_factura WHERE cliente_id = 2 ORDER BY id LIMIT 1")->fetchColumn();
+    $pid = (int)$pdo->query("SELECT id FROM productos_clientes WHERE cliente_id = 2 AND (receptores_id IS NULL OR receptores_id = $rec) LIMIT 1")->fetchColumn();
+    $r = $c->req('POST', $c->base . 'includes/cotizacion_accion.php', http_build_query(['accion' => 'guardar', 'receptor_id' => $rec, 'categoria_id' => $kid, 'fecha' => date('Y-m-d'),
+        'valida_hasta' => date('Y-m-d', strtotime('+10 days')), 'items' => [['producto_id' => $pid, 'cantidad' => 1, 'precio' => 10]]]));
+    $id = (int)($r['json']['id'] ?? 0);
+    check('la cotización guarda su categoría', $id && (int)$pdo->query("SELECT categoria_id FROM cotizaciones WHERE id = $id")->fetchColumn() === $kid, $r['body']);
+    $x = $c->post('includes/cotizacion_accion.php', ['accion' => 'categoria_eliminar', 'id' => $kid]);
+    check('al eliminar la categoría la cotización queda sin categoría (no se borra)', ($x['json']['success'] ?? false) && $pdo->query("SELECT categoria_id FROM cotizaciones WHERE id = $id")->fetchColumn() === null);
+    $f = login('qa.facturador@local.test');
+    $y = $f->post('includes/cotizacion_accion.php', ['accion' => 'categoria_guardar', 'nombre' => 'QA no']);
+    check('el facturador no administra categorías', !($y['json']['success'] ?? true));
+    $pdo->exec("DELETE FROM cotizaciones WHERE id = $id");
+});

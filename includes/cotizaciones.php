@@ -62,6 +62,55 @@ function cotizacionGuardarConfig(PDO $pdo, int $cid, array $d): void
                    $txt('contacto_telefono', 50), isset(FIRMANTES_ROLES[$d['firmante'] ?? '']) ? $d['firmante'] : 'vobo', $txt('asunto_correo', 255), $txt('mensaje_correo')]);
 }
 
+/** ¿Están instaladas las categorías? */
+function cotizacionCategoriasDisponible(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) {
+        try { $ok = (bool)$pdo->query("SHOW TABLES LIKE 'cotizaciones_categorias'")->fetchColumn(); } catch (Throwable $e) { $ok = false; }
+    }
+    return $ok;
+}
+
+/** Categorías de la empresa (Impresión, Diseño…) con sus textos y cuántas cotizaciones tiene cada una. */
+function cotizacionCategorias(PDO $pdo, int $cid): array
+{
+    if (!cotizacionCategoriasDisponible($pdo)) return [];
+    $st = $pdo->prepare("SELECT k.*, (SELECT COUNT(*) FROM cotizaciones c WHERE c.categoria_id = k.id) AS usos
+                         FROM cotizaciones_categorias k WHERE k.cliente_id = ? ORDER BY k.orden, k.nombre");
+    $st->execute([$cid]);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function cotizacionCategoriaGuardar(PDO $pdo, int $cid, array $d): int
+{
+    $id = (int)($d['id'] ?? 0);
+    $nombre = mb_substr(trim((string)($d['nombre'] ?? '')), 0, 100);
+    if ($nombre === '') throw new Exception("Escribe el nombre de la categoría.");
+    $st = $pdo->prepare("SELECT id FROM cotizaciones_categorias WHERE cliente_id = ? AND nombre = ? AND id <> ?");
+    $st->execute([$cid, $nombre, $id]);
+    if ($st->fetchColumn()) throw new Exception("Ya existe la categoría «{$nombre}».");
+    $txt = fn($k) => ($v = trim((string)($d[$k] ?? ''))) === '' ? null : mb_substr($v, 0, 5000);
+    $dias = ($d['vigencia_dias'] ?? '') === '' ? null : max(1, min(365, (int)$d['vigencia_dias']));
+    $icono = preg_match('/^bi-[a-z0-9-]{1,36}$/', (string)($d['icono'] ?? '')) ? $d['icono'] : null;
+    if ($id) {
+        $pdo->prepare("UPDATE cotizaciones_categorias SET nombre = ?, icono = ?, incluye = ?, condiciones = ?, vigencia_dias = ? WHERE id = ? AND cliente_id = ?")
+            ->execute([$nombre, $icono, $txt('incluye'), $txt('condiciones'), $dias, $id, $cid]);
+        return $id;
+    }
+    $orden = (int)$pdo->query("SELECT COALESCE(MAX(orden), 0) + 1 FROM cotizaciones_categorias WHERE cliente_id = " . (int)$cid)->fetchColumn();
+    $pdo->prepare("INSERT INTO cotizaciones_categorias (cliente_id, nombre, icono, incluye, condiciones, vigencia_dias, orden) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        ->execute([$cid, $nombre, $icono, $txt('incluye'), $txt('condiciones'), $dias, $orden]);
+    return (int)$pdo->lastInsertId();
+}
+
+/** Elimina la categoría; sus cotizaciones quedan sin categoría (no se borran). */
+function cotizacionCategoriaEliminar(PDO $pdo, int $cid, int $id): void
+{
+    $pdo->prepare("UPDATE cotizaciones SET categoria_id = NULL WHERE cliente_id = ? AND categoria_id = ?")->execute([$cid, $id]);
+    $pdo->prepare("DELETE FROM cotizaciones_categorias WHERE id = ? AND cliente_id = ?")->execute([$id, $cid]);
+}
+
 /** COT-AAAAMMDD-NN: el siguiente del día de la cotización. */
 function cotizacionSiguienteNumero(PDO $pdo, int $cid, string $fecha): string
 {
@@ -109,6 +158,12 @@ function cotizacionGuardar(PDO $pdo, int $cid, int $uid, array $d, int $id = 0):
     $valida = (string)($d['valida_hasta'] ?? '');
     foreach ([$fecha, $valida] as $f) if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $f) || !strtotime($f)) throw new Exception("Revisa la fecha y la vigencia.");
     if ($valida < $fecha) throw new Exception("La vigencia no puede ser anterior a la fecha de la cotización.");
+    $categoria = null;
+    if (cotizacionCategoriasDisponible($pdo) && (int)($d['categoria_id'] ?? 0)) {
+        $st = $pdo->prepare("SELECT id FROM cotizaciones_categorias WHERE id = ? AND cliente_id = ?");
+        $st->execute([(int)$d['categoria_id'], $cid]);
+        $categoria = (int)$st->fetchColumn() ?: null;
+    }
 
     $lineas = array_values(array_filter((array)($d['items'] ?? []), fn($l) => is_array($l) && (!empty($l['producto_id']) || trim((string)($l['descripcion'] ?? '')) !== '')));
     if (!$lineas) throw new Exception("Agrega al menos un producto o servicio.");
@@ -137,6 +192,9 @@ function cotizacionGuardar(PDO $pdo, int $cid, int $uid, array $d, int $id = 0):
     $txt = fn($k, $max = 5000) => ($v = trim((string)($d[$k] ?? ''))) === '' ? null : mb_substr($v, 0, $max);
     $datos = [$receptor, $fecha, $valida, $txt('servicio', 255), $txt('incluye'), $txt('condiciones'), $txt('notas'), round($sub, 2), $i15, $i18, round($sub + $i15 + $i18, 2)];
 
+    $guardarCategoria = function (int $id) use ($pdo, $cid, $categoria) {
+        if (cotizacionCategoriasDisponible($pdo)) $pdo->prepare("UPDATE cotizaciones SET categoria_id = ? WHERE id = ? AND cliente_id = ?")->execute([$categoria, $id, $cid]);
+    };
     if ($id) {
         $c = cotizacionObtener($pdo, $cid, $id);
         if ($c['estado'] === 'facturada') throw new Exception("La cotización ya se facturó: no se puede editar.");
@@ -148,6 +206,7 @@ function cotizacionGuardar(PDO $pdo, int $cid, int $uid, array $d, int $id = 0):
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([$cid, cotizacionSiguienteNumero($pdo, $cid, $fecha), ...$datos, $uid]);
         $id = (int)$pdo->lastInsertId();
     }
+    $guardarCategoria($id);
     $ins = $pdo->prepare("INSERT INTO cotizacion_items (cotizacion_id, producto_id, descripcion, detalle, cantidad, precio, tipo_isv, subtotal, orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
     foreach ($items as $it) $ins->execute([$id, ...$it]);
     return $id;
@@ -230,11 +289,11 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
         $filas .= '<tr class="' . ($i % 2 ? 'par' : '') . '"><td class="c">' . $e($cant($it['cantidad'])) . '</td><td>' . $e($it['descripcion'])
             . ($it['detalle'] ? '<div class="det">' . nl2br($e($it['detalle'])) . '</div>' : '') . '</td><td class="r">' . $L($it['precio']) . '</td><td class="r">' . $L($it['subtotal']) . '</td></tr>';
     $isv = (float)$c['isv_15'] + (float)$c['isv_18'];
-    $tot = '<tr class="tot"><td></td><td><strong>Subtotal</strong></td><td></td><td class="r n">' . $L($c['subtotal']) . '</td></tr>'
-        . ((float)$c['isv_15'] > 0 ? '<tr class="tot"><td></td><td><strong>ISV (15 %)</strong></td><td></td><td class="r n">' . $L($c['isv_15']) . '</td></tr>' : '')
-        . ((float)$c['isv_18'] > 0 ? '<tr class="tot"><td></td><td><strong>ISV (18 %)</strong></td><td></td><td class="r n">' . $L($c['isv_18']) . '</td></tr>' : '')
-        . (!$isv ? '<tr class="tot"><td></td><td><strong>ISV</strong></td><td></td><td class="r n">Exento</td></tr>' : '')
-        . '<tr class="tot"><td></td><td><strong>Total a pagar</strong></td><td></td><td class="r n">' . $L($c['total']) . '</td></tr>';
+    $tot = '<tr class="tot"><td></td><td></td><td class="r"><strong>Subtotal</strong></td><td class="r n">' . $L($c['subtotal']) . '</td></tr>'
+        . ((float)$c['isv_15'] > 0 ? '<tr class="tot"><td></td><td></td><td class="r"><strong>ISV (15 %)</strong></td><td class="r n">' . $L($c['isv_15']) . '</td></tr>' : '')
+        . ((float)$c['isv_18'] > 0 ? '<tr class="tot"><td></td><td></td><td class="r"><strong>ISV (18 %)</strong></td><td class="r n">' . $L($c['isv_18']) . '</td></tr>' : '')
+        . (!$isv ? '<tr class="tot"><td></td><td></td><td class="r"><strong>ISV</strong></td><td class="r n">Exento</td></tr>' : '')
+        . '<tr class="tot"><td></td><td></td><td class="r"><strong>Total a pagar</strong></td><td class="r n">' . $L($c['total']) . '</td></tr>';
     $incluye = cotizacionVinetas((string)$c['incluye'], $dias, $e);
     $condic = cotizacionVinetas((string)$c['condiciones'], $dias, $e);
 
@@ -265,13 +324,13 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
         table.v td { padding: 0 0 1px; vertical-align: top; line-height: 1.3; }
         table.v td.b { color: #e8590c; font-weight: bold; width: 14px; }
         .notas { margin-top: 10px; font-size: 10px; color: #374151; }
-        .firma { margin-top: 56px; position: relative; }
-        .firma .img { height: 52px; }
-        .firma .img img { max-height: 50px; max-width: 200px; }
-        .firma .linea { border-top: 1.2px solid #111827; width: 250px; padding-top: 5px; font-size: 10px; line-height: 1.45; color: #4b5563; }
+        .firma { margin-top: 34px; position: relative; }
+        .firma .img { height: 78px; }
+        .firma .img img { max-height: 75px; max-width: 300px; }
+        .firma .linea { border-top: 1.2px solid #111827; width: 300px; padding-top: 5px; font-size: 10px; line-height: 1.45; color: #4b5563; }
         .firma .linea b { color: #111827; }
         .sello { height: 0; overflow: visible; }
-        .sello img { height: 112px; margin-left: 175px; margin-top: -72px; }
+        .sello img { height: 112px; margin-left: 250px; margin-top: -92px; }
         .pie { position: fixed; bottom: -36px; left: 0; right: 0; text-align: center; font-size: 8.5px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 6px; }
     </style></head><body>
     <table class="top"><tr>
@@ -295,7 +354,7 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
         <div class="img">' . (!empty($firm['firma_b64']) ? '<img src="' . $firm['firma_b64'] . '">' : '') . '</div>
         ' . ($sello ? '<div class="sello"><img src="' . $sello . '"></div>' : '') . '
         <div class="linea">' . ($firm['nombre'] ? '<b>' . $e($firm['nombre']) . '</b><br>' : '') . $e(trim(($firm['cargo'] ?? '') . ($firm['cargo'] ? ' • ' : '') . $alias))
-            . ($correo ? '<br>' . $e($correo) : '') . ($tel ? '<br>Cel. ' . $e($tel) : '') . '</div>
+            . ($correo || $tel ? '<br>' . $e(trim($correo . ($correo && $tel ? ' • ' : '') . ($tel ? 'Cel. ' . $tel : ''))) : '') . '</div>
     </div>
     <div class="pie">' . $e(implode('  •  ', array_filter([$alias, !empty($emp['rtn']) ? 'RTN ' . $emp['rtn'] : '', !empty($emp['direccion']) ? trim(explode(',', $emp['direccion'])[0]) : '', $web]))) . '</div>
     </body></html>';

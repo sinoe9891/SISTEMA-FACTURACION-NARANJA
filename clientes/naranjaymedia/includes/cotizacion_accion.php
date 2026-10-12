@@ -7,6 +7,7 @@
 //   POST accion=enviar id, para, cc, asunto, mensaje
 //   POST accion=cliente_crear nombre, rtn, email, telefono, direccion, contacto_nombre  → alta rápida de cliente
 //   POST accion=producto_crear nombre, precio, tipo_isv, descripcion, receptor_id, para_todos → alta rápida de producto
+//   POST accion=categoria_guardar [id] nombre, icono, incluye, condiciones, vigencia_dias · accion=categoria_eliminar id (administradores)
 //   POST accion=config vigencia_dias, incluye, condiciones, lema, contacto_email, contacto_telefono, firmante, asunto_correo, mensaje_correo
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
@@ -112,6 +113,19 @@ try {
             $pdo->prepare("INSERT INTO productos_clientes (cliente_id, receptores_id, nombre, descripcion, precio, tipo_isv, precio_fijo, tipo) VALUES (?, ?, ?, ?, ?, ?, 0, 'servicio')")
                 ->execute([$cid, $rec, $nombre, mb_substr(trim((string)($_POST['descripcion'] ?? '')), 0, 2000) ?: $nombre, $precio, $isv]);
             echo json_encode(['success' => true, 'producto' => ['id' => (int)$pdo->lastInsertId(), 'nombre' => $nombre, 'precio' => $precio, 'tipo_isv' => $isv], 'message' => 'Producto creado.'], JSON_UNESCAPED_UNICODE);
+            break;
+
+        case 'categoria_guardar':
+            if (!$esAdmin) throw new Exception("Solo un administrador administra las categorías.");
+            if (!cotizacionCategoriasDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-12_cotizaciones_categorias.sql.");
+            $kid = cotizacionCategoriaGuardar($pdo, $cid, $_POST);
+            echo json_encode(['success' => true, 'id' => $kid, 'message' => 'Categoría guardada.'], JSON_UNESCAPED_UNICODE);
+            break;
+
+        case 'categoria_eliminar':
+            if (!$esAdmin) throw new Exception("Solo un administrador administra las categorías.");
+            cotizacionCategoriaEliminar($pdo, $cid, $id);
+            echo json_encode(['success' => true, 'message' => 'Categoría eliminada; sus cotizaciones quedaron sin categoría.'], JSON_UNESCAPED_UNICODE);
             break;
 
         case 'config':

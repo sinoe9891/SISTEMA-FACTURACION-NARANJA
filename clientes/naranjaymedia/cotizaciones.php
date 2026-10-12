@@ -13,14 +13,19 @@ $puedeFacturar = $puedeEditar && permisoPuede($pdo, 'generar_factura');
 $lista = [];
 $cfg = [];
 if ($instalada) {
-    $st = $pdo->prepare("SELECT c.*, cf.nombre AS cliente, cf.email AS cliente_email, f.correlativo AS factura_correlativo,
+    $conCat = cotizacionCategoriasDisponible($pdo);
+    $st = $pdo->prepare("SELECT c.*, cf.nombre AS cliente, cf.email AS cliente_email, f.correlativo AS factura_correlativo," . ($conCat ? " k.nombre AS categoria, k.icono AS categoria_icono," : " NULL AS categoria, NULL AS categoria_icono,") . "
                                 (SELECT COUNT(*) FROM cotizacion_items i WHERE i.cotizacion_id = c.id) AS lineas
-                         FROM cotizaciones c JOIN clientes_factura cf ON cf.id = c.receptor_id LEFT JOIN facturas f ON f.id = c.factura_id
+                         FROM cotizaciones c JOIN clientes_factura cf ON cf.id = c.receptor_id LEFT JOIN facturas f ON f.id = c.factura_id" . ($conCat ? " LEFT JOIN cotizaciones_categorias k ON k.id = c.categoria_id" : '') . "
                          WHERE c.cliente_id = ? ORDER BY c.fecha DESC, c.id DESC");
     $st->execute([$cid]);
     $lista = $st->fetchAll(PDO::FETCH_ASSOC);
     $cfg = cotizacionConfig($pdo, $cid);
+    $categorias = cotizacionCategorias($pdo, $cid);
 }
+$categorias ??= [];
+const COT_ICONOS = ['bi-printer' => 'Impresión', 'bi-palette' => 'Diseño', 'bi-code-slash' => 'Desarrollo', 'bi-megaphone' => 'Marketing', 'bi-hdd-network' => 'Hosting',
+    'bi-camera-reels' => 'Audiovisual', 'bi-camera' => 'Fotografía', 'bi-calendar-event' => 'Eventos', 'bi-lightbulb' => 'Consultoría', 'bi-tag' => 'Otro'];
 $cuenta = array_fill_keys(array_keys(COTIZACION_ESTADOS), 0);
 $montos = array_fill_keys(array_keys(COTIZACION_ESTADOS), 0.0);
 foreach ($lista as &$c) {
@@ -38,6 +43,7 @@ require_once '../../includes/templates/header.php';
         <p class="app-page-sub">Propuestas a clientes con su PDF, envío por correo y paso a factura cuando el cliente acepta.</p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
+        <?php if ($esAdmin && $instalada && cotizacionCategoriasDisponible($pdo)): ?><button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mCategorias"><i class="bi bi-tags me-1"></i> Categorías</button><?php endif; ?>
         <?php if ($esAdmin && $instalada): ?><button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mConfig"><i class="bi bi-gear me-1"></i> Textos por defecto</button><?php endif; ?>
         <?php if ($puedeEditar && $instalada): ?><a href="cotizacion_editar" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Nueva cotización</a><?php endif; ?>
     </div>
@@ -62,6 +68,8 @@ require_once '../../includes/templates/header.php';
                 <div class="app-search" style="max-width:320px"><i class="bi bi-search"></i><input type="search" class="form-control form-control-sm" id="cotBuscar" placeholder="Buscar número, cliente o servicio…"></div>
                 <select class="form-select form-select-sm" id="cotEstado" style="width:auto"><option value="">Todos los estados</option>
                     <?php foreach (COTIZACION_ESTADOS as $k => $e): ?><option value="<?= $k ?>"><?= $e[0] ?></option><?php endforeach; ?></select>
+                <?php if ($categorias): ?><select class="form-select form-select-sm" id="cotCategoria" style="width:auto"><option value="">Todas las categorías</option>
+                    <?php foreach ($categorias as $k): ?><option value="<?= (int)$k['id'] ?>"><?= htmlspecialchars($k['nombre']) ?></option><?php endforeach; ?><option value="0">Sin categoría</option></select><?php endif; ?>
                 <select class="form-select form-select-sm" id="cotPorPagina" style="width:auto"><option value="25">25/pág</option><option value="50">50/pág</option><option value="100">100/pág</option></select>
             </div>
         </div>
@@ -70,12 +78,13 @@ require_once '../../includes/templates/header.php';
                 <thead><tr><th class="app-n">#</th><th>Número</th><th>Fecha</th><th>Cliente</th><th>Servicio</th><th>Válida hasta</th><th class="app-num">Total</th><th>Estado</th><th class="text-end no-orden">Acciones</th></tr></thead>
                 <tbody>
                     <?php foreach ($lista as $c): [$txt, $bg, $fg, $ico] = COTIZACION_ESTADOS[$c['vista']]; $dRest = (int)floor((strtotime($c['valida_hasta']) - strtotime(date('Y-m-d'))) / 86400); ?>
-                        <tr data-fila data-estado="<?= $c['vista'] ?>" data-buscar="<?= htmlspecialchars(mb_strtolower($c['numero'] . ' ' . $c['cliente'] . ' ' . $c['servicio'])) ?>">
+                        <tr data-fila data-estado="<?= $c['vista'] ?>" data-categoria="<?= (int)($c['categoria_id'] ?? 0) ?>" data-buscar="<?= htmlspecialchars(mb_strtolower($c['numero'] . ' ' . $c['cliente'] . ' ' . $c['servicio'] . ' ' . $c['categoria'])) ?>">
                             <td class="app-n"></td>
                             <td class="font-monospace small text-nowrap"><a href="cotizacion_editar?id=<?= (int)$c['id'] ?>"><?= htmlspecialchars($c['numero']) ?></a></td>
                             <td class="text-nowrap" data-sort="<?= $c['fecha'] ?>"><?= date('d/m/Y', strtotime($c['fecha'])) ?></td>
                             <td><?= htmlspecialchars($c['cliente']) ?><?= $c['enviada_a'] ? '<div class="small text-muted" title="Enviada el ' . date('d/m/Y g:i a', strtotime($c['enviada_en'])) . '"><i class="bi bi-envelope-check me-1"></i>' . htmlspecialchars($c['enviada_a']) . '</div>' : '' ?></td>
-                            <td class="small"><?= htmlspecialchars((string)$c['servicio']) ?: '<span class="text-muted">' . (int)$c['lineas'] . ' línea(s)</span>' ?></td>
+                            <td class="small"><?= htmlspecialchars((string)$c['servicio']) ?: '<span class="text-muted">' . (int)$c['lineas'] . ' línea(s)</span>' ?>
+                                <?php if ($c['categoria']): ?><div><span class="badge border text-secondary bg-light fw-normal"><i class="bi <?= htmlspecialchars($c['categoria_icono'] ?: 'bi-tag') ?> me-1"></i><?= htmlspecialchars($c['categoria']) ?></span></div><?php endif; ?></td>
                             <td class="text-nowrap" data-sort="<?= $c['valida_hasta'] ?>"><?= date('d/m/Y', strtotime($c['valida_hasta'])) ?>
                                 <?php if (in_array($c['vista'], ['borrador', 'enviada'], true)): ?><div class="small <?= $dRest <= 3 ? 'text-danger' : 'text-muted' ?>"><?= $dRest === 0 ? 'vence hoy' : 'faltan ' . $dRest . ' día' . ($dRest === 1 ? '' : 's') ?></div><?php endif; ?></td>
                             <td class="app-num fw-semibold">L <?= number_format((float)$c['total'], 2) ?></td>
@@ -138,6 +147,49 @@ require_once '../../includes/templates/header.php';
             <iframe id="eIframe" style="width:100%;height:70vh;border:0" sandbox=""></iframe></div></div>
     </div>
 
+    <?php if ($esAdmin && cotizacionCategoriasDisponible($pdo)): ?>
+    <!-- Categorías: cada una con su Incluye, sus Condiciones y su vigencia -->
+    <div class="modal fade" id="mCategorias" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-md-down"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-tags me-1"></i> Categorías de cotización</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="list-group" id="katLista">
+                            <?php foreach ($categorias as $k): ?>
+                                <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center kat-item" data-id="<?= (int)$k['id'] ?>">
+                                    <span><i class="bi <?= htmlspecialchars($k['icono'] ?: 'bi-tag') ?> me-2"></i><?= htmlspecialchars($k['nombre']) ?></span>
+                                    <span class="badge bg-light text-secondary border"><?= (int)$k['usos'] ?></span></a>
+                            <?php endforeach; ?>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary w-100 mt-2" id="katNueva"><i class="bi bi-plus-lg me-1"></i> Nueva categoría</button>
+                        <div class="form-text">El número es cuántas cotizaciones la usan. Si una categoría no tiene Incluye o Condiciones, usa los textos por defecto.</div>
+                    </div>
+                    <div class="col-md-8">
+                        <form id="fKat" class="border rounded-3 p-3" novalidate>
+                            <input type="hidden" name="accion" value="categoria_guardar"><input type="hidden" name="id">
+                            <div class="row g-2">
+                                <div class="col-md-6"><label class="form-label">Nombre *</label><input name="nombre" class="form-control" maxlength="100" required placeholder="Ej.: Impresión"></div>
+                                <div class="col-md-3"><label class="form-label">Ícono</label><select name="icono" class="form-select">
+                                    <?php foreach (COT_ICONOS as $ico => $t): ?><option value="<?= $ico ?>"><?= $t ?></option><?php endforeach; ?></select></div>
+                                <div class="col-md-3"><label class="form-label">Vigencia (días)</label><input type="number" name="vigencia_dias" class="form-control" min="1" max="365" placeholder="<?= (int)$cfg['vigencia_dias'] ?>"></div>
+                                <div class="col-12"><label class="form-label fw-semibold">Incluye</label><textarea name="incluye" id="katIncluye" class="form-control" rows="3"></textarea></div>
+                                <div class="col-12"><label class="form-label fw-semibold">Condiciones</label><textarea name="condiciones" id="katCondiciones" class="form-control" rows="3"></textarea></div>
+                            </div>
+                            <div class="d-flex justify-content-between mt-3">
+                                <button type="button" class="btn btn-link text-danger px-0" id="katEliminar"><i class="bi bi-trash3 me-1"></i> Eliminar</button>
+                                <button class="btn btn-primary"><i class="bi bi-floppy me-1"></i> Guardar categoría</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div></div>
+    </div>
+    <script>window.COT_KAT = <?= json_encode(array_column(array_map(fn($k) => ['id' => (int)$k['id'], 'nombre' => $k['nombre'], 'icono' => $k['icono'] ?: 'bi-tag', 'vigencia_dias' => $k['vigencia_dias'],
+        'incluye' => (string)$k['incluye'], 'condiciones' => (string)$k['condiciones'], 'usos' => (int)$k['usos']], $categorias), null, 'id'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;</script>
+    <?php endif; ?>
+
     <?php if ($esAdmin): ?>
     <!-- Textos por defecto -->
     <div class="modal fade" id="mConfig" tabindex="-1" aria-hidden="true">
@@ -167,6 +219,38 @@ require_once '../../includes/templates/header.php';
 <script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
 <script src="../../clientes/js/lista-vinetas.js?v=<?= @filemtime(__DIR__ . '/../js/lista-vinetas.js') ?>"></script>
 <script>
+// Categorías: elegir una para editarla, o «Nueva categoría»
+(() => {
+    const f = document.getElementById('fKat');
+    if (!f) return;
+    ListaVinetas(document.getElementById('katIncluye'), { placeholderTexto: 'Ej.: Una prueba digital para aprobación.' });
+    ListaVinetas(document.getElementById('katCondiciones'), { placeholderTitulo: 'Ej.: Forma de pago', sugerencias: ['Forma de pago', 'Entrega', 'Cambios', 'Vigencia', 'Garantía', 'Soporte', 'Tiempo de entrega'] });
+    const ver = k => {
+        f.id.value = k?.id || ''; f.nombre.value = k?.nombre || ''; f.icono.value = k?.icono || 'bi-tag'; f.vigencia_dias.value = k?.vigencia_dias || '';
+        f.incluye.value = k?.incluye || ''; f.condiciones.value = k?.condiciones || '';
+        f.incluye.dispatchEvent(new Event('vinetas:recargar')); f.condiciones.dispatchEvent(new Event('vinetas:recargar'));
+        document.getElementById('katEliminar').classList.toggle('invisible', !k);
+        document.querySelectorAll('.kat-item').forEach(a => a.classList.toggle('active', k && a.dataset.id == k.id));
+    };
+    document.querySelectorAll('.kat-item').forEach(a => a.addEventListener('click', e => { e.preventDefault(); ver(window.COT_KAT[a.dataset.id]); }));
+    document.getElementById('katNueva').addEventListener('click', () => { ver(null); f.nombre.focus(); });
+    const primera = Object.values(window.COT_KAT)[0];
+    document.getElementById('mCategorias').addEventListener('shown.bs.modal', () => { if (!f.nombre.value && !f.id.value) ver(primera || null); });
+    const post = async fd => { const r = await fetch('includes/cotizacion_accion.php', { method: 'POST', body: fd }); const d = await r.json().catch(() => ({ success: false, error: 'Respuesta inesperada.' })); if (!d.success) throw new Error(d.error); return d; };
+    f.addEventListener('submit', async e => {
+        e.preventDefault();
+        if (!f.nombre.value.trim()) return f.nombre.focus();
+        try { await post(new FormData(f)); Swal.fire({ icon: 'success', title: 'Categoría guardada', timer: 1200, showConfirmButton: false }).then(() => location.reload()); }
+        catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+    });
+    document.getElementById('katEliminar').addEventListener('click', async () => {
+        const k = window.COT_KAT[f.id.value];
+        if (!k) return;
+        if (!(await Swal.fire({ icon: 'warning', title: '¿Eliminar «' + k.nombre + '»?', text: k.usos ? k.usos + ' cotización(es) quedarán sin categoría (no se borran).' : '', showCancelButton: true, confirmButtonText: 'Eliminar', confirmButtonColor: '#dc2626', cancelButtonText: 'Cancelar' })).isConfirmed) return;
+        const fd = new FormData(); fd.append('accion', 'categoria_eliminar'); fd.append('id', k.id);
+        try { await post(fd); location.reload(); } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+    });
+})();
 ListaVinetas(document.getElementById('cfgIncluye'), { placeholderTexto: 'Ej.: Una prueba digital para aprobación.' });
 ListaVinetas(document.getElementById('cfgCondiciones'), { placeholderTitulo: 'Ej.: Forma de pago', sugerencias: ['Forma de pago', 'Entrega', 'Cambios', 'Vigencia', 'Garantía', 'Soporte', 'Tiempo de entrega'] });
 </script>
@@ -178,8 +262,11 @@ ListaVinetas(document.getElementById('cfgCondiciones'), { placeholderTitulo: 'Ej
     const fd = o => { const f = new FormData(); Object.entries(o).forEach(([k, v]) => f.append(k, v)); return f; };
     const estado = document.getElementById('cotEstado');
     if (!estado) return;
-    const tabla = AppTabla('#tCot', { buscar: '#cotBuscar', porPagina: '#cotPorPagina', pie: '#cotPie', filtro: tr => !estado.value || tr.dataset.estado === estado.value, vacio: 'Sin cotizaciones.' });
+    const cat = document.getElementById('cotCategoria');
+    const tabla = AppTabla('#tCot', { buscar: '#cotBuscar', porPagina: '#cotPorPagina', pie: '#cotPie', vacio: 'Sin cotizaciones.',
+        filtro: tr => (!estado.value || tr.dataset.estado === estado.value) && (!cat || cat.value === '' || tr.dataset.categoria === cat.value) });
     estado.addEventListener('change', () => tabla.refrescar());
+    cat?.addEventListener('change', () => tabla.refrescar());
     document.querySelectorAll('.cot-filtro-rapido').forEach(a => a.addEventListener('click', e => { e.preventDefault(); estado.value = estado.value === a.dataset.estado ? '' : a.dataset.estado; tabla.refrescar(); }));
 
     document.addEventListener('click', async e => {

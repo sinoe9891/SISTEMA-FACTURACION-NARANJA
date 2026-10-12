@@ -32,6 +32,8 @@ $cotForm = [
     'condiciones' => $cot ? (string)$cot['condiciones'] : $cfg['condiciones'],
     'notas' => $cot['notas'] ?? '',
 ];
+$categorias = cotizacionCategorias($pdo, $cid);
+$cotForm['categoria_id'] = (int)($cot['categoria_id'] ?? 0);
 $st = $pdo->prepare("SELECT id, nombre, email FROM clientes_factura WHERE cliente_id = ? ORDER BY nombre");
 $st->execute([$cid]);
 $clientes = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -65,6 +67,16 @@ require_once '../../includes/templates/header.php';
                 <div class="app-card-header"><span><i class="bi bi-person me-1"></i> Cliente</span>
                     <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#mCliente"><i class="bi bi-person-plus me-1"></i> Nuevo cliente</button></div>
                 <div class="app-card-body row g-3">
+                    <?php if ($categorias): ?>
+                    <div class="col-12"><label class="form-label">Categoría <span class="text-muted small">(carga su «Incluye», sus «Condiciones» y su vigencia)</span></label>
+                        <div class="d-flex flex-wrap gap-2" id="cCategorias">
+                            <input type="hidden" name="categoria_id" id="cCategoria" value="<?= $cotForm['categoria_id'] ?: '' ?>">
+                            <button type="button" class="btn btn-sm <?= !$cotForm['categoria_id'] ? 'btn-dark' : 'btn-outline-secondary' ?> c-cat" data-id="">General</button>
+                            <?php foreach ($categorias as $k): ?>
+                                <button type="button" class="btn btn-sm <?= $cotForm['categoria_id'] === (int)$k['id'] ? 'btn-dark' : 'btn-outline-secondary' ?> c-cat" data-id="<?= (int)$k['id'] ?>"><i class="bi <?= htmlspecialchars($k['icono'] ?: 'bi-tag') ?> me-1"></i><?= htmlspecialchars($k['nombre']) ?></button>
+                            <?php endforeach; ?>
+                        </div></div>
+                    <?php endif; ?>
                     <div class="col-12"><label class="form-label">Cliente *</label>
                         <select name="receptor_id" id="cReceptor" class="form-select" required data-buscar>
                             <option value="">— Seleccione un cliente —</option>
@@ -159,8 +171,40 @@ require_once '../../includes/templates/header.php';
 
 <script src="../../clientes/js/lista-vinetas.js?v=<?= @filemtime(__DIR__ . '/../js/lista-vinetas.js') ?>"></script>
 <script>
+// Textos de cada categoría (y los generales para «General»)
+const COT_CATEGORIAS = <?= json_encode(['' => ['incluye' => $cfg['incluye'], 'condiciones' => $cfg['condiciones'], 'vigencia_dias' => $cfg['vigencia_dias']]]
+    + array_column(array_map(fn($k) => ['id' => (int)$k['id'], 'incluye' => (string)($k['incluye'] ?? '') ?: $cfg['incluye'], 'condiciones' => (string)($k['condiciones'] ?? '') ?: $cfg['condiciones'], 'vigencia_dias' => (int)($k['vigencia_dias'] ?: $cfg['vigencia_dias'])], $categorias), null, 'id'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 ListaVinetas(document.getElementById('cIncluye'), { placeholderTexto: 'Ej.: Una prueba digital para aprobación antes de imprimir.' });
 ListaVinetas(document.getElementById('cCondiciones'), { placeholderTitulo: 'Ej.: Forma de pago', placeholderTexto: 'Ej.: 50 % al confirmar el pedido y 50 % contra entrega.', sugerencias: ['Forma de pago', 'Entrega', 'Cambios', 'Vigencia', 'Garantía', 'Soporte', 'Tiempo de entrega'] });
+(() => {
+    // Categoría: al elegirla se cargan sus textos (si ya se cambiaron a mano, primero se pregunta)
+    const inc = document.getElementById('cIncluye'), con = document.getElementById('cCondiciones'), hid = document.getElementById('cCategoria');
+    let tocado = <?= $cot ? 'true' : 'false' ?>;
+    [inc, con].forEach(t => t.addEventListener('input', () => tocado = true));
+    document.querySelectorAll('.c-cat').forEach(b => b.addEventListener('click', async () => {
+        if (b.disabled) return;
+        const k = COT_CATEGORIAS[b.dataset.id] || COT_CATEGORIAS[''];
+        const distinto = inc.value.trim() !== (k.incluye || '').trim() || con.value.trim() !== (k.condiciones || '').trim();
+        let cargar = true;
+        if (tocado && distinto) {
+            const r = await Swal.fire({ icon: 'question', title: '¿Cargar los textos de «' + b.textContent.trim() + '»?', text: 'Se reemplazan el Incluye y las Condiciones que tiene ahora la cotización.',
+                showDenyButton: true, showCancelButton: true, confirmButtonText: 'Sí, cargarlos', denyButtonText: 'No, solo cambiar la categoría', cancelButtonText: 'Cancelar' });
+            if (r.isDismissed) return;
+            cargar = r.isConfirmed;
+        }
+        hid.value = b.dataset.id;
+        document.querySelectorAll('.c-cat').forEach(x => { x.classList.toggle('btn-dark', x === b); x.classList.toggle('btn-outline-secondary', x !== b); });
+        if (!cargar) return;
+        inc.value = k.incluye || ''; con.value = k.condiciones || '';
+        inc.dispatchEvent(new Event('vinetas:recargar')); con.dispatchEvent(new Event('vinetas:recargar'));
+        tocado = false;
+        if (!<?= $cot ? 'true' : 'false' ?> && k.vigencia_dias) {
+            const fF = document.getElementById('cFecha'), fV = document.getElementById('cValida');
+            const d = new Date(fF.value + 'T12:00:00'); d.setDate(d.getDate() + +k.vigencia_dias);
+            fV.value = d.toISOString().slice(0, 10); fV.dispatchEvent(new Event('change'));
+        }
+    }));
+})();
 (() => {
     const ITEMS = <?= json_encode(array_map(fn($i) => ['producto_id' => (int)$i['producto_id'], 'descripcion' => $i['descripcion'], 'detalle' => (string)$i['detalle'], 'cantidad' => (float)$i['cantidad'], 'precio' => (float)$i['precio']], $items), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
     const ACC = 'includes/cotizacion_accion.php';
