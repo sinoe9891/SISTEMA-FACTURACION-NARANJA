@@ -20,7 +20,7 @@ function AppTabla(tabla, opciones) {
     const tbl = $(tabla), buscar = $(o.buscar), sel = $(o.porPagina), pie = $(o.pie);
     if (!tbl) return { refrescar() {} };
     const tbody = tbl.tBodies[0];
-    const filas = Array.from(tbody.querySelectorAll('tr[data-fila]'));
+    const filasDom = () => Array.from(tbody.querySelectorAll('tr[data-fila]'));   // en el orden actual (se puede ordenar)
     const cols = tbl.tHead ? tbl.tHead.rows[0].cells.length : 1;
     const vacia = document.createElement('tr');
     vacia.innerHTML = `<td colspan="${cols}" class="text-center text-muted py-4"></td>`;
@@ -32,6 +32,7 @@ function AppTabla(tabla, opciones) {
 
     function refrescar() {
         const q = (buscar?.value || '').trim().toLowerCase();
+        const filas = filasDom();
         const visibles = filas.filter(tr => (!q || texto(tr).includes(q)) && (!o.filtro || o.filtro(tr)));
         const n = parseInt(sel?.value || o.porPaginaInicial || 10, 10);
         const paginas = Math.max(1, Math.ceil(visibles.length / n));
@@ -65,7 +66,9 @@ function AppTabla(tabla, opciones) {
     buscar?.addEventListener('input', () => { pagina = 1; refrescar(); });
     sel?.addEventListener('change', () => { pagina = 1; refrescar(); });
     refrescar();
-    return { refrescar: () => { pagina = 1; refrescar(); } };
+    const api = { refrescar: () => { pagina = 1; refrescar(); } };
+    tbl.__appTabla = api;
+    return api;
 }
 
 /*
@@ -89,4 +92,41 @@ function AppTabla(tabla, opciones) {
         AppTabla(t, { pie, porPaginaInicial: n, vacio: t.dataset.vacio || 'Sin resultados.' });
     });
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
+})();
+
+/*
+ * Orden por columnas: cualquier <table data-ordenar> ordena al hacer clic en el encabezado (asc/desc).
+ * Valor de cada celda: data-sort si lo tiene (p. ej. fecha 2026-01-31 o período 2026-01), si no su texto;
+ * montos («L 1,234.56») y fechas dd/mm/aaaa se comparan con window.tablaComparar. No ordenan: los
+ * encabezados vacíos, la columna # (.app-n) y los que tengan class="no-orden". La columna .app-n se
+ * numera 1, 2, 3… en el orden que se ve. Funciona junto con data-paginar / AppTabla.
+ */
+(function () {
+    if (window.__appOrdenar) return;
+    window.__appOrdenar = true;
+    const valor = td => (td ? (td.dataset.sort ?? td.textContent) : '').trim();
+    const comparar = (a, b) => (window.tablaComparar ? window.tablaComparar(a, b) : String(a).localeCompare(String(b), 'es', { numeric: true }));
+    const numerar = t => { let n = 0; Array.from(t.tBodies[0].rows).forEach(r => { const c = r.querySelector('td.app-n'); if (c) c.textContent = ++n; }); };
+    const iniciar = () => document.querySelectorAll('table[data-ordenar]').forEach(t => {
+        if (t.__ordenar || !t.tHead || !t.tBodies[0]) return;
+        t.__ordenar = true;
+        const ths = Array.from(t.tHead.rows[0].cells);
+        ths.forEach((th, i) => {
+            if (!th.textContent.trim() || th.classList.contains('app-n') || th.classList.contains('no-orden')) return;
+            th.classList.add('app-th-orden');
+            th.addEventListener('click', () => {
+                const dir = th.classList.contains('orden-asc') ? 'desc' : 'asc';
+                ths.forEach(x => x.classList.remove('orden-asc', 'orden-desc'));
+                th.classList.add('orden-' + dir);
+                const body = t.tBodies[0];
+                const filas = Array.from(body.rows).filter(r => r.cells.length > 1);
+                filas.sort((a, b) => (dir === 'asc' ? 1 : -1) * comparar(valor(a.cells[i]), valor(b.cells[i])));
+                filas.forEach(r => body.appendChild(r));
+                if (t.__appTabla) t.__appTabla.refrescar(); else numerar(t);
+            });
+        });
+        if (!t.__appTabla) numerar(t);
+    });
+    // Después de data-paginar (que se inicia en DOMContentLoaded), para que la numeración siga a la paginación
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(iniciar)); else setTimeout(iniciar);
 })();

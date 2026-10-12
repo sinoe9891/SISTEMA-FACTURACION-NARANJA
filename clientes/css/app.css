@@ -444,6 +444,34 @@ body.app-body {
 	font-variant-numeric: tabular-nums;
 }
 
+/* Encabezados que ordenan (table[data-ordenar], ver app-tabla.js) */
+.app-th-orden {
+	cursor: pointer;
+	user-select: none;
+	white-space: nowrap;
+}
+
+.app-th-orden::after {
+	content: '\2195';
+	margin-left: 4px;
+	font-size: .8em;
+	opacity: .35;
+}
+
+.app-th-orden.orden-asc::after {
+	content: '\2191';
+	opacity: 1;
+}
+
+.app-th-orden.orden-desc::after {
+	content: '\2193';
+	opacity: 1;
+}
+
+.app-th-orden:hover {
+	color: var(--brand, #ea580c);
+}
+
 .app-num {
 	text-align: right;
 	font-variant-numeric: tabular-nums;

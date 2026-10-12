@@ -975,13 +975,13 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                     <?php if ($isvApartar > 0): ?><span class="badge rounded-pill" style="background:#ede9fe;color:#5b21b6" title="ISV incluido en pagos anticipados sin factura: se declara al emitir la factura">ISV por apartar L <?= number_format($isvApartar, 2) ?></span><?php endif; ?>
                 </div>
                 <div class="table-responsive">
-                    <table class="fc-table">
-                        <thead><tr><th>#</th><th>Fecha de pago</th><th>Concepto</th><th class="text-end">Monto</th><?php if ($planRes['isv'] > 0): ?><th class="text-end">ISV</th><?php endif; ?><th class="text-end">Total</th><th>Estado</th><th class="text-end"></th></tr></thead>
+                    <table class="fc-table" data-ordenar>
+                        <thead><tr><th class="app-n">#</th><th>Fecha de pago</th><th>Concepto</th><th class="text-end">Monto</th><?php if ($planRes['isv'] > 0): ?><th class="text-end">ISV</th><?php endif; ?><th class="text-end">Total</th><th>Estado</th><th class="text-end"></th></tr></thead>
                         <tbody>
                             <?php foreach ($plan as $i => $l): [$bg, $fg, $ico, $txt] = $semaforo($l); ?>
                                 <tr>
-                                    <td class="text-muted"><?= $i + 1 ?></td>
-                                    <td class="text-nowrap fw-semibold"><?= $fCorta($l['fecha']) ?></td>
+                                    <td class="app-n"><?= $i + 1 ?></td>
+                                    <td class="text-nowrap fw-semibold" data-sort="<?= htmlspecialchars($l['fecha']) ?>"><?= $fCorta($l['fecha']) ?></td>
                                     <td><?= htmlspecialchars($l['concepto']) ?><?= $l['tipo'] !== 'cuota' && stripos($l['concepto'], PLAN_TIPOS[$l['tipo']]) !== 0 ? ' <span class="badge" style="background:#f1f5f9;color:#475569">' . PLAN_TIPOS[$l['tipo']] . '</span>' : '' ?>
                                         <?php if ($l['cobro']): ?><div class="small text-muted"><?= htmlspecialchars($l['cobro']) ?></div><?php endif; ?></td>
                                     <td class="text-end text-nowrap">L <?= number_format((float)$l['monto'], 2) ?></td>
@@ -1066,13 +1066,14 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                 </div>
             </div>
             <div class="table-responsive">
-                <table class="fc-table">
-                    <thead><tr><th>Fecha</th><th>Concepto</th><th>Método</th><th>Referencia</th><th class="text-end">Monto</th><th class="text-center">Factura</th><th></th></tr></thead>
+                <table class="fc-table" data-ordenar>
+                    <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Concepto</th><th>Método</th><th>Referencia</th><th class="text-end">Monto</th><th class="text-center">Factura</th><th></th></tr></thead>
                     <tbody>
-                        <?php if (!$anticipos): ?><tr><td colspan="7" class="text-center text-muted py-3">Aún no hay pagos anticipados.</td></tr><?php endif; ?>
+                        <?php if (!$anticipos): ?><tr><td colspan="8" class="text-center text-muted py-3">Aún no hay pagos anticipados.</td></tr><?php endif; ?>
                         <?php foreach ($anticipos as $a): ?>
                             <tr class="<?= (int)$a['anulado'] ? 'text-muted text-decoration-line-through' : '' ?>">
-                                <td class="text-nowrap"><?= date('d/m/Y', strtotime($a['fecha'])) ?></td>
+                                <td class="app-n"></td>
+                                <td class="text-nowrap" data-sort="<?= htmlspecialchars($a['fecha']) ?>"><?= date('d/m/Y', strtotime($a['fecha'])) ?></td>
                                 <td><?= htmlspecialchars($a['concepto'] ?? '') ?: '—' ?><?= (int)$a['anulado'] ? '<div class="small">Anulado: ' . htmlspecialchars($a['motivo_anulacion'] ?? '') . '</div>' : '' ?></td>
                                 <td class="small"><?= htmlspecialchars(ucfirst($a['metodo'])) ?><?= $a['banco'] ? '<br><span class="text-muted">' . htmlspecialchars($a['banco'] . ' ' . $a['cuenta_numero']) . '</span>' : '' ?></td>
                                 <td class="small"><?= htmlspecialchars($a['referencia'] ?? '') ?: '—' ?></td>
@@ -1116,14 +1117,15 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
             </div>
         <?php else: ?>
             <div style="overflow-x:auto">
-                <table class="fc-table">
-                    <thead><tr><th>Recibo</th><th>Fecha</th><th class="text-center">Período</th><th>Concepto</th><th>Método</th><th class="text-end">Monto</th><th class="text-center">PDF</th></tr></thead>
+                <table class="fc-table" data-ordenar>
+                    <thead><tr><th class="app-n">#</th><th>Recibo</th><th>Fecha</th><th class="text-center">Período</th><th>Concepto</th><th>Método</th><th class="text-end">Monto</th><th class="text-center no-orden">PDF</th></tr></thead>
                     <tbody>
                         <?php foreach ($recibos as $r): ?>
                             <tr>
+                                <td class="app-n"></td>
                                 <td class="fw-bold font-monospace"><?= str_pad((string)$r['numero_recibo'], 5, '0', STR_PAD_LEFT) ?></td>
-                                <td><?= date('d/m/Y', strtotime($r['fecha_emision'])) ?></td>
-                                <td class="text-center"><?= $r['periodo_mes'] ? '<span class="badge" style="background:#dbeafe;color:#1e40af">' . $meses_es[(int)$r['periodo_mes']] . ' ' . (int)$r['periodo_anio'] . '</span>' : '—' ?></td>
+                                <td data-sort="<?= substr($r['fecha_emision'], 0, 10) ?>"><?= date('d/m/Y', strtotime($r['fecha_emision'])) ?></td>
+                                <td class="text-center" data-sort="<?= $r['periodo_mes'] ? sprintf('%04d-%02d', (int)$r['periodo_anio'], (int)$r['periodo_mes']) : '' ?>"><?= $r['periodo_mes'] ? '<span class="badge" style="background:#dbeafe;color:#1e40af">' . $meses_es[(int)$r['periodo_mes']] . ' ' . (int)$r['periodo_anio'] . '</span>' : '—' ?></td>
                                 <td class="small"><?= htmlspecialchars($r['concepto'] ?? '') ?></td>
                                 <td class="small"><?= htmlspecialchars(ucfirst($r['metodo_pago'])) ?></td>
                                 <td class="text-end fw-bold" style="color:var(--brand)">L <?= number_format((float)$r['monto'], 2) ?></td>
@@ -1132,7 +1134,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
-                    <tfoot><tr><td colspan="5" class="text-end text-muted">Total cobrado con recibo (sin ISV):</td><td class="text-end" style="color:var(--brand)">L <?= number_format($totalRecibos, 2) ?></td><td></td></tr></tfoot>
+                    <tfoot><tr><td colspan="6" class="text-end text-muted">Total cobrado con recibo (sin ISV):</td><td class="text-end" style="color:var(--brand)">L <?= number_format($totalRecibos, 2) ?></td><td></td></tr></tfoot>
                 </table>
             </div>
         <?php endif; ?>
@@ -1168,9 +1170,10 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                         <?php foreach ($porEmpresa as $emp => $pe): ?><span class="badge border" style="background:#f8fafc;color:#334155;font-weight:500"><?= htmlspecialchars($emp) ?> · <?= $pe['n'] ?> factura(s) · L <?= number_format($pe['total'], 2) ?></span><?php endforeach; ?>
                     </div>
                 <?php endif; ?>
-                <table class="fc-table">
+                <table class="fc-table" data-ordenar>
                     <thead>
                         <tr>
+                            <th class="app-n">#</th>
                             <th>Correlativo</th>
                             <th>Fecha</th>
                             <th class="text-center">Período</th>
@@ -1179,7 +1182,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                             <th class="text-end">Total</th>
                             <th class="text-center">Declarada</th>
                             <th class="text-center">Cobro</th>
-                            <th class="text-center">Acciones</th>
+                            <th class="text-center no-orden">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1189,13 +1192,14 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                             $esAnulada = ($f['estado'] ?? 'emitida') === 'anulada';
                         ?>
                             <tr class="<?= $esMes ? 'tr-actual' : ($esAnulada ? 'tr-anulada' : '') ?>">
+                                <td class="app-n"></td>
                                 <td>
                                     <span class="fw-bold"
                                         style="font-family:monospace;font-size:.83rem;white-space:nowrap"><?= htmlspecialchars($f['correlativo']) ?></span>
                                     <?php if ($esMes): ?><br><span class="badge"
                                             style="background:#d1fae5;color:#065f46;font-size:.65rem">Este mes</span><?php endif; ?>
                                 </td>
-                                <td>
+                                <td data-sort="<?= substr($f['fecha_emision'], 0, 10) ?>">
                                     <div class="fw-semibold"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></div>
                                     <?php if ($variasEmpresas): ?><div class="small text-muted" style="max-width:220px"><?= htmlspecialchars((string)$f['empresa_factura']) ?></div><?php endif; ?>
                                 </td>
@@ -1206,6 +1210,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                     $per_lbl = ($pm_d && $pa_d) ? ($meses_es[$pm_d] . ' ' . $pa_d) : '—';
                                     $per_bg  = ($pm_d && $pa_d) ? 'background:#dbeafe;color:#1e40af' : 'background:#fee2e2;color:#991b1b';
                                     ?>
+                                    <span class="d-none fc-sort-periodo"><?= $pm_d && $pa_d ? sprintf('%04d-%02d', $pa_d, $pm_d) : '' ?></span>
                                     <span class="badge btn-editar-periodo"
                                         style="<?= $per_bg ?>;cursor:pointer;font-size:.68rem" data-factura-id="<?= $f['id'] ?>"
                                         data-contrato-id="<?= $contrato_id ?>" data-periodo-mes="<?= $pm_d ?>"
@@ -1268,7 +1273,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="3" class="text-end text-muted">Totales del contrato:</td>
+                            <td colspan="4" class="text-end text-muted">Totales del contrato:</td>
                             <td class="text-end">L <?= number_format($totalSubtotal, 2) ?></td>
                             <td class="text-end">L <?= number_format($totalIsv, 2) ?></td>
                             <td class="text-end" style="color:var(--brand)">L <?= number_format($totalFacturado, 2) ?></td>
