@@ -848,7 +848,7 @@ require_once '../../includes/templates/header.php';
 							<td data-col="nombre"><?= htmlspecialchars($p['nombre']) ?></td>
 							<td data-col="desc" style="max-width:220px;"><span
 									style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
-									title="<?= htmlspecialchars($p['descripcion']) ?>"><?= htmlspecialchars($p['descripcion']) ?></span>
+									title="<?= htmlspecialchars((string)$p['descripcion']) ?>"><?= htmlspecialchars((string)$p['descripcion']) ?></span>
 							</td>
 							<td data-sort-val="<?= $p['precio'] ?>"><strong>L <?= number_format($p['precio'], 2) ?></strong>
 							</td>

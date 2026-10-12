@@ -2902,3 +2902,73 @@ suite('Cobro con comprobante y «Registrar cobro» desde la factura y la lista',
     @unlink(__DIR__ . '/../../clientes/naranjaymedia/includes/uploads/gastos/' . basename((string)$cob['archivo_adjunto']));
     check('al anular el cobro la factura vuelve a quedar pendiente', (int)$pdo->query("SELECT pagada FROM facturas WHERE id=$fid")->fetchColumn() === 0);
 });
+
+suite('Cotizaciones: crear con alta rápida de cliente y producto, PDF, correo, estados, duplicar y pasar a factura', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $r = $c->get('cotizaciones');
+    check('la página de cotizaciones carga (con orden y número)', sinErroresPhp($r['body']) && str_contains($r['body'], 'id="tCot" data-ordenar'), errorPhp($r['body']));
+    $n = $c->get('cotizacion_editar');
+    check('la página de nueva cotización carga con alta rápida de cliente y producto', sinErroresPhp($n['body']) && str_contains($n['body'], 'id="mCliente"') && str_contains($n['body'], 'id="mProducto"'), errorPhp($n['body']));
+    $nombre = 'QA Cliente Cotización ' . time();
+    $cl = $c->post('includes/cotizacion_accion.php', ['accion' => 'cliente_crear', 'nombre' => $nombre, 'rtn' => '0801' . rand(100000000, 999999999), 'email' => 'qa.cot@local.test', 'contacto_nombre' => 'Ana QA']);
+    $rec = (int)($cl['json']['cliente']['id'] ?? 0);
+    check('alta rápida de cliente', $rec > 0, $cl['body']);
+    $dup = $c->post('includes/cotizacion_accion.php', ['accion' => 'cliente_crear', 'nombre' => $nombre]);
+    check('no deja crear el mismo cliente dos veces', !($dup['json']['success'] ?? true));
+    $pr = $c->post('includes/cotizacion_accion.php', ['accion' => 'producto_crear', 'nombre' => 'QA Tarjetas doble cara', 'precio' => 7, 'tipo_isv' => '15', 'receptor_id' => $rec]);
+    $pid = (int)($pr['json']['producto']['id'] ?? 0);
+    check('alta rápida de producto (solo para ese cliente)', $pid > 0 && (int)$pdo->query("SELECT receptores_id FROM productos_clientes WHERE id = $pid")->fetchColumn() === $rec, $pr['body']);
+    $cotPost = fn(array $d) => $c->req('POST', $c->base . 'includes/cotizacion_accion.php', http_build_query($d));   // líneas anidadas: items[0][…]
+    $g = $cotPost(['accion' => 'guardar', 'receptor_id' => $rec, 'fecha' => date('Y-m-d'), 'valida_hasta' => date('Y-m-d', strtotime('+15 days')), 'servicio' => 'Impresión de tarjetas',
+        'incluye' => "Una prueba digital", 'condiciones' => "Vigencia: {dias} días", 'items' => [['producto_id' => $pid, 'descripcion' => 'Tarjetas a doble cara', 'cantidad' => 100, 'precio' => 7]]]);
+    $id = (int)($g['json']['id'] ?? 0);
+    $cot = $pdo->query("SELECT * FROM cotizaciones WHERE id = $id")->fetch(PDO::FETCH_ASSOC);
+    check('la cotización se guarda con su número y totales (ISV 15 %)', $cot && preg_match('/^COT-\d{8}-\d{2}$/', $cot['numero']) && (float)$cot['subtotal'] === 700.0 && (float)$cot['isv_15'] === 105.0 && (float)$cot['total'] === 805.0 && $cot['estado'] === 'borrador', $g['body']);
+    $mal = $cotPost(['accion' => 'guardar', 'receptor_id' => $rec, 'fecha' => date('Y-m-d'), 'valida_hasta' => date('Y-m-d', strtotime('-1 day')), 'items' => [['producto_id' => $pid, 'cantidad' => 1, 'precio' => 1]]]);
+    check('no acepta una vigencia anterior a la fecha', !($mal['json']['success'] ?? true));
+    $pdf = $c->get('cotizacion_pdf', ['id' => $id]);
+    check('el PDF se genera', $pdf['code'] === 200 && str_starts_with($pdf['body'], '%PDF'));
+    $co = $c->get('includes/cotizacion_accion.php', ['correo' => $id]);
+    check('el correo sugerido trae el correo del cliente, el asunto y un mensaje redactado', ($co['json']['para'] ?? '') === 'qa.cot@local.test' && str_contains($co['json']['asunto'] ?? '', $cot['numero']) && str_contains($co['json']['mensaje'] ?? '', 'Ana QA'), $co['body']);
+    $v = $c->post('includes/cotizacion_accion.php', ['accion' => 'vista_correo', 'id' => $id, 'mensaje' => '<p>Hola <script>alert(1)</script></p>']);
+    check('la vista del correo lleva el resumen y limpia código peligroso', str_contains($v['json']['html'] ?? '', 'L 805.00') && !str_contains($v['json']['html'] ?? '', '<script'));
+    $e = $c->post('includes/cotizacion_accion.php', ['accion' => 'enviar', 'id' => $id, 'para' => '', 'asunto' => 'x']);
+    check('no envía sin destinatario', !($e['json']['success'] ?? true));
+    $s = $c->post('includes/cotizacion_accion.php', ['accion' => 'estado', 'id' => $id, 'estado' => 'aceptada']);
+    check('se marca aceptada', ($s['json']['success'] ?? false) && $pdo->query("SELECT estado FROM cotizaciones WHERE id = $id")->fetchColumn() === 'aceptada');
+    $d = $c->post('includes/cotizacion_accion.php', ['accion' => 'duplicar', 'id' => $id]);
+    $id2 = (int)($d['json']['id'] ?? 0);
+    check('duplicar crea otra en borrador con las mismas líneas', $id2 && $pdo->query("SELECT estado FROM cotizaciones WHERE id = $id2")->fetchColumn() === 'borrador' && (int)$pdo->query("SELECT COUNT(*) FROM cotizacion_items WHERE cotizacion_id = $id2")->fetchColumn() === 1);
+    $gf = $c->get('generar_factura', ['cotizacion_id' => $id]);
+    check('«Convertir en factura» abre Nueva factura con el cliente y las líneas', sinErroresPhp($gf['body']) && str_contains($gf['body'], 'name="cotizacion_id" value="' . $id . '"') && str_contains($gf['body'], '"producto_id":' . $pid), errorPhp($gf['body']));
+    $nom = login('qa.nomina@local.test');
+    $x = $nom->post('includes/cotizacion_accion.php', ['accion' => 'estado', 'id' => $id, 'estado' => 'rechazada']);
+    check('un rol sin acceso a Cotizaciones no puede cambiarla', !($x['json']['success'] ?? true) && $pdo->query("SELECT estado FROM cotizaciones WHERE id = $id")->fetchColumn() === 'aceptada');
+    $fa = $c->post('includes/cotizacion_accion.php', ['accion' => 'eliminar', 'id' => $id2]);
+    check('el administrador puede eliminarla', ($fa['json']['success'] ?? false) && !$pdo->query("SELECT COUNT(*) FROM cotizaciones WHERE id = $id2")->fetchColumn());
+    $pdo->exec("DELETE FROM cotizaciones WHERE id = $id");
+    $pdo->exec("DELETE FROM productos_clientes WHERE id = $pid");
+    $pdo->exec("DELETE FROM clientes_factura WHERE id = $rec");
+});
+
+suite('Sello de la empresa: se sube en Firmas y sale en facturas y cotizaciones', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $p = $c->get('configuracion_firmas');
+    check('Firmas muestra el sello', sinErroresPhp($p['body']) && str_contains($p['body'], 'id="selloCard"'), errorPhp($p['body']));
+    $u = $c->post('includes/firmante_accion.php', ['accion' => 'sello_subir', 'sello' => new CURLFile(archivoTemporal('png'), 'image/png', 'sello.png')]);
+    $rel = (string)$pdo->query("SELECT sello FROM clientes_saas WHERE id = 2")->fetchColumn();
+    check('se guarda el sello', ($u['json']['success'] ?? false) && $rel !== '', $u['body']);
+    $img = $c->get('includes/firmante_accion.php', ['sello' => 1]);
+    check('se puede ver', $img['code'] === 200 && str_starts_with($img['body'], "\x89PNG"));
+    $c->post('includes/firmante_accion.php', ['accion' => 'sello_uso', 'facturas' => 1, 'cotizaciones' => 1]);
+    $fid = (int)$pdo->query("SELECT id FROM facturas WHERE cliente_id = 2 ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $v = $c->get('ver_factura', ['id' => $fid]);
+    check('con el interruptor encendido sale en la factura', str_contains($v['body'], 'class="sello-factura"'));
+    $c->post('includes/firmante_accion.php', ['accion' => 'sello_uso', 'cotizaciones' => 1]);
+    $v = $c->get('ver_factura', ['id' => $fid]);
+    check('apagado, no sale en la factura', !str_contains($v['body'], 'class="sello-factura"'));
+    $q = $c->post('includes/firmante_accion.php', ['accion' => 'sello_quitar']);
+    check('se puede quitar', ($q['json']['success'] ?? false) && $pdo->query("SELECT sello FROM clientes_saas WHERE id = 2")->fetchColumn() === null);
+});

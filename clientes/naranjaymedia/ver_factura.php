@@ -818,6 +818,20 @@ if (!function_exists('formatFecha')) {
 		<h5>
 			<span class="cantidadletras">Cantidad en letras: </span><?= htmlspecialchars($factura['monto_letras']) ?>
 		</h5>
+		<?php // Sello de la empresa (Configuración → Firmas), si se eligió ponerlo en las facturas
+		$selloFactura = '';
+		try {
+			$stSello = $pdo->prepare("SELECT sello, sello_facturas FROM clientes_saas WHERE id = ?");
+			$stSello->execute([(int)$factura['cliente_id']]);
+			$rSello = $stSello->fetch(PDO::FETCH_ASSOC);
+			$rutaSello = $rSello && $rSello['sello'] && (int)$rSello['sello_facturas'] ? __DIR__ . '/includes/uploads/firmas/' . $rSello['sello'] : '';
+			if ($rutaSello && is_file($rutaSello)) $selloFactura = 'data:image/png;base64,' . base64_encode(file_get_contents($rutaSello));
+		} catch (Throwable $e) {
+			$selloFactura = '';
+		} ?>
+		<?php if ($selloFactura): ?>
+			<div class="sello-factura" style="text-align:right;margin-top:-10px"><img src="<?= $selloFactura ?>" alt="Sello" style="max-height:110px;max-width:150px"></div>
+		<?php endif; ?>
 		<p class="agradecimiento">
 			Gracias por su preferencia.
 		</p>

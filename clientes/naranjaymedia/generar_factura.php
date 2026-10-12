@@ -22,6 +22,33 @@ $get_producto_id  = (int)($_GET['producto_id']  ?? 0);
 $get_monto        = (float)($_GET['monto']       ?? 0);
 $get_contrato_id  = (int)($_GET['contrato_id']  ?? 0);
 
+// Desde una cotización («Convertir en factura»): mismo cliente y mismas líneas
+$cotizacion = null;
+$cotizacion_items = [];
+if ((int)($_GET['cotizacion_id'] ?? 0)) {
+    require_once '../../includes/cotizaciones.php';
+    try {
+        if (cotizacionesDisponible($pdo)) {
+            $cotizacion = cotizacionObtener($pdo, (int)$cliente_id, (int)$_GET['cotizacion_id']);
+            if ($cotizacion['estado'] === 'facturada') $cotizacion = null;
+            else {
+                $get_receptor_id = (int)$cotizacion['receptor_id'];
+                // En la factura sale «PRODUCTO - detalle»: la descripción de la cotización solo va si es distinta del nombre del producto
+                $stN = $pdo->prepare("SELECT nombre FROM productos_clientes WHERE id = ?");
+                $cotizacion_items = array_map(function ($i) use ($stN) {
+                    $stN->execute([(int)$i['producto_id']]);
+                    $nom = (string)$stN->fetchColumn();
+                    $desc = mb_strtolower(trim($i['descripcion'])) === mb_strtolower(trim($nom)) ? '' : $i['descripcion'];
+                    return ['producto_id' => (int)$i['producto_id'], 'cantidad' => (float)$i['cantidad'], 'precio' => (float)$i['precio'],
+                        'detalles' => trim(implode("\n", array_filter([$desc, (string)$i['detalle']])))];
+                }, cotizacionItems($pdo, (int)$cotizacion['id']));
+            }
+        }
+    } catch (Throwable $e) {
+        $cotizacion = null;
+    }
+}
+
 /* ── Clientes factura ───────────────────────────────────────────────────── */
 $stmtClientes = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cliente_id = ? ORDER BY nombre ASC");
 $stmtClientes->execute([$cliente_id]);
@@ -267,6 +294,9 @@ require_once '../../includes/templates/header.php';
         <input type="hidden" name="establecimiento_id"
             value="<?= htmlspecialchars($_SESSION['establecimiento_activo'] ?? '') ?>">
         <input type="hidden" name="estado" value="emitida">
+        <?php if ($cotizacion): ?><input type="hidden" name="cotizacion_id" value="<?= (int)$cotizacion['id'] ?>">
+            <div class="alert alert-info"><i class="bi bi-file-earmark-text me-1"></i> Factura de la cotización <strong><?= htmlspecialchars($cotizacion['numero']) ?></strong> (L <?= number_format((float)$cotizacion['total'], 2) ?>): ya trae el cliente y las líneas. Revisa y elige el CAI. Al guardar, la cotización queda como facturada.</div>
+        <?php endif; ?>
         <input type="hidden" name="fecha_emision" value="<?= date('Y-m-d H:i:s') ?>">
 
         <div class="row g-4">
@@ -725,6 +755,17 @@ require_once '../../includes/templates/header.php';
     }
 
     window.addEventListener('DOMContentLoaded', () => {
+        // Líneas de la cotización
+        const COT = <?= json_encode($cotizacion_items, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+        COT.forEach((it, i) => {
+            if (i > 0) document.getElementById('agregar-producto').click();
+            const item = document.querySelectorAll('.producto-item')[i];
+            const sel = item.querySelector('select[name$="[id]"]');
+            sel.value = String(it.producto_id);
+            item.querySelector('input[name$="[cantidad]"]').value = it.cantidad;
+            item.querySelector('input[name$="[precio]"]').value = (+it.precio).toFixed(2);
+            item.querySelector('textarea[name$="[detalles]"]').value = it.detalles;
+        });
         calcularTotales();
         const m = <?= json_encode($get_monto) ?>;
         if (m > 0) {

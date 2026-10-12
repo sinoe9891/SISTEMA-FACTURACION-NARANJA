@@ -362,14 +362,14 @@ require_once '../../includes/templates/header.php';
 							<div class="row g-3">
 								<div class="col-md-4"><label class="fe-form-label">Orden de compra exenta</label><input
 										type="text" name="orden_compra_exenta" class="form-control"
-										value="<?= htmlspecialchars($factura['orden_compra_exenta']) ?>"></div>
+										value="<?= htmlspecialchars((string)$factura['orden_compra_exenta']) ?>"></div>
 								<div class="col-md-4"><label class="fe-form-label">Constancia de
 										exoneración</label><input type="text" name="constancia_exoneracion"
 										class="form-control"
-										value="<?= htmlspecialchars($factura['constancia_exoneracion']) ?>"></div>
+										value="<?= htmlspecialchars((string)$factura['constancia_exoneracion']) ?>"></div>
 								<div class="col-md-4"><label class="fe-form-label">Registro SAG</label><input
 										type="text" name="registro_sag" class="form-control"
-										value="<?= htmlspecialchars($factura['registro_sag']) ?>"></div>
+										value="<?= htmlspecialchars((string)$factura['registro_sag']) ?>"></div>
 							</div>
 						</div>
 					</div>

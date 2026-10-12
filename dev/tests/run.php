@@ -113,7 +113,7 @@ function check(string $nombre, bool $cond, string $detalle = ''): void
 
 function sinErroresPhp(string $html): bool
 {
-    return !preg_match('/(Fatal error|Parse error|Warning:|Notice:|Deprecated:|Uncaught )/', $html);
+    return !preg_match('/(Fatal error|Parse error|Warning:|Notice:|Deprecated:|Uncaught |<b>(Warning|Notice|Deprecated)<\/b>:)/', $html);
 }
 
 function errorPhp(string $html): string

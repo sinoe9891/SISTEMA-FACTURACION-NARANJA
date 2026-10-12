@@ -36,6 +36,7 @@ $menuLateral = [
 	'Facturación' => [
 		['generar_factura', 'bi-plus-circle', 'Nueva factura', []],
 		['lista_facturas', 'bi-receipt', 'Historial de facturas', ['editar_factura', 'ver_factura']],
+		['cotizaciones', 'bi-file-earmark-text', 'Cotizaciones', ['cotizacion_editar']],
 	],
 	'Contratos' => [
 		['contratos', 'bi-file-earmark-text', 'Lista de contratos', ['editar_contrato', 'facturas_contrato', 'generar_recibo']],

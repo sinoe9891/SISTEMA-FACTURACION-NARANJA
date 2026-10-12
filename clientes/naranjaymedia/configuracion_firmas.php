@@ -11,6 +11,15 @@ if (!permisoPuede($pdo, 'configuracion_firmas')) {
 $cid = (int)cliente_actual();
 $instalada = firmantesDisponible($pdo);
 $firmantes = $instalada ? firmantesLista($pdo, $cid) : [];
+// Sello de la empresa (para facturas y cotizaciones)
+$sello = null;
+try {
+    $stS = $pdo->prepare("SELECT sello, sello_facturas, sello_cotizaciones FROM clientes_saas WHERE id = ?");
+    $stS->execute([$cid]);
+    $sello = $stS->fetch(PDO::FETCH_ASSOC) ?: null;
+} catch (Throwable $e) {
+    $sello = null;   // sin la migración de cotizaciones
+}
 $ayuda = [
     'elaborado' => 'Quien prepara el pago y el documento.',
     'autorizado' => 'Quien aprueba el pago.',
@@ -55,6 +64,29 @@ require_once '../../includes/templates/config_tabs.php';
             </div>
         <?php endforeach; ?>
     </div>
+    <?php if ($sello !== null): ?>
+    <div class="app-card mt-3" id="selloCard">
+        <div class="app-card-header"><span><i class="bi bi-patch-check me-1"></i> Sello de la empresa</span><span class="small text-muted fw-normal">Se pone junto a la firma en los documentos que elijas.</span></div>
+        <div class="app-card-body row g-3 align-items-center">
+            <div class="col-md-4">
+                <div class="border rounded d-flex align-items-center justify-content-center" style="height:150px;background:repeating-conic-gradient(#f1f5f9 0 25%,#fff 0 50%) 0 0/16px 16px">
+                    <?php if ($sello['sello']): ?><img src="includes/firmante_accion.php?sello=1&v=<?= substr(md5($sello['sello']), 0, 8) ?>" alt="Sello" style="max-height:140px;max-width:95%">
+                    <?php else: ?><span class="small text-muted">Sin sello</span><?php endif; ?>
+                </div>
+            </div>
+            <div class="col-md-8">
+                <label class="btn btn-sm btn-outline-primary mb-2"><i class="bi bi-upload me-1"></i> <?= $sello['sello'] ? 'Cambiar sello' : 'Subir sello' ?>
+                    <input type="file" id="selloArchivo" accept="image/png,image/jpeg,image/webp" hidden></label>
+                <?php if ($sello['sello']): ?><button type="button" class="btn btn-sm btn-link text-danger mb-2" id="selloQuitar">Quitar</button><?php endif; ?>
+                <div class="form-text mb-3">PNG con fondo transparente se ve mejor (también JPG). Se ajusta a 600 px.</div>
+                <div class="form-check form-switch"><input class="form-check-input sello-uso" type="checkbox" role="switch" id="selloFact" name="facturas" <?= (int)$sello['sello_facturas'] ? 'checked' : '' ?> style="cursor:pointer">
+                    <label class="form-check-label" for="selloFact">Ponerlo en las facturas</label></div>
+                <div class="form-check form-switch"><input class="form-check-input sello-uso" type="checkbox" role="switch" id="selloCot" name="cotizaciones" <?= (int)$sello['sello_cotizaciones'] ? 'checked' : '' ?> style="cursor:pointer">
+                    <label class="form-check-label" for="selloCot">Ponerlo en las cotizaciones</label></div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
     <p class="small text-muted mt-3"><i class="bi bi-info-circle me-1"></i> «Elaborado por»: si no tiene nombre, el documento muestra al usuario que registró el pago. Un firmante no necesita ser colaborador.</p>
 <?php endif; ?>
 
@@ -68,6 +100,24 @@ require_once '../../includes/templates/config_tabs.php';
     };
     const listo = d => Swal.fire({ icon: 'success', title: 'Listo', text: d.message, timer: 1400, showConfirmButton: false }).then(() => location.reload());
     const error = e => Swal.fire('No se pudo', e.message, 'error');
+    // Sello
+    document.getElementById('selloArchivo')?.addEventListener('change', e => {
+        if (!e.target.files[0]) return;
+        const fd = new FormData(); fd.append('accion', 'sello_subir'); fd.append('sello', e.target.files[0]);
+        Swal.fire({ title: 'Guardando sello…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        enviar(fd).then(listo).catch(err => { error(err); e.target.value = ''; });
+    });
+    document.getElementById('selloQuitar')?.addEventListener('click', async () => {
+        if (!(await Swal.fire({ title: '¿Quitar el sello?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar' })).isConfirmed) return;
+        const fd = new FormData(); fd.append('accion', 'sello_quitar');
+        enviar(fd).then(listo).catch(error);
+    });
+    document.querySelectorAll('.sello-uso').forEach(sw => sw.addEventListener('change', () => {
+        const fd = new FormData(); fd.append('accion', 'sello_uso');
+        if (document.getElementById('selloFact').checked) fd.append('facturas', '1');
+        if (document.getElementById('selloCot').checked) fd.append('cotizaciones', '1');
+        enviar(fd).then(() => Swal.fire({ icon: 'success', title: 'Guardado', timer: 1000, showConfirmButton: false })).catch(error);
+    }));
     document.querySelectorAll('.f-firmante').forEach(form => {
         const rol = form.dataset.rol;
         form.addEventListener('submit', e => {

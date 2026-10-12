@@ -11,8 +11,8 @@ $instalado = cxcDisponible($pdo);
 
 $st = $pdo->prepare("SELECT * FROM clientes_factura WHERE id = ? AND cliente_id = ?");
 $st->execute([$rid, $cid]);
-$cliente = $st->fetch(PDO::FETCH_ASSOC);
-if (!$cliente) {
+$receptorEc = $st->fetch(PDO::FETCH_ASSOC);
+if (!$receptorEc) {
     header('Location: cuentas_cobrar');
     exit;
 }
@@ -78,12 +78,12 @@ require_once '../../includes/templates/header.php';
 <div class="app-page-header">
     <div>
         <a href="cuentas_cobrar" class="small text-muted text-decoration-none no-print"><i class="bi bi-arrow-left"></i> Cuentas por cobrar</a>
-        <h1 class="app-page-title"><?= htmlspecialchars($cliente['nombre']) ?></h1>
+        <h1 class="app-page-title"><?= htmlspecialchars($receptorEc['nombre']) ?></h1>
         <p class="app-page-sub">
             Estado de cuenta al <?= date('d/m/Y') ?>
-            <?= $cliente['rtn'] ? ' · RTN ' . htmlspecialchars($cliente['rtn']) : '' ?>
-            <?= $cliente['telefono'] ? ' · ' . htmlspecialchars($cliente['telefono']) : '' ?>
-            <?= $cliente['email'] ? ' · ' . htmlspecialchars($cliente['email']) : '' ?>
+            <?= ($receptorEc['rtn'] ?? '') ? ' · RTN ' . htmlspecialchars($receptorEc['rtn']) : '' ?>
+            <?= ($receptorEc['telefono'] ?? '') ? ' · ' . htmlspecialchars($receptorEc['telefono']) : '' ?>
+            <?= ($receptorEc['email'] ?? '') ? ' · ' . htmlspecialchars($receptorEc['email']) : '' ?>
         </p>
     </div>
     <div class="d-flex gap-2 no-print">

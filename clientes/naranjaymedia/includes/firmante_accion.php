@@ -2,6 +2,7 @@
 // clientes/naranjaymedia/includes/firmante_accion.php — Firmantes de los documentos de pago (solo administradores).
 //   GET  ?firma=<rol>                         → imagen de la firma (vista previa)
 //   POST accion=guardar rol, nombre, cargo     · accion=subir rol, firma (PNG/JPG)  · accion=quitar rol
+//   Sello de la empresa: GET ?sello=1 (imagen) · POST accion=sello_subir sello · sello_quitar · sello_uso facturas=0|1 cotizaciones=0|1
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 require_once '../../../includes/firmantes.php';
@@ -12,6 +13,59 @@ try {
     if (!permisoPuede($pdo, 'configuracion_firmas')) throw new Exception("Tu rol no tiene acceso a Firmas.");
     if (!firmantesDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-06_firmantes_concepto.sql.");
     $cid = (int)cliente_actual();
+
+    // ── Sello de la empresa (clientes_saas.sello): imagen a color tal cual (no se recorta como las firmas) ──
+    $esSello = isset($_GET['sello']) || str_starts_with((string)($_POST['accion'] ?? ''), 'sello_');
+    if ($esSello) {
+        if (!$pdo->query("SHOW COLUMNS FROM clientes_saas LIKE 'sello'")->fetchColumn()) throw new Exception("Falta instalar sql/migraciones/2026-10-12_cotizaciones.sql.");
+        $st = $pdo->prepare("SELECT sello FROM clientes_saas WHERE id = ?");
+        $st->execute([$cid]);
+        $selloActual = (string)$st->fetchColumn();
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            $ruta = $selloActual ? realpath(FIRMANTE_DIR . $selloActual) : false;
+            if (!$ruta || !str_starts_with($ruta, realpath(FIRMANTE_DIR) ?: '-')) { http_response_code(404); exit; }
+            header('Content-Type: ' . ((new finfo(FILEINFO_MIME_TYPE))->file($ruta) ?: 'image/png'));
+            header('Cache-Control: private, no-store');
+            readfile($ruta);
+            exit;
+        }
+        header('Content-Type: application/json; charset=utf-8');
+        switch ($_POST['accion']) {
+            case 'sello_subir':
+                $f = $_FILES['sello'] ?? null;
+                if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) throw new Exception("Elige la imagen del sello.");
+                if ($f['size'] > 3 * 1024 * 1024) throw new Exception("La imagen supera 3 MB.");
+                $mime = (new finfo(FILEINFO_MIME_TYPE))->file($f['tmp_name']);
+                $img = match ($mime) { 'image/png' => @imagecreatefrompng($f['tmp_name']), 'image/jpeg' => @imagecreatefromjpeg($f['tmp_name']), 'image/webp' => @imagecreatefromwebp($f['tmp_name']), default => false };
+                if (!$img) throw new Exception("Usa una imagen PNG (mejor con fondo transparente), JPG o WEBP.");
+                // Máximo 600 px de lado, conservando la transparencia
+                $w = imagesx($img); $h = imagesy($img); $k = min(1, 600 / max($w, $h));
+                $out = imagecreatetruecolor(max(1, (int)round($w * $k)), max(1, (int)round($h * $k)));
+                imagealphablending($out, false); imagesavealpha($out, true);
+                imagefill($out, 0, 0, imagecolorallocatealpha($out, 255, 255, 255, 127));
+                imagecopyresampled($out, $img, 0, 0, 0, 0, imagesx($out), imagesy($out), $w, $h);
+                if (!is_dir(FIRMANTE_DIR . $cid) && !mkdir(FIRMANTE_DIR . $cid, 0775, true)) throw new Exception("No se pudo crear la carpeta.");
+                $rel = $cid . '/sello_' . bin2hex(random_bytes(6)) . '.png';
+                imagepng($out, FIRMANTE_DIR . $rel, 6);
+                $pdo->prepare("UPDATE clientes_saas SET sello = ? WHERE id = ?")->execute([$rel, $cid]);
+                if ($selloActual && is_file(FIRMANTE_DIR . $selloActual)) @unlink(FIRMANTE_DIR . $selloActual);
+                echo json_encode(['success' => true, 'message' => 'Sello guardado.'], JSON_UNESCAPED_UNICODE);
+                break;
+            case 'sello_quitar':
+                $pdo->prepare("UPDATE clientes_saas SET sello = NULL WHERE id = ?")->execute([$cid]);
+                if ($selloActual && is_file(FIRMANTE_DIR . $selloActual)) @unlink(FIRMANTE_DIR . $selloActual);
+                echo json_encode(['success' => true, 'message' => 'Sello eliminado.'], JSON_UNESCAPED_UNICODE);
+                break;
+            case 'sello_uso':
+                $pdo->prepare("UPDATE clientes_saas SET sello_facturas = ?, sello_cotizaciones = ? WHERE id = ?")->execute([empty($_POST['facturas']) ? 0 : 1, empty($_POST['cotizaciones']) ? 0 : 1, $cid]);
+                echo json_encode(['success' => true, 'message' => 'Guardado.'], JSON_UNESCAPED_UNICODE);
+                break;
+            default:
+                throw new Exception("Acción no válida.");
+        }
+        exit;
+    }
+
     $rol = (string)($_REQUEST['firma'] ?? $_REQUEST['rol'] ?? '');
     if (!isset(FIRMANTES_ROLES[$rol])) throw new Exception("Firmante no válido.");
     $actual = firmantesLista($pdo, $cid)[$rol];

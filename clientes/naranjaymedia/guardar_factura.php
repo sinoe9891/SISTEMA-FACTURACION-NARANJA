@@ -27,6 +27,13 @@ try {
 			$avisoPlan = ' No se ligó al plan de pagos: ' . $e->getMessage();
 		}
 	}
+	// Viene de una cotización: queda facturada y ligada a esta factura
+	if ((int)($_POST['cotizacion_id'] ?? 0)) {
+		require_once '../../includes/cotizaciones.php';
+		if (cotizacionesDisponible($pdo))
+			$pdo->prepare("UPDATE cotizaciones SET estado = 'facturada', factura_id = ? WHERE id = ? AND cliente_id = ? AND estado <> 'facturada'")
+				->execute([(int)$factura['id'], (int)$_POST['cotizacion_id'], (int)$cliente_id]);
+	}
 	// Gastos que se le cobraban al cliente y se incluyeron en esta factura
 	$cobrados = 0;
 	if (!empty($_POST['gastos_cobrar'])) {

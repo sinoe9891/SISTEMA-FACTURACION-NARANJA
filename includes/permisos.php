@@ -31,6 +31,8 @@ const PERMISOS_ACCIONES = [
     'guardar_factura' => ['generar_factura'], 'ver_factura' => ['lista_facturas', 'generar_factura', 'cuentas_cobrar', 'contratos'],
     'editar_factura' => ['lista_facturas'], 'guardar_factura_editada' => ['lista_facturas'], 'facturas_xlsx' => ['lista_facturas'],
     'procesar_accion_factura' => ['lista_facturas', 'generar_factura', 'cuentas_cobrar', 'contratos', 'cobros_programados'],
+    // Cotizaciones
+    'cotizacion_editar' => ['cotizaciones'], 'cotizacion_accion' => ['cotizaciones'], 'cotizacion_pdf' => ['cotizaciones'],
     // Contratos
     'editar_contrato' => ['contratos'], 'facturas_contrato' => ['contratos'], 'generar_recibo' => ['contratos'], 'recibo_pdf' => ['contratos', 'cuentas_cobrar'],
     'contrato_guardar' => ['crear_contrato'], 'contrato_actualizar' => ['contratos'], 'contrato_actualizar_periodo' => ['contratos'], 'contrato_cancelar' => ['contratos'],
@@ -75,11 +77,11 @@ const PERMISOS_ACCIONES = [
 ];
 
 /** Páginas que se abren en el navegador (al bloquearlas se redirige); lo demás son acciones (responden 403). */
-const PERMISOS_VISTAS = ['ver_factura', 'editar_factura', 'editar_contrato', 'facturas_contrato', 'generar_recibo', 'estado_cuenta', 'gasto_ver', 'banco_cuenta',
+const PERMISOS_VISTAS = ['ver_factura', 'cotizacion_editar', 'cotizacion_pdf', 'editar_factura', 'editar_contrato', 'facturas_contrato', 'generar_recibo', 'estado_cuenta', 'gasto_ver', 'banco_cuenta',
     'colaborador_ver', 'colaborador_reporte', 'crear_cliente', 'editar_cliente', 'inventario_kardex', 'inventario_reportes', 'crear_cai', 'editar_cai', 'nuevo_cobro'];
 
 /** Páginas del menú lateral (cada una es su propia opción). */
-const PERMISOS_PAGINAS = ['generar_factura', 'lista_facturas', 'contratos', 'crear_contrato', 'cuentas_cobrar', 'cobros_programados', 'cuentas_pagar', 'gastos',
+const PERMISOS_PAGINAS = ['generar_factura', 'lista_facturas', 'cotizaciones', 'contratos', 'crear_contrato', 'cuentas_cobrar', 'cobros_programados', 'cuentas_pagar', 'gastos',
     'licencias', 'bouchers', 'proveedores', 'categorias_gastos', 'bancos', 'cheques', 'tarjetas', 'activos', 'socios', 'financiero', 'estados_financieros', 'balance_general',
     'proyeccion', 'colaboradores', 'pagos_nomina', 'clientes', 'productos', 'productos_clientes', 'pos', 'pos_turnos', 'inventario', 'inventario_traslados', 'usuarios'];
 
