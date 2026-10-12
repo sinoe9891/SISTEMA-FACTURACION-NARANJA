@@ -800,15 +800,24 @@ try {
 	error_log('dashboard cobrar_clientes: ' . $e->getMessage());
 }
 try {
-	$stPx = $pdo->prepare("SELECT CONVERT(l.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS descripcion, lc.fecha, lc.costo AS monto, " . licenciaComisionSql('lc.costo') . " AS comision_pct, CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS cliente, l.receptor_id AS cobrar_receptor_id, CONVERT(CONCAT('año ', lc.anio_n, ' de ', lc.anios) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS detalle
+	// Cada fila trae sus días de aviso (configurables en la licencia o en el gasto; 5 si no se puso)
+	$av = gastosAvisosDisponible($pdo);
+	$avLic = $av ? 'COALESCE(l.aviso_dias, ' . AVISO_DIAS_DEFECTO . ')' : (string)AVISO_DIAS_DEFECTO;
+	$avGas = $av ? 'COALESCE(g.cobrar_aviso_dias, l.aviso_dias, ' . AVISO_DIAS_DEFECTO . ')' : (string)AVISO_DIAS_DEFECTO;
+	$stPx = $pdo->prepare("SELECT CONVERT(l.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS descripcion, lc.fecha, lc.costo AS monto, " . licenciaComisionSql('lc.costo') . " AS comision_pct, CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS cliente, l.receptor_id AS cobrar_receptor_id, CONVERT(CONCAT('año ', lc.anio_n, ' de ', lc.anios) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS detalle, $avLic AS aviso_dias
 	                       FROM licencias_cobros lc JOIN licencias l ON l.id = lc.licencia_id JOIN clientes_factura cf ON cf.id = l.receptor_id
-	                       WHERE lc.cliente_id = ? AND lc.factura_id IS NULL AND lc.fecha > LAST_DAY(CURDATE()) AND lc.fecha <= CURDATE() + INTERVAL 60 DAY
+	                       WHERE lc.cliente_id = ? AND lc.factura_id IS NULL AND lc.fecha > LAST_DAY(CURDATE()) AND lc.fecha <= CURDATE() + INTERVAL GREATEST(60, $avLic) DAY
 	                       UNION ALL
-	                       SELECT CONVERT(g.descripcion USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.fecha, g.monto, " . licenciaComisionSql('g.monto') . ", CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.cobrar_receptor_id, CONVERT('renovación' USING utf8mb4) COLLATE utf8mb4_unicode_ci
+	                       SELECT CONVERT(g.descripcion USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.fecha, g.monto, " . licenciaComisionSql('g.monto') . ", CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.cobrar_receptor_id, CONVERT('renovación' USING utf8mb4) COLLATE utf8mb4_unicode_ci, $avGas
 	                       FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id LEFT JOIN licencias l ON l.id = g.licencia_id
-	                       WHERE g.cliente_id = ? AND g.cobrado_factura_id IS NULL AND g.estado = 'pendiente' AND g.fecha > LAST_DAY(CURDATE()) AND g.fecha <= CURDATE() + INTERVAL 60 DAY
+	                       WHERE g.cliente_id = ? AND g.cobrado_factura_id IS NULL AND g.estado = 'pendiente' AND g.fecha > LAST_DAY(CURDATE()) AND g.fecha <= CURDATE() + INTERVAL GREATEST(60, $avGas) DAY"
+	                       . ($av ? " AND (g.cobrar_desde IS NULL OR g.cobrar_desde <= g.fecha)
+	                       UNION ALL
+	                       SELECT CONVERT(g.descripcion USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.cobrar_desde, g.monto, " . licenciaComisionSql('g.monto') . ", CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.cobrar_receptor_id, CONVERT('cobro pospuesto' USING utf8mb4) COLLATE utf8mb4_unicode_ci, $avGas
+	                       FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id LEFT JOIN licencias l ON l.id = g.licencia_id
+	                       WHERE g.cliente_id = ? AND g.cobrado_factura_id IS NULL AND g.estado <> 'anulado' AND g.cobrar_desde > CURDATE()" : '') . "
 	                       ORDER BY fecha");
-	$stPx->execute([(int)$cliente_id, (int)$cliente_id]);
+	$stPx->execute($av ? [(int)$cliente_id, (int)$cliente_id, (int)$cliente_id] : [(int)$cliente_id, (int)$cliente_id]);
 	$cobrar_clientes_proximos = $stPx->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
 	error_log('dashboard cobrar_clientes_proximos: ' . $e->getMessage());
@@ -823,7 +832,7 @@ try {
 		foreach (licenciasLista($pdo, (int)$cliente_id, true) as $l) {
 			if ($l['receptor_id']) continue;
 			$dias = (int)floor((strtotime($l['proxima_renovacion']) - strtotime(date('Y-m-d'))) / 86400);
-			if ($dias > 60) continue;
+			if ($dias > max(60, (int)($l['aviso_dias'] ?? 0))) continue;
 			$licencias_por_renovar[] = $l + ['dias' => $dias, 'costo_l' => licenciaCostoHnl($pdo, (int)$cliente_id, $l), 'icono' => licenciaIcono($l)];
 		}
 		usort($licencias_por_renovar, fn($a, $b) => $a['dias'] <=> $b['dias']);

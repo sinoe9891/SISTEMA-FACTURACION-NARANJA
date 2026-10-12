@@ -1014,7 +1014,7 @@ $total  = count($gastos);
                                     <?php if (!empty($g['cobrado_factura_id'])): ?>
                                         <a href="ver_factura?id=<?= (int)$g['cobrado_factura_id'] ?>" target="_blank" class="badge border text-decoration-none" style="font-size:9px;background:#ecfdf5;color:#047857" title="Ya se le cobró al cliente en esta factura">✓ Cobrado en factura <?= htmlspecialchars(substr((string)($g['cobrado_correlativo'] ?? ''), -8)) ?></a>
                                     <?php else: ?>
-                                        <span class="badge border" style="font-size:9px;background:#fff7ed;color:#c2410c" title="Al hacerle su próxima factura sale el aviso hasta que lo incluyas">↻ Se cobra a <?= htmlspecialchars($gcClientes[$g['cobrar_receptor_id']] ?? 'cliente') ?></span>
+                                        <span class="badge border" style="font-size:9px;background:#fff7ed;color:#c2410c" title="Al hacerle su próxima factura sale el aviso hasta que lo incluyas">↻ Se cobra a <?= htmlspecialchars($gcClientes[$g['cobrar_receptor_id']] ?? 'cliente') ?><?= !empty($g['cobrar_desde']) && $g['cobrar_desde'] > date('Y-m-d') ? ' desde el ' . date('d/m/Y', strtotime($g['cobrar_desde'])) : '' ?></span>
                                     <?php endif; ?>
                                 <?php endif; ?>
                             </td>
@@ -1191,6 +1191,14 @@ $total  = count($gastos);
                             </select>
                             <small class="text-muted" style="font-size:.72rem">Ej.: el hosting de un cliente. Al hacerle su próxima factura sale el aviso hasta que lo incluyas.</small>
                         </div>
+                        <?php if (gastosAvisosDisponible($pdo)): ?>
+                        <div class="col-md-3 g-cobro-aviso d-none"><label class="mf-label">Cobrarlo a partir de</label>
+                            <input type="date" name="cobrar_desde" id="g_cobrar_desde" class="mf-input">
+                            <small class="text-muted" style="font-size:.72rem">Vacío: se cobra en su próxima factura.</small></div>
+                        <div class="col-md-3 g-cobro-aviso d-none"><label class="mf-label">Avisar días antes</label>
+                            <input type="number" name="cobrar_aviso_dias" id="g_cobrar_aviso" class="mf-input" min="0" max="365" step="1" placeholder="<?= AVISO_DIAS_DEFECTO ?>">
+                            <small class="text-muted" style="font-size:.72rem">En el Dashboard. Vacío: <?= AVISO_DIAS_DEFECTO ?> días.</small></div>
+                        <?php endif; ?>
                         <?php endif; ?>
 
                         <!-- Método de pago + Tarjeta -->
@@ -1648,6 +1656,13 @@ $total  = count($gastos);
         if (!prov.value && nombre) proveedorSelectValor(prov, nombre);
     });
 
+    // «Cobrarlo a partir de» y «Avisar días antes» solo cuando se le cobra a un cliente
+    function gsCobroAviso() {
+        const sel = document.getElementById('g_cobrar');
+        document.querySelectorAll('.g-cobro-aviso').forEach(x => x.classList.toggle('d-none', !(sel && sel.value)));
+    }
+    document.getElementById('g_cobrar')?.addEventListener('change', gsCobroAviso);
+
     function limpiarModalGasto() {
         document.getElementById('formGasto').reset();
         document.getElementById('g_id').value = '';
@@ -1655,6 +1670,7 @@ $total  = count($gastos);
         document.getElementById('g_nat').disabled = false;
         document.getElementById('g_nat_info').classList.add('d-none');
         if (document.getElementById('g_cobrar')) document.getElementById('g_cobrar').value = '';   // el buscador se actualiza con el valor
+        gsCobroAviso();
         gsLimpiarComp();
         // Reset comprobante actual section
         document.getElementById('gsCompActual').style.display = 'none';
@@ -1696,6 +1712,11 @@ $total  = count($gastos);
             proveedorSelectValor(document.getElementById('g_prov'), g.proveedor || '');
             const gCobrar = document.getElementById('g_cobrar');
             if (gCobrar) gCobrar.value = g.cobrar_receptor_id || '';
+            if (document.getElementById('g_cobrar_desde')) {
+                document.getElementById('g_cobrar_desde').value = g.cobrar_desde || '';
+                document.getElementById('g_cobrar_aviso').value = g.cobrar_aviso_dias ?? '';
+            }
+            gsCobroAviso();
             document.getElementById('g_notas').value = g.notas || '';
             document.getElementById('g_colab').value =
                 ''; // Colaborador no guardado en gastos directamente (usa proveedor)

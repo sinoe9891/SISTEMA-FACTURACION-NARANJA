@@ -20,9 +20,23 @@ function gastosCobrarDisponible(PDO $pdo): bool
  * Gastos por cobrar a un cliente (o a todos si $receptorId = 0): ya pagados o que vencen este mes, sin factura.
  * Se cobran en la factura del mes: la renovación sale desde el día 1 de su mes; las de meses siguientes, no.
  */
+/** Días de aviso por defecto (de los cobros a clientes y de las renovaciones), si no se configuró otro. */
+const AVISO_DIAS_DEFECTO = 5;
+
+/** ¿Existen los avisos configurables (cobrar desde / días de aviso)? */
+function gastosAvisosDisponible(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) {
+        try { $ok = (bool)$pdo->query("SHOW COLUMNS FROM gastos LIKE 'cobrar_desde'")->fetchColumn(); } catch (Throwable $e) { $ok = false; }
+    }
+    return $ok;
+}
+
 function gastosPorCobrar(PDO $pdo, int $cid, int $receptorId = 0): array
 {
     if (!gastosCobrarDisponible($pdo)) return [];
+    $desde = gastosAvisosDisponible($pdo);
     // Si viene de una licencia, también su comisión (precio al cliente = costo + %)
     $lic = false;
     try { $lic = (bool)$pdo->query("SHOW COLUMNS FROM gastos LIKE 'licencia_id'")->fetchColumn(); } catch (Throwable $e) { $lic = false; }
@@ -32,6 +46,7 @@ function gastosPorCobrar(PDO $pdo, int $cid, int $receptorId = 0): array
             FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id" . ($lic ? " LEFT JOIN licencias l ON l.id = g.licencia_id" : '') . "
             WHERE g.cliente_id = ? AND g.cobrar_receptor_id IS NOT NULL AND g.cobrado_factura_id IS NULL
               AND g.estado <> 'anulado' AND (g.estado = 'pagado' OR g.fecha <= LAST_DAY(CURDATE()))"
+         . ($desde ? " AND (g.cobrar_desde IS NULL OR g.cobrar_desde <= CURDATE())" : '')   // cobro pospuesto: todavía no toca"
          . ($anual ? " AND NOT EXISTS (SELECT 1 FROM licencias_cobros lc WHERE lc.gasto_id = g.id)" : '')   // los que se cobran por año van abajo
          . ($receptorId ? " AND g.cobrar_receptor_id = ?" : '') . " ORDER BY g.fecha, g.id";
     $st = $pdo->prepare($sql);

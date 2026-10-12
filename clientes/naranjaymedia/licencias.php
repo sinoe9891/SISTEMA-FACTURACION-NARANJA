@@ -176,6 +176,8 @@ require_once '../../includes/templates/header.php';
                         <select class="form-select" name="receptor_id" id="licCliente"><option value="">No, es de la empresa</option><?php foreach ($clientes as $k => $v): ?><option value="<?= (int)$k ?>"><?= htmlspecialchars($v) ?></option><?php endforeach; ?></select></div>
                     <div class="col-md-4"><label class="form-label small">Comisión (%)</label><input type="number" class="form-control" name="comision_pct" step="0.01" min="0" max="500"></div>
                     <div class="col-md-6"><label class="form-label small">Precio fijo al cliente por año <span class="text-muted">(opcional, L)</span></label><input type="number" class="form-control" name="precio_cliente" step="0.01" min="0" placeholder="Si se llena, se cobra esto en vez de costo + %"></div>
+                    <div class="col-md-6"><label class="form-label small">Avisar días antes</label><input type="number" class="form-control" name="aviso_dias" step="1" min="0" max="365" placeholder="5">
+                        <div class="form-text">De la renovación y del cobro al cliente, en el Dashboard. Vacío: 5 días.</div></div>
                     <div class="col-12"><div class="small text-muted" id="licPrecio"></div></div>
                     <div class="col-12"><label class="form-label small">Notas</label><textarea class="form-control" name="notas" rows="2" placeholder="Cuenta, usuario, dominio, para qué se usa…"></textarea></div>
                 </div>
@@ -208,7 +210,7 @@ require_once '../../includes/templates/header.php';
         document.getElementById('licId').value = l ? l.id : 0;
         document.getElementById('licTitulo').innerHTML = '<i class="bi bi-key me-1"></i> ' + (l ? 'Editar licencia' : 'Nueva licencia');
         proveedorSelectValor(document.getElementById('licProv'), d.proveedor || '');
-        ['nombre', 'frecuencia', 'moneda', 'costo', 'proxima_renovacion', 'metodo_pago', 'categoria_id', 'receptor_id', 'comision_pct', 'precio_cliente', 'notas'].forEach(k => { if (f[k]) f[k].value = d[k] ?? ''; });
+        ['nombre', 'frecuencia', 'moneda', 'costo', 'proxima_renovacion', 'metodo_pago', 'categoria_id', 'receptor_id', 'comision_pct', 'precio_cliente', 'aviso_dias', 'notas'].forEach(k => { if (f[k]) f[k].value = d[k] ?? ''; });
         precio(); modal.show();
     };
     document.getElementById('btnNueva').addEventListener('click', () => abrir(null));

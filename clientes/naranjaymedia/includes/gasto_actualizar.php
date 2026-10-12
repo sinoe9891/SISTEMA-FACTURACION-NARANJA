@@ -210,6 +210,14 @@ try {
                 $pdo->prepare("UPDATE gastos SET cobrar_receptor_id = ?, cobrado_factura_id = NULL WHERE id = ? AND cliente_id = ?")->execute([$cobrarA ?: null, $gasto_id, $cid]);
             $gastoActual['cobrar_receptor_id'] = $cobrarA ?: null;
         }
+        // Avisos del cobro al cliente: desde cuándo se cobra y cuántos días antes avisa
+        require_once __DIR__ . '/../../../includes/gastos_cobrar.php';
+        if (gastosAvisosDisponible($pdo) && array_key_exists('cobrar_desde', $_POST)) {
+            $cDesde = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$_POST['cobrar_desde']) ? $_POST['cobrar_desde'] : null;
+            $cAviso = ($_POST['cobrar_aviso_dias'] ?? '') === '' ? null : max(0, min(365, (int)$_POST['cobrar_aviso_dias']));
+            $pdo->prepare("UPDATE gastos SET cobrar_desde = ?, cobrar_aviso_dias = ? WHERE id IN (?) AND cliente_id = ? AND cobrar_receptor_id IS NOT NULL")->execute([$cDesde, $cAviso, $gasto_id, $cid]);
+        }
+
         // Si pasó de pendiente a pagado y es recurrente, programar el período siguiente
         // (con los datos ya editados: monto, día de pago, vencimiento, etc.)
         if ($estado === 'pagado') {

@@ -2845,3 +2845,27 @@ suite('Licencias: precio fijo al cliente por año (p. ej. VPS a L 10,000 aunque 
 
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';
+
+suite('Avisos configurables: cobrar a partir de una fecha y días de aviso', function () {
+    require_once __DIR__ . '/../../includes/gastos_cobrar.php';
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $rec = (int)$pdo->query("SELECT id FROM clientes_factura WHERE cliente_id = 2 ORDER BY id LIMIT 1")->fetchColumn();
+    $cat = $pdo->query("SELECT id FROM categorias_gastos WHERE cliente_id=2 LIMIT 1")->fetchColumn();
+    $desde = date('Y-m-d', strtotime('+20 days'));
+    $r = $c->post('includes/gasto_guardar.php', ['descripcion' => 'QA cobro pospuesto', 'monto' => 300, 'fecha' => date('Y-m-d'), 'tipo' => 'variable', 'frecuencia' => 'unico',
+        'estado' => 'pagado', 'metodo_pago' => 'tarjeta', 'categoria_id' => $cat, 'cobrar_receptor_id' => $rec, 'cobrar_desde' => $desde, 'cobrar_aviso_dias' => 30]);
+    $g = $pdo->query("SELECT id, cobrar_desde, cobrar_aviso_dias FROM gastos WHERE cliente_id = 2 AND descripcion = 'QA cobro pospuesto' ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    check('se guardan «cobrarlo a partir de» y los días de aviso', $g && $g['cobrar_desde'] === $desde && (int)$g['cobrar_aviso_dias'] === 30, $r['body']);
+    $gid = (int)($g['id'] ?? 0);
+    $en = fn() => in_array($gid, array_map('intval', array_column(gastosPorCobrar($pdo, 2, $rec), 'id')), true);
+    check('antes de esa fecha no sale para cobrar en la factura', !$en());
+    $d = $c->get('dashboard');
+    check('en el Dashboard sale como próximo cobro (visible: está dentro de sus 30 días de aviso)', sinErroresPhp($d['body']) && preg_match('#<tr class="text-muted ">(?:(?!</tr>).)*QA cobro pospuesto#s', $d['body']) === 1, errorPhp($d['body']));
+    $c->post('includes/gasto_actualizar.php', ['gasto_id' => $gid, 'descripcion' => 'QA cobro pospuesto', 'monto' => 300, 'fecha' => date('Y-m-d'), 'tipo' => 'variable', 'frecuencia' => 'unico',
+        'estado' => 'pagado', 'metodo_pago' => 'tarjeta', 'categoria_id' => $cat, 'cobrar_receptor_id' => $rec, 'cobrar_desde' => '', 'cobrar_aviso_dias' => '']);
+    check('al quitar la fecha ya toca cobrarlo', $en() && $pdo->query("SELECT cobrar_desde IS NULL AND cobrar_aviso_dias IS NULL FROM gastos WHERE id = $gid")->fetchColumn() == 1);
+    $pdo->exec("DELETE FROM gastos WHERE id = $gid");
+    $l = $c->get('licencias');
+    check('la licencia tiene el campo «Avisar días antes»', str_contains($l['body'], 'name="aviso_dias"'));
+});

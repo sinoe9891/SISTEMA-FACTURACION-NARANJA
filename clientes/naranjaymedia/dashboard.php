@@ -552,11 +552,11 @@ unset($__v);
                                 <?php $ccMas = 0; foreach ($cobrar_clientes_proximos as $r):
                                     // Como las demás alertas: se ve lo de los próximos 5 días; lo demás con «Cargar más»
                                     $ccDias = (int)floor((strtotime($r['fecha']) - strtotime(date('Y-m-d'))) / 86400);
-                                    $ccOculta = $ccDias > 5; if ($ccOculta) $ccMas++; ?>
+                                    $ccAviso = (int)($r['aviso_dias'] ?? 5); $ccOculta = $ccDias > $ccAviso; if ($ccOculta) $ccMas++; ?>
                                     <tr class="text-muted <?= $ccOculta ? 'cc-mas d-none' : '' ?>"><td><?= htmlspecialchars($r['cliente']) ?></td>
                                         <td class="small"><?= htmlspecialchars($r['descripcion']) ?> <span class="small">· <?= htmlspecialchars($r['detalle']) ?></span></td>
                                         <td class="text-end">L <?= number_format($precioCc($r), 2) ?></td>
-                                        <td class="text-center small"><?= date('d/m/Y', strtotime($r['fecha'])) ?><div><span class="badge <?= $ccDias <= 5 ? 'bg-warning text-dark' : 'bg-light text-secondary border' ?>">en <?= $ccDias ?> día<?= $ccDias === 1 ? '' : 's' ?></span></div></td>
+                                        <td class="text-center small"><?= date('d/m/Y', strtotime($r['fecha'])) ?><div><span class="badge <?= $ccDias <= $ccAviso ? 'bg-warning text-dark' : 'bg-light text-secondary border' ?>" title="Avisa <?= $ccAviso ?> día<?= $ccAviso === 1 ? '' : 's' ?> antes">en <?= $ccDias ?> día<?= $ccDias === 1 ? '' : 's' ?></span></div></td>
                                         <td></td></tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -589,12 +589,12 @@ unset($__v);
                         <table class="table table-sm align-middle mb-0" style="font-size:.855rem">
                             <thead class="table-light"><tr><th>Licencia</th><th class="text-end">Costo</th><th class="text-center">Renueva</th></tr></thead>
                             <tbody>
-                                <?php $lrMas = 0; foreach ($licencias_por_renovar as $l): $lrOculta = $l['dias'] > 5; if ($lrOculta) $lrMas++; ?>
+                                <?php $lrMas = 0; foreach ($licencias_por_renovar as $l): $lrAviso = (int)($l['aviso_dias'] ?? 0) ?: 5; $lrOculta = $l['dias'] > $lrAviso; if ($lrOculta) $lrMas++; ?>
                                     <tr class="<?= $lrOculta ? 'lr-mas d-none' : '' ?>">
                                         <td><span style="display:inline-flex;width:24px;height:24px;border-radius:6px;align-items:center;justify-content:center;background:<?= $l['icono'][1] ?>1a;color:<?= $l['icono'][1] ?>"><i class="bi <?= $l['icono'][0] ?>"></i></span>
                                             <span class="fw-semibold ms-1"><?= htmlspecialchars($l['nombre']) ?></span> <span class="small text-muted"><?= htmlspecialchars((string)$l['proveedor']) ?></span></td>
                                         <td class="text-end"><?= $l['moneda'] === 'USD' ? 'USD ' . number_format((float)$l['costo'], 2) . '<div class="small text-muted">L ' . number_format($l['costo_l'], 2) . '</div>' : 'L ' . number_format((float)$l['costo'], 2) ?></td>
-                                        <td class="text-center small"><?= date('d/m/Y', strtotime($l['proxima_renovacion'])) ?><div><span class="badge <?= $l['dias'] < 0 ? 'bg-danger' : ($l['dias'] <= 5 ? 'bg-warning text-dark' : 'bg-light text-secondary border') ?>"><?= $l['dias'] < 0 ? 'Vencida hace ' . -$l['dias'] . 'd' : ($l['dias'] === 0 ? '¡Hoy!' : 'en ' . $l['dias'] . 'd') ?></span></div></td>
+                                        <td class="text-center small"><?= date('d/m/Y', strtotime($l['proxima_renovacion'])) ?><div><span class="badge <?= $l['dias'] < 0 ? 'bg-danger' : ($l['dias'] <= $lrAviso ? 'bg-warning text-dark' : 'bg-light text-secondary border') ?>"><?= $l['dias'] < 0 ? 'Vencida hace ' . -$l['dias'] . 'd' : ($l['dias'] === 0 ? '¡Hoy!' : 'en ' . $l['dias'] . 'd') ?></span></div></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>

@@ -74,6 +74,10 @@ try {
     proveedorVincular($pdo, $cid, 'licencias', [$id]);
     if ($pdo->query("SHOW COLUMNS FROM licencias LIKE 'precio_cliente'")->fetchColumn())
         $pdo->prepare("UPDATE licencias SET precio_cliente = ? WHERE id = ? AND cliente_id = ?")->execute([$receptor ? $fijo : null, $id, $cid]);
+    // Cuántos días antes avisa la renovación (y el cobro al cliente); vacío = 5
+    if ($pdo->query("SHOW COLUMNS FROM licencias LIKE 'aviso_dias'")->fetchColumn())
+        $pdo->prepare("UPDATE licencias SET aviso_dias = ? WHERE id = ? AND cliente_id = ?")
+            ->execute([($_POST['aviso_dias'] ?? '') === '' ? null : max(0, min(365, (int)$_POST['aviso_dias'])), $id, $cid]);
     licenciasSincronizar($pdo, $cid, (int)USUARIO_ID);
     $pdo->commit();
     echo json_encode(['success' => true, 'id' => $id, 'message' => 'Licencia guardada. Su próxima renovación está en Cuentas por pagar' . ($receptor ? ' y saldrá como aviso en la factura del cliente.' : '.')], JSON_UNESCAPED_UNICODE);
