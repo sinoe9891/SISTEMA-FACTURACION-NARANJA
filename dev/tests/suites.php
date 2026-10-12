@@ -2764,5 +2764,35 @@ suite('Gastos por cobrar y licencias: un contrato rotativo cuenta como un solo c
     $pdo->exec("DELETE FROM gastos WHERE id = $gid");
 });
 
+suite('Licencias: tabla con número, ícono, filtros, orden y Excel; a clientes se les cobra cada año', function () {
+    require_once __DIR__ . '/../../includes/licencias.php';
+    require_once __DIR__ . '/../../includes/gastos_cobrar.php';
+    $pdo = db();
+    $rec = (int)$pdo->query("SELECT id FROM clientes_factura WHERE cliente_id = 2 ORDER BY id LIMIT 1")->fetchColumn();
+    $pdo->prepare("INSERT INTO licencias (cliente_id, nombre, proveedor, frecuencia, moneda, costo, proxima_renovacion, receptor_id, comision_pct, metodo_pago, notas, activa) VALUES (2, 'QA Dominio prueba.com', 'GoDaddy', 'bienal', 'HNL', 1000, ?, ?, 35, 'tarjeta', 'QA', 1)")
+        ->execute([date('Y-m-d', strtotime('+2 years -5 days')), $rec]);
+    $lid = (int)$pdo->lastInsertId();
+    // Se pagó hoy por 2 años
+    $pdo->prepare("INSERT INTO gastos (cliente_id, descripcion, monto, fecha, frecuencia, tipo, naturaleza, metodo_pago, estado, usuario_id, cobrar_receptor_id, licencia_id) VALUES (2, 'QA dominio 2 años', 1000, CURDATE(), 'unico', 'fijo', 'gasto', 'tarjeta', 'pagado', 1, ?, ?)")->execute([$rec, $lid]);
+    $gid = (int)$pdo->lastInsertId();
+    licenciasSincronizar($pdo, 2, 1);
+    $cobros = $pdo->query("SELECT * FROM licencias_cobros WHERE gasto_id = $gid ORDER BY anio_n")->fetchAll(PDO::FETCH_ASSOC);
+    check('el pago de 2 años se reparte en 2 cobros anuales', count($cobros) === 2 && (float)$cobros[0]['costo'] === 500.0 && (float)$cobros[1]['costo'] === 500.0 && $cobros[1]['fecha'] === date('Y-m-d', strtotime('+1 year')));
+    $pc = array_values(array_filter(gastosPorCobrar($pdo, 2, $rec), fn($g) => in_array((int)$g['id'], [$gid, -(int)$cobros[0]['id'], -(int)$cobros[1]['id']], true)));
+    check('en la factura sale solo el año 1 (no el gasto entero ni el año 2)', count($pc) === 1 && (int)$pc[0]['id'] === -(int)$cobros[0]['id'] && (float)$pc[0]['monto'] === 500.0 && str_contains($pc[0]['descripcion'], 'año 1 de 2'));
+    $fid = (int)$pdo->query("SELECT id FROM facturas WHERE cliente_id = 2 ORDER BY id DESC LIMIT 1")->fetchColumn();
+    check('al facturarlo queda cobrado el año 1', gastosMarcarCobrados($pdo, 2, [-(int)$cobros[0]['id']], $fid, $rec) === 1 && (int)$pdo->query("SELECT factura_id FROM licencias_cobros WHERE id = {$cobros[0]['id']}")->fetchColumn() === $fid);
+    check('el gasto no se marca cobrado hasta cobrar los 2 años', $pdo->query("SELECT cobrado_factura_id FROM gastos WHERE id = $gid")->fetchColumn() === null);
+    $r = login('qa.admin@local.test')->get('licencias');
+    check('Licencias: número, ícono, buscador, filtros, orden y Excel', sinErroresPhp($r['body']) && str_contains($r['body'], 'id="licBuscar"') && str_contains($r['body'], 'id="licFRenov"') && str_contains($r['body'], 'class="lic-ico"') && str_contains($r['body'], '#' . $lid) && str_contains($r['body'], 'lic-orden') && str_contains($r['body'], 'Próximo cobro anual'), errorPhp($r['body']));
+    $x = login('qa.admin@local.test')->get('licencias_exportar.php', ['ids' => $lid]);
+    check('el Excel de licencias se descarga', $x['code'] === 200 && str_starts_with($x['body'], 'PK'));
+    $f = login('qa.facturador@local.test')->get('licencias_exportar.php', ['ids' => $lid]);
+    check('sin permiso de Licencias no se exporta', $f['code'] !== 200 || !str_starts_with($f['body'], 'PK'));
+    $pdo->exec("DELETE FROM licencias_cobros WHERE licencia_id = $lid");
+    $pdo->exec("DELETE FROM gastos WHERE licencia_id = $lid");
+    $pdo->exec("DELETE FROM licencias WHERE id = $lid");
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

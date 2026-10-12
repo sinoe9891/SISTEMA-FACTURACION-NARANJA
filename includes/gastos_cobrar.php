@@ -5,6 +5,8 @@
  * Mientras no tenga factura, Nueva factura lo avisa al elegir ese cliente.
  */
 
+require_once __DIR__ . '/licencias.php';
+
 function gastosCobrarDisponible(PDO $pdo): bool
 {
     static $ok = null;
@@ -24,15 +26,28 @@ function gastosPorCobrar(PDO $pdo, int $cid, int $receptorId = 0): array
     // Si viene de una licencia, también su comisión (precio al cliente = costo + %)
     $lic = false;
     try { $lic = (bool)$pdo->query("SHOW COLUMNS FROM gastos LIKE 'licencia_id'")->fetchColumn(); } catch (Throwable $e) { $lic = false; }
+    $anual = $lic && licenciasCobrosDisponible($pdo);
     $sql = "SELECT g.id, g.fecha, g.descripcion, g.monto, g.estado, g.proveedor, g.cobrar_receptor_id, cf.nombre AS cliente"
          . ($lic ? ", l.comision_pct" : ", NULL AS comision_pct") . "
             FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id" . ($lic ? " LEFT JOIN licencias l ON l.id = g.licencia_id" : '') . "
             WHERE g.cliente_id = ? AND g.cobrar_receptor_id IS NOT NULL AND g.cobrado_factura_id IS NULL
               AND g.estado <> 'anulado' AND (g.estado = 'pagado' OR g.fecha <= LAST_DAY(CURDATE()))"
+         . ($anual ? " AND NOT EXISTS (SELECT 1 FROM licencias_cobros lc WHERE lc.gasto_id = g.id)" : '')   // los que se cobran por año van abajo
          . ($receptorId ? " AND g.cobrar_receptor_id = ?" : '') . " ORDER BY g.fecha, g.id";
     $st = $pdo->prepare($sql);
     $st->execute($receptorId ? [$cid, $receptorId] : [$cid]);
-    return $st->fetchAll(PDO::FETCH_ASSOC);
+    $out = $st->fetchAll(PDO::FETCH_ASSOC);
+    if ($anual) {
+        // Cobros anuales de licencias pagadas por varios años: el del año que ya empezó (id negativo = cobro anual)
+        $st = $pdo->prepare("SELECT -lc.id AS id, lc.fecha, CONCAT('Licencia: ', l.nombre, ' · año ', lc.anio_n, ' de ', lc.anios, ' (', DATE_FORMAT(lc.desde, '%d/%m/%Y'), ' al ', DATE_FORMAT(lc.hasta, '%d/%m/%Y'), ')') AS descripcion,
+                                    lc.costo AS monto, 'pagado' AS estado, l.proveedor, l.receptor_id AS cobrar_receptor_id, cf.nombre AS cliente, l.comision_pct
+                             FROM licencias_cobros lc JOIN licencias l ON l.id = lc.licencia_id JOIN clientes_factura cf ON cf.id = l.receptor_id
+                             WHERE lc.cliente_id = ? AND lc.factura_id IS NULL AND lc.fecha <= LAST_DAY(CURDATE())" . ($receptorId ? " AND l.receptor_id = ?" : '') . " ORDER BY lc.fecha, lc.id");
+        $st->execute($receptorId ? [$cid, $receptorId] : [$cid]);
+        $out = array_merge($out, $st->fetchAll(PDO::FETCH_ASSOC));
+        usort($out, fn($a, $b) => strcmp($a['fecha'], $b['fecha']));
+    }
+    return $out;
 }
 
 /**
@@ -71,12 +86,27 @@ function gastosGrupoDe(PDO $pdo, int $cid, int $receptorId): array
 /** Marca gastos como cobrados en una factura (del mismo cliente de la factura —o de su grupo rotativo— y aún sin factura). */
 function gastosMarcarCobrados(PDO $pdo, int $cid, array $ids, int $facturaId, int $receptorId): int
 {
-    $ids = array_values(array_filter(array_map('intval', $ids)));
-    if (!$ids || !gastosCobrarDisponible($pdo)) return 0;
+    $todos = array_values(array_filter(array_map('intval', $ids)));
+    if (!$todos || !gastosCobrarDisponible($pdo)) return 0;
     $grupo = gastosGrupoDe($pdo, $cid, $receptorId);
-    $in = implode(',', array_fill(0, count($ids), '?'));
     $inG = implode(',', array_fill(0, count($grupo), '?'));
-    $st = $pdo->prepare("UPDATE gastos SET cobrado_factura_id = ? WHERE cliente_id = ? AND cobrar_receptor_id IN ($inG) AND cobrado_factura_id IS NULL AND id IN ($in)");
-    $st->execute(array_merge([$facturaId, $cid], $grupo, $ids));
-    return $st->rowCount();
+    $n = 0;
+    // Gastos (id positivo)
+    if ($ids = array_values(array_filter($todos, fn($i) => $i > 0))) {
+        $st = $pdo->prepare("UPDATE gastos SET cobrado_factura_id = ? WHERE cliente_id = ? AND cobrar_receptor_id IN ($inG) AND cobrado_factura_id IS NULL AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")");
+        $st->execute(array_merge([$facturaId, $cid], $grupo, $ids));
+        $n += $st->rowCount();
+    }
+    // Cobros anuales de licencias (id negativo)
+    if (($anuales = array_map('abs', array_values(array_filter($todos, fn($i) => $i < 0)))) && licenciasCobrosDisponible($pdo)) {
+        $st = $pdo->prepare("UPDATE licencias_cobros lc JOIN licencias l ON l.id = lc.licencia_id SET lc.factura_id = ?
+                             WHERE lc.cliente_id = ? AND l.receptor_id IN ($inG) AND lc.factura_id IS NULL AND lc.id IN (" . implode(',', array_fill(0, count($anuales), '?')) . ")");
+        $st->execute(array_merge([$facturaId, $cid], $grupo, $anuales));
+        $n += $st->rowCount();
+        // Si ya se cobraron todos los años, el gasto queda como cobrado en la última factura
+        $pdo->prepare("UPDATE gastos g SET g.cobrado_factura_id = ? WHERE g.cliente_id = ? AND g.cobrado_factura_id IS NULL
+                       AND EXISTS (SELECT 1 FROM licencias_cobros c WHERE c.gasto_id = g.id) AND NOT EXISTS (SELECT 1 FROM licencias_cobros c WHERE c.gasto_id = g.id AND c.factura_id IS NULL)")
+            ->execute([$facturaId, $cid]);
+    }
+    return $n;
 }

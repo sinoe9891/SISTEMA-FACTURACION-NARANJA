@@ -138,6 +138,43 @@ function licenciasSincronizar(PDO $pdo, int $cid, int $usuario = 0): void
         if (!$grupo) $pdo->prepare("UPDATE gastos SET gasto_grupo_id = ? WHERE id = ?")->execute([$nuevo, $nuevo]);
         $pdo->prepare("UPDATE licencias SET proxima_renovacion = ? WHERE id = ?")->execute([$fecha, $id]);
     }
+    licenciasCobrosSincronizar($pdo, $cid);
+}
+
+/** ¿Está instalada la tabla de cobros anuales? */
+function licenciasCobrosDisponible(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) {
+        try { $ok = (bool)$pdo->query("SHOW TABLES LIKE 'licencias_cobros'")->fetchColumn(); } catch (Throwable $e) { $ok = false; }
+    }
+    return $ok;
+}
+
+/**
+ * A los clientes las licencias se les cobran CADA AÑO. Si una renovación pagada cubre más de un año (p. ej. un dominio
+ * por 2 años), se reparte en cobros anuales: el 1.º desde la fecha del pago y el siguiente al cumplirse el año.
+ * Esos gastos ya no salen enteros en la factura: salen sus cobros anuales (gastosPorCobrar).
+ */
+function licenciasCobrosSincronizar(PDO $pdo, int $cid): void
+{
+    if (!licenciasCobrosDisponible($pdo)) return;
+    $st = $pdo->prepare("SELECT g.id, g.fecha, g.monto, g.licencia_id, l.frecuencia FROM gastos g JOIN licencias l ON l.id = g.licencia_id
+                         WHERE g.cliente_id = ? AND g.estado = 'pagado' AND g.cobrar_receptor_id IS NOT NULL AND g.cobrado_factura_id IS NULL
+                           AND l.receptor_id IS NOT NULL AND l.frecuencia = 'bienal'
+                           AND NOT EXISTS (SELECT 1 FROM licencias_cobros c WHERE c.gasto_id = g.id)");
+    $st->execute([$cid]);
+    $ins = $pdo->prepare("INSERT INTO licencias_cobros (cliente_id, licencia_id, gasto_id, anio_n, anios, fecha, desde, hasta, costo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $g) {
+        $anios = 2;
+        $parte = round((float)$g['monto'] / $anios, 2);
+        for ($n = 1; $n <= $anios; $n++) {
+            $desde = date('Y-m-d', strtotime($g['fecha'] . ' +' . ($n - 1) . ' year'));
+            $hasta = date('Y-m-d', strtotime($g['fecha'] . " +$n year -1 day"));
+            $costo = $n < $anios ? $parte : round((float)$g['monto'] - $parte * ($anios - 1), 2);   // el último lleva los centavos
+            $ins->execute([$cid, (int)$g['licencia_id'], (int)$g['id'], $n, $anios, $desde, $desde, $hasta, $costo]);
+        }
+    }
 }
 
 /** Ingresos esperados por licencias de clientes en un mes (renovaciones de ese mes, con comisión). */
@@ -148,11 +185,14 @@ function licenciasIngresosMes(PDO $pdo, int $cid, int $anio, int $mes): array
     $out = [];
     foreach (licenciasLista($pdo, $cid, true) as $l) {
         if (empty($l['receptor_id'])) continue;
-        $f = $l['proxima_renovacion'];
-        while ($f < $ini) $f = licenciaSiguienteFecha($f, $l['frecuencia']);
+        // A los clientes se les cobra cada año: lo que se paga cada 2 años se reparte en 2 cobros anuales
+        $bienal = $l['frecuencia'] === 'bienal';
+        $paso = $bienal ? 'anual' : $l['frecuencia'];
+        $f = $bienal ? date('Y-m-d', strtotime($l['proxima_renovacion'] . ' -1 year')) : $l['proxima_renovacion'];
+        while ($f < $ini) $f = licenciaSiguienteFecha($f, $paso);
         if ($f > $fin) continue;
-        $out[] = ['cliente' => $l['cliente_nombre'] ?: 'Cliente', 'nombre' => 'Licencia: ' . $l['nombre'] . ' · renovación ' . date('d/m/Y', strtotime($f)),
-                  'monto' => licenciaPrecio(licenciaCostoHnl($pdo, $cid, $l), (float)$l['comision_pct']), 'regla' => 'Licencia que se le cobra al cliente (costo + ' . rtrim(rtrim(number_format((float)$l['comision_pct'], 2), '0'), '.') . ' %)'];
+        $out[] = ['cliente' => $l['cliente_nombre'] ?: 'Cliente', 'nombre' => 'Licencia: ' . $l['nombre'] . ($bienal ? ' · cobro anual ' : ' · renovación ') . date('d/m/Y', strtotime($f)),
+                  'monto' => licenciaPrecio(licenciaCostoHnl($pdo, $cid, $l) * ($bienal ? 0.5 : 1), (float)$l['comision_pct']), 'regla' => 'Licencia que se le cobra al cliente cada año (costo + ' . rtrim(rtrim(number_format((float)$l['comision_pct'], 2), '0'), '.') . ' %)'];
     }
     return $out;
 }
@@ -165,4 +205,19 @@ function licenciaSemaforo(string $fecha): array
     if ($dias <= 7) return [$dias, 'rojo', $dias === 0 ? 'Vence hoy' : "En $dias día(s)"];
     if ($dias <= 30) return [$dias, 'amarillo', "En $dias días"];
     return [$dias, 'gris', "En $dias días"];
+}
+
+/** Ícono y color según el tipo de licencia (por el nombre y el proveedor): [clase Bootstrap Icons, color, texto]. */
+function licenciaIcono(array $l): array
+{
+    $t = mb_strtolower(($l['nombre'] ?? '') . ' ' . ($l['proveedor'] ?? ''));
+    return match (true) {
+        str_contains($t, 'hosting') || str_contains($t, 'servidor') => ['bi-hdd-network', '#2563eb', 'Hosting'],
+        str_contains($t, 'dominio') || str_contains($t, 'domain') => ['bi-globe2', '#0891b2', 'Dominio'],
+        str_contains($t, 'correo') || str_contains($t, 'email') || str_contains($t, '365') => ['bi-envelope-at', '#7c3aed', 'Correo'],
+        str_contains($t, 'dropbox') || str_contains($t, 'drive') || str_contains($t, 'nube') => ['bi-dropbox', '#0061fe', 'Almacenamiento'],
+        str_contains($t, 'adobe') || str_contains($t, 'canva') || str_contains($t, 'figma') => ['bi-palette', '#dc2626', 'Diseño'],
+        str_contains($t, 'ssl') || str_contains($t, 'certificado') => ['bi-shield-lock', '#16a34a', 'Seguridad'],
+        default => ['bi-key', '#d97706', 'Licencia'],
+    };
 }

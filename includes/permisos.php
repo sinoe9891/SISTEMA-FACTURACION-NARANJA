@@ -45,7 +45,7 @@ const PERMISOS_ACCIONES = [
     'gasto_eliminar' => ['gastos', 'cuentas_pagar'], 'gasto_marcar_pagado' => ['gastos', 'cuentas_pagar'], 'gastos_exportar' => ['gastos'],
     'gasto_archivo' => ['gastos', 'cuentas_pagar', 'colaboradores', 'pagos_nomina', 'bouchers'],
     'boucher_lote' => ['bouchers', 'pagos_nomina', 'colaboradores'], 'boucher_pdf' => ['bouchers', 'pagos_nomina', 'colaboradores', 'gastos'],
-    'licencia_accion' => ['licencias'],
+    'licencia_accion' => ['licencias'], 'licencias_exportar' => ['licencias'],
     'categoria_gasto_guardar' => ['categorias_gastos'], 'categoria_gasto_actualizar' => ['categorias_gastos'], 'categoria_gasto_eliminar' => ['categorias_gastos'],
     // Bancos
     'banco_cuenta' => ['bancos'], 'movimiento_archivo' => ['bancos'], 'banco_accion' => ['bancos', 'cheques', 'configuracion_tasa'],

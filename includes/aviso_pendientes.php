@@ -188,7 +188,7 @@ function avisoPendientesCorreo(array $d, array $empresa, array $cfg, string $bas
         $resumen[] = count($d['vencidas']) . ' vencida' . (count($d['vencidas']) === 1 ? '' : 's') . ' (' . $L($total) . ')';
     }
     if ($d['por_cobrar']) {
-        $filas = array_map(fn($r) => '<tr><td ' . $td . '><strong>' . $e($r['cliente']) . '</strong><br><span style="color:#64748b;font-size:12px">' . $e($r['descripcion']) . ' · gasto #' . $r['id'] . ($r['comision'] ? ' · +' . rtrim(rtrim(number_format($r['comision'], 2), '0'), '.') . ' %' : '') . '</span></td>'
+        $filas = array_map(fn($r) => '<tr><td ' . $td . '><strong>' . $e($r['cliente']) . '</strong><br><span style="color:#64748b;font-size:12px">' . $e($r['descripcion']) . ($r['id'] < 0 ? ' · cobro anual de licencia' : ' · gasto #' . $r['id']) . ($r['comision'] ? ' · +' . rtrim(rtrim(number_format($r['comision'], 2), '0'), '.') . ' %' : '') . '</span></td>'
             . '<td ' . $tdR . '>' . $f($r['fecha']) . '<br><span style="color:#64748b">' . ($r['estado'] === 'pagado' ? 'pagado' : 'por pagar') . '</span></td><td ' . $tdR . '>' . $L($r['monto']) . '</td></tr>', $d['por_cobrar']);
         $partes[] = $seccion('Gastos por cobrar al cliente', 'Pagados (o que vencen este mes) por cuenta del cliente y aún sin incluir en una factura.', '#2563eb',
             [['Cliente', false], ['Fecha', true], ['A cobrar', true]], $filas, $base . 'generar_factura.php', 'Nueva factura');
