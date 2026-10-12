@@ -16,6 +16,22 @@ $cat_filtro  = (int)($_GET['cat']  ?? 0);
 $tipo_filtro = trim($_GET['tipo']  ?? '');
 $dias_filtro = (int)($_GET['dias'] ?? 0); // 0=todos, -1=vencidos, 5/10/20/30=próximos X
 
+// ?gasto=347 → abre el mes de ese gasto con la búsqueda «#347» ya puesta (para buscar un número fuera del período que se ve)
+$gasto_buscar = (int)($_GET['gasto'] ?? 0);
+$gasto_no_existe = false;
+if ($gasto_buscar > 0) {
+    $stG = $pdo->prepare("SELECT fecha FROM gastos WHERE id = ? AND cliente_id = ?");
+    $stG->execute([$gasto_buscar, $cliente_id]);
+    $fechaG = $stG->fetchColumn();
+    if ($fechaG) {
+        $vista = 'mensual';
+        $mes_filtro = (int)date('n', strtotime($fechaG));
+        $anio_filtro = (int)date('Y', strtotime($fechaG));
+    } else {
+        $gasto_no_existe = true;
+    }
+}
+
 $meses_nombres = [
     'Enero',
     'Febrero',
@@ -829,10 +845,15 @@ $total  = count($gastos);
                         <?php endfor; ?></select>
                 </div>
                 <div class="col-auto"><label class="form-label small fw-semibold mb-1">Año</label>
-                    <select name="anio"
-                        class="form-select form-select-sm"><?php for ($a = date('Y'); $a >= date('Y') - 4; $a--): ?>
+                    <?php // Años que tienen gastos (y el actual y el elegido, aunque no tengan)
+                    $stA = $pdo->prepare("SELECT DISTINCT YEAR(fecha) FROM gastos WHERE cliente_id = ? AND fecha IS NOT NULL");
+                    $stA->execute([$cliente_id]);
+                    $aniosGastos = array_unique(array_merge(array_map('intval', $stA->fetchAll(PDO::FETCH_COLUMN)), [(int)date('Y'), $anio_filtro]));
+                    rsort($aniosGastos); ?>
+                    <select name="anio" class="form-select form-select-sm">
+                        <?php foreach ($aniosGastos as $a): ?>
                             <option value="<?= $a ?>" <?= $a == $anio_filtro ? 'selected' : '' ?>><?= $a ?></option>
-                        <?php endfor; ?>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-auto"><label class="form-label small fw-semibold mb-1">Categoría</label>
@@ -878,7 +899,7 @@ $total  = count($gastos);
     <div class="gs-toolbar">
         <button class="btn-nuevo-gs" id="btnNuevoGasto"><i class="bi bi-plus-circle-fill"></i> Nuevo Gasto</button>
         <div class="gs-search-wrap"><i class="bi bi-search"></i><input type="text" id="gsSearch" class="gs-search"
-                placeholder="Buscar descripción, proveedor, colaborador…" autocomplete="off"><button
+                placeholder="Buscar descripción, proveedor, #número de gasto…" autocomplete="off"><button
                 class="gs-clear-btn" id="gsClear"><i class="bi bi-x-lg"></i></button></div>
         <select id="gsFiltroTipo" class="gs-select">
             <option value="">Todos los tipos</option>
@@ -1445,8 +1466,10 @@ $total  = count($gastos);
             const td = r.querySelectorAll('td')[i + 1];   // +1: la primera es la casilla
             return td ? (td.dataset.sort || td.dataset.original || td.textContent).trim().toLowerCase() : '';   // data-sort: número y fecha ordenan bien
         };
+        const numGasto = q => (q.match(/^#\s*(\d+)$/) || [])[1] || '';   // «#347»: solo ese gasto (sin el #3470)
         const filtered = () => allRows.filter(r => {
-            const s = !query || r.dataset.search.includes(query.toLowerCase());
+            const n = numGasto(query);
+            const s = !query || (n ? r.dataset.id === n : r.dataset.search.includes(query.toLowerCase()));
             const t = !filtroTipo || r.dataset.tipo === filtroTipo;
             const e = !filtroEstado || r.dataset.estado === filtroEstado;
             return s && t && e;
@@ -1474,6 +1497,14 @@ $total  = count($gastos);
                 $empty.style.display = 'block';
                 const mensual = document.getElementById('sVista')?.value === 'mensual';
                 $sub.textContent = query ? `Sin resultados para "${query}" en este período.${mensual ? ' Cambia la vista a «Anual» para buscar en todo el año.' : ''}` : 'Sin gastos.';
+                const n = (query.match(/^#?\s*(\d+)$/) || [])[1];
+                if (n) {   // un número: ofrecer buscarlo como gasto en cualquier período
+                    const a = document.createElement('a');
+                    a.href = 'gastos.php?gasto=' + n;
+                    a.className = 'd-block mt-2 fw-semibold';
+                    a.innerHTML = `<i class="bi bi-search"></i> Buscar el gasto #${n} en todos los períodos`;
+                    $sub.appendChild(a);
+                }
             } else {
                 $empty.style.display = 'none';
                 rows.slice(s, e).forEach(r => {
@@ -1531,6 +1562,14 @@ $total  = count($gastos);
             mk('<i class="bi bi-chevron-double-right"></i>', tot, cur === tot ? 'disabled' : '');
         };
         tomarElementos();
+        <?php if ($gasto_buscar > 0): ?>
+        $s.value = '#<?= $gasto_buscar ?>';
+        query = $s.value;
+        $cl.classList.add('visible');
+        <?php if ($gasto_no_existe): ?>
+        setTimeout(() => { $sub && ($sub.textContent = 'No existe el gasto #<?= $gasto_buscar ?>.'); }, 0);
+        <?php endif; ?>
+        <?php endif; ?>
         let deb;
         $s.addEventListener('input', () => {
             clearTimeout(deb);

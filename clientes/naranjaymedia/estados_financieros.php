@@ -35,6 +35,15 @@ $rangos = [
     'Año anterior' => [($hoy->format('Y') - 1) . '-01-01', ($hoy->format('Y') - 1) . '-12-31'],
 ];
 
+// Años con movimientos (facturas o gastos), para el selector de año
+$stA = $pdo->prepare("SELECT YEAR(fecha_emision) FROM facturas WHERE cliente_id = ? AND fecha_emision IS NOT NULL
+                      UNION SELECT YEAR(fecha) FROM gastos WHERE cliente_id = ? AND fecha IS NOT NULL AND fecha <= CURDATE()");
+$stA->execute([$cid, $cid]);
+$anios = array_unique(array_merge(array_map('intval', $stA->fetchAll(PDO::FETCH_COLUMN)), [(int)$hoy->format('Y')]));
+rsort($anios);
+$rangoAnio = fn(int $a) => ["$a-01-01", $a === (int)$hoy->format('Y') ? $hoy->format('Y-m-d') : "$a-12-31"];
+$corteAnio = fn(int $a) => $a === (int)$hoy->format('Y') ? $hoy->format('Y-m-d') : "$a-12-31";
+
 if ($tab === 'resultados') $r = efResultados($pdo, $cid, $desde, $hasta);
 else $b = efBalance($pdo, $cid, $corte, $tasa);
 
@@ -58,31 +67,45 @@ require_once '../../includes/templates/header.php';
 </ul>
 
 <!-- Filtros -->
-<form class="app-card app-card-body mb-3 no-print" method="get" action="<?= $tab === 'balance' ? 'balance_general' : 'estados_financieros' ?>">
+<form id="efFiltros" class="app-card app-card-body mb-3 no-print" method="get" action="<?= $tab === 'balance' ? 'balance_general' : 'estados_financieros' ?>">
     <div class="row g-2 align-items-end">
         <?php if ($tab === 'resultados'): ?>
+            <div class="col-12 col-md-2"><label class="form-label small">Año</label>
+                <select class="form-select form-select-sm" id="efAnio">
+                    <option value="">Personalizado</option>
+                    <?php foreach ($anios as $a): [$d, $h] = $rangoAnio($a); ?>
+                        <option value="<?= $a ?>" data-desde="<?= $d ?>" data-hasta="<?= $h ?>" <?= $d === $desde && $h === $hasta ? 'selected' : '' ?>><?= $a ?></option>
+                    <?php endforeach; ?>
+                </select></div>
             <div class="col-6 col-md-2"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" value="<?= $desde ?>"></div>
             <div class="col-6 col-md-2"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" value="<?= $hasta ?>"></div>
             <div class="col-md-auto"><button class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i> Ver</button></div>
             <div class="col-md d-flex flex-wrap gap-1 justify-content-md-end">
                 <?php foreach ($rangos as $txt => [$d, $h]): ?>
-                    <a class="btn btn-sm <?= $d === $desde && $h === $hasta ? 'btn-secondary' : 'btn-outline-secondary' ?>" href="estados_financieros?desde=<?= $d ?>&hasta=<?= $h ?>"><?= $txt ?></a>
+                    <a class="btn btn-sm <?= $d === $desde && $h === $hasta ? 'btn-secondary' : 'btn-outline-secondary' ?>" href="estados_financieros?desde=<?= $d ?>&hasta=<?= $h ?>" data-ef><?= $txt ?></a>
                 <?php endforeach; ?>
             </div>
         <?php else: ?>
+            <div class="col-12 col-md-2"><label class="form-label small">Cierre del año</label>
+                <select class="form-select form-select-sm" id="efAnio">
+                    <option value="">Otra fecha</option>
+                    <?php foreach ($anios as $a): $c = $corteAnio($a); ?>
+                        <option value="<?= $a ?>" data-corte="<?= $c ?>" <?= $c === $corte ? 'selected' : '' ?>><?= $a ?><?= $c === $hoy->format('Y-m-d') ? ' (hoy)' : '' ?></option>
+                    <?php endforeach; ?>
+                </select></div>
             <div class="col-6 col-md-2"><label class="form-label small">Al</label><input type="date" class="form-control form-control-sm" name="corte" value="<?= $corte ?>"></div>
             <div class="col-6 col-md-2"><label class="form-label small">Tasa L por US$1</label><input type="number" step="0.0001" min="0" class="form-control form-control-sm" name="tasa" value="<?= $tasa > 0 ? $tasa : '' ?>" placeholder="para cuentas en dólares"></div>
             <div class="col-md-auto"><button class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i> Ver</button></div>
             <div class="col-md d-flex flex-wrap gap-1 justify-content-md-end">
-                <a class="btn btn-sm btn-outline-secondary" href="balance_general">Hoy</a>
-                <a class="btn btn-sm btn-outline-secondary" href="balance_general?corte=<?= (new DateTime('last day of last month'))->format('Y-m-d') ?>">Cierre del mes anterior</a>
-                <a class="btn btn-sm btn-outline-secondary" href="balance_general?corte=<?= $hoy->format('Y') - 1 ?>-12-31">Cierre del año anterior</a>
+                <a class="btn btn-sm btn-outline-secondary" href="balance_general" data-ef>Hoy</a>
+                <a class="btn btn-sm btn-outline-secondary" href="balance_general?corte=<?= (new DateTime('last day of last month'))->format('Y-m-d') ?>" data-ef>Cierre del mes anterior</a>
+                <a class="btn btn-sm btn-outline-secondary" href="balance_general?corte=<?= $hoy->format('Y') - 1 ?>-12-31" data-ef>Cierre del año anterior</a>
             </div>
         <?php endif; ?>
     </div>
 </form>
 
-<div class="app-card app-estado">
+<div class="app-card app-estado" id="efEstado">
     <div class="app-estado-head">
         <div class="app-estado-empresa"><?= $e($emp['nombre'] ?: $emp['alias']) ?></div>
         <?php if (!empty($emp['rtn'])): ?><div class="app-estado-sub">RTN <?= $e($emp['rtn']) ?></div><?php endif; ?>
@@ -151,5 +174,42 @@ require_once '../../includes/templates/header.php';
         <p class="app-estado-pie">Generado el <?= date('d/m/Y g:i a') ?> · Los números entre paréntesis son negativos.</p>
     </div>
 </div>
+
+<script>
+// Filtros sin recargar: el año, las fechas y los atajos traen solo el estado y los filtros
+(() => {
+    let pedido = 0;
+    const cargar = async url => {
+        const yo = ++pedido, est = document.getElementById('efEstado');
+        est.style.opacity = '.5';
+        try {
+            const r = await fetch(url, { credentials: 'same-origin' });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+            if (yo !== pedido) return;
+            ['efFiltros', 'efEstado'].forEach(id => { const n = doc.getElementById(id); if (n) document.getElementById(id).replaceWith(n); });
+            history.replaceState(null, '', url);
+        } catch (e) {
+            location.href = url;   // si algo falla, se carga la página normal
+        } finally {
+            document.getElementById('efEstado').style.removeProperty('opacity');
+        }
+    };
+    const urlForm = f => f.getAttribute('action') + '?' + new URLSearchParams(new FormData(f)).toString();
+    document.addEventListener('submit', e => { if (e.target.id === 'efFiltros') { e.preventDefault(); cargar(urlForm(e.target)); } });
+    document.addEventListener('click', e => { const a = e.target.closest('#efFiltros a[data-ef]'); if (a) { e.preventDefault(); cargar(a.getAttribute('href')); } });
+    document.addEventListener('change', e => {
+        const f = document.getElementById('efFiltros');
+        if (!f || !f.contains(e.target)) return;
+        if (e.target.id === 'efAnio') {
+            const o = e.target.selectedOptions[0];
+            if (!o.value) return;   // «Personalizado»: se eligen las fechas a mano
+            if (o.dataset.corte) f.elements.corte.value = o.dataset.corte;
+            else { f.elements.desde.value = o.dataset.desde; f.elements.hasta.value = o.dataset.hasta; }
+        }
+        cargar(urlForm(f));
+    });
+})();
+</script>
 
 <?php require_once '../../includes/templates/footer.php'; ?>
