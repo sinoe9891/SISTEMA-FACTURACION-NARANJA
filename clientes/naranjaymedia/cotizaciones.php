@@ -94,12 +94,12 @@ require_once '../../includes/templates/header.php';
                                 <a class="btn btn-sm btn-outline-danger" href="cotizacion_pdf?id=<?= (int)$c['id'] ?>" target="_blank" title="Ver PDF"><i class="bi bi-file-earmark-pdf"></i></a>
                                 <?php if ($puedeEditar): ?>
                                     <button class="btn btn-sm btn-outline-success cot-enviar" data-id="<?= (int)$c['id'] ?>" title="Enviar por correo"><i class="bi bi-send"></i></button>
-                                    <?php if ($c['estado'] !== 'facturada' && $puedeFacturar): ?><a class="btn btn-sm btn-outline-primary" href="generar_factura?cotizacion_id=<?= (int)$c['id'] ?>" title="Convertir en factura"><i class="bi bi-receipt"></i></a><?php endif; ?>
+                                    <?php if ($c['estado'] !== 'facturada'): ?><a class="btn btn-sm btn-outline-primary" href="cotizacion_editar?id=<?= (int)$c['id'] ?>" title="Editar"><i class="bi bi-pencil"></i></a><?php endif; ?>
                                     <div class="btn-group">
                                         <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' title="Más"><i class="bi bi-three-dots"></i></button>
                                         <ul class="dropdown-menu dropdown-menu-end">
                                             <?php if ($c['estado'] !== 'facturada'): ?>
-                                                <li><a class="dropdown-item" href="cotizacion_editar?id=<?= (int)$c['id'] ?>"><i class="bi bi-pencil me-2"></i>Editar</a></li>
+                                                <?php if ($puedeFacturar): ?><li><a class="dropdown-item" href="generar_factura?cotizacion_id=<?= (int)$c['id'] ?>"><i class="bi bi-receipt me-2 text-primary"></i>Convertir en factura</a></li><li><hr class="dropdown-divider"></li><?php endif; ?>
                                                 <?php if ($c['estado'] === 'borrador'): ?><li><a class="dropdown-item cot-enviada" href="#" data-id="<?= (int)$c['id'] ?>"><i class="bi bi-whatsapp me-2 text-success"></i>Marcar como enviada (WhatsApp u otro)</a></li><?php endif; ?>
                                                 <li><a class="dropdown-item cot-estado" href="#" data-id="<?= (int)$c['id'] ?>" data-estado="aceptada"><i class="bi bi-hand-thumbs-up me-2 text-success"></i>Marcar aceptada</a></li>
                                                 <li><a class="dropdown-item cot-estado" href="#" data-id="<?= (int)$c['id'] ?>" data-estado="rechazada"><i class="bi bi-hand-thumbs-down me-2 text-danger"></i>Marcar rechazada</a></li>

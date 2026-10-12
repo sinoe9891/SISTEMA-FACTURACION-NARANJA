@@ -115,6 +115,21 @@ require_once '../../includes/templates/header.php';
 
         <div class="col-lg-4">
             <div class="app-card" style="position:sticky;top:calc(var(--app-topbar-h, 60px) + 1rem)">
+                <?php if ($cot): $vistaEst = cotizacionEstadoVista($cot); [$eTxt, $eBg, $eFg, $eIco] = COTIZACION_ESTADOS[$vistaEst]; ?>
+                <div class="app-card-header"><span><i class="bi bi-flag me-1"></i> Estado</span>
+                    <span class="badge" id="cEstadoBadge" style="background:<?= $eBg ?>;color:<?= $eFg ?>"><i class="bi <?= $eIco ?> me-1"></i><?= $eTxt ?></span></div>
+                <div class="app-card-body border-bottom">
+                    <?php if ($cot['estado'] === 'facturada'): ?>
+                        <div class="small text-muted">Ya se facturó: el estado no cambia.</div>
+                    <?php elseif ($puedeEditar): ?>
+                        <select class="form-select form-select-sm" id="cEstado" data-actual="<?= $cot['estado'] ?>">
+                            <?php foreach (['borrador', 'enviada', 'aceptada', 'rechazada'] as $k): ?><option value="<?= $k ?>" <?= $cot['estado'] === $k ? 'selected' : '' ?>><?= COTIZACION_ESTADOS[$k][0] ?></option><?php endforeach; ?>
+                        </select>
+                        <div class="small text-muted mt-1" id="cEnviadaInfo"><?= $cot['enviada_en'] ? '<i class="bi bi-envelope-check me-1"></i>Enviada el ' . date('d/m/Y', strtotime($cot['enviada_en'])) . ($cot['enviada_a'] ? ' · ' . htmlspecialchars($cot['enviada_a']) : '') : '' ?></div>
+                        <?php if ($vistaEst === 'vencida'): ?><div class="small text-danger mt-1">Venció el <?= date('d/m/Y', strtotime($cot['valida_hasta'])) ?> sin respuesta: cambia «Válida hasta» si la vas a mantener.</div><?php endif; ?>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
                 <div class="app-card-header"><span><i class="bi bi-calculator me-1"></i> Totales</span></div>
                 <div class="app-card-body">
                     <div class="d-flex justify-content-between py-1"><span class="text-muted">Subtotal</span><strong id="tSub">L 0.00</strong></div>
@@ -204,6 +219,27 @@ ListaVinetas(document.getElementById('cCondiciones'), { placeholderTitulo: 'Ej.:
             fV.value = d.toISOString().slice(0, 10); fV.dispatchEvent(new Event('change'));
         }
     }));
+})();
+// Estado de la cotización: se guarda al elegirlo (Enviada pregunta el medio, como en la lista)
+(() => {
+    const sel = document.getElementById('cEstado');
+    if (!sel) return;
+    sel.addEventListener('change', async () => {
+        const fd = new FormData();
+        fd.append('accion', 'estado'); fd.append('id', '<?= $id ?>'); fd.append('estado', sel.value);
+        if (sel.value === 'enviada') {
+            const r = await Swal.fire({ title: 'Marcar como enviada', text: '¿Por qué medio se la enviaste? No se manda ningún correo.', input: 'select',
+                inputOptions: { 'WhatsApp': 'WhatsApp', 'correo': 'Correo', 'en persona': 'En persona', 'mensaje de texto': 'Mensaje de texto', 'otro medio': 'Otro medio' }, inputValue: 'WhatsApp',
+                showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar' });
+            if (!r.isConfirmed) { sel.value = sel.dataset.actual; return; }
+            fd.append('medio', r.value);
+        }
+        try {
+            const d = await fetch('includes/cotizacion_accion.php', { method: 'POST', body: fd }).then(r => r.json());
+            if (!d.success) throw new Error(d.error);
+            Swal.fire({ icon: 'success', title: d.message, timer: 1200, showConfirmButton: false }).then(() => location.reload());
+        } catch (err) { sel.value = sel.dataset.actual; Swal.fire('No se pudo', err.message, 'error'); }
+    });
 })();
 (() => {
     const ITEMS = <?= json_encode(array_map(fn($i) => ['producto_id' => (int)$i['producto_id'], 'descripcion' => $i['descripcion'], 'detalle' => (string)$i['detalle'], 'cantidad' => (float)$i['cantidad'], 'precio' => (float)$i['precio']], $items), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
