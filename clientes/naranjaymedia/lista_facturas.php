@@ -193,6 +193,15 @@ $noDeclAtrasadas = $stmtNoDeclAtrasadas->fetch(PDO::FETCH_ASSOC);
 $cant_no_decl_atrasadas = (int)$noDeclAtrasadas['cantidad'];
 $isv_no_decl_atrasadas  = (float)$noDeclAtrasadas['isv_pendiente'];
 
+// Identificar las pendientes aunque la tabla esté mostrando otro CAI o período.
+$stmtDetalleNoDecl = $pdo->prepare("SELECT correlativo, fecha_emision, cai_id, (isv_15 + isv_18) AS isv
+    FROM facturas WHERE cliente_id = ? AND establecimiento_id = ?
+    AND estado = 'emitida' AND estado_declarada = 0 AND fecha_emision < ?
+    ORDER BY fecha_emision ASC, id ASC LIMIT 8");
+$stmtDetalleNoDecl->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual]);
+$detalleNoDecl = $stmtDetalleNoDecl->fetchAll(PDO::FETCH_ASSOC);
+
+
 $stmtNoDeclMesActual = $pdo->prepare("
 	SELECT COUNT(*) AS cantidad, IFNULL(SUM(isv_15 + isv_18), 0) AS isv_mes_actual
 	FROM facturas
@@ -1213,6 +1222,22 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 				<?php if ($hayAtrasadas): ?>
 					<div class="mb-1"><strong><?= $cant_no_decl_atrasadas ?></strong> factura<?= $cant_no_decl_atrasadas > 1 ? 's' : '' ?> atrasada<?= $cant_no_decl_atrasadas > 1 ? 's' : '' ?></div>
 					<div class="mb-1">ISV pendiente: <strong>L <?= number_format($isv_no_decl_atrasadas, 2) ?></strong></div>
+                    <ul class="list-unstyled small mb-1">
+                        <?php foreach ($detalleNoDecl as $pendiente): ?>
+                            <li class="d-flex flex-wrap align-items-center gap-2 py-1 border-bottom">
+                                <a class="fw-semibold" href="lista_facturas?cai_id=<?= (int)$pendiente['cai_id'] ?>&amp;buscar=<?= urlencode($pendiente['correlativo']) ?>" title="Mostrar esta factura en el historial">
+                                    <?= htmlspecialchars(substr($pendiente['correlativo'], -8)) ?> <i class="bi bi-search" aria-hidden="true"></i>
+                                </a>
+                                <span><?= date('d/m/Y', strtotime($pendiente['fecha_emision'])) ?></span>
+                                <?php if (substr($pendiente['fecha_emision'], 0, 4) !== date('Y')): ?><span class="badge bg-danger-subtle text-danger-emphasis">Año <?= htmlspecialchars(substr($pendiente['fecha_emision'], 0, 4)) ?></span><?php endif; ?>
+                                <?php if ($caix && (int)$pendiente['cai_id'] !== (int)$caix): ?><span class="badge bg-secondary-subtle text-secondary-emphasis">Otro CAI</span><?php endif; ?>
+                                <span class="ms-auto">ISV L <?= number_format((float)$pendiente['isv'], 2) ?></span>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <?php if ($cant_no_decl_atrasadas > count($detalleNoDecl)): ?><div class="small">Y <?= $cant_no_decl_atrasadas - count($detalleNoDecl) ?> más.</div><?php endif; ?>
+                    <div class="small mt-2">Incluye todos los CAI y períodos. Pulsa el número para mostrar la factura.</div>
+
 				<?php else: ?>
 					<div><i class="bi bi-check-circle-fill"></i> No hay meses pendientes de declaración.</div>
 				<?php endif; ?>
