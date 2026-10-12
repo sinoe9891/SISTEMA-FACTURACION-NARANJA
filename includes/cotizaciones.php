@@ -270,8 +270,8 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
         .firma .img img { max-height: 50px; max-width: 200px; }
         .firma .linea { border-top: 1.2px solid #111827; width: 250px; padding-top: 5px; font-size: 10px; line-height: 1.45; color: #4b5563; }
         .firma .linea b { color: #111827; }
-        .sello { position: absolute; right: 0; bottom: 0; }
-        .sello img { max-height: 110px; max-width: 150px; }
+        .sello { float: right; margin-top: -6px; }
+        .sello img { height: 120px; }
         .pie { position: fixed; bottom: -36px; left: 0; right: 0; text-align: center; font-size: 8.5px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 6px; }
     </style></head><body>
     <table class="top"><tr>
