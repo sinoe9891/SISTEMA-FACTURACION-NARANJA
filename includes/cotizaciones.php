@@ -260,18 +260,18 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
         table.t tr.tot td { background: #fde8dc; }
         table.t td.n { color: #e8590c; font-weight: bold; }
         .det { color: #6b7280; font-size: 9.5px; margin-top: 2px; }
-        h3 { font-size: 13px; margin: 14px 0 6px; color: #111827; }
+        h3 { font-size: 13px; margin: 12px 0 4px; color: #111827; }
         table.v { border-collapse: collapse; margin-left: 6px; }
-        table.v td { padding: 2px 0 4px; vertical-align: top; line-height: 1.45; }
+        table.v td { padding: 0 0 1px; vertical-align: top; line-height: 1.3; }
         table.v td.b { color: #e8590c; font-weight: bold; width: 14px; }
         .notas { margin-top: 10px; font-size: 10px; color: #374151; }
-        .firma { margin-top: 26px; position: relative; }
+        .firma { margin-top: 56px; position: relative; }
         .firma .img { height: 52px; }
         .firma .img img { max-height: 50px; max-width: 200px; }
         .firma .linea { border-top: 1.2px solid #111827; width: 250px; padding-top: 5px; font-size: 10px; line-height: 1.45; color: #4b5563; }
         .firma .linea b { color: #111827; }
-        .sello { float: right; margin-top: -6px; }
-        .sello img { height: 120px; }
+        .sello { height: 0; overflow: visible; }
+        .sello img { height: 112px; margin-left: 175px; margin-top: -72px; }
         .pie { position: fixed; bottom: -36px; left: 0; right: 0; text-align: center; font-size: 8.5px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 6px; }
     </style></head><body>
     <table class="top"><tr>
@@ -292,8 +292,8 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
     ' . ($incluye ? '<h3>Incluye</h3>' . $incluye : '') . ($condic ? '<h3>Condiciones</h3>' . $condic : '')
     . ($c['notas'] ? '<div class="notas">' . nl2br($e($c['notas'])) . '</div>' : '') . '
     <div class="firma">
-        ' . ($sello ? '<div class="sello"><img src="' . $sello . '"></div>' : '') . '
         <div class="img">' . (!empty($firm['firma_b64']) ? '<img src="' . $firm['firma_b64'] . '">' : '') . '</div>
+        ' . ($sello ? '<div class="sello"><img src="' . $sello . '"></div>' : '') . '
         <div class="linea">' . ($firm['nombre'] ? '<b>' . $e($firm['nombre']) . '</b><br>' : '') . $e(trim(($firm['cargo'] ?? '') . ($firm['cargo'] ? ' • ' : '') . $alias))
             . ($correo ? '<br>' . $e($correo) : '') . ($tel ? '<br>Cel. ' . $e($tel) : '') . '</div>
     </div>

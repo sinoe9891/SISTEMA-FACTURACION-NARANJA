@@ -1412,7 +1412,7 @@ body.app-login .app-login-wrap { flex: 1; min-height: 0; }
 	display: flex;
 	align-items: flex-start;
 	gap: 6px;
-	margin-bottom: 6px;
+	margin-bottom: 4px;
 }
 
 .lv-punto {
