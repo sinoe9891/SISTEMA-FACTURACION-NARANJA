@@ -41,11 +41,35 @@ $stA = $pdo->prepare("SELECT YEAR(fecha_emision) FROM facturas WHERE cliente_id 
 $stA->execute([$cid, $cid]);
 $anios = array_unique(array_merge(array_map('intval', $stA->fetchAll(PDO::FETCH_COLUMN)), [(int)$hoy->format('Y')]));
 rsort($anios);
-$rangoAnio = fn(int $a) => ["$a-01-01", $a === (int)$hoy->format('Y') ? $hoy->format('Y-m-d') : "$a-12-31"];
-$corteAnio = fn(int $a) => $a === (int)$hoy->format('Y') ? $hoy->format('Y-m-d') : "$a-12-31";
+// Vista como en «Estado de resultados»: año completo, mes específico o fechas a mano (el fin nunca pasa de hoy)
+$hoyY = $hoy->format('Y-m-d');
+$finMes = fn(string $f) => min(date('Y-m-t', strtotime($f)), $hoyY);
+$finAnio = fn(string $f) => min(substr($f, 0, 4) . '-12-31', $hoyY);
+$ref = $tab === 'balance' ? $corte : $hasta;
+$efAnioSel = (int)substr($ref, 0, 4);
+$efMesSel = (int)substr($ref, 5, 2);
+if ($tab === 'balance') {
+    $efVista = $corte === $finAnio($corte) ? 'anual' : ($corte === $finMes($corte) ? 'mensual' : 'rango');
+} else {
+    $efVista = ($desde === substr($hasta, 0, 4) . '-01-01' && $hasta === $finAnio($hasta)) ? 'anual'
+        : (($desde === substr($hasta, 0, 7) . '-01' && $hasta === $finMes($hasta)) ? 'mensual' : 'rango');
+}
+if (in_array($_GET['vista'] ?? '', ['anual', 'mensual', 'rango'], true)) $efVista = $_GET['vista'];   // hoy puede ser fin de año o de mes: manda lo elegido
+if (!in_array($efAnioSel, $anios, true)) { $anios[] = $efAnioSel; rsort($anios); }
 
 if ($tab === 'resultados') $r = efResultados($pdo, $cid, $desde, $hasta);
 else $b = efBalance($pdo, $cid, $corte, $tasa);
+
+// Selects Vista / Mes / Año (los dos estados los usan; el JS calcula las fechas)
+$efControles = function (array $vistas) use ($efVista, $efMesSel, $efAnioSel, $anios, $meses) {
+    $h = '<div class="col-6 col-md-auto"><label class="form-label small">Vista</label><select class="form-select form-select-sm" id="efVista" name="vista">';
+    foreach ($vistas as $v => $t) $h .= '<option value="' . $v . '"' . ($v === $efVista ? ' selected' : '') . '>' . $t . '</option>';
+    $h .= '</select></div><div class="col-6 col-md-auto ef-mes' . ($efVista === 'mensual' ? '' : ' d-none') . '"><label class="form-label small">Mes</label><select class="form-select form-select-sm" id="efMes">';
+    foreach ($meses as $n => $m) $h .= '<option value="' . $n . '"' . ($n === $efMesSel ? ' selected' : '') . '>' . ucfirst($m) . '</option>';
+    $h .= '</select></div><div class="col-6 col-md-auto ef-anio' . ($efVista === 'rango' ? ' d-none' : '') . '"><label class="form-label small">Año</label><select class="form-select form-select-sm" id="efAnio">';
+    foreach ($anios as $a) $h .= '<option value="' . $a . '"' . ($a === $efAnioSel ? ' selected' : '') . '>' . $a . '</option>';
+    return $h . '</select></div>';
+};
 
 require_once '../../includes/templates/header.php';
 ?>
@@ -70,15 +94,9 @@ require_once '../../includes/templates/header.php';
 <form id="efFiltros" class="app-card app-card-body mb-3 no-print" method="get" action="<?= $tab === 'balance' ? 'balance_general' : 'estados_financieros' ?>">
     <div class="row g-2 align-items-end">
         <?php if ($tab === 'resultados'): ?>
-            <div class="col-12 col-md-2"><label class="form-label small">Año</label>
-                <select class="form-select form-select-sm" id="efAnio">
-                    <option value="">Personalizado</option>
-                    <?php foreach ($anios as $a): [$d, $h] = $rangoAnio($a); ?>
-                        <option value="<?= $a ?>" data-desde="<?= $d ?>" data-hasta="<?= $h ?>" <?= $d === $desde && $h === $hasta ? 'selected' : '' ?>><?= $a ?></option>
-                    <?php endforeach; ?>
-                </select></div>
-            <div class="col-6 col-md-2"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" value="<?= $desde ?>"></div>
-            <div class="col-6 col-md-2"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" value="<?= $hasta ?>"></div>
+            <?= $efControles(['anual' => '📅 Año completo', 'mensual' => '🗓️ Mes específico', 'rango' => '✏️ Personalizado']) ?>
+            <div class="col-6 col-md-2 ef-rango <?= $efVista === 'rango' ? '' : 'd-none' ?>"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" value="<?= $desde ?>"></div>
+            <div class="col-6 col-md-2 ef-rango <?= $efVista === 'rango' ? '' : 'd-none' ?>"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" value="<?= $hasta ?>"></div>
             <div class="col-md-auto"><button class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i> Ver</button></div>
             <div class="col-md d-flex flex-wrap gap-1 justify-content-md-end">
                 <?php foreach ($rangos as $txt => [$d, $h]): ?>
@@ -86,14 +104,8 @@ require_once '../../includes/templates/header.php';
                 <?php endforeach; ?>
             </div>
         <?php else: ?>
-            <div class="col-12 col-md-2"><label class="form-label small">Cierre del año</label>
-                <select class="form-select form-select-sm" id="efAnio">
-                    <option value="">Otra fecha</option>
-                    <?php foreach ($anios as $a): $c = $corteAnio($a); ?>
-                        <option value="<?= $a ?>" data-corte="<?= $c ?>" <?= $c === $corte ? 'selected' : '' ?>><?= $a ?><?= $c === $hoy->format('Y-m-d') ? ' (hoy)' : '' ?></option>
-                    <?php endforeach; ?>
-                </select></div>
-            <div class="col-6 col-md-2"><label class="form-label small">Al</label><input type="date" class="form-control form-control-sm" name="corte" value="<?= $corte ?>"></div>
+            <?= $efControles(['anual' => '📅 Cierre del año', 'mensual' => '🗓️ Cierre del mes', 'rango' => '✏️ Otra fecha']) ?>
+            <div class="col-6 col-md-2 ef-rango <?= $efVista === 'rango' ? '' : 'd-none' ?>"><label class="form-label small">Al</label><input type="date" class="form-control form-control-sm" name="corte" value="<?= $corte ?>"></div>
             <div class="col-6 col-md-2"><label class="form-label small">Tasa L por US$1</label><input type="number" step="0.0001" min="0" class="form-control form-control-sm" name="tasa" value="<?= $tasa > 0 ? $tasa : '' ?>" placeholder="para cuentas en dólares"></div>
             <div class="col-md-auto"><button class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i> Ver</button></div>
             <div class="col-md d-flex flex-wrap gap-1 justify-content-md-end">
@@ -201,11 +213,19 @@ require_once '../../includes/templates/header.php';
     document.addEventListener('change', e => {
         const f = document.getElementById('efFiltros');
         if (!f || !f.contains(e.target)) return;
-        if (e.target.id === 'efAnio') {
-            const o = e.target.selectedOptions[0];
-            if (!o.value) return;   // «Personalizado»: se eligen las fechas a mano
-            if (o.dataset.corte) f.elements.corte.value = o.dataset.corte;
-            else { f.elements.desde.value = o.dataset.desde; f.elements.hasta.value = o.dataset.hasta; }
+        if (['efVista', 'efMes', 'efAnio'].includes(e.target.id)) {
+            const vista = f.querySelector('#efVista').value, mes = +f.querySelector('#efMes').value, anio = +f.querySelector('#efAnio').value;
+            f.querySelectorAll('.ef-mes').forEach(x => x.classList.toggle('d-none', vista !== 'mensual'));
+            f.querySelectorAll('.ef-anio').forEach(x => x.classList.toggle('d-none', vista === 'rango'));
+            f.querySelectorAll('.ef-rango').forEach(x => x.classList.toggle('d-none', vista !== 'rango'));
+            if (vista === 'rango') return;   // fechas a mano: se cargan al cambiarlas
+            const p = n => String(n).padStart(2, '0'), hoy = '<?= $hoyY ?>';
+            let ini = vista === 'anual' ? `${anio}-01-01` : `${anio}-${p(mes)}-01`;
+            let fin = vista === 'anual' ? `${anio}-12-31` : `${anio}-${p(mes)}-${p(new Date(anio, mes, 0).getDate())}`;
+            if (fin > hoy) fin = hoy;
+            if (ini > fin) ini = fin;   // un mes que todavía no llega
+            if (f.elements.corte) f.elements.corte.value = fin;
+            else { f.elements.desde.value = ini; f.elements.hasta.value = fin; }
         }
         cargar(urlForm(f));
     });
