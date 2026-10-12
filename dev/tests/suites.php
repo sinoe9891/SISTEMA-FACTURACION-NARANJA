@@ -2909,7 +2909,7 @@ suite('Cotizaciones: crear con alta rápida de cliente y producto, PDF, correo, 
     $r = $c->get('cotizaciones');
     check('la página de cotizaciones carga (con orden y número)', sinErroresPhp($r['body']) && str_contains($r['body'], 'id="tCot" data-ordenar'), errorPhp($r['body']));
     $n = $c->get('cotizacion_editar');
-    check('la página de nueva cotización carga con alta rápida de cliente y producto', sinErroresPhp($n['body']) && str_contains($n['body'], 'id="mCliente"') && str_contains($n['body'], 'id="mProducto"'), errorPhp($n['body']));
+    check('la página de nueva cotización carga con alta rápida de cliente y producto', sinErroresPhp($n['body']) && str_contains($n['body'], 'id="mCliente"') && str_contains($n['body'], 'id="mProducto"') && str_contains($n['body'], "ListaVinetas(document.getElementById('cIncluye')"), errorPhp($n['body']));
     $nombre = 'QA Cliente Cotización ' . time();
     $cl = $c->post('includes/cotizacion_accion.php', ['accion' => 'cliente_crear', 'nombre' => $nombre, 'rtn' => '0801' . rand(100000000, 999999999), 'email' => 'qa.cot@local.test', 'contacto_nombre' => 'Ana QA']);
     $rec = (int)($cl['json']['cliente']['id'] ?? 0);

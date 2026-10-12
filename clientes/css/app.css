@@ -1406,3 +1406,69 @@ body.app-login .app-login-wrap { flex: 1; min-height: 0; }
 /* Interruptores (toggles): mano al pasar el mouse; los bloqueados, no */
 .form-switch .form-check-input, .form-switch .form-check-label { cursor: pointer; }
 .form-switch .form-check-input:disabled, .form-switch .form-check-input:disabled ~ .form-check-label { cursor: not-allowed; }
+
+/* Editor de viñetas (Incluye / Condiciones de cotizaciones, ver clientes/js/lista-vinetas.js) */
+.lv-fila {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	margin-bottom: 6px;
+}
+
+.lv-punto {
+	color: #e8590c;
+	font-weight: 700;
+	font-size: 1.15rem;
+	line-height: 1;
+	width: 10px;
+	flex: none;
+	padding-top: 6px;
+}
+
+.lv-t {
+	flex: 0 0 150px;
+	font-weight: 700;
+}
+
+.lv-t::placeholder {
+	font-weight: 400;
+}
+
+.lv-x {
+	flex: 1 1 auto;
+	min-width: 0;
+	resize: none;
+	overflow: hidden;
+	line-height: 1.45;
+}
+
+.lv-acc {
+	display: flex;
+	gap: 6px;
+	flex: none;
+	padding-top: 5px;
+}
+
+.lv-acc .btn-link {
+	color: var(--app-muted, #64748b);
+	line-height: 1;
+}
+
+.lv-acc .btn-link.text-danger {
+	color: #dc2626 !important;
+}
+
+@media (max-width: 576px) {
+	.lv-fila {
+		flex-wrap: wrap;
+	}
+
+	.lv-t {
+		flex: 1 1 calc(100% - 20px);
+	}
+
+	.lv-x {
+		flex: 1 1 calc(100% - 90px);
+		margin-left: 16px;
+	}
+}

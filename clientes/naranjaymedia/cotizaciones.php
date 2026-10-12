@@ -152,8 +152,8 @@ require_once '../../includes/templates/header.php';
                 <div class="col-md-4"><label class="form-label">Firma</label><select name="firmante" class="form-select">
                     <?php foreach (FIRMANTES_ROLES as $k => $t): ?><option value="<?= $k ?>" <?= $cfg['firmante'] === $k ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?></select>
                     <div class="form-text">Nombre, cargo y firma de Configuración → Firmas.</div></div>
-                <div class="col-md-6"><label class="form-label">Incluye</label><textarea name="incluye" class="form-control" rows="5"><?= htmlspecialchars($cfg['incluye']) ?></textarea></div>
-                <div class="col-md-6"><label class="form-label">Condiciones</label><textarea name="condiciones" class="form-control" rows="5"><?= htmlspecialchars($cfg['condiciones']) ?></textarea></div>
+                <div class="col-12"><label class="form-label fw-semibold">Incluye</label><textarea name="incluye" id="cfgIncluye" class="form-control" rows="4"><?= htmlspecialchars($cfg['incluye']) ?></textarea></div>
+                <div class="col-12"><label class="form-label fw-semibold">Condiciones</label><textarea name="condiciones" id="cfgCondiciones" class="form-control" rows="4"><?= htmlspecialchars($cfg['condiciones']) ?></textarea></div>
                 <div class="col-12"><label class="form-label">Asunto del correo</label><input name="asunto_correo" class="form-control" maxlength="255" value="<?= htmlspecialchars($cfg['asunto_correo']) ?>"></div>
                 <div class="col-12"><label class="form-label">Mensaje del correo <span class="text-muted small">(vacío = el mensaje profesional del sistema)</span></label><textarea name="mensaje_correo" class="form-control" rows="5"><?= htmlspecialchars($cfg['mensaje_correo']) ?></textarea>
                     <div class="form-text">Variables: {numero} {cliente} {contacto} {servicio} {total} {valida_hasta} {empresa}. En Incluye y Condiciones: {dias}.</div></div>
@@ -165,6 +165,11 @@ require_once '../../includes/templates/header.php';
 <?php endif; ?>
 
 <script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../js/app-tabla.js') ?>"></script>
+<script src="../../clientes/js/lista-vinetas.js?v=<?= @filemtime(__DIR__ . '/../js/lista-vinetas.js') ?>"></script>
+<script>
+ListaVinetas(document.getElementById('cfgIncluye'), { placeholderTexto: 'Ej.: Una prueba digital para aprobación.' });
+ListaVinetas(document.getElementById('cfgCondiciones'), { placeholderTitulo: 'Ej.: Forma de pago', sugerencias: ['Forma de pago', 'Entrega', 'Cambios', 'Vigencia', 'Garantía', 'Soporte', 'Tiempo de entrega'] });
+</script>
 <script>
 (() => {
     const ACC = 'includes/cotizacion_accion.php';

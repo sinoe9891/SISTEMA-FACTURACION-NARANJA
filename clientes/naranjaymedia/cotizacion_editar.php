@@ -90,10 +90,12 @@ require_once '../../includes/templates/header.php';
             </div>
 
             <div class="app-card mb-3">
-                <div class="app-card-header"><span><i class="bi bi-list-check me-1"></i> Incluye y condiciones</span><small class="text-muted fw-normal">Una por línea · «Título: texto» pone el título en negrita · {dias} = días de vigencia</small></div>
+                <div class="app-card-header"><span><i class="bi bi-list-check me-1"></i> Incluye y condiciones</span><small class="text-muted fw-normal">El título (opcional) sale en negrita · {dias} = días de vigencia</small></div>
                 <div class="app-card-body row g-3">
-                    <div class="col-md-6"><label class="form-label">Incluye</label><textarea name="incluye" class="form-control" rows="6" placeholder="Una prueba digital para aprobación…"><?= htmlspecialchars($cotForm['incluye']) ?></textarea></div>
-                    <div class="col-md-6"><label class="form-label">Condiciones</label><textarea name="condiciones" class="form-control" rows="6"><?= htmlspecialchars($cotForm['condiciones']) ?></textarea></div>
+                    <div class="col-12"><label class="form-label fw-semibold">Incluye <span class="text-muted small fw-normal">(lo que recibe el cliente con este precio; si queda vacío, no sale en el PDF)</span></label>
+                        <textarea name="incluye" id="cIncluye" class="form-control" rows="4"><?= htmlspecialchars($cotForm['incluye']) ?></textarea></div>
+                    <div class="col-12"><label class="form-label fw-semibold">Condiciones <span class="text-muted small fw-normal">(forma de pago, entrega, cambios, vigencia…)</span></label>
+                        <textarea name="condiciones" id="cCondiciones" class="form-control" rows="4"><?= htmlspecialchars($cotForm['condiciones']) ?></textarea></div>
                     <div class="col-12"><label class="form-label">Notas <span class="text-muted small">(opcional, salen al final)</span></label><textarea name="notas" class="form-control" rows="2"><?= htmlspecialchars($cotForm['notas']) ?></textarea></div>
                 </div>
             </div>
@@ -155,7 +157,10 @@ require_once '../../includes/templates/header.php';
     </form></div>
 </div>
 
+<script src="../../clientes/js/lista-vinetas.js?v=<?= @filemtime(__DIR__ . '/../js/lista-vinetas.js') ?>"></script>
 <script>
+ListaVinetas(document.getElementById('cIncluye'), { placeholderTexto: 'Ej.: Una prueba digital para aprobación antes de imprimir.' });
+ListaVinetas(document.getElementById('cCondiciones'), { placeholderTitulo: 'Ej.: Forma de pago', placeholderTexto: 'Ej.: 50 % al confirmar el pedido y 50 % contra entrega.', sugerencias: ['Forma de pago', 'Entrega', 'Cambios', 'Vigencia', 'Garantía', 'Soporte', 'Tiempo de entrega'] });
 (() => {
     const ITEMS = <?= json_encode(array_map(fn($i) => ['producto_id' => (int)$i['producto_id'], 'descripcion' => $i['descripcion'], 'detalle' => (string)$i['detalle'], 'cantidad' => (float)$i['cantidad'], 'precio' => (float)$i['precio']], $items), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
     const ACC = 'includes/cotizacion_accion.php';
