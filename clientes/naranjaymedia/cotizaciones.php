@@ -87,7 +87,7 @@ require_once '../../includes/templates/header.php';
                                     <button class="btn btn-sm btn-outline-success cot-enviar" data-id="<?= (int)$c['id'] ?>" title="Enviar por correo"><i class="bi bi-send"></i></button>
                                     <?php if ($c['estado'] !== 'facturada' && $puedeFacturar): ?><a class="btn btn-sm btn-outline-primary" href="generar_factura?cotizacion_id=<?= (int)$c['id'] ?>" title="Convertir en factura"><i class="bi bi-receipt"></i></a><?php endif; ?>
                                     <div class="btn-group">
-                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="Más"><i class="bi bi-three-dots"></i></button>
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' title="Más"><i class="bi bi-three-dots"></i></button>
                                         <ul class="dropdown-menu dropdown-menu-end">
                                             <?php if ($c['estado'] !== 'facturada'): ?>
                                                 <li><a class="dropdown-item" href="cotizacion_editar?id=<?= (int)$c['id'] ?>"><i class="bi bi-pencil me-2"></i>Editar</a></li>
