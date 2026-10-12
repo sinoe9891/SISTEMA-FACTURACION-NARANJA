@@ -316,7 +316,13 @@ ListaVinetas(document.getElementById('cCondiciones'), { placeholderTitulo: 'Ej.:
     rec.addEventListener('change', cargarProductos);
 
     // Vigencia
-    const dias = () => { const a = new Date(f.fecha.value), b = new Date(f.valida_hasta.value); const d = Math.round((b - a) / 864e5); document.getElementById('cDias').textContent = isNaN(d) ? '' : `${d} días de vigencia`; };
+    const dias = () => {
+        const a = new Date(f.fecha.value), b = new Date(f.valida_hasta.value), d = Math.round((b - a) / 864e5);
+        document.getElementById('cDias').textContent = isNaN(d) ? '' : `${d} días de vigencia`;
+        // «Vigencia rápida» muestra los días que tiene (si es una de sus opciones)
+        const v = document.getElementById('cVigencia');
+        v.value = [...v.options].some(o => o.value === String(d)) ? String(d) : '';
+    };
     document.getElementById('cVigencia').addEventListener('change', e => {
         if (!e.target.value) return;
         const d = new Date(f.fecha.value + 'T12:00:00'); d.setDate(d.getDate() + +e.target.value);
