@@ -36,6 +36,8 @@ try {
     $fecha = trim((string)($_POST['proxima_renovacion'] ?? ''));
     $receptor = (int)($_POST['receptor_id'] ?? 0) ?: null;
     $pct = ($_POST['comision_pct'] ?? '') === '' ? LICENCIA_COMISION_DEFECTO : round((float)$_POST['comision_pct'], 2);
+    $fijo = ($_POST['precio_cliente'] ?? '') === '' ? null : round((float)str_replace(',', '', (string)$_POST['precio_cliente']), 2);
+    if ($fijo !== null && $fijo <= 0) $fijo = null;
     $metodo = in_array($_POST['metodo_pago'] ?? '', ['tarjeta', 'transferencia', 'efectivo', 'cheque', 'otro'], true) ? $_POST['metodo_pago'] : 'tarjeta';
     $categoria = (int)($_POST['categoria_id'] ?? 0) ?: null;
     $notas = trim((string)($_POST['notas'] ?? '')) ?: null;
@@ -70,6 +72,8 @@ try {
     }
     require_once __DIR__ . '/../../../includes/proveedores.php';
     proveedorVincular($pdo, $cid, 'licencias', [$id]);
+    if ($pdo->query("SHOW COLUMNS FROM licencias LIKE 'precio_cliente'")->fetchColumn())
+        $pdo->prepare("UPDATE licencias SET precio_cliente = ? WHERE id = ? AND cliente_id = ?")->execute([$receptor ? $fijo : null, $id, $cid]);
     licenciasSincronizar($pdo, $cid, (int)USUARIO_ID);
     $pdo->commit();
     echo json_encode(['success' => true, 'id' => $id, 'message' => 'Licencia guardada. Su próxima renovación está en Cuentas por pagar' . ($receptor ? ' y saldrá como aviso en la factura del cliente.' : '.')], JSON_UNESCAPED_UNICODE);

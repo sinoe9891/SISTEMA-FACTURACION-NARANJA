@@ -52,6 +52,27 @@ function licenciaPrecio(float $costoHnl, float $pct): float
     return round($costoHnl * (1 + $pct / 100), 2);
 }
 
+/** Lo que se le cobra al cliente por año: el precio fijo si lo tiene; si no, costo del año + comisión. */
+function licenciaPrecioAnual(PDO $pdo, int $cid, array $l): float
+{
+    if (isset($l['precio_cliente']) && $l['precio_cliente'] !== null && (float)$l['precio_cliente'] > 0) return round((float)$l['precio_cliente'], 2);
+    $costoAnio = licenciaCostoHnl($pdo, $cid, $l) * ($l['frecuencia'] === 'bienal' ? 0.5 : 1);
+    return licenciaPrecio($costoAnio, (float)$l['comision_pct']);
+}
+
+/** % de ganancia sobre el costo del año (lo que se cobra frente a lo que se paga). */
+function licenciaGananciaPct(PDO $pdo, int $cid, array $l): ?float
+{
+    $costoAnio = licenciaCostoHnl($pdo, $cid, $l) * ($l['frecuencia'] === 'bienal' ? 0.5 : 1);
+    return $costoAnio > 0 ? round((licenciaPrecioAnual($pdo, $cid, $l) / $costoAnio - 1) * 100, 1) : null;
+}
+
+/** Comisión efectiva en SQL: con precio fijo, la que hace que costo × (1 + %) = precio fijo. $monto = columna del costo. */
+function licenciaComisionSql(string $monto): string
+{
+    return "IF(l.precio_cliente IS NOT NULL AND l.precio_cliente > 0 AND $monto > 0, ROUND((l.precio_cliente / $monto - 1) * 100, 6), l.comision_pct)";
+}
+
 /** Frecuencia del gasto de la renovación: mensual/anual se repiten solos al pagarse; cada 2 años lo programa la licencia. */
 function licenciaFrecuenciaGasto(string $f): string
 {
@@ -192,7 +213,7 @@ function licenciasIngresosMes(PDO $pdo, int $cid, int $anio, int $mes): array
         while ($f < $ini) $f = licenciaSiguienteFecha($f, $paso);
         if ($f > $fin) continue;
         $out[] = ['cliente' => $l['cliente_nombre'] ?: 'Cliente', 'nombre' => 'Licencia: ' . $l['nombre'] . ($bienal ? ' · cobro anual ' : ' · renovación ') . date('d/m/Y', strtotime($f)),
-                  'monto' => licenciaPrecio(licenciaCostoHnl($pdo, $cid, $l) * ($bienal ? 0.5 : 1), (float)$l['comision_pct']), 'regla' => 'Licencia que se le cobra al cliente cada año (costo + ' . rtrim(rtrim(number_format((float)$l['comision_pct'], 2), '0'), '.') . ' %)'];
+                  'monto' => licenciaPrecioAnual($pdo, $cid, $l), 'regla' => !empty($l['precio_cliente']) ? 'Licencia que se le cobra al cliente cada año (precio fijo)' : 'Licencia que se le cobra al cliente cada año (costo + ' . rtrim(rtrim(number_format((float)$l['comision_pct'], 2), '0'), '.') . ' %)'];
     }
     return $out;
 }

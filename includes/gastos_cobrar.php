@@ -28,7 +28,7 @@ function gastosPorCobrar(PDO $pdo, int $cid, int $receptorId = 0): array
     try { $lic = (bool)$pdo->query("SHOW COLUMNS FROM gastos LIKE 'licencia_id'")->fetchColumn(); } catch (Throwable $e) { $lic = false; }
     $anual = $lic && licenciasCobrosDisponible($pdo);
     $sql = "SELECT g.id, g.fecha, g.descripcion, g.monto, g.estado, g.proveedor, g.cobrar_receptor_id, cf.nombre AS cliente"
-         . ($lic ? ", l.comision_pct" : ", NULL AS comision_pct") . "
+         . ($lic ? ", " . licenciaComisionSql('g.monto') . " AS comision_pct" : ", NULL AS comision_pct") . "
             FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id" . ($lic ? " LEFT JOIN licencias l ON l.id = g.licencia_id" : '') . "
             WHERE g.cliente_id = ? AND g.cobrar_receptor_id IS NOT NULL AND g.cobrado_factura_id IS NULL
               AND g.estado <> 'anulado' AND (g.estado = 'pagado' OR g.fecha <= LAST_DAY(CURDATE()))"
@@ -40,7 +40,7 @@ function gastosPorCobrar(PDO $pdo, int $cid, int $receptorId = 0): array
     if ($anual) {
         // Cobros anuales de licencias pagadas por varios años: el del año que ya empezó (id negativo = cobro anual)
         $st = $pdo->prepare("SELECT -lc.id AS id, lc.fecha, CONCAT('Licencia: ', l.nombre, ' · año ', lc.anio_n, ' de ', lc.anios, ' (', DATE_FORMAT(lc.desde, '%d/%m/%Y'), ' al ', DATE_FORMAT(lc.hasta, '%d/%m/%Y'), ')') AS descripcion,
-                                    lc.costo AS monto, 'pagado' AS estado, l.proveedor, l.receptor_id AS cobrar_receptor_id, cf.nombre AS cliente, l.comision_pct
+                                    lc.costo AS monto, 'pagado' AS estado, l.proveedor, l.receptor_id AS cobrar_receptor_id, cf.nombre AS cliente, " . licenciaComisionSql('lc.costo') . " AS comision_pct
                              FROM licencias_cobros lc JOIN licencias l ON l.id = lc.licencia_id JOIN clientes_factura cf ON cf.id = l.receptor_id
                              WHERE lc.cliente_id = ? AND lc.factura_id IS NULL AND lc.fecha <= LAST_DAY(CURDATE())" . ($receptorId ? " AND l.receptor_id = ?" : '') . " ORDER BY lc.fecha, lc.id");
         $st->execute($receptorId ? [$cid, $receptorId] : [$cid]);

@@ -2822,5 +2822,26 @@ suite('Proveedores: catálogo, logo, select en gastos y licencias, y ligado por 
     $pdo->exec("DELETE FROM proveedores WHERE id = $pid");
 });
 
+suite('Licencias: precio fijo al cliente por año (p. ej. VPS a L 10,000 aunque se pague cada 2 años)', function () {
+    require_once __DIR__ . '/../../includes/licencias.php';
+    require_once __DIR__ . '/../../includes/gastos_cobrar.php';
+    $pdo = db();
+    $rec = (int)$pdo->query("SELECT id FROM clientes_factura WHERE cliente_id = 2 ORDER BY id LIMIT 1")->fetchColumn();
+    $pdo->prepare("INSERT INTO licencias (cliente_id, nombre, proveedor, frecuencia, moneda, costo, proxima_renovacion, receptor_id, comision_pct, precio_cliente, metodo_pago, notas, activa) VALUES (2, 'QA VPS', 'Hostinger', 'bienal', 'HNL', 8000, ?, ?, 35, 10000, 'tarjeta', 'QA', 1)")
+        ->execute([date('Y-m-d', strtotime('+2 years -5 days')), $rec]);
+    $lid = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO gastos (cliente_id, descripcion, monto, fecha, frecuencia, tipo, naturaleza, metodo_pago, estado, usuario_id, cobrar_receptor_id, licencia_id) VALUES (2, 'QA VPS 2 años', 8000, CURDATE(), 'unico', 'fijo', 'gasto', 'tarjeta', 'pagado', 1, ?, ?)")->execute([$rec, $lid]);
+    licenciasSincronizar($pdo, 2, 1);
+    $pc = array_values(array_filter(gastosPorCobrar($pdo, 2, $rec), fn($g) => str_contains($g['descripcion'], 'QA VPS')));
+    $precio = $pc ? round((float)$pc[0]['monto'] * (1 + (float)$pc[0]['comision_pct'] / 100), 2) : 0;
+    check('el cobro anual sale con el precio fijo (L 10,000), no con costo + %', count($pc) === 1 && abs($precio - 10000) < 0.01, json_encode($pc));
+    check('la licencia muestra el precio fijo por año', licenciaPrecioAnual($pdo, 2, licenciaObtener($pdo, 2, $lid)) === 10000.0);
+    $r = login('qa.admin@local.test')->get('licencias');
+    check('el formulario tiene el campo de precio fijo', str_contains($r['body'], 'name="precio_cliente"') && str_contains($r['body'], 'precio fijo'));
+    $pdo->exec("DELETE FROM licencias_cobros WHERE licencia_id = $lid");
+    $pdo->exec("DELETE FROM gastos WHERE licencia_id = $lid");
+    $pdo->exec("DELETE FROM licencias WHERE id = $lid");
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

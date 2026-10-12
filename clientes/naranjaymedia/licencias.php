@@ -72,7 +72,7 @@ $anual = fn($l) => licenciaCostoHnl($pdo, $cid, $l) * licenciaVecesAnio($l['frec
 $costoPropias = $costoClientes = $ventaClientes = 0.0;
 foreach ($lista as $l) {
     if (!(int)$l['activa']) continue;
-    if ($l['receptor_id']) { $costoClientes += $anual($l); $ventaClientes += licenciaPrecio($anual($l), (float)$l['comision_pct']); }
+    if ($l['receptor_id']) { $costoClientes += $anual($l); $ventaClientes += licenciaPrecioAnual($pdo, $cid, $l) * ($l['frecuencia'] === 'mensual' ? 12 : 1); }
     else $costoPropias += $anual($l);
 }
 $L = fn($v) => 'L ' . number_format((float)$v, 2);
@@ -137,7 +137,7 @@ require_once '../../includes/templates/header.php';
                             . (count($gruposLic[(int)$l['receptor_id']] ?? []) > 1 ? '<div class="small text-muted" title="Se le cobra en la factura de cualquiera de las empresas de su contrato rotativo"><i class="bi bi-diagram-3 me-1"></i>o cualquiera de sus ' . count($gruposLic[(int)$l['receptor_id']]) . ' empresas</div>' : '') : '<span class="text-muted">Empresa</span>' ?></td>
                         <td><?= LICENCIA_FRECUENCIAS[$l['frecuencia']] ?? $l['frecuencia'] ?></td>
                         <td class="app-num"><?= $l['moneda'] === 'USD' ? 'USD ' . number_format((float)$l['costo'], 2) . '<div class="small text-muted">' . $L($costoL) . '</div>' : $L($l['costo']) ?></td>
-                        <td class="app-num"><?= $l['receptor_id'] ? '<span class="fw-semibold">' . $L(licenciaPrecio($costoL / max(1, 1 / licenciaVecesAnio($l['frecuencia'])) , (float)$l['comision_pct'])) . '</span>' . ($l['frecuencia'] === 'bienal' ? '<div class="small text-muted">por año</div>' : '') : '<span class="text-muted">—</span>' ?>
+                        <td class="app-num"><?= $l['receptor_id'] ? '<span class="fw-semibold">' . $L(licenciaPrecioAnual($pdo, $cid, $l)) . '</span>' . (($gp = licenciaGananciaPct($pdo, $cid, $l)) !== null ? ' <span class="badge ' . ($gp < 15 ? 'bg-danger-subtle text-danger-emphasis' : 'bg-success-subtle text-success-emphasis') . '" title="Ganancia sobre lo que se paga al año">+' . number_format($gp, 1) . ' %</span>' : '') . ($l['frecuencia'] === 'bienal' || !empty($l['precio_cliente']) ? '<div class="small text-muted">por año' . (!empty($l['precio_cliente']) ? ' · precio fijo' : '') . '</div>' : '') : '<span class="text-muted">—</span>' ?>
                             <?php if ($l['receptor_id']): $uc = $ultimoCobro[(int)$l['id']] ?? null; ?>
                                 <div class="small text-nowrap"><?= $uc ? '<a href="ver_factura?id=' . (int)$uc['id'] . '" target="_blank" class="text-decoration-none" title="Última factura en que se cobró">Última: ' . htmlspecialchars(substr($uc['correlativo'], -3)) . ' · ' . date('d/m/Y', strtotime($uc['fecha'])) . '</a>' : '<span class="text-muted">Sin cobros registrados</span>' ?></div>
                                 <?php if (!empty($porCobrarLic[(int)$l['id']])): ?><div class="small"><span class="badge bg-warning-subtle text-warning-emphasis" title="Renovación pagada que todavía no está en una factura">Pagada, por cobrar</span></div><?php endif; ?>
@@ -175,6 +175,7 @@ require_once '../../includes/templates/header.php';
                     <div class="col-md-8"><label class="form-label small">¿Se le cobra a un cliente?</label>
                         <select class="form-select" name="receptor_id" id="licCliente"><option value="">No, es de la empresa</option><?php foreach ($clientes as $k => $v): ?><option value="<?= (int)$k ?>"><?= htmlspecialchars($v) ?></option><?php endforeach; ?></select></div>
                     <div class="col-md-4"><label class="form-label small">Comisión (%)</label><input type="number" class="form-control" name="comision_pct" step="0.01" min="0" max="500"></div>
+                    <div class="col-md-6"><label class="form-label small">Precio fijo al cliente por año <span class="text-muted">(opcional, L)</span></label><input type="number" class="form-control" name="precio_cliente" step="0.01" min="0" placeholder="Si se llena, se cobra esto en vez de costo + %"></div>
                     <div class="col-12"><div class="small text-muted" id="licPrecio"></div></div>
                     <div class="col-12"><label class="form-label small">Notas</label><textarea class="form-control" name="notas" rows="2" placeholder="Cuenta, usuario, dominio, para qué se usa…"></textarea></div>
                 </div>
@@ -193,13 +194,13 @@ require_once '../../includes/templates/header.php';
     const TASA = <?= json_encode($tasa) ?>;
     const fmt = n => 'L ' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const precio = () => {
-        const c = +f.costo.value || 0, p = +f.comision_pct.value || 0, cl = f.receptor_id.value, usd = f.moneda.value === 'USD';
+        const c = +f.costo.value || 0, p = +f.comision_pct.value || 0, cl = f.receptor_id.value, usd = f.moneda.value === 'USD', fijo = +f.precio_cliente.value || 0;
         const cL = usd ? c * TASA : c;
-        f.comision_pct.disabled = !cl;
+        f.comision_pct.disabled = !cl || fijo > 0; f.precio_cliente.disabled = !cl;
         document.getElementById('licPrecio').innerHTML = !c ? '' : (usd ? `Costo en lempiras: <strong>${fmt(cL)}</strong> (tasa ${TASA ? TASA.toFixed(4) : 'sin registrar'}). ` : '')
-            + (cl ? `Se le cobra al cliente: <strong>${fmt(cL * (1 + p / 100) / (f.frecuencia.value === 'bienal' ? 2 : 1))}</strong>${f.frecuencia.value === 'bienal' ? ' por año' : ''} (costo + ${p} %). A los clientes se les cobra cada año: sale como aviso en su factura.` : 'Es gasto de la empresa.');
+            + (cl ? `Se le cobra al cliente: <strong>${fmt(fijo || cL * (1 + p / 100) / (f.frecuencia.value === 'bienal' ? 2 : 1))}</strong>${f.frecuencia.value === 'bienal' || fijo ? ' por año' : ''} (${fijo ? 'precio fijo' : 'costo + ' + p + ' %'}). A los clientes se les cobra cada año: sale como aviso en su factura.` : 'Es gasto de la empresa.');
     };
-    ['costo', 'comision_pct', 'receptor_id', 'moneda', 'frecuencia'].forEach(n => { f[n].addEventListener('input', precio); f[n].addEventListener('change', precio); });
+    ['costo', 'comision_pct', 'receptor_id', 'moneda', 'frecuencia', 'precio_cliente'].forEach(n => { f[n].addEventListener('input', precio); f[n].addEventListener('change', precio); });
     f.receptor_id.addEventListener('change', precio);
     const abrir = l => {
         f.reset();
@@ -207,7 +208,7 @@ require_once '../../includes/templates/header.php';
         document.getElementById('licId').value = l ? l.id : 0;
         document.getElementById('licTitulo').innerHTML = '<i class="bi bi-key me-1"></i> ' + (l ? 'Editar licencia' : 'Nueva licencia');
         proveedorSelectValor(document.getElementById('licProv'), d.proveedor || '');
-        ['nombre', 'frecuencia', 'moneda', 'costo', 'proxima_renovacion', 'metodo_pago', 'categoria_id', 'receptor_id', 'comision_pct', 'notas'].forEach(k => { if (f[k]) f[k].value = d[k] ?? ''; });
+        ['nombre', 'frecuencia', 'moneda', 'costo', 'proxima_renovacion', 'metodo_pago', 'categoria_id', 'receptor_id', 'comision_pct', 'precio_cliente', 'notas'].forEach(k => { if (f[k]) f[k].value = d[k] ?? ''; });
         precio(); modal.show();
     };
     document.getElementById('btnNueva').addEventListener('click', () => abrir(null));

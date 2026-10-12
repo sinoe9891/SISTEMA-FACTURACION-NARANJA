@@ -800,11 +800,11 @@ try {
 	error_log('dashboard cobrar_clientes: ' . $e->getMessage());
 }
 try {
-	$stPx = $pdo->prepare("SELECT CONVERT(l.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS descripcion, lc.fecha, lc.costo AS monto, l.comision_pct, CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS cliente, l.receptor_id AS cobrar_receptor_id, CONVERT(CONCAT('año ', lc.anio_n, ' de ', lc.anios) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS detalle
+	$stPx = $pdo->prepare("SELECT CONVERT(l.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS descripcion, lc.fecha, lc.costo AS monto, " . licenciaComisionSql('lc.costo') . " AS comision_pct, CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS cliente, l.receptor_id AS cobrar_receptor_id, CONVERT(CONCAT('año ', lc.anio_n, ' de ', lc.anios) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS detalle
 	                       FROM licencias_cobros lc JOIN licencias l ON l.id = lc.licencia_id JOIN clientes_factura cf ON cf.id = l.receptor_id
 	                       WHERE lc.cliente_id = ? AND lc.factura_id IS NULL AND lc.fecha > LAST_DAY(CURDATE()) AND lc.fecha <= CURDATE() + INTERVAL 60 DAY
 	                       UNION ALL
-	                       SELECT CONVERT(g.descripcion USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.fecha, g.monto, l.comision_pct, CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.cobrar_receptor_id, CONVERT('renovación' USING utf8mb4) COLLATE utf8mb4_unicode_ci
+	                       SELECT CONVERT(g.descripcion USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.fecha, g.monto, " . licenciaComisionSql('g.monto') . ", CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.cobrar_receptor_id, CONVERT('renovación' USING utf8mb4) COLLATE utf8mb4_unicode_ci
 	                       FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id LEFT JOIN licencias l ON l.id = g.licencia_id
 	                       WHERE g.cliente_id = ? AND g.cobrado_factura_id IS NULL AND g.estado = 'pendiente' AND g.fecha > LAST_DAY(CURDATE()) AND g.fecha <= CURDATE() + INTERVAL 60 DAY
 	                       ORDER BY fecha");
