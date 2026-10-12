@@ -788,7 +788,49 @@ try {
 }
 $contratos_proximos_pagos = array_merge($contratos_dashboard, $planFilas);
 usort($contratos_proximos_pagos, fn($a, $b) => (int)$a['dias_para_pago'] <=> (int)$b['dias_para_pago']);
-$contratos_proximos_pagos = array_slice($contratos_proximos_pagos, 0, 60);   // el dashboard muestra 5 días y el resto con «Cargar más»
+$contratos_proximos_pagos = array_slice($contratos_proximos_pagos, 0, 60);
+
+// Lo que hay que cobrarle a los clientes aparte del contrato (licencias, hosting, gastos reembolsables):
+// lo de este mes (sale en su factura) y lo que viene en los próximos 60 días
+$cobrar_clientes = $cobrar_clientes_proximos = [];
+try {
+	require_once __DIR__ . '/gastos_cobrar.php';
+	$cobrar_clientes = gastosPorCobrar($pdo, (int)$cliente_id);
+} catch (Throwable $e) {
+	error_log('dashboard cobrar_clientes: ' . $e->getMessage());
+}
+try {
+	$stPx = $pdo->prepare("SELECT CONVERT(l.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS descripcion, lc.fecha, lc.costo AS monto, l.comision_pct, CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci AS cliente, l.receptor_id AS cobrar_receptor_id, CONVERT(CONCAT('año ', lc.anio_n, ' de ', lc.anios) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS detalle
+	                       FROM licencias_cobros lc JOIN licencias l ON l.id = lc.licencia_id JOIN clientes_factura cf ON cf.id = l.receptor_id
+	                       WHERE lc.cliente_id = ? AND lc.factura_id IS NULL AND lc.fecha > LAST_DAY(CURDATE()) AND lc.fecha <= CURDATE() + INTERVAL 60 DAY
+	                       UNION ALL
+	                       SELECT CONVERT(g.descripcion USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.fecha, g.monto, l.comision_pct, CONVERT(cf.nombre USING utf8mb4) COLLATE utf8mb4_unicode_ci, g.cobrar_receptor_id, CONVERT('renovación' USING utf8mb4) COLLATE utf8mb4_unicode_ci
+	                       FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id LEFT JOIN licencias l ON l.id = g.licencia_id
+	                       WHERE g.cliente_id = ? AND g.cobrado_factura_id IS NULL AND g.estado = 'pendiente' AND g.fecha > LAST_DAY(CURDATE()) AND g.fecha <= CURDATE() + INTERVAL 60 DAY
+	                       ORDER BY fecha");
+	$stPx->execute([(int)$cliente_id, (int)$cliente_id]);
+	$cobrar_clientes_proximos = $stPx->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+	error_log('dashboard cobrar_clientes_proximos: ' . $e->getMessage());
+	$cobrar_clientes_proximos = [];
+}
+
+// Renovaciones de licencias de la empresa (lo que hay que pagar): vencidas y próximos 60 días
+$licencias_por_renovar = [];
+try {
+	require_once __DIR__ . '/licencias.php';
+	if (licenciasDisponible($pdo)) {
+		foreach (licenciasLista($pdo, (int)$cliente_id, true) as $l) {
+			if ($l['receptor_id']) continue;
+			$dias = (int)floor((strtotime($l['proxima_renovacion']) - strtotime(date('Y-m-d'))) / 86400);
+			if ($dias > 60) continue;
+			$licencias_por_renovar[] = $l + ['dias' => $dias, 'costo_l' => licenciaCostoHnl($pdo, (int)$cliente_id, $l), 'icono' => licenciaIcono($l)];
+		}
+		usort($licencias_por_renovar, fn($a, $b) => $a['dias'] <=> $b['dias']);
+	}
+} catch (Throwable $e) {
+	$licencias_por_renovar = [];
+}   // el dashboard muestra 5 días y el resto con «Cargar más»
 
 // Cobros por correo programados (como en la lista de facturas): por factura y, si la fila aún no tiene factura, por cliente
 $cobros_prog_factura = $cobros_prog_receptor = [];

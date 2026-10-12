@@ -2794,5 +2794,33 @@ suite('Licencias: tabla con número, ícono, filtros, orden y Excel; a clientes 
     $pdo->exec("DELETE FROM licencias WHERE id = $lid");
 });
 
+suite('Proveedores: catálogo, logo, select en gastos y licencias, y ligado por nombre', function () {
+    require_once __DIR__ . '/../../includes/proveedores.php';
+    $pdo = db();
+    $a = login('qa.admin@local.test');
+    $r = $a->get('proveedores');
+    check('la página de proveedores carga con buscador, filtros y orden', sinErroresPhp($r['body']) && str_contains($r['body'], 'id="pvBuscar"') && str_contains($r['body'], 'pv-orden'), errorPhp($r['body']));
+    $n = 'QA Proveedor ' . time();
+    $g = $a->post('includes/proveedor_accion.php', ['accion' => 'guardar', 'nombre' => $n, 'tipo' => 'software']);
+    $pid = (int)($g['json']['proveedor']['id'] ?? 0);
+    check('alta de proveedor (también la rápida desde un select)', $pid > 0, $g['body']);
+    $g2 = $a->post('includes/proveedor_accion.php', ['accion' => 'guardar', 'nombre' => mb_strtoupper($n), 'tipo' => 'software']);
+    check('no se duplica: con el mismo nombre devuelve el existente', (int)($g2['json']['proveedor']['id'] ?? 0) === $pid);
+    check('valida el sitio web', str_contains($a->post('includes/proveedor_accion.php', ['accion' => 'guardar', 'nombre' => $n . ' x', 'sitio_web' => 'no es sitio'])['body'], 'no es válido'));
+    $gs = $a->get('gastos');
+    check('Gastos y Licencias eligen el proveedor de una lista con «Agregar nuevo»', str_contains($gs['body'], 'proveedor-select') && str_contains($gs['body'], '__nuevo__') && str_contains($a->get('licencias')['body'], 'id="licProv"'));
+    $r = $a->post('includes/gasto_guardar.php', ['descripcion' => 'QA gasto proveedor', 'monto' => 10, 'fecha' => date('Y-m-d'), 'tipo' => 'variable', 'frecuencia' => 'unico', 'estado' => 'pagado', 'metodo_pago' => 'efectivo', 'proveedor' => $n]);
+    $gid = (int)($r['json']['gasto_id'] ?? 0);
+    check('el gasto queda ligado al proveedor del catálogo', $gid && (int)$pdo->query("SELECT proveedor_id FROM gastos WHERE id = $gid")->fetchColumn() === $pid, $r['body']);
+    $lista = array_values(array_filter(proveedoresLista($pdo, 2), fn($p) => (int)$p['id'] === $pid));
+    check('la lista suma lo pagado al proveedor', $lista && (float)$lista[0]['pagado'] === 10.0 && (int)$lista[0]['gastos_n'] === 1);
+    $pdo->exec("UPDATE proveedores SET logo = NULL WHERE id = $pid");
+    check('sin logo muestra el ícono del tipo', str_contains(proveedorAvatar(proveedorObtener($pdo, 2, $pid)), 'bi-cloud-check'));
+    $f = login('qa.facturador@local.test')->get('proveedor_logo', ['id' => $pid]);
+    check('el logo solo se sirve con sesión y si existe', in_array($f['code'], [404, 302], true));
+    $pdo->exec("DELETE FROM gastos WHERE id = $gid");
+    $pdo->exec("DELETE FROM proveedores WHERE id = $pid");
+});
+
 require __DIR__ . '/cobros_lista_adjuntos.php';
 require __DIR__ . '/factura_contrato_edicion.php';

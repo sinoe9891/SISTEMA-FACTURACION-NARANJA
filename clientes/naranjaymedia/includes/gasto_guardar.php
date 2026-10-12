@@ -175,6 +175,10 @@ try {
             $pdo->prepare("UPDATE gastos SET cobrar_receptor_id = ? WHERE id IN (" . implode(',', array_map('intval', $ids_creados)) . ") AND cliente_id = ?")->execute([$cobrarA, $cid]);
     }
 
+    // Proveedor del catálogo
+    require_once __DIR__ . '/../../../includes/proveedores.php';
+    proveedorVincular($pdo, $cid, 'gastos', $ids_creados);
+
     $pdo->commit();
 
     $msg = count($ids_creados) > 1

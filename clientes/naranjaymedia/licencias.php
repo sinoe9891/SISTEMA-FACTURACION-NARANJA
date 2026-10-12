@@ -19,6 +19,10 @@ $lista = $instalado ? licenciasLista($pdo, $cid) : [];
 // Empresas de un mismo contrato rotativo (p. ej. Texaco): la licencia se le cobra a cualquiera de ellas
 require_once '../../includes/gastos_cobrar.php';
 $gruposLic = gastosGruposReceptores($pdo, (int)$cid);
+// Proveedores (logo junto al nombre)
+require_once '../../includes/proveedores.php';
+$provPorId = [];
+foreach (proveedoresOpciones($pdo, (int)$cid) as $pv) $provPorId[(int)$pv['id']] = $pv;
 // Última factura en la que se le cobró cada licencia al cliente (por sus renovaciones pagadas)
 $ultimoCobro = [];
 try {
@@ -128,7 +132,7 @@ require_once '../../includes/templates/header.php';
                         <?php [$licIco, $licCol, $licTipo] = licenciaIcono($l); ?>
                         <td class="text-nowrap"><span class="lic-ico" style="background:<?= $licCol ?>1a;color:<?= $licCol ?>" title="<?= $licTipo ?>"><i class="bi <?= $licIco ?>"></i></span> <span class="text-muted small fw-semibold">#<?= (int)$l['id'] ?></span></td>
                         <td><div class="fw-semibold"><?= htmlspecialchars($l['nombre']) ?><?= $act ? '' : ' <span class="badge bg-light text-secondary border">Inactiva</span>' ?></div>
-                            <div class="small text-muted"><?= htmlspecialchars(trim(($l['proveedor'] ?? '') . ($l['categoria'] ? ' · ' . $l['categoria'] : ''), ' ·')) ?></div></td>
+                            <div class="small text-muted"><?= isset($provPorId[(int)($l['proveedor_id'] ?? 0)]) ? proveedorAvatar($provPorId[(int)$l['proveedor_id']], 16) . ' ' : '' ?><?= htmlspecialchars(trim(($l['proveedor'] ?? '') . ($l['categoria'] ? ' · ' . $l['categoria'] : ''), ' ·')) ?></div></td>
                         <td><?= $l['receptor_id'] ? '<i class="bi bi-person me-1"></i>' . htmlspecialchars((string)$l['cliente_nombre']) . ' <span class="small text-muted">(+' . $fmtPct($l['comision_pct']) . ')</span>'
                             . (count($gruposLic[(int)$l['receptor_id']] ?? []) > 1 ? '<div class="small text-muted" title="Se le cobra en la factura de cualquiera de las empresas de su contrato rotativo"><i class="bi bi-diagram-3 me-1"></i>o cualquiera de sus ' . count($gruposLic[(int)$l['receptor_id']]) . ' empresas</div>' : '') : '<span class="text-muted">Empresa</span>' ?></td>
                         <td><?= LICENCIA_FRECUENCIAS[$l['frecuencia']] ?? $l['frecuencia'] ?></td>
@@ -161,7 +165,7 @@ require_once '../../includes/templates/header.php';
                 <input type="hidden" name="accion" value="guardar"><input type="hidden" name="id" id="licId" value="0">
                 <div class="row g-3">
                     <div class="col-md-7"><label class="form-label small">Nombre <span class="text-danger">*</span></label><input class="form-control" name="nombre" required maxlength="150" placeholder="Ej.: Adobe Creative Cloud, Hosting sigurban.com"></div>
-                    <div class="col-md-5"><label class="form-label small">Proveedor</label><input class="form-control" name="proveedor" maxlength="150" placeholder="Adobe, GoDaddy, Google…"></div>
+                    <div class="col-md-5"><label class="form-label small">Proveedor</label><?php $psId = 'licProv'; $psValor = ''; $psClase = 'form-select'; require '../../includes/templates/proveedor_select.php'; ?></div>
                     <div class="col-md-4"><label class="form-label small">Frecuencia</label><select class="form-select" name="frecuencia"><?php foreach (LICENCIA_FRECUENCIAS as $k => $v): ?><option value="<?= $k ?>"><?= $v ?></option><?php endforeach; ?></select></div>
                     <div class="col-md-3"><label class="form-label small">Moneda</label><select class="form-select" name="moneda"><option value="HNL">Lempiras</option><option value="USD">Dólares</option></select></div>
                     <div class="col-md-5"><label class="form-label small">Costo por renovación <span class="text-danger">*</span></label><input type="number" class="form-control" name="costo" step="0.01" min="0.01" required></div>
@@ -193,16 +197,17 @@ require_once '../../includes/templates/header.php';
         const cL = usd ? c * TASA : c;
         f.comision_pct.disabled = !cl;
         document.getElementById('licPrecio').innerHTML = !c ? '' : (usd ? `Costo en lempiras: <strong>${fmt(cL)}</strong> (tasa ${TASA ? TASA.toFixed(4) : 'sin registrar'}). ` : '')
-            + (cl ? `Se le cobra al cliente: <strong>${fmt(cL * (1 + p / 100))}</strong> (costo + ${p} %), en su factura del mes de la renovación.` : 'Es gasto de la empresa.');
+            + (cl ? `Se le cobra al cliente: <strong>${fmt(cL * (1 + p / 100) / (f.frecuencia.value === 'bienal' ? 2 : 1))}</strong>${f.frecuencia.value === 'bienal' ? ' por año' : ''} (costo + ${p} %). A los clientes se les cobra cada año: sale como aviso en su factura.` : 'Es gasto de la empresa.');
     };
-    ['costo', 'comision_pct', 'receptor_id', 'moneda'].forEach(n => f[n].addEventListener('input', precio));
+    ['costo', 'comision_pct', 'receptor_id', 'moneda', 'frecuencia'].forEach(n => { f[n].addEventListener('input', precio); f[n].addEventListener('change', precio); });
     f.receptor_id.addEventListener('change', precio);
     const abrir = l => {
         f.reset();
         const d = Object.assign({}, DEF, l || {});
         document.getElementById('licId').value = l ? l.id : 0;
         document.getElementById('licTitulo').innerHTML = '<i class="bi bi-key me-1"></i> ' + (l ? 'Editar licencia' : 'Nueva licencia');
-        ['nombre', 'proveedor', 'frecuencia', 'moneda', 'costo', 'proxima_renovacion', 'metodo_pago', 'categoria_id', 'receptor_id', 'comision_pct', 'notas'].forEach(k => { if (f[k]) f[k].value = d[k] ?? ''; });
+        proveedorSelectValor(document.getElementById('licProv'), d.proveedor || '');
+        ['nombre', 'frecuencia', 'moneda', 'costo', 'proxima_renovacion', 'metodo_pago', 'categoria_id', 'receptor_id', 'comision_pct', 'notas'].forEach(k => { if (f[k]) f[k].value = d[k] ?? ''; });
         precio(); modal.show();
     };
     document.getElementById('btnNueva').addEventListener('click', () => abrir(null));

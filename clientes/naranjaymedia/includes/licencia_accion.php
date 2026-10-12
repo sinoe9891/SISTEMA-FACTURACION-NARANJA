@@ -68,6 +68,8 @@ try {
             ->execute(array_merge($datos, [$cid]));
         $id = (int)$pdo->lastInsertId();
     }
+    require_once __DIR__ . '/../../../includes/proveedores.php';
+    proveedorVincular($pdo, $cid, 'licencias', [$id]);
     licenciasSincronizar($pdo, $cid, (int)USUARIO_ID);
     $pdo->commit();
     echo json_encode(['success' => true, 'id' => $id, 'message' => 'Licencia guardada. Su próxima renovación está en Cuentas por pagar' . ($receptor ? ' y saldrá como aviso en la factura del cliente.' : '.')], JSON_UNESCAPED_UNICODE);

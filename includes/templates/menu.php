@@ -52,6 +52,7 @@ $menuLateral = [
 		['gastos', 'bi-wallet2', 'Gastos', ['gasto_ver']],
 		['licencias', 'bi-key', 'Licencias', []],
 		['bouchers', 'bi-receipt-cutoff', 'Bouchers', []],
+		['proveedores', 'bi-truck', 'Proveedores', []],
 		['categorias_gastos', 'bi-tags', 'Categorías de gastos', []],
 	])),
 	'Bancos' => array_values(array_filter([

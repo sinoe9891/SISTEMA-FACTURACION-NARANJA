@@ -220,6 +220,9 @@ try {
                 'tarjeta_id' => $tarjeta_id, 'proveedor' => $proveedor,
             ]), $cid, $usuario_id);
         }
+        // Proveedor del catálogo (si no cambió el nombre, se conserva el que tenía ligado)
+        require_once __DIR__ . '/../../../includes/proveedores.php';
+        proveedorVincular($pdo, $cid, 'gastos', [$gasto_id], $gastoActual['proveedor'] ?? null);
         $pdo->commit();
         $mensaje = 'Gasto actualizado correctamente.';
     }

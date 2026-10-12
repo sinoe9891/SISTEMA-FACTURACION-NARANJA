@@ -1160,9 +1160,8 @@ $total  = count($gastos);
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-6"><label class="mf-label">Proveedor / Beneficiario</label><input type="text"
-                                name="proveedor" id="g_prov" class="mf-input" placeholder="Nombre del proveedor"
-                                maxlength="200"></div>
+                        <div class="col-md-6"><label class="mf-label">Proveedor / Beneficiario <a href="proveedores" target="_blank" class="text-muted fw-normal" style="text-transform:none;letter-spacing:0">(catálogo)</a></label>
+                            <?php $psId = 'g_prov'; $psValor = ''; $psClase = 'mf-select'; require '../../includes/templates/proveedor_select.php'; ?></div>
                         <?php if ($gcDisponible): ?>
                         <div class="col-md-6"><label class="mf-label">Se le cobra a un cliente <span class="text-muted fw-normal" style="text-transform:none;letter-spacing:0">(opcional)</span></label>
                             <select name="cobrar_receptor_id" id="g_cobrar" class="mf-select" data-buscar>
@@ -1607,7 +1606,7 @@ $total  = count($gastos);
     document.getElementById('g_colab').addEventListener('change', function() {
         const prov = document.getElementById('g_prov');
         const nombre = this.selectedOptions[0]?.dataset.nombre || '';
-        if (!prov.value && nombre) prov.value = nombre;
+        if (!prov.value && nombre) proveedorSelectValor(prov, nombre);
     });
 
     function limpiarModalGasto() {
@@ -1655,7 +1654,7 @@ $total  = count($gastos);
             document.getElementById('g_fecha').value = g.fecha || '';
             document.getElementById('g_estado').value = g.estado || 'pendiente';
             document.getElementById('g_cat').value = g.categoria_id || '';
-            document.getElementById('g_prov').value = g.proveedor || '';
+            proveedorSelectValor(document.getElementById('g_prov'), g.proveedor || '');
             const gCobrar = document.getElementById('g_cobrar');
             if (gCobrar) gCobrar.value = g.cobrar_receptor_id || '';
             document.getElementById('g_notas').value = g.notas || '';

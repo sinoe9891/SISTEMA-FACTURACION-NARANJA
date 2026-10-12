@@ -211,13 +211,30 @@ function licenciaSemaforo(string $fecha): array
 function licenciaIcono(array $l): array
 {
     $t = mb_strtolower(($l['nombre'] ?? '') . ' ' . ($l['proveedor'] ?? ''));
+    $hay = fn(...$p) => (bool)array_filter($p, fn($x) => str_contains($t, $x));
     return match (true) {
-        str_contains($t, 'hosting') || str_contains($t, 'servidor') => ['bi-hdd-network', '#2563eb', 'Hosting'],
-        str_contains($t, 'dominio') || str_contains($t, 'domain') => ['bi-globe2', '#0891b2', 'Dominio'],
-        str_contains($t, 'correo') || str_contains($t, 'email') || str_contains($t, '365') => ['bi-envelope-at', '#7c3aed', 'Correo'],
-        str_contains($t, 'dropbox') || str_contains($t, 'drive') || str_contains($t, 'nube') => ['bi-dropbox', '#0061fe', 'Almacenamiento'],
-        str_contains($t, 'adobe') || str_contains($t, 'canva') || str_contains($t, 'figma') => ['bi-palette', '#dc2626', 'Diseño'],
-        str_contains($t, 'ssl') || str_contains($t, 'certificado') => ['bi-shield-lock', '#16a34a', 'Seguridad'],
+        $hay('hosting', 'servidor', 'vps', 'cpanel', 'cloud server') => ['bi-hdd-network', '#2563eb', 'Hosting'],
+        $hay('dominio', 'domain', '.com', '.hn', '.store') && !$hay('correo', 'email') => ['bi-globe2', '#0891b2', 'Dominio'],
+        $hay('ssl', 'certificado', 'https') => ['bi-shield-lock', '#16a34a', 'Certificado SSL'],
+        $hay('correo', 'email', 'outlook', 'gmail', 'workspace', '365') => ['bi-envelope-at', '#7c3aed', 'Correo'],
+        $hay('wordpress', 'elementor', 'plugin', 'woocommerce', 'tema ', 'theme') => ['bi-wordpress', '#21759b', 'WordPress / plugins'],
+        $hay('dropbox', 'drive', 'onedrive', 'icloud', 'nube', 'almacenamiento', 'backup', 'respaldo') => ['bi-cloud-arrow-up', '#0061fe', 'Almacenamiento / respaldo'],
+        $hay('adobe', 'photoshop', 'illustrator', 'premiere', 'figma', 'canva', 'diseño') => ['bi-palette', '#dc2626', 'Diseño'],
+        $hay('envato', 'freepik', 'shutterstock', 'stock', 'imágenes', 'fuentes', 'fonts') => ['bi-images', '#ea580c', 'Banco de imágenes'],
+        $hay('epidemic', 'artlist', 'música', 'musica', 'audio', 'spotify') => ['bi-music-note-beamed', '#db2777', 'Música / audio'],
+        $hay('capcut', 'final cut', 'video', 'vimeo', 'youtube') => ['bi-camera-reels', '#e11d48', 'Video'],
+        $hay('chatgpt', 'openai', 'claude', 'anthropic', 'gemini', 'midjourney', ' ia', 'ai ') => ['bi-stars', '#9333ea', 'Inteligencia artificial'],
+        $hay('meta', 'facebook', 'instagram', 'tiktok', 'ads', 'pauta', 'publicidad') => ['bi-megaphone', '#1877f2', 'Publicidad'],
+        $hay('hootsuite', 'metricool', 'buffer', 'later', 'redes') => ['bi-share', '#0ea5e9', 'Redes sociales'],
+        $hay('analytics', 'semrush', 'ahrefs', 'seo', 'hotjar') => ['bi-graph-up-arrow', '#f59e0b', 'Analítica / SEO'],
+        $hay('zoom', 'teams', 'meet', 'slack', 'reunión') => ['bi-camera-video', '#2d8cff', 'Reuniones / chat'],
+        $hay('notion', 'trello', 'asana', 'monday', 'clickup', 'proyectos') => ['bi-kanban', '#64748b', 'Gestión de proyectos'],
+        $hay('crm', 'hubspot', 'salesforce', 'mailchimp', 'brevo') => ['bi-people', '#ff7a59', 'CRM / marketing'],
+        $hay('quickbooks', 'contab', 'factur', 'erp') => ['bi-calculator', '#0f766e', 'Contabilidad'],
+        $hay('antivirus', 'vpn', 'seguridad', 'password', '1password', 'bitwarden') => ['bi-shield-check', '#15803d', 'Seguridad'],
+        $hay('github', 'gitlab', 'vercel', 'netlify', 'desarrollo', 'api') => ['bi-code-slash', '#111827', 'Desarrollo'],
+        $hay('windows', 'office', 'microsoft', 'mac', 'licencia de sistema') => ['bi-windows', '#0078d4', 'Software de oficina'],
+        $hay('teléfono', 'telefono', 'internet', 'tigo', 'claro', 'plan') => ['bi-wifi', '#0891b2', 'Telefonía / internet'],
         default => ['bi-key', '#d97706', 'Licencia'],
     };
 }

@@ -530,6 +530,92 @@ unset($__v);
                 </div>
             <?php endif; ?>
 
+            <!-- Por cobrar a clientes fuera del contrato: licencias, hosting, dominios, gastos reembolsables -->
+            <?php if (!empty($cobrar_clientes) || !empty($cobrar_clientes_proximos)):
+                $precioCc = fn($r) => round((float)$r['monto'] * (1 + (float)($r['comision_pct'] ?? 0) / 100), 2); ?>
+                <div class="db-card" style="border-color:#fde68a">
+                    <div class="db-card-header">
+                        <span class="db-card-title"><i class="bi bi-key me-2 text-warning"></i>Por cobrar a clientes (licencias y reembolsos)</span>
+                        <a href="licencias" class="btn btn-sm btn-outline-secondary">Licencias <i class="bi bi-arrow-right ms-1"></i></a>
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm align-middle mb-0" style="font-size:.855rem">
+                            <thead class="table-light"><tr><th>Cliente</th><th>Concepto</th><th class="text-end">Se cobra</th><th class="text-center">Cuándo</th><th class="text-center">Acción</th></tr></thead>
+                            <tbody>
+                                <?php foreach ($cobrar_clientes as $r): ?>
+                                    <tr><td class="fw-semibold"><?= htmlspecialchars($r['cliente']) ?></td>
+                                        <td class="small"><?= htmlspecialchars($r['descripcion']) ?></td>
+                                        <td class="text-end fw-bold">L <?= number_format($precioCc($r), 2) ?></td>
+                                        <td class="text-center"><span class="badge bg-warning text-dark">Ya toca</span></td>
+                                        <td class="text-center"><a href="generar_factura?receptor_id=<?= (int)$r['cobrar_receptor_id'] ?>" class="btn btn-sm btn-success" title="Hacer la factura (sale como aviso para incluirlo)"><i class="fa-solid fa-file-invoice-dollar"></i></a></td></tr>
+                                <?php endforeach; ?>
+                                <?php $ccMas = 0; foreach ($cobrar_clientes_proximos as $r):
+                                    // Como las demás alertas: se ve lo de los próximos 5 días; lo demás con «Cargar más»
+                                    $ccDias = (int)floor((strtotime($r['fecha']) - strtotime(date('Y-m-d'))) / 86400);
+                                    $ccOculta = $ccDias > 5; if ($ccOculta) $ccMas++; ?>
+                                    <tr class="text-muted <?= $ccOculta ? 'cc-mas d-none' : '' ?>"><td><?= htmlspecialchars($r['cliente']) ?></td>
+                                        <td class="small"><?= htmlspecialchars($r['descripcion']) ?> <span class="small">· <?= htmlspecialchars($r['detalle']) ?></span></td>
+                                        <td class="text-end">L <?= number_format($precioCc($r), 2) ?></td>
+                                        <td class="text-center small"><?= date('d/m/Y', strtotime($r['fecha'])) ?><div><span class="badge <?= $ccDias <= 5 ? 'bg-warning text-dark' : 'bg-light text-secondary border' ?>">en <?= $ccDias ?> día<?= $ccDias === 1 ? '' : 's' ?></span></div></td>
+                                        <td></td></tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <?php if ($ccMas): ?>
+                            <div class="d-flex justify-content-center gap-2 py-2 border-top">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="ccMas"><i class="bi bi-chevron-down me-1"></i>Cargar más (<?= $ccMas ?>)</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="ccMenos"><i class="bi bi-chevron-up me-1"></i>Ver menos</button>
+                            </div>
+                            <script>
+                            (() => {
+                                const mas = document.getElementById('ccMas'), menos = document.getElementById('ccMenos'), filas = () => document.querySelectorAll('tr.cc-mas');
+                                mas.addEventListener('click', () => { filas().forEach(f => f.classList.remove('d-none')); mas.classList.add('d-none'); menos.classList.remove('d-none'); });
+                                menos.addEventListener('click', () => { filas().forEach(f => f.classList.add('d-none')); menos.classList.add('d-none'); mas.classList.remove('d-none'); });
+                            })();
+                            </script>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Renovaciones de licencias de la empresa (por pagar) -->
+            <?php if (!empty($licencias_por_renovar)): ?>
+                <div class="db-card">
+                    <div class="db-card-header">
+                        <span class="db-card-title"><i class="bi bi-arrow-repeat me-2 text-primary"></i>Licencias de la empresa por renovar</span>
+                        <a href="licencias" class="btn btn-sm btn-outline-secondary">Licencias <i class="bi bi-arrow-right ms-1"></i></a>
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm align-middle mb-0" style="font-size:.855rem">
+                            <thead class="table-light"><tr><th>Licencia</th><th class="text-end">Costo</th><th class="text-center">Renueva</th></tr></thead>
+                            <tbody>
+                                <?php $lrMas = 0; foreach ($licencias_por_renovar as $l): $lrOculta = $l['dias'] > 5; if ($lrOculta) $lrMas++; ?>
+                                    <tr class="<?= $lrOculta ? 'lr-mas d-none' : '' ?>">
+                                        <td><span style="display:inline-flex;width:24px;height:24px;border-radius:6px;align-items:center;justify-content:center;background:<?= $l['icono'][1] ?>1a;color:<?= $l['icono'][1] ?>"><i class="bi <?= $l['icono'][0] ?>"></i></span>
+                                            <span class="fw-semibold ms-1"><?= htmlspecialchars($l['nombre']) ?></span> <span class="small text-muted"><?= htmlspecialchars((string)$l['proveedor']) ?></span></td>
+                                        <td class="text-end"><?= $l['moneda'] === 'USD' ? 'USD ' . number_format((float)$l['costo'], 2) . '<div class="small text-muted">L ' . number_format($l['costo_l'], 2) . '</div>' : 'L ' . number_format((float)$l['costo'], 2) ?></td>
+                                        <td class="text-center small"><?= date('d/m/Y', strtotime($l['proxima_renovacion'])) ?><div><span class="badge <?= $l['dias'] < 0 ? 'bg-danger' : ($l['dias'] <= 5 ? 'bg-warning text-dark' : 'bg-light text-secondary border') ?>"><?= $l['dias'] < 0 ? 'Vencida hace ' . -$l['dias'] . 'd' : ($l['dias'] === 0 ? '¡Hoy!' : 'en ' . $l['dias'] . 'd') ?></span></div></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <?php if ($lrMas): ?>
+                            <div class="d-flex justify-content-center gap-2 py-2 border-top">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="lrMas"><i class="bi bi-chevron-down me-1"></i>Cargar más (<?= $lrMas ?>)</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="lrMenos"><i class="bi bi-chevron-up me-1"></i>Ver menos</button>
+                            </div>
+                            <script>
+                            (() => {
+                                const mas = document.getElementById('lrMas'), menos = document.getElementById('lrMenos'), filas = () => document.querySelectorAll('tr.lr-mas');
+                                mas.addEventListener('click', () => { filas().forEach(f => f.classList.remove('d-none')); mas.classList.add('d-none'); menos.classList.remove('d-none'); });
+                                menos.addEventListener('click', () => { filas().forEach(f => f.classList.add('d-none')); menos.classList.add('d-none'); mas.classList.remove('d-none'); });
+                            })();
+                            </script>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
             <!-- Próximas fechas de cobro -->
             <div class="db-card">
                 <div class="db-card-header">

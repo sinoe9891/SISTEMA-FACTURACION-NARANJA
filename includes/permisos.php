@@ -46,6 +46,7 @@ const PERMISOS_ACCIONES = [
     'gasto_archivo' => ['gastos', 'cuentas_pagar', 'colaboradores', 'pagos_nomina', 'bouchers'],
     'boucher_lote' => ['bouchers', 'pagos_nomina', 'colaboradores'], 'boucher_pdf' => ['bouchers', 'pagos_nomina', 'colaboradores', 'gastos'],
     'licencia_accion' => ['licencias'], 'licencias_exportar' => ['licencias'],
+    'proveedor_accion' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar'], 'proveedor_logo' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar'],
     'categoria_gasto_guardar' => ['categorias_gastos'], 'categoria_gasto_actualizar' => ['categorias_gastos'], 'categoria_gasto_eliminar' => ['categorias_gastos'],
     // Bancos
     'banco_cuenta' => ['bancos'], 'movimiento_archivo' => ['bancos'], 'banco_accion' => ['bancos', 'cheques', 'configuracion_tasa'],
@@ -79,7 +80,7 @@ const PERMISOS_VISTAS = ['ver_factura', 'editar_factura', 'editar_contrato', 'fa
 
 /** Páginas del menú lateral (cada una es su propia opción). */
 const PERMISOS_PAGINAS = ['generar_factura', 'lista_facturas', 'contratos', 'crear_contrato', 'cuentas_cobrar', 'cobros_programados', 'cuentas_pagar', 'gastos',
-    'licencias', 'bouchers', 'categorias_gastos', 'bancos', 'cheques', 'tarjetas', 'activos', 'socios', 'financiero', 'estados_financieros', 'balance_general',
+    'licencias', 'bouchers', 'proveedores', 'categorias_gastos', 'bancos', 'cheques', 'tarjetas', 'activos', 'socios', 'financiero', 'estados_financieros', 'balance_general',
     'proyeccion', 'colaboradores', 'pagos_nomina', 'clientes', 'productos', 'productos_clientes', 'pos', 'pos_turnos', 'inventario', 'inventario_traslados', 'usuarios'];
 
 /** Lo de siempre (antes de los interruptores). */

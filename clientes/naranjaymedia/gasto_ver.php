@@ -727,8 +727,7 @@ $archivoNombre = $g['archivo_nombre'] ?? basename($archivoRaw);
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">Proveedor</label>
-                                <input type="text" name="proveedor" class="form-control"
-                                    value="<?= htmlspecialchars($g['proveedor'] ?? '') ?>">
+                                <?php $psId = 'gv_prov'; $psValor = (string)($g['proveedor'] ?? ''); $psClase = 'form-select'; require '../../includes/templates/proveedor_select.php'; ?>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">N° Factura</label>
