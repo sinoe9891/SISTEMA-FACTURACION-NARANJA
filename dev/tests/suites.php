@@ -2869,3 +2869,36 @@ suite('Avisos configurables: cobrar a partir de una fecha y días de aviso', fun
     $l = $c->get('licencias');
     check('la licencia tiene el campo «Avisar días antes»', str_contains($l['body'], 'name="aviso_dias"'));
 });
+
+suite('Cobro con comprobante y «Registrar cobro» desde la factura y la lista', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $f = $pdo->query("SELECT f.* FROM facturas f WHERE f.cliente_id=2 AND f.estado='emitida' AND f.pagada=0 AND NOT EXISTS (SELECT 1 FROM cobros_factura c WHERE c.factura_id=f.id AND c.anulado=0) AND f.total > 100 ORDER BY f.id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    check('hay una factura pendiente para probar', (bool)$f);
+    if (!$f) return;
+    $fid = (int)$f['id'];
+    $v = $c->get('ver_factura', ['id' => $fid]);
+    check('la factura muestra «Registrar cobro» y lleva a Cuentas por cobrar', sinErroresPhp($v['body']) && str_contains($v['body'], 'cuentas_cobrar?cobrar=' . $fid), errorPhp($v['body']));
+    $l = $c->get('lista_facturas');
+    check('la lista de facturas tiene el botón «Cobro»', str_contains($l['body'], 'cuentas_cobrar?cobrar=' . $fid));
+    $cc = $c->get('cuentas_cobrar', ['cobrar' => $fid]);
+    check('Cuentas por cobrar tiene el comprobante y abre la ventana con ?cobrar', sinErroresPhp($cc['body']) && str_contains($cc['body'], 'name="comprobante"') && str_contains($cc['body'], "get('cobrar')"), errorPhp($cc['body']));
+    $malo = $c->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => $fid, 'fecha' => date('Y-m-d'), 'metodo' => 'transferencia', 'monto' => 1,
+        'comprobante' => new CURLFile(archivoTemporal('txt'), 'image/jpeg', 'foto.jpg')]);
+    check('rechaza un comprobante que no es imagen ni PDF, y no registra el cobro', !($malo['json']['success'] ?? true) && !$pdo->query("SELECT COUNT(*) FROM cobros_factura WHERE factura_id=$fid AND anulado=0")->fetchColumn());
+    $r = $c->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => $fid, 'fecha' => date('Y-m-d'), 'metodo' => 'transferencia', 'monto' => $f['total'], 'referencia' => 'QA-COMP',
+        'comprobante' => new CURLFile(archivoTemporal('png'), 'image/png', 'transferencia.png')]);
+    $cob = $pdo->query("SELECT * FROM cobros_factura WHERE factura_id=$fid AND anulado=0 ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    check('el cobro total guarda el comprobante y la factura queda pagada', ($r['json']['success'] ?? false) && $cob && $cob['archivo_adjunto'] && $cob['archivo_nombre'] === 'transferencia.png'
+        && (int)$pdo->query("SELECT pagada FROM facturas WHERE id=$fid")->fetchColumn() === 1, $r['body']);
+    $a = $c->get('cobro_archivo.php', ['id' => (int)($cob['id'] ?? 0)]);
+    check('el comprobante se puede ver', $a['code'] === 200 && str_starts_with($a['body'], "\x89PNG"));
+    $j = $c->get('includes/cxc_accion.php', ['factura_id' => $fid]);
+    check('la lista de abonos marca que tiene comprobante', (int)($j['json']['cobros'][0]['con_comprobante'] ?? 0) === 1);
+    $ccic = login('qa.ccic@local.test', 3);
+    $x = $ccic->get('cobro_archivo.php', ['id' => (int)($cob['id'] ?? 0)]);
+    check('otra empresa no ve el comprobante', $x['code'] !== 200 || !str_starts_with($x['body'], "\x89PNG"));
+    $c->post('includes/cxc_accion.php', ['accion' => 'anular_cobro', 'id' => (int)$cob['id'], 'motivo' => 'QA']);
+    @unlink(__DIR__ . '/../../clientes/naranjaymedia/includes/uploads/gastos/' . basename((string)$cob['archivo_adjunto']));
+    check('al anular el cobro la factura vuelve a quedar pendiente', (int)$pdo->query("SELECT pagada FROM facturas WHERE id=$fid")->fetchColumn() === 0);
+});

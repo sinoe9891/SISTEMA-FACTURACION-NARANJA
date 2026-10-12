@@ -38,7 +38,7 @@ const PERMISOS_ACCIONES = [
     'contrato_plan_accion' => ['contratos', 'crear_contrato'], 'facturas_sin_contrato' => ['contratos'], 'recibo_guardar' => ['contratos'],
     'anticipo_accion' => ['contratos', 'cuentas_cobrar'],
     // Cobros
-    'estado_cuenta' => ['cuentas_cobrar'], 'cxc_accion' => ['cuentas_cobrar', 'contratos', 'lista_facturas'],
+    'estado_cuenta' => ['cuentas_cobrar'], 'cxc_accion' => ['cuentas_cobrar', 'contratos', 'lista_facturas'], 'cobro_archivo' => ['cuentas_cobrar', 'contratos', 'lista_facturas'],
     'cobro_accion' => ['cobros_programados'], 'nuevo_cobro' => ['cobros_programados'], 'cobros_filas' => ['cobros_programados'],
     // Pagos y gastos
     'gasto_ver' => ['gastos', 'cuentas_pagar'], 'gasto_guardar' => ['gastos'], 'gasto_actualizar' => ['gastos', 'cuentas_pagar'],

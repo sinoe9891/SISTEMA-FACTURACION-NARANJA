@@ -16,7 +16,8 @@ try {
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $f = cxcFactura($pdo, $cid, (int)($_GET['factura_id'] ?? 0));
-        $stmt = $pdo->prepare("SELECT c.id, c.fecha, c.monto, c.metodo, c.referencia, c.anulado, c.motivo_anulacion,
+        $conArchivo = (bool)$pdo->query("SHOW COLUMNS FROM cobros_factura LIKE 'archivo_adjunto'")->fetchColumn();
+        $stmt = $pdo->prepare("SELECT c.id, c.fecha, c.monto, c.metodo, c.referencia, c.anulado, c.motivo_anulacion," . ($conArchivo ? " c.archivo_adjunto IS NOT NULL AS con_comprobante," : " 0 AS con_comprobante,") . "
                 b.banco, b.numero AS cuenta_numero, u.nombre AS usuario
             FROM cobros_factura c
             LEFT JOIN cuentas_bancarias b ON b.id = c.cuenta_id
@@ -33,7 +34,16 @@ try {
     $pdo->beginTransaction();
     if ($accion === 'cobrar') {
         if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true)) throw new Exception("No tienes permiso para registrar cobros.");
-        $id = cxcRegistrarCobro($pdo, $cid, (int)USUARIO_ID, $_POST);
+        // Comprobante opcional (JPG, PNG, WEBP o PDF; 5 MB), como en gastos
+        require_once __DIR__ . '/_gasto_adjuntos.php';
+        $adj = !empty($_FILES['comprobante']) && $pdo->query("SHOW COLUMNS FROM cobros_factura LIKE 'archivo_adjunto'")->fetchColumn()
+            ? guardarAdjuntoGasto($_FILES['comprobante'], $cid) : null;
+        try {
+            $id = cxcRegistrarCobro($pdo, $cid, (int)USUARIO_ID, $_POST, $adj);
+        } catch (Throwable $e) {
+            if ($adj) @unlink(gastoAdjuntoDir() . $adj[0]);
+            throw $e;
+        }
         $f = cxcFactura($pdo, $cid, (int)$_POST['factura_id']);
         $pdo->commit();
         echo json_encode(['success' => true, 'id' => $id, 'saldo' => $f['saldo'],

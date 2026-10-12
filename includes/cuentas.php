@@ -86,7 +86,7 @@ function cxcActualizarPagada(PDO $pdo, int $facturaId): void
 }
 
 /** Registra un abono. Si viene cuenta_id, el dinero entra a esa cuenta bancaria (HNL). */
-function cxcRegistrarCobro(PDO $pdo, int $cid, int $usuario, array $d): int
+function cxcRegistrarCobro(PDO $pdo, int $cid, int $usuario, array $d, ?array $adjunto = null): int
 {
     $f = cxcFactura($pdo, $cid, (int)($d['factura_id'] ?? 0), true);
     if ($f['estado'] !== 'emitida') throw new Exception("Solo se cobran facturas emitidas.");
@@ -116,6 +116,14 @@ function cxcRegistrarCobro(PDO $pdo, int $cid, int $usuario, array $d): int
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         ->execute([$cid, $f['id'], $fecha, $monto, $metodo, $ref, $cuentaId, $movId, mb_substr(trim((string)($d['notas'] ?? '')), 0, 255) ?: null, $usuario]);
     $id = (int)$pdo->lastInsertId();
+    // Comprobante (captura de la transferencia…): en el cobro y en su entrada del banco
+    if ($adjunto) {
+        $pdo->prepare("UPDATE cobros_factura SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ?")->execute([$adjunto[0], $adjunto[1], $id]);
+        if ($movId) {
+            try { $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND archivo_adjunto IS NULL")->execute([$adjunto[0], $adjunto[1], $movId]); }
+            catch (PDOException $e) { /* sin comprobante en movimientos */ }
+        }
+    }
     cxcActualizarPagada($pdo, (int)$f['id']);
     return $id;
 }

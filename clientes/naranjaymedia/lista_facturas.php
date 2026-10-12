@@ -110,6 +110,7 @@ $pendientes_count  = count($pendientes_facts);
 $pendientes_monto  = array_sum(array_map(fn($f) => (float)$f['total'], $pendientes_facts));
 $total_monto       = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
 $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
+$puedeCobrarLf     = in_array($datos['rol'], ['admin', 'superadmin', 'facturador'], true) && permisoPuede($pdo, 'cuentas_cobrar');   // «Registrar cobro» → Cuentas por cobrar
 
 // Tarjeta "Totales": respeta el filtro de fecha/CAI activo; sin filtro, muestra el mes actual (igual que el dashboard).
 if ($fecha_desde || $fecha_hasta || $caix) {
@@ -778,6 +779,17 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		background: #eff6ff;
 		color: #1d4ed8;
 		border-color: rgba(29, 78, 216, .2);
+	}
+
+	.btn-fa-cobro {
+		background: #f0fdf4;
+		color: #15803d;
+		border-color: rgba(21, 128, 61, .25);
+	}
+
+	.btn-fa-cobro:hover {
+		background: #15803d;
+		color: #fff;
 	}
 
 	.btn-fa-view:hover {
@@ -1610,6 +1622,9 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 									rel="noopener noreferrer"
 									onclick="window.open(this.href, '_blank', 'noopener,noreferrer'); return false;"><i
 										class="bi bi-printer-fill"></i> Ver/PDF</a>
+									<?php if ($puedeCobrarLf && $f['estado'] === 'emitida' && empty($f['pagada'])): ?>
+										<a href="cuentas_cobrar?cobrar=<?= (int)$f['id'] ?>" class="btn-fa btn-fa-cobro mt-1" title="Registrar el pago del cliente con su comprobante; al completar el total queda pagada"><i class="bi bi-cash-coin"></i> Cobro</a>
+									<?php endif; ?>
 							</td>
 						</tr>
 					<?php endforeach; ?>
@@ -2242,10 +2257,24 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					enviada
 				};
 			}
-		}).then(result => {
+		}).then(async result => {
 			if (!result.isConfirmed) return;
 			const estados = {};
 			if (result.value.pagada !== '') estados.pagada = parseInt(result.value.pagada, 10);
+			// Marcar UNA factura como pagada = registrar su cobro (fecha, monto, banco y comprobante)
+			let irACobro = false;
+			if (facturaIds.length === 1 && estados.pagada === 1 && !(presetEstados && +presetEstados.pagada === 1) && <?= $puedeCobrarLf ? 'true' : 'false' ?>) {
+				const q = await Swal.fire({
+					icon: 'question', title: '¿Registrar el cobro?',
+					html: 'Para que quede pagada lo correcto es <strong>registrar el cobro</strong>: fecha, monto, banco y el comprobante de la transferencia. Así cuadra con Cuentas por cobrar y Bancos.',
+					showCancelButton: true, showDenyButton: true,
+					confirmButtonText: '<i class="bi bi-cash-coin"></i> Registrar cobro', denyButtonText: 'Solo marcarla pagada', cancelButtonText: 'Cancelar',
+					confirmButtonColor: '#15803d', denyButtonColor: '#64748b'
+				});
+				if (q.isDismissed) return;
+				if (q.isConfirmed) { irACobro = true; delete estados.pagada; }
+			}
+			if (irACobro && !Object.keys(estados).length) { location.href = 'cuentas_cobrar?cobrar=' + facturaIds[0]; return; }
 			if (result.value.declarada !== '') estados.estado_declarada = parseInt(result.value.declarada, 10);
 			if (result.value.enviada !== '') estados.enviada_receptor = parseInt(result.value.enviada, 10);
 			fetch('procesar_accion_factura.php', {
@@ -2263,7 +2292,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					estados
 				})
 			}).then(r => r.json()).then(data => {
-				if (data.success) Swal.fire('Correcto', data.message, 'success').then(() => location
+				if (data.success && irACobro) location.href = 'cuentas_cobrar?cobrar=' + facturaIds[0];
+				else if (data.success) Swal.fire('Correcto', data.message, 'success').then(() => location
 					.reload());
 				else Swal.fire('Error', data.error, 'error');
 			});

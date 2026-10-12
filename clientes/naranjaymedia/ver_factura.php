@@ -98,6 +98,23 @@ switch ($cond_pago_raw) {
 
 /* ── Estado de pago ────────────────────────────────────────────────────── */
 $estado_pago_label = !empty($factura['pagada']) ? 'Pagada' : 'Pendiente de pago';
+// Con abonos: cuánto falta; y el botón «Registrar cobro» (lleva a Cuentas por cobrar con su ventana abierta)
+$saldo_factura = null;
+$puede_registrar_cobro = false;
+if ($factura && $factura['estado'] === 'emitida') {
+	try {
+		require_once '../../includes/cuentas.php';
+		if (cxcDisponible($pdo)) {
+			$cxcF = cxcFactura($pdo, (int)$factura['cliente_id'], (int)$factura['id']);
+			$saldo_factura = (float)$cxcF['saldo'];
+			if ($cxcF['abonado'] > 0 && $saldo_factura > 0) $estado_pago_label = 'Abonado L ' . number_format($cxcF['abonado'], 2) . ' · saldo L ' . number_format($saldo_factura, 2);
+			$puede_registrar_cobro = $saldo_factura > 0 && in_array($rol_usuario, ['admin', 'superadmin', 'facturador'], true)
+				&& (int)$factura['cliente_id'] === (int)cliente_actual() && permisoPuede($pdo, 'cuentas_cobrar');
+		}
+	} catch (Throwable $e) {
+		$saldo_factura = null;
+	}
+}
 
 if (!$factura) {
 	http_response_code(404);
@@ -247,6 +264,17 @@ if (!function_exists('formatFecha')) {
 
 		.btn-ab-print:hover {
 			background: #c45e16;
+			color: #fff !important;
+		}
+
+		.btn-ab-cobro {
+			background: #16a34a;
+			color: #fff !important;
+			box-shadow: 0 1px 6px rgba(22, 163, 74, .35);
+		}
+
+		.btn-ab-cobro:hover {
+			background: #15803d;
 			color: #fff !important;
 		}
 
@@ -626,6 +654,11 @@ if (!function_exists('formatFecha')) {
 				<?php if ($esAdmin): ?>
 					<a href="editar_factura?id=<?= $factura_id ?>" class="btn-ab btn-ab-edit">
 						✏️ Editar Factura
+					</a>
+				<?php endif; ?>
+				<?php if ($puede_registrar_cobro): ?>
+					<a href="cuentas_cobrar?cobrar=<?= (int)$factura_id ?>" class="btn-ab btn-ab-cobro" title="Registrar el pago del cliente (con su comprobante); al completar el total la factura queda pagada">
+						💵 Registrar cobro
 					</a>
 				<?php endif; ?>
 				<button onclick="window.print()" class="btn-ab btn-ab-print">

@@ -190,6 +190,9 @@ require_once '../../includes/templates/header.php';
                             <select class="form-select" name="cuenta_id"><option value="">— No registrar en banco —</option>
                                 <?php foreach ($cuentasHnl as $c): ?><option value="<?= (int)$c['id'] ?>"<?= bancoSel($c) ?>><?= htmlspecialchars($c['banco'] . ' ' . $c['numero']) ?></option><?php endforeach; ?></select>
                             <div class="form-text">Si eliges una cuenta, el cobro aparece como entrada en Bancos.</div></div>
+                        <div class="col-12"><label class="form-label">Comprobante <span class="text-muted small">(captura de la transferencia, cheque… · JPG, PNG o PDF, máx. 5 MB)</span></label>
+                            <input class="form-control" type="file" name="comprobante" accept="image/jpeg,image/png,image/webp,application/pdf">
+                            <div class="form-text">Si es transferencia, adjunta la captura: queda en el cobro y en su entrada del banco.</div></div>
                         <div class="col-12"><label class="form-label">Notas</label><input class="form-control" name="notas" maxlength="255"></div>
                     </div>
                     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-success" type="submit">Registrar cobro</button></div>
@@ -229,6 +232,15 @@ require_once '../../includes/templates/header.php';
                 Swal.fire({ icon: 'success', title: d.message }).then(() => location.reload());
             }).catch(e => Swal.fire('No se pudo registrar', e.message, 'error')).finally(() => btn.disabled = false);
         });
+    }
+
+    // ?cobrar=<factura>: viene de «Registrar cobro» en la factura o en la lista de facturas → se abre su ventana
+    const pedida = new URLSearchParams(location.search).get('cobrar');
+    if (pedida && form) {
+        history.replaceState(null, '', location.pathname);
+        const b = document.querySelector(`.btn-cobrar[data-id="${CSS.escape(pedida)}"]`);
+        if (b) b.click();
+        else Swal.fire({ icon: 'info', title: 'Esta factura no tiene saldo pendiente', text: 'Ya está cobrada por completo, o no está emitida.' });
     }
 
 })();

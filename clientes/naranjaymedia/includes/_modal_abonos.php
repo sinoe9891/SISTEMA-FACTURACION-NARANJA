@@ -47,6 +47,8 @@ $__abCuentas = bancosDisponible($pdo)
                                         <?php foreach ($__abCuentas as $__c): ?><option value="<?= (int)$__c['id'] ?>"<?= bancoSel($__c) ?>><?= htmlspecialchars($__c['banco'] . ' ' . $__c['numero']) ?></option><?php endforeach; ?>
                                     </select></div>
                             <?php endif; ?>
+                            <div class="col-12"><label class="form-label small">Comprobante <span class="text-muted">(captura de la transferencia, cheque… · JPG, PNG o PDF, máx. 5 MB)</span></label>
+                                <input type="file" name="comprobante" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp,application/pdf"></div>
                             <div class="col-12"><label class="form-label small">Notas</label><input type="text" name="notas" class="form-control form-control-sm" maxlength="255"></div>
                         </div>
                         <button type="submit" class="btn btn-primary btn-sm mt-3 w-100"><i class="bi bi-plus-lg me-1"></i> Registrar abono</button>
@@ -81,7 +83,7 @@ $__abCuentas = bancosDisponible($pdo)
             <tr class="${+c.anulado ? 'text-decoration-line-through text-muted' : ''}">
                 <td>${esc(c.fecha.split('-').reverse().join('/'))}</td>
                 <td>${esc(c.metodo)}${c.banco ? '<br><small>' + esc(c.banco + ' ' + c.cuenta_numero) + '</small>' : ''}</td>
-                <td>${esc(c.referencia || '—')}</td>
+                <td>${esc(c.referencia || '—')}${+c.con_comprobante ? ` <a href="cobro_archivo.php?id=${c.id}" target="_blank" title="Ver comprobante"><i class="bi bi-paperclip"></i></a>` : ''}</td>
                 <td class="text-end">${L(c.monto)}</td>
                 <td class="text-end">${+c.anulado ? '<small>' + esc(c.motivo_anulacion || 'Anulado') + '</small>'
                     : (esAdmin ? `<button type="button" class="btn btn-link btn-sm p-0 text-danger ab-anular" data-id="${c.id}" title="Anular abono"><i class="bi bi-x-circle"></i></button>` : '')}</td>
