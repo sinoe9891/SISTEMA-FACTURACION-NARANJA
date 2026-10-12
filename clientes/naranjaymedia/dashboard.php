@@ -538,7 +538,7 @@ unset($__v);
                         <span class="db-card-title"><i class="bi bi-key me-2 text-warning"></i>Por cobrar a clientes (licencias y reembolsos)</span>
                         <a href="licencias" class="btn btn-sm btn-outline-secondary">Licencias <i class="bi bi-arrow-right ms-1"></i></a>
                     </div>
-                    <div class="card-body p-0">
+                    <div class="card-body p-0 table-responsive">
                         <table class="table table-sm align-middle mb-0" style="font-size:.855rem">
                             <thead class="table-light"><tr><th>Cliente</th><th>Concepto</th><th class="text-end">Se cobra</th><th class="text-center">Cuándo</th><th class="text-center">Acción</th></tr></thead>
                             <tbody>
@@ -585,7 +585,7 @@ unset($__v);
                         <span class="db-card-title"><i class="bi bi-arrow-repeat me-2 text-primary"></i>Licencias de la empresa por renovar</span>
                         <a href="licencias" class="btn btn-sm btn-outline-secondary">Licencias <i class="bi bi-arrow-right ms-1"></i></a>
                     </div>
-                    <div class="card-body p-0">
+                    <div class="card-body p-0 table-responsive">
                         <table class="table table-sm align-middle mb-0" style="font-size:.855rem">
                             <thead class="table-light"><tr><th>Licencia</th><th class="text-end">Costo</th><th class="text-center">Renueva</th></tr></thead>
                             <tbody>

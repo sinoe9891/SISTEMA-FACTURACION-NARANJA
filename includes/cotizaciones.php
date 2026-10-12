@@ -316,7 +316,7 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
         table.t td.k { width: 26%; font-weight: bold; }
         table.t .c { text-align: center; width: 9%; }
         table.t .r { text-align: right; white-space: nowrap; }
-        table.t tr.tot td { background: #fde8dc; }
+        table.t tr.tot td { background: #fde8dc; padding-top: 3px; padding-bottom: 3px; }
         table.t td.n { color: #e8590c; font-weight: bold; }
         .det { color: #6b7280; font-size: 9.5px; margin-top: 2px; }
         h3 { font-size: 13px; margin: 12px 0 4px; color: #111827; }
@@ -325,12 +325,12 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
         table.v td.b { color: #e8590c; font-weight: bold; width: 14px; }
         .notas { margin-top: 10px; font-size: 10px; color: #374151; }
         .firma { margin-top: 34px; position: relative; }
-        .firma .img { height: 78px; }
+        .firma .img { height: 78px; width: 300px; text-align: center; }
         .firma .img img { max-height: 75px; max-width: 300px; }
         .firma .linea { border-top: 1.2px solid #111827; width: 300px; padding-top: 5px; font-size: 10px; line-height: 1.45; color: #4b5563; }
         .firma .linea b { color: #111827; }
         .sello { height: 0; overflow: visible; }
-        .sello img { height: 112px; margin-left: 250px; margin-top: -92px; }
+        .sello img { height: 112px; margin-left: 205px; margin-top: -100px; }
         .pie { position: fixed; bottom: -36px; left: 0; right: 0; text-align: center; font-size: 8.5px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 6px; }
     </style></head><body>
     <table class="top"><tr>
