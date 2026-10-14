@@ -12,14 +12,16 @@
 function programarSiguienteGastoRecurrente(PDO $pdo, array $gasto, int $cid, int $usuario_id): ?string
 {
     $frecuencia = $gasto['frecuencia'] ?? 'unico';
-    if (!in_array($frecuencia, ['mensual', 'anual'], true)) return null;     // quincenal/único: no
+    if (!in_array($frecuencia, ['mensual', 'quincenal', 'anual'], true)) return null;
     if (($gasto['estado'] ?? '') !== 'pendiente') return null;              // solo al pasar de pendiente a pagado
     if (strpos($gasto['descripcion'] ?? '', 'Sueldo ') === 0) return null;  // nómina: módulo colaboradores
 
     // Siguiente fecha a partir de la fecha PROGRAMADA (no la del pago real)
     $base = new DateTime($gasto['fecha']);
     $sig  = (clone $base)->modify('first day of this month')->modify($frecuencia === 'anual' ? '+1 year' : '+1 month');
-    $dia  = (int)($gasto['dia_pago'] ?: $base->format('j'));
+    $quincena = $frecuencia === 'quincenal' ? (int)($gasto['quincena_num'] ?? 0) : 0;
+    if ($frecuencia === 'quincenal' && !in_array($quincena, [1, 2], true)) return null;
+    $dia = (int)(($quincena === 2 ? $gasto['dia_pago_2'] : $gasto['dia_pago']) ?: $base->format('j'));
     $sig->setDate((int)$sig->format('Y'), (int)$sig->format('n'), min($dia, (int)$sig->format('t')));
     $fechaSig = $sig->format('Y-m-d');
 
@@ -37,10 +39,11 @@ function programarSiguienteGastoRecurrente(PDO $pdo, array $gasto, int $cid, int
         $desde = $sig->format('Y-m-01');
         $hasta = $sig->format('Y-m-t');
     }
+    $filtroQuincena = $frecuencia === 'quincenal' ? " AND quincena_num = $quincena" : '';
     $stmt = $pdo->prepare("
         SELECT COUNT(*) FROM gastos
         WHERE cliente_id = ? AND estado != 'anulado' AND fecha BETWEEN ? AND ?
-          AND (gasto_grupo_id = ? OR id = ? OR (descripcion = ? AND frecuencia = ?))
+          AND (gasto_grupo_id = ? OR id = ? OR (descripcion = ? AND frecuencia = ?)) $filtroQuincena
     ");
     $stmt->execute([$cid, $desde, $hasta, $grupo, $grupo, $gasto['descripcion'], $frecuencia]);
     if ((int)$stmt->fetchColumn() > 0) return null;
@@ -74,6 +77,7 @@ function programarSiguienteGastoRecurrente(PDO $pdo, array $gasto, int $cid, int
         $usuario_id,
     ]);
     $nuevoId = (int)$pdo->lastInsertId();
+    if ($quincena) $pdo->prepare('UPDATE gastos SET quincena_num = ? WHERE id = ? AND cliente_id = ?')->execute([$quincena, $nuevoId, $cid]);
     // La siguiente cuota conserva su naturaleza (p. ej. abono a capital de un préstamo) y su préstamo
     if (!empty($gasto['naturaleza']) && $gasto['naturaleza'] !== 'gasto') {
         $pdo->prepare("UPDATE gastos SET naturaleza = ?, prestamo_id = ?, activo_id = ? WHERE id = ?")
