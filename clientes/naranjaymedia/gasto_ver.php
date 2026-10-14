@@ -627,6 +627,14 @@ $archivoNombre = $g['archivo_nombre'] ?? basename($archivoRaw);
                     <form id="formEditarGasto" enctype="multipart/form-data">
                         <input type="hidden" name="gasto_id" value="<?= $g['id'] ?>">
                         <input type="hidden" name="gasto_grupo_id" value="<?= $g['gasto_grupo_id'] ?? '' ?>">
+                        <?php if (!empty($g['gasto_grupo_id']) && $g['frecuencia'] === 'quincenal'): ?>
+                            <fieldset class="border rounded p-3 mb-3 bg-light">
+                                <legend class="float-none w-auto fs-6 fw-semibold px-1">¿A cuáles cuotas aplicar los cambios?</legend>
+                                <div class="form-check mb-2"><input class="form-check-input" type="radio" name="actualizar_grupo" id="editSoloCuota" value="0" checked><label class="form-check-label" for="editSoloCuota">Solo esta cuota</label></div>
+                                <div class="form-check"><input class="form-check-input" type="radio" name="actualizar_grupo" id="editTodasCuotas" value="1"><label class="form-check-label" for="editTodasCuotas">Todas las cuotas del grupo</label></div>
+                                <div class="form-text">En todas se actualizarán el monto por cuota, descripción, categoría, frecuencia, días de pago, vencimiento, tipo y proveedor. Cada cuota conserva su fecha, estado y comprobante; esos datos se editan solo en la cuota abierta.</div>
+                            </fieldset>
+                        <?php endif; ?>
                         <div class="row g-3">
                             <div class="col-12">
                                 <label class="form-label fw-semibold">Descripción <span
@@ -642,6 +650,7 @@ $archivoNombre = $g['archivo_nombre'] ?? basename($archivoRaw);
                                     <input type="number" name="monto" class="form-control" step="0.01"
                                         value="<?= number_format((float)$g['monto'], 2, '.', '') ?>" required>
                                 </div>
+                                <?php if ($g['frecuencia'] === 'quincenal'): ?><div class="form-text">Monto de esta quincena. Ejemplo: L 3,400 por cuota = L 6,800 al mes si ambas son iguales.</div><?php endif; ?>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">Fecha <span class="text-danger">*</span></label>
@@ -806,18 +815,7 @@ $archivoNombre = $g['archivo_nombre'] ?? basename($archivoRaw);
                                         </div>
                                         </div>
                                     </div>
-                                    <?php if ($g['gasto_grupo_id']): ?>
-                                        <div class="col-12">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="actualizar_grupo"
-                                                    id="chkGrupo" value="1">
-                                                <label class="form-check-label small text-muted" for="chkGrupo">
-                                                    <i class="fa-solid fa-link me-1"></i> Actualizar también la otra quincena
-                                                    del grupo
-                                                </label>
-                                            </div>
-                                        </div>
-                                    <?php endif; ?>
+
                             </div>
                     </form>
                 </div>
