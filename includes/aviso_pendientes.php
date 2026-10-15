@@ -3,7 +3,7 @@
  * aviso_pendientes.php — Resumen interno para gerencia (cuenta Facturación): lo que ya tocaba y no se ha hecho.
  *   1. Contratos sin facturar: ya pasó su día de pago del mes y no hay factura (o recibo) que cubra el mes;
  *      con plan de pagos, las cuotas vencidas sin cobrar.
- *   2. Facturas emitidas que no se le han enviado al cliente (enviada_receptor = 0), de los últimos 90 días.
+ *   2. Facturas emitidas que no se le han enviado al cliente (enviada_receptor = 0), desde su día de pago contractual, o desde la emisión si no tienen contrato.
  *   3. Facturas vencidas sin pagar: las de contrato vencen el día de pago del mes que cubren (nunca antes de emitirse);
  *      las demás, a los 30 días de emitidas.
  *   4. Gastos que se le cobran a un cliente (p. ej. licencias) y aún no están en una factura.
@@ -44,6 +44,14 @@ function avisoPendientesDiaPago(int $anio, int $mes, int $diaPago): string
 {
     $ult = (int)date('t', mktime(0, 0, 0, $mes, 1, $anio));
     return sprintf('%04d-%02d-%02d', $anio, $mes, min(max(1, $diaPago), $ult));
+}
+
+/** Inicio del aviso interno: nunca antes de emitir ni antes del día contractual. */
+function avisoPendientesDesdeEnvio(array $f): string
+{
+    return !empty($f['contrato_id']) && $f['dia_pago'] !== null
+        ? max($f['emision'], avisoPendientesDiaPago((int)$f['pa'], (int)$f['pm'], (int)$f['dia_pago']))
+        : $f['emision'];
 }
 
 function avisoPendientesDatos(PDO $pdo, int $cid, ?string $hoy = null): array
@@ -103,12 +111,12 @@ function avisoPendientesDatos(PDO $pdo, int $cid, ?string $hoy = null): array
           AND (f.enviada_receptor = 0 OR f.pagada = 0)
         ORDER BY f.fecha_emision, f.id");
     $st->execute([$cid, $hoy]);
-    $limiteEnvio = date('Y-m-d', strtotime($hoy . ' -90 days'));
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $f) {
         $fila = ['id' => (int)$f['id'], 'correlativo' => $f['correlativo'], 'cliente' => $f['cliente'], 'emision' => $f['emision'], 'total' => (float)$f['total']];
-        // Sin enviar: desde el día siguiente de emitida (la del mismo día aún se puede estar enviando)
-        if (!(int)$f['enviada_receptor'] && $f['emision'] < $hoy && $f['emision'] >= $limiteEnvio)
-            $out['sin_enviar'][] = $fila + ['dias' => avisoPendientesDiasEntre($f['emision'], $hoy), 'email' => (string)$f['email']];
+        // Mantener el aviso hasta que se marque enviada, sin límite de antigüedad.
+        $desdeEnvio = avisoPendientesDesdeEnvio($f);
+        if (!(int)$f['enviada_receptor'] && $desdeEnvio <= $hoy)
+            $out['sin_enviar'][] = $fila + ['desde_envio' => $desdeEnvio, 'dias' => avisoPendientesDiasEntre($desdeEnvio, $hoy), 'email' => (string)$f['email']];
         $saldo = (float)$f['abonado'] > 0 ? (float)$f['total'] - (float)$f['abonado'] : ((int)$f['pagada'] ? 0.0 : (float)$f['total']);
         if ($saldo <= 0.004) continue;
         $vence = $f['contrato_id'] && $f['dia_pago'] !== null
@@ -173,9 +181,9 @@ function avisoPendientesCorreo(array $d, array $empresa, array $cfg, string $bas
     }
     if ($d['sin_enviar']) {
         $filas = array_map(fn($r) => '<tr><td ' . $td . '>' . $num($r['correlativo']) . '<br><span style="color:#64748b;font-size:12px">' . $e($r['cliente']) . ($r['email'] ? '' : ' · sin correo registrado') . '</span></td>'
-            . '<td ' . $tdR . '>' . $f($r['emision']) . '<br><span style="color:#9a3412">hace ' . $dias($r['dias']) . '</span></td><td ' . $tdR . '>' . $L($r['total']) . '</td></tr>', $d['sin_enviar']);
-        $partes[] = $seccion('Facturas sin enviar al cliente', 'Emitidas y aún no enviadas desde el sistema. Si ya se mandaron por otro medio, márcalas como «Enviada al cliente».', '#f59e0b',
-            [['Factura', false], ['Emitida', true], ['Total', true]], $filas, $base . 'lista_facturas.php', 'Ver facturas');
+            . '<td ' . $tdR . '>' . $f($r['desde_envio'] ?? $r['emision']) . '<br><span style="color:#9a3412">hace ' . $dias($r['dias']) . '</span></td><td ' . $tdR . '>' . $L($r['total']) . '</td></tr>', $d['sin_enviar']);
+        $partes[] = $seccion('Facturas sin enviar al cliente', 'Con contrato: desde el día de pago del período facturado. Sin contrato: desde su emisión. Se mantienen hasta marcarlas enviadas. Si ya se mandaron por otro medio, márcalas como «Enviada al cliente».', '#f59e0b',
+            [['Factura', false], ['Pendiente desde', true], ['Total', true]], $filas, $base . 'lista_facturas.php', 'Ver facturas');
         $resumen[] = count($d['sin_enviar']) . ' sin enviar';
     }
     if ($d['vencidas']) {

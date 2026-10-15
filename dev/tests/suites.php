@@ -2475,7 +2475,7 @@ suite('Resumen diario de pendientes a gerencia (cron + Configuración → Correo
     check('el día de pago no se pasa del último día del mes', avisoPendientesDiaPago(2026, 2, 30) === '2026-02-28' && avisoPendientesDiaPago(2026, 10, 15) === '2026-10-15');
     $d = avisoPendientesDatos($pdo, 2);
     $hoy = date('Y-m-d');
-    check('sin enviar: solo emitidas antes de hoy y no enviadas', !array_filter($d['sin_enviar'], fn($r) => $r['emision'] >= $hoy
+    check('sin enviar: fecha de aviso alcanzada y no enviadas', !array_filter($d['sin_enviar'], fn($r) => $r['desde_envio'] > $hoy
         || (int)$pdo->query("SELECT enviada_receptor FROM facturas WHERE id = " . (int)$r['id'])->fetchColumn()));
     check('vencidas: con saldo, ya vencidas y no pagadas', !array_filter($d['vencidas'], fn($r) => $r['saldo'] <= 0 || $r['vence'] >= $hoy
         || (int)$pdo->query("SELECT pagada FROM facturas WHERE id = " . (int)$r['id'])->fetchColumn() && $r['saldo'] >= $r['total']));
