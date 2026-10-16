@@ -1128,7 +1128,7 @@ suite('Contrato tipo proyecto con pagos anticipados', function () {
 suite('Correo SMTP y aviso de pago a colaboradores', function () {
     $pdo = db();
     if (!$pdo->query("SHOW TABLES LIKE 'configuracion_correo'")->fetchColumn()) { check('migración de correo instalada', false); return; }
-    $dir = '/private/tmp/claude-501/-Applications-XAMPP-xamppfiles-htdocs-proyectos-NARANJA-sistemafacturacion/ee82cda1-ff6c-4bf7-8e00-1c9a72466389/scratchpad/correos';
+    $dir = __DIR__ . '/../qa/correos';
     $c = login('qa.admin@local.test');
     $base = ['accion' => 'guardar', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna', 'usuario' => 'qa',
              'remitente_email' => 'facturacion@ejemplo.test', 'remitente_nombre' => 'Naranja & Media', 'responder_a' => 'admin@ejemplo.test', 'activo' => 1];
@@ -1248,7 +1248,7 @@ suite('Cron de avisos de pago automáticos', function () {
 suite('Cobros por correo programados', function () {
     $pdo = db();
     if (!$pdo->query("SHOW TABLES LIKE 'cobros_programados'")->fetchColumn()) { check('migración de cobros instalada', false); return; }
-    $dir = '/private/tmp/claude-501/-Applications-XAMPP-xamppfiles-htdocs-proyectos-NARANJA-sistemafacturacion/ee82cda1-ff6c-4bf7-8e00-1c9a72466389/scratchpad/correos';
+    $dir = __DIR__ . '/../qa/correos';
     $c = login('qa.admin@local.test');
     $r = $c->post('includes/correo_accion.php', ['accion' => 'guardar', 'perfil' => 'facturacion', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna',
         'usuario' => 'qa', 'clave' => 'clave-de-prueba', 'remitente_email' => 'facturacion@ejemplo.test', 'responder_a' => 'gerencia@ejemplo.test, administracion@ejemplo.test', 'activo' => 1]);
@@ -1639,7 +1639,7 @@ suite('Rol Nómina', function () {
 suite('Recuperar contraseña por correo', function () {
     $pdo = db();
     if (!$pdo->query("SHOW TABLES LIKE 'clave_resets'")->fetchColumn()) { check('migración clave_resets instalada', false); return; }
-    $dir = '/private/tmp/claude-501/-Applications-XAMPP-xamppfiles-htdocs-proyectos-NARANJA-sistemafacturacion/ee82cda1-ff6c-4bf7-8e00-1c9a72466389/scratchpad/correos';
+    $dir = __DIR__ . '/../qa/correos';
     $pdo->exec("DELETE FROM login_intentos WHERE clave LIKE 'reset:%' OR clave LIKE 'login:%'");
     $a = login('qa.admin@local.test');
     $a->post('includes/correo_accion.php', ['accion' => 'guardar', 'perfil' => 'facturacion', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna',
@@ -2078,7 +2078,7 @@ suite('Plan de pagos del contrato y recibos en los reportes', function () {
 suite('Recibos con banco, PDF, recordatorios del plan y envío de recibos por correo', function () {
     global $pdo;
     $f = fn($sql) => $pdo->query($sql)->fetchColumn();
-    $dir = '/private/tmp/claude-501/-Applications-XAMPP-xamppfiles-htdocs-proyectos-NARANJA-sistemafacturacion/ee82cda1-ff6c-4bf7-8e00-1c9a72466389/scratchpad/correos';
+    $dir = __DIR__ . '/../qa/correos';
     $c = login('qa.admin@local.test');
     // Cuenta de Facturación hacia el servidor de correo falso (por si esta suite corre sola)
     $c->post('includes/correo_accion.php', ['accion' => 'guardar', 'perfil' => 'facturacion', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna',
@@ -2349,7 +2349,7 @@ suite('Activos fijos, préstamos recibidos, anticipos a proveedores y salidas de
 suite('Recibo de anticipo en PDF y por correo', function () {
     global $pdo;
     $f = fn($sql) => $pdo->query($sql)->fetchColumn();
-    $dir = '/private/tmp/claude-501/-Applications-XAMPP-xamppfiles-htdocs-proyectos-NARANJA-sistemafacturacion/ee82cda1-ff6c-4bf7-8e00-1c9a72466389/scratchpad/correos';
+    $dir = __DIR__ . '/../qa/correos';
     $c = login('qa.admin@local.test');
     $c->post('includes/correo_accion.php', ['accion' => 'guardar', 'perfil' => 'facturacion', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna',
         'usuario' => 'qa', 'clave' => 'clave-de-prueba', 'remitente_email' => 'facturacion@ejemplo.test', 'responder_a' => 'gerencia@ejemplo.test', 'activo' => 1]);

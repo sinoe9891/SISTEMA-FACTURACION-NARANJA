@@ -20,7 +20,7 @@ foreach ($facturas as $f) {
     $k = $f['receptor_id'];
     $porCliente[$k] ??= ['nombre' => $f['receptor'], 'rtn' => $f['receptor_rtn'], 'facturas' => 0, 'saldo' => 0.0, 'mayor' => 0, 'meses' => [], 'desde' => null] + array_fill_keys(array_keys($tramos), 0.0);
     $porCliente[$k]['meses'][sprintf('%04d-%02d', $f['periodo_anio'], $f['periodo_mes'])] = true;
-    $porCliente[$k]['desde'] = min($porCliente[$k]['desde'] ?? $f['fecha_emision'], $f['fecha_emision']);
+    $porCliente[$k]['desde'] = min($porCliente[$k]['desde'] ?? $f['desde'], $f['desde']);   // desde cuándo debe (día de pago del contrato si se facturó después)
     $porCliente[$k]['facturas']++;
     $porCliente[$k]['saldo'] += (float)$f['saldo'];
     $porCliente[$k][$t] += (float)$f['saldo'];
@@ -108,7 +108,7 @@ require_once '../../includes/templates/header.php';
                                     <tr>
                                         <td class="font-monospace text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
                                         <td class="text-nowrap"><?= $periodo($f['periodo_mes'], $f['periodo_anio']) ?></td>
-                                        <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
+                                        <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?><?= $f['desde'] < substr($f['fecha_emision'], 0, 10) ? '<div class="small text-danger" title="Es de un contrato: se cuenta desde el día de pago de su período">se debe desde el ' . date('d/m/Y', strtotime($f['desde'])) . '</div>' : '' ?></td>
                                         <td class="app-num"><span class="app-badge app-badge-<?= $colorTramo[$tf] ?>"><?= (int)$f['dias'] ?></span></td>
                                         <td class="app-num"><?= number_format((float)$f['total'], 2) ?></td>
                                         <td class="app-num text-success"><?= (float)$f['abonado'] > 0 ? number_format((float)$f['abonado'], 2) : '—' ?></td>
@@ -181,7 +181,7 @@ require_once '../../includes/templates/header.php';
                             <td class="font-monospace small text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
                             <td><a href="estado_cuenta?receptor_id=<?= (int)$f['receptor_id'] ?>"><?= htmlspecialchars($f['receptor']) ?></a></td>
                             <td class="text-nowrap small"><?= $periodo($f['periodo_mes'], $f['periodo_anio']) ?></td>
-                            <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
+                            <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?><?= $f['desde'] < substr($f['fecha_emision'], 0, 10) ? '<div class="small text-danger" title="Es de un contrato: se cuenta desde el día de pago de su período">se debe desde el ' . date('d/m/Y', strtotime($f['desde'])) . '</div>' : '' ?></td>
                             <td class="app-num"><span class="app-badge app-badge-<?= $colorTramo[$t] ?>"><?= (int)$f['dias'] ?></span></td>
                             <td class="app-num"><?= number_format((float)$f['total'], 2) ?></td>
                             <td class="app-num text-success"><?= (float)$f['abonado'] > 0 ? number_format((float)$f['abonado'], 2) : '—' ?></td>

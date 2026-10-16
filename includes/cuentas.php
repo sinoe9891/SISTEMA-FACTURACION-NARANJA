@@ -33,7 +33,20 @@ function cxcSqlSaldo(): string
         ELSE f.total END";
 }
 
-/** Facturas emitidas con saldo pendiente (y su antigüedad en días). */
+/**
+ * Desde cuándo se debe una factura: la fecha de emisión, o —si es de un contrato y su período es anterior— el día de pago
+ * de ese período según el contrato (p. ej. septiembre facturado el 16/10 con día de pago 30 → se debe desde el 30/09).
+ * Requiere los alias f (facturas) y ct (contratos, LEFT JOIN por f.contrato_id).
+ */
+function cxcSqlDesde(): string
+{
+    $inicioMes = "DATE_ADD(MAKEDATE(f.periodo_anio, 1), INTERVAL (f.periodo_mes - 1) MONTH)";
+    return "CASE WHEN f.periodo_mes IS NOT NULL AND f.periodo_anio IS NOT NULL AND ct.id IS NOT NULL
+        THEN LEAST(DATE(f.fecha_emision), DATE_ADD($inicioMes, INTERVAL (LEAST(GREATEST(COALESCE(ct.dia_pago, 1), 1), DAY(LAST_DAY($inicioMes))) - 1) DAY))
+        ELSE DATE(f.fecha_emision) END";
+}
+
+/** Facturas emitidas con saldo pendiente (y su antigüedad en días, desde que se debe: ver cxcSqlDesde). */
 function cxcFacturasPendientes(PDO $pdo, int $cid, ?int $receptor = null): array
 {
     $sql = "
@@ -43,9 +56,11 @@ function cxcFacturasPendientes(PDO $pdo, int $cid, ?int $receptor = null): array
                COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) AS periodo_anio,
                COALESCE(ab.abonado, 0) AS abonado,
                " . cxcSqlSaldo() . " AS saldo,
-               DATEDIFF(CURDATE(), DATE(f.fecha_emision)) AS dias
+               " . cxcSqlDesde() . " AS desde,
+               DATEDIFF(CURDATE(), " . cxcSqlDesde() . ") AS dias
         FROM facturas f
         JOIN clientes_factura cf ON cf.id = f.receptor_id
+        LEFT JOIN contratos ct ON ct.id = f.contrato_id AND ct.cliente_id = f.cliente_id
         LEFT JOIN (SELECT factura_id, SUM(monto) AS abonado FROM cobros_factura WHERE anulado = 0 GROUP BY factura_id) ab ON ab.factura_id = f.id
         WHERE f.cliente_id = ? AND f.estado = 'emitida'" . ($receptor ? " AND f.receptor_id = ?" : "") . "
         HAVING saldo > 0.004

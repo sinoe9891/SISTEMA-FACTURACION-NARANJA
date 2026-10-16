@@ -5,3 +5,4 @@ dev/.qa_password
 /pagos/
 clientes/naranjaymedia/includes/uploads/*
 !clientes/naranjaymedia/includes/uploads/.htaccess
+dev/qa/correos/

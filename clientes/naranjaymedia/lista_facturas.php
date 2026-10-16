@@ -28,7 +28,7 @@ $totalSubsanaciones = (int)$stmtSubsanaciones->fetchColumn();
 
 $subsanacion = in_array($_GET['subsanacion'] ?? '', ['0', '1', '2'], true) ? $_GET['subsanacion'] : '';
 if (in_array($_GET['estado'] ?? '', ['sub_0', 'sub_1', 'sub_2'], true)) $subsanacion = substr($_GET['estado'], 4);
-$estadoFiltro = in_array($_GET['estado'] ?? '', ['emitida', 'anulada', 'borrador'], true) ? $_GET['estado'] : '';
+$estadoFiltro = in_array($_GET['estado'] ?? '', ['emitida', 'anulada', 'borrador', 'pago_pendiente', 'pagada'], true) ? $_GET['estado'] : '';
 $caix = null;
 if (isset($_GET['cai_id']) && ctype_digit($_GET['cai_id'])) {
 	$caix = intval($_GET['cai_id']);
@@ -59,7 +59,9 @@ if ($fecha_hasta && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_hasta)) $fecha_h
 
 $params     = [$cliente_id, $establecimiento_activo];
 $whereExtra = "";
-if ($estadoFiltro !== '') { $whereExtra .= " AND f.estado = ?"; $params[] = $estadoFiltro; }
+if ($estadoFiltro === 'pago_pendiente') $whereExtra .= " AND f.estado = 'emitida' AND (f.pagada = 0 OR f.pagada IS NULL)";   // emitidas sin pagar
+elseif ($estadoFiltro === 'pagada') $whereExtra .= " AND f.estado = 'emitida' AND f.pagada = 1";
+elseif ($estadoFiltro !== '') { $whereExtra .= " AND f.estado = ?"; $params[] = $estadoFiltro; }
 if ($subsanacion !== '') {
     $whereExtra .= " AND f.requiere_subsanacion = ?";
     $params[] = (int)$subsanacion;
@@ -1198,7 +1200,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 				<div class="fh-stat-lbl">Pagadas</div>
 			</div>
 		</div>
-		<div class="fh-stat">
+		<div class="fh-stat fh-ver-pendientes" role="button" title="Ver solo las facturas pendientes de pago" style="cursor:pointer">
 			<div class="fh-stat-icon red"><i class="bi bi-hourglass-split"></i></div>
 			<div>
 				<div class="fh-stat-val"><?= $pendientes_count ?></div>
@@ -1227,6 +1229,10 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		<div class="fh-card" style="margin-bottom:0;<?= $pendientes_count > 0 ? 'border-color:#fecaca;' : '' ?>">
 			<div class="fh-card-header">
 				<span class="fh-card-title"><i class="bi bi-hourglass-split text-danger"></i> Pendientes de pago</span>
+				<?php if ($pendientes_count > 0): ?><span class="d-flex gap-2">
+					<a href="#" class="fh-ver-pendientes small fw-semibold text-decoration-none"><i class="bi bi-funnel"></i> Ver en la lista</a>
+					<?php if (permisoPuede($pdo, 'cuentas_cobrar')): ?><a href="cuentas_cobrar" class="small fw-semibold text-decoration-none"><i class="bi bi-cash-coin"></i> Cuentas por cobrar</a><?php endif; ?>
+				</span><?php endif; ?>
 			</div>
 			<div style="padding:.25rem 1.25rem 1.1rem;">
 				<?php if ($pendientes_count > 0): ?>
@@ -1343,6 +1349,10 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 <option value="<?= $valorEstado ?>" <?= $estadoFiltro === $valorEstado ? 'selected' : '' ?>><?= $textoEstado ?></option>
 <?php endforeach; ?>
 </optgroup>
+<optgroup label="Pago">
+<option value="pago_pendiente" <?= $estadoFiltro === 'pago_pendiente' ? 'selected' : '' ?>>Pendientes de pago</option>
+<option value="pagada" <?= $estadoFiltro === 'pagada' ? 'selected' : '' ?>>Pagadas</option>
+</optgroup>
 <option disabled>────────────────────</option>
 <optgroup label="Seguimiento de subsanación">
 <?php foreach (['1'=>'Requieren subsanación', '2'=>'Subsanadas', '0'=>'Sin subsanación'] as $valorSub=>$textoSub): ?>
@@ -1419,10 +1429,19 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 						}
 					};
 					selEstado.addEventListener('change', () => {
- if (['sub_1', 'sub_2'].includes(selEstado.value)) { if (!selCai.disabled) selCai.value = ''; desde.value = hasta.value = ''; llenarPeriodos(); }
+ if (['sub_1', 'sub_2', 'pago_pendiente'].includes(selEstado.value)) { if (selCai && !selCai.disabled) selCai.value = ''; desde.value = hasta.value = ''; llenarPeriodos(); }   // todas, de cualquier período
  aplicar();
 });
 f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
+					// «Pendientes de pago» (tarjeta o «Ver en la lista»): filtra la lista sin salir de la página
+					document.addEventListener('click', e => {
+						const v = e.target.closest('.fh-ver-pendientes');
+						if (!v) return;
+						e.preventDefault();
+						selEstado.value = 'pago_pendiente';
+						selEstado.dispatchEvent(new Event('change'));
+						document.getElementById('fhZonaTabla')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+					});
 					f.querySelector('.btn-clear-filter')?.addEventListener('click', e => {
 						e.preventDefault();
  selEstado.value = '';
