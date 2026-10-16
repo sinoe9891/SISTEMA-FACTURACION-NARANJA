@@ -22,6 +22,7 @@ $stmtCAIs->execute([$cliente_id, $establecimiento_activo]);
 $cais = $stmtCAIs->fetchAll();
 
 $subsanacion = in_array($_GET['subsanacion'] ?? '', ['0', '1', '2'], true) ? $_GET['subsanacion'] : '';
+if (in_array($_GET['estado'] ?? '', ['sub_0', 'sub_1', 'sub_2'], true)) $subsanacion = substr($_GET['estado'], 4);
 $estadoFiltro = in_array($_GET['estado'] ?? '', ['emitida', 'anulada', 'borrador'], true) ? $_GET['estado'] : '';
 $caix = null;
 if (isset($_GET['cai_id']) && ctype_digit($_GET['cai_id'])) {
@@ -229,7 +230,14 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 .fh-nota-btn svg { width:13px; height:13px; flex-shrink:0; }
 .fh-nota-btn:hover { color:#1d4ed8; text-decoration:underline; }
 .fh-nota-btn:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
-.fh-nota-contenido { white-space:pre-wrap !important; overflow-wrap:anywhere; text-align:left !important; max-height:60vh; overflow-y:auto; }
+.fh-nota-modal { border-radius:16px !important; padding:0 0 1.25rem !important; text-align:left; }
+.fh-nota-titulo { padding:1.4rem 1.5rem .4rem !important; font-size:1.15rem !important; color:#1e293b !important; text-align:left !important; }
+.fh-nota-contenido { margin:.25rem 1.5rem 0 !important; overflow-wrap:anywhere; text-align:left !important; max-height:60vh; overflow-y:auto; font-size:.9rem !important; color:#475569 !important; line-height:1.7 !important; }
+.fh-nota-factura { font-size:.78rem; color:#64748b; padding-bottom:1rem; border-bottom:1px solid #e2e8f0; margin-bottom:1rem; }
+.fh-nota-texto { white-space:pre-wrap; margin:0; }
+.fh-nota-privada { margin-top:1.2rem; font-size:.75rem; color:#64748b; }
+.fh-nota-acciones { justify-content:flex-end !important; margin:1.2rem 1.5rem 0 !important; }
+
 
 	:root {
 		--brand: #4f46e5;
@@ -1318,21 +1326,20 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 							value="<?= htmlspecialchars($_GET['fecha_hasta'] ?? '') ?>">
 					</div>
 					<div>
-<label class="fh-label" for="fhSubsanacion">Subsanación</label>
-<select class="fh-select" name="subsanacion" id="fhSubsanacion">
-<option value="">Todas las facturas</option>
-<option value="1" <?= $subsanacion === '1' ? 'selected' : '' ?>>Requieren subsanación</option>
-<option value="2" <?= $subsanacion === '2' ? 'selected' : '' ?>>Subsanadas</option>
-<option value="0" <?= $subsanacion === '0' ? 'selected' : '' ?>>Sin subsanación</option>
-</select>
-</div>
-<div>
 <label class="fh-label" for="fhEstado">Estado de factura</label>
 <select class="fh-select" id="fhEstado" name="estado">
 <option value="">Todos los estados</option>
+<optgroup label="Estado de factura">
 <?php foreach (['emitida'=>'Emitidas', 'anulada'=>'Anuladas', 'borrador'=>'Borradores'] as $valorEstado=>$textoEstado): ?>
 <option value="<?= $valorEstado ?>" <?= $estadoFiltro === $valorEstado ? 'selected' : '' ?>><?= $textoEstado ?></option>
 <?php endforeach; ?>
+</optgroup>
+<option disabled>────────────────────</option>
+<optgroup label="Seguimiento de subsanación">
+<?php foreach (['1'=>'Requieren subsanación', '2'=>'Subsanadas', '0'=>'Sin subsanación'] as $valorSub=>$textoSub): ?>
+<option value="sub_<?= $valorSub ?>" <?= $estadoFiltro === '' && $subsanacion === (string)$valorSub ? 'selected' : '' ?>><?= $textoSub ?></option>
+<?php endforeach; ?>
+</optgroup>
 </select></div>
 <div class="fh-filter-btns">
 						<button type="submit" class="btn-filter"><i class="bi bi-search"></i> Filtrar</button>
@@ -1347,7 +1354,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					const f = document.getElementById('fhFilterForm');
 					const desde = f.querySelector('[name=fecha_desde]'), hasta = f.querySelector('[name=fecha_hasta]');
 					const selEstado = f.querySelector('[name=estado]');
- const selSub = f.querySelector('[name=subsanacion]');
+
 					const selCai = f.querySelector('select[name=cai_id]'), selPer = document.getElementById('fhPeriodo');
 					const btn = f.querySelector('.btn-filter'), btnHtml = btn.innerHTML;
 					const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -1402,15 +1409,14 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 							if (yo === pedido) btn.innerHTML = btnHtml;
 						}
 					};
-					selEstado.addEventListener('change', aplicar);
- selSub.addEventListener('change', () => {
- if (['1', '2'].includes(selSub.value)) { if (!selCai.disabled) selCai.value = ''; desde.value = hasta.value = ''; llenarPeriodos(); }
+					selEstado.addEventListener('change', () => {
+ if (['sub_1', 'sub_2'].includes(selEstado.value)) { if (!selCai.disabled) selCai.value = ''; desde.value = hasta.value = ''; llenarPeriodos(); }
  aplicar();
 });
 f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 					f.querySelector('.btn-clear-filter')?.addEventListener('click', e => {
 						e.preventDefault();
- selSub.value = ''; selEstado.value = '';
+ selEstado.value = '';
 						desde.value = hasta.value = '';
 						if (selCai && !selCai.disabled) {
 							const activo = [...selCai.options].find(o => o.dataset.activo === '1');
@@ -2405,14 +2411,24 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 document.addEventListener('click', function (event) {
     const boton = event.target.closest('.fh-nota-btn');
     if (!boton) return;
+    const contenido = document.createElement('div');
+    const factura = document.createElement('div');
+    factura.className = 'fh-nota-factura';
+    factura.textContent = 'Factura ' + boton.dataset.factura;
+    const nota = document.createElement('p');
+    nota.className = 'fh-nota-texto';
+    nota.textContent = boton.dataset.nota;
+    const privada = document.createElement('div');
+    privada.className = 'fh-nota-privada';
+    privada.textContent = 'Uso interno · No se incluye en el PDF ni en los correos al cliente.';
+    contenido.append(factura, nota, privada);
     Swal.fire({
-        titleText: 'Nota interna · ' + boton.dataset.factura,
-        text: boton.dataset.nota,
-        icon: 'info',
+        titleText: 'Nota interna',
+        html: contenido,
         confirmButtonText: 'Cerrar',
         confirmButtonColor: '#2563eb',
         width: 640,
-        customClass: { htmlContainer: 'fh-nota-contenido' }
+        customClass: { popup: 'fh-nota-modal', title: 'fh-nota-titulo', htmlContainer: 'fh-nota-contenido', actions: 'fh-nota-acciones' }
     });
 });
 </script>

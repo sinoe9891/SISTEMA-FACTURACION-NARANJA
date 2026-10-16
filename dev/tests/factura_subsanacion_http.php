@@ -3,13 +3,15 @@ suite('Subsanacion historial', function () {
     $c = login('qa.admin@local.test');
     $r = $c->get('lista_facturas.php', ['subsanacion'=>'1']);
     check('historial filtrado abre', $r['code'] === 200 && sinErroresPhp($r['body']));
-    check('filtro seleccionado', str_contains($r['body'], 'value="1" selected>Requieren subsanación'));
+    check('filtro seleccionado', str_contains($r['body'], 'value="sub_1" selected>Requieren subsanación'));
     check('no selecciona CAI activo por defecto', !preg_match('/<option[^>]*data-activo="1"[^>]*selected/', $r['body']));
     file_put_contents('/tmp/subsanacion-historial.html', $r['body']);
     foreach (['emitida', 'anulada', 'borrador'] as $estado) {
-        $r = $c->get('lista_facturas.php', ['estado'=>$estado, 'subsanacion'=>'2']);
-        check('filtro '.$estado.' y subsanadas', $r['code'] === 200 && sinErroresPhp($r['body']) && str_contains($r['body'], 'value="'.$estado.'" selected') && str_contains($r['body'], 'value="2" selected>Subsanadas'));
+        $r = $c->get('lista_facturas.php', ['estado'=>$estado]);
+        check('filtro '.$estado.' seleccionado', $r['code'] === 200 && sinErroresPhp($r['body']) && str_contains($r['body'], 'value="'.$estado.'" selected'));
     }
+    $r = $c->get('lista_facturas.php', ['estado'=>'sub_2']);
+    check('subsanadas en selector unificado', $r['code'] === 200 && sinErroresPhp($r['body']) && str_contains($r['body'], 'value="sub_2" selected>Subsanadas'));
     $pdo = db();
     $fila = $pdo->query('SELECT id, notas_internas, requiere_subsanacion FROM facturas WHERE cliente_id=2 AND establecimiento_id=1 ORDER BY fecha_emision DESC, id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
     try {
