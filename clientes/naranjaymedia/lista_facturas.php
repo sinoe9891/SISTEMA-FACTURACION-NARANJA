@@ -68,7 +68,7 @@ $stmtFacturas = $pdo->prepare("
     SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.subtotal,
            f.estado, f.pagada, f.enviada_receptor, f.estado_declarada,
            (f.isv_15 + f.isv_18) AS isv_total,
-           f.receptor_id, cf.nombre AS receptor
+           f.notas_internas, f.receptor_id, cf.nombre AS receptor
     FROM facturas f
     INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
     WHERE f.cliente_id = ? AND f.establecimiento_id = ?
@@ -1564,7 +1564,9 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 								<?php endif; ?>
 							</td>
 							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
-							<td data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></td>
+							<td data-col="receptor"><?= htmlspecialchars($f['receptor']) ?>
+<?php if (!empty($f['notas_internas'])): ?><details class="small mt-1"><summary class="text-muted">Nota interna</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;max-width:350px"><?= htmlspecialchars($f['notas_internas'], ENT_QUOTES, 'UTF-8') ?></div></details><?php endif; ?>
+</td>
 							<td data-col="total" data-sort-val="<?= $f['total'] ?>"><strong>L
 									<?= number_format($f['total'], 2) ?></strong></td>
 							<td>

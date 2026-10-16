@@ -555,7 +555,12 @@ require_once '../../includes/templates/header.php';
 			</div>
 
 		</div><!-- /row -->
-	</form>
+	<div class="card border-0 shadow-sm my-3"><div class="card-body">
+<label class="form-label fw-semibold" for="notasInternas">Notas internas</label>
+<textarea class="form-control" id="notasInternas" name="notas_internas" rows="3" maxlength="5000" placeholder="Seguimiento, acuerdos o información interna…"><?= htmlspecialchars($factura['notas_internas'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
+<div class="form-text">Solo para uso interno. No se incluyen en el PDF ni en los correos al cliente. Máximo 5,000 caracteres.</div>
+</div></div>
+</form>
 </div>
 
 <script>

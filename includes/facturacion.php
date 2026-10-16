@@ -139,6 +139,8 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
         $subtotal, $isv_15, $isv_18, $total, numeroALetras($total), $estado,
     ]);
     $factura_id = (int)$pdo->lastInsertId();
+    require_once __DIR__ . '/factura_notas.php';
+    facturaGuardarNotas($pdo, $cliente_id, $factura_id, $d);
 
     $pdo->prepare("UPDATE cai_rangos SET ultimo_correlativo = ? WHERE id = ?")->execute([$correlativo, $cai_id]);
 

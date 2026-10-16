@@ -336,6 +336,8 @@ try {
 		invDescontarFactura($pdo, $cliente_factura, (int)$factura_id, (int)$factura['establecimiento_id'], (int)$usuario_id);
 	}
 
+	require_once '../../includes/factura_notas.php';
+	facturaGuardarNotas($pdo, (int)$cliente_factura, (int)$factura_id, $_POST);
 	$pdo->commit();
 
 	header("Location: lista_facturas?success=1");
