@@ -27,7 +27,7 @@ try {
     try {
         $mv = $pdo->prepare("SELECT movimiento_id FROM colaborador_prestamos WHERE id = ?");
         $mv->execute([$prestamo_id]);
-        if ($movId = (int)$mv->fetchColumn()) $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ? AND cliente_id = ? AND conciliado = 0")->execute([$movId, $cid]);
+        if ($movId = (int)$mv->fetchColumn()) { $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ? AND cliente_id = ? AND conciliado = 0")->execute([$movId, $cid]); if (function_exists('bancoLeyPoblacionalSincronizar')) bancoLeyPoblacionalSincronizar($pdo, $cid); }
     } catch (PDOException $e) {
         // sin la columna movimiento_id (migración 2026-10-08)
     }

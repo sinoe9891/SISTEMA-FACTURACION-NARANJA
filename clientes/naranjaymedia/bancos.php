@@ -168,6 +168,9 @@ require_once '../../includes/templates/header.php';
                         <div class="col-6"><label class="form-label">Saldo inicial</label><input class="form-control" type="number" step="0.01" name="saldo_inicial" value="0"></div>
                         <div class="col-6"><label class="form-label">Saldo a la fecha</label><input class="form-control" type="date" name="fecha_saldo_inicial" value="<?= date('Y-m-d') ?>"></div>
                         <div class="col-12"><label class="form-label">Notas</label><input class="form-control" name="notas" maxlength="255"></div>
+                        <div class="col-12"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" name="ley_poblacional" value="1" id="cLeyPob" checked style="cursor:pointer">
+                            <label class="form-check-label" for="cLeyPob">Cobra Ley Poblacional (L 2 por cada L 1,000 o fracción de cada débito)</label></div>
+                            <div class="form-text">Encendido: cada salida de la cuenta registra sola ese cargo y lo suma al gasto «Ley Poblacional» del mes. Solo cuentas en lempiras.</div></div>
                     </div>
                     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" type="submit">Guardar</button></div>
                 </form>
@@ -252,6 +255,7 @@ require_once '../../includes/templates/header.php';
         const c = JSON.parse(b.dataset.cuenta);
         fCuenta.reset();
         ['id', 'banco', 'numero', 'tipo', 'titular', 'moneda', 'saldo_inicial', 'fecha_saldo_inicial', 'notas'].forEach(k => fCuenta.elements[k].value = c[k] ?? '');
+        if (fCuenta.elements.ley_poblacional) fCuenta.elements.ley_poblacional.checked = c.ley_poblacional === undefined ? c.moneda === 'HNL' : +c.ley_poblacional === 1;
         document.getElementById('tituloCuenta').textContent = 'Editar cuenta';
         B.modal('modalCuenta').show();
     }));

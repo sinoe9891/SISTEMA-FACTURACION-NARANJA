@@ -3033,3 +3033,31 @@ suite('Gastos: al registrar un gasto pagado se elige de qué cuenta salió', fun
     $pdo->exec("DELETE FROM gastos WHERE id IN ($gid, $gt, $gp)");
     $pdo->exec("DELETE FROM cuentas_bancarias WHERE id=$cta");
 });
+
+suite('Bancos: Ley Poblacional (L 2 por cada L 1,000 o fracción) en cada salida', function () {
+    require_once __DIR__ . '/../../includes/bancos.php';
+    $pdo = db();
+    check('el cálculo cuadra con el estado de cuenta', leyPoblacionalMonto(3400) === 8.0 && leyPoblacionalMonto(2152.18) === 6.0 && leyPoblacionalMonto(41321.34) === 84.0 && leyPoblacionalMonto(1000) === 2.0 && leyPoblacionalMonto(1000.01) === 4.0);
+    $c = login('qa.admin@local.test');
+    $c->post('includes/banco_accion.php', ['accion' => 'cuenta_guardar', 'banco' => 'QA LeyPob', 'numero' => '888', 'tipo' => 'ahorro', 'moneda' => 'HNL', 'saldo_inicial' => 100000, 'fecha_saldo_inicial' => date('Y-m-01'), 'ley_poblacional' => 1]);
+    $cta = (int)$pdo->query("SELECT id FROM cuentas_bancarias WHERE banco='QA LeyPob' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $cat = $pdo->query("SELECT id FROM categorias_gastos WHERE cliente_id=2 LIMIT 1")->fetchColumn();
+    $base = ['fecha' => date('Y-m-d'), 'tipo' => 'variable', 'frecuencia' => 'unico', 'estado' => 'pagado', 'categoria_id' => $cat, 'cuenta_id' => $cta, 'metodo_pago' => 'transferencia'];
+    $c->post('includes/gasto_guardar.php', $base + ['descripcion' => 'QA LP uno', 'monto' => 3400]);
+    $c->post('includes/gasto_guardar.php', $base + ['descripcion' => 'QA LP dos', 'monto' => 7000]);
+    $lp = fn() => (float)$pdo->query("SELECT COALESCE(SUM(monto),0) FROM movimientos_bancarios WHERE cuenta_id=$cta AND tipo='comision' AND anulado=0")->fetchColumn();
+    $gasto = fn() => $pdo->query("SELECT monto, estado FROM gastos WHERE cliente_id=2 AND factura_ref='LP-$cta-" . date('Y-m') . "'")->fetch(PDO::FETCH_ASSOC);
+    check('cada salida registra su cargo (8 + 14) y el gasto del mes los suma', $lp() === 22.0 && (float)($gasto()['monto'] ?? 0) === 22.0);
+    check('el saldo del banco ya descuenta la Ley Poblacional', abs(bancoSaldo($pdo, $cta) - (100000 - 3400 - 7000 - 22)) < 0.01);
+    $g1 = (int)$pdo->query("SELECT id FROM gastos WHERE descripcion='QA LP uno' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $c->post('includes/gasto_eliminar.php', ['id' => $g1, 'accion' => 'eliminar']);
+    check('si se anula la salida, se anula su cargo y baja el gasto del mes', $lp() === 14.0 && (float)($gasto()['monto'] ?? 0) === 14.0);
+    bancoLeyPoblacionalSincronizar($pdo, 2, $cta);
+    check('sincronizar de nuevo no duplica', $lp() === 14.0);
+    $pdo->exec("UPDATE cuentas_bancarias SET ley_poblacional = 0 WHERE id = $cta");
+    bancoLeyPoblacionalSincronizar($pdo, 2, $cta);
+    check('al apagarla en la cuenta se anulan sus cargos', $lp() === 0.0 && ($gasto()['estado'] ?? '') === 'anulado');
+    $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id=$cta");
+    $pdo->exec("DELETE FROM gastos WHERE cliente_id=2 AND (descripcion LIKE 'QA LP %' OR factura_ref='LP-$cta-" . date('Y-m') . "')");
+    $pdo->exec("DELETE FROM cuentas_bancarias WHERE id=$cta");
+});

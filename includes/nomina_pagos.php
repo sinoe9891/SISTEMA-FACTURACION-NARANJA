@@ -189,7 +189,7 @@ function nominaPagoAnular(PDO $pdo, int $cid, int $gid, string $motivo): array
             $pdo->prepare("UPDATE colaborador_prestamos SET estado = 'activo', notas = CONCAT(IFNULL(notas,''), ?) WHERE id = ? AND cliente_id = ?")->execute([$nota, $b['id'], $cid]);
         $pdo->prepare("UPDATE gastos SET estado = 'anulado', notas = CONCAT(IFNULL(notas,''), ?) WHERE cliente_id = ? AND id IN ($in)")
             ->execute([' | ANULADO el ' . date('d/m/Y') . ': ' . mb_substr($motivo, 0, 200), $cid]);
-        if ($hayBancos) $pdo->exec("UPDATE movimientos_bancarios SET anulado = 1 WHERE cliente_id = $cid AND gasto_id IN ($in) AND tipo = 'pago_gasto'");
+        if ($hayBancos) { $pdo->exec("UPDATE movimientos_bancarios SET anulado = 1 WHERE cliente_id = $cid AND gasto_id IN ($in) AND tipo = 'pago_gasto'"); if (function_exists('bancoLeyPoblacionalSincronizar')) bancoLeyPoblacionalSincronizar($pdo, $cid); }
         if ($propia) $pdo->commit();
     } catch (Throwable $e) {
         if ($propia && $pdo->inTransaction()) $pdo->rollBack();

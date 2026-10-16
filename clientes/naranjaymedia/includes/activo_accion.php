@@ -167,7 +167,7 @@ try {
             // Las cuotas ya registradas vuelven a ser gastos normales (no se borran) y las pendientes generadas se anulan
             $pdo->prepare("UPDATE gastos SET estado = 'anulado' WHERE prestamo_id = ? AND cliente_id = ? AND estado = 'pendiente' AND descripcion LIKE 'Cuota %préstamo%'")->execute([$id, $cid]);
             $pdo->prepare("UPDATE gastos SET naturaleza = 'gasto', prestamo_id = NULL WHERE prestamo_id = ? AND cliente_id = ?")->execute([$id, $cid]);
-            if ($p['movimiento_id']) $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ? AND conciliado = 0")->execute([$p['movimiento_id']]);
+            if ($p['movimiento_id']) { $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ? AND conciliado = 0")->execute([$p['movimiento_id']]); if (function_exists('bancoLeyPoblacionalSincronizar')) bancoLeyPoblacionalSincronizar($pdo, $cid); }
             $pdo->prepare("UPDATE prestamos_recibidos SET estado = 'anulado' WHERE id = ?")->execute([$id]);
             $msg = 'Préstamo anulado.';
             break;

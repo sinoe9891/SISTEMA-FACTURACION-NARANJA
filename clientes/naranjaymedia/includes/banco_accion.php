@@ -51,11 +51,17 @@ try {
                 $pdo->prepare("UPDATE cuentas_bancarias SET banco=?, numero=?, tipo=?, moneda=?, titular=?, saldo_inicial=?, fecha_saldo_inicial=?, notas=? WHERE id=? AND cliente_id=?")
                     ->execute([$banco, $numero, $tipo, $moneda, $titular, $saldoIni, $fechaIni, $notas, $id, $cid]);
                 $mensaje = 'Cuenta actualizada.';
+                $kLey = (int)$id;
             } else {
                 $pdo->prepare("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, titular, moneda, saldo_inicial, fecha_saldo_inicial, notas) VALUES (?,?,?,?,?,?,?,?,?)")
                     ->execute([$cid, $banco, $tipo, $numero, $titular, $moneda, $saldoIni, $fechaIni, $notas]);
                 $extra['id'] = (int)$pdo->lastInsertId();
                 $mensaje = 'Cuenta creada.';
+                $kLey = $extra['id'];
+            }
+            if (bancoLeyPoblacionalDisponible($pdo)) {
+                $pdo->prepare("UPDATE cuentas_bancarias SET ley_poblacional = ? WHERE id = ? AND cliente_id = ?")->execute([$moneda === 'HNL' && !empty($_POST['ley_poblacional']) ? 1 : 0, $kLey, $cid]);
+                bancoLeyPoblacionalSincronizar($pdo, $cid, $kLey, (int)USUARIO_ID);
             }
             break;
 

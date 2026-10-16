@@ -23,6 +23,7 @@ try {
         $conc->execute([$gasto_id, $cid]);
         if ($conc->fetchColumn()) throw new Exception("El pago de este gasto ya está conciliado en el banco: quita la conciliación antes de anularlo.");
         $pdo->prepare("UPDATE movimientos_bancarios SET anulado=1 WHERE gasto_id=? AND cliente_id=?")->execute([$gasto_id, $cid]);
+        if (function_exists('bancoLeyPoblacionalSincronizar')) bancoLeyPoblacionalSincronizar($pdo, $cid);   // y su Ley Poblacional
     }
 
     if ($accion === 'eliminar' && in_array(USUARIO_ROL, ['admin','superadmin'])) {

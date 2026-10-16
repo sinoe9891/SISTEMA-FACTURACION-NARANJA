@@ -103,7 +103,95 @@ function bancoInsertarMovimiento(PDO $pdo, int $cid, int $cuentaId, array $m): i
         $m['referencia'] ?? null, $m['tasa_cambio'] ?? null, $m['transferencia_grupo'] ?? null,
         $m['cheque_id'] ?? null, $m['gasto_id'] ?? null, $m['factura_id'] ?? null, $m['usuario_id'] ?? null,
     ]);
-    return (int)$pdo->lastInsertId();
+    $id = (int)$pdo->lastInsertId();
+    // Cada salida paga su Ley Poblacional (el cargo mismo no, para no cobrarla sobre sí misma)
+    if ($m['sentido'] === 'salida' && $m['tipo'] !== 'comision') bancoLeyPoblacionalSincronizar($pdo, $cid, $cuentaId, (int)($m['usuario_id'] ?? 0));
+    return $id;
+}
+
+// ── Ley Poblacional (Tasa de Seguridad Poblacional) ─────────────────────────
+// El banco cobra L 2 por cada L 1,000 o fracción de cada débito (transferencias, pagos de tarjeta, retiros, cheques).
+// Cada salida de una cuenta que la cobra tiene su cargo (movimiento «comision», referencia LP#<id de la salida>) y todos
+// los del mes se suman en un gasto «Ley Poblacional <mes> — <cuenta>», para que salga en el Estado de resultados.
+
+/** Lo que cobra la ley por un débito: L 2 por cada L 1,000 o fracción. */
+function leyPoblacionalMonto(float $monto): float
+{
+    return $monto > 0 ? 2.0 * ceil(round($monto, 2) / 1000) : 0.0;
+}
+
+function bancoLeyPoblacionalDisponible(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) {
+        try { $ok = (bool)$pdo->query("SHOW COLUMNS FROM cuentas_bancarias LIKE 'ley_poblacional'")->fetchColumn(); } catch (Throwable $e) { $ok = false; }
+    }
+    return $ok;
+}
+
+/**
+ * Deja al día los cargos de Ley Poblacional de una cuenta (o de todas, con $cuentaId = 0): crea los que faltan,
+ * anula los de salidas que se anularon y ajusta el gasto mensual. Se puede llamar las veces que sea (no duplica).
+ */
+function bancoLeyPoblacionalSincronizar(PDO $pdo, int $cid, int $cuentaId = 0, int $usuario = 0): void
+{
+    if (!bancoLeyPoblacionalDisponible($pdo)) return;
+    $st = $pdo->prepare("SELECT * FROM cuentas_bancarias WHERE cliente_id = ?" . ($cuentaId ? " AND id = ?" : ''));
+    $st->execute($cuentaId ? [$cid, $cuentaId] : [$cid]);
+    $MES = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $cta) {
+        $k = (int)$cta['id'];
+        $sal = $pdo->prepare("SELECT id, fecha, monto, descripcion FROM movimientos_bancarios
+                              WHERE cuenta_id = ? AND anulado = 0 AND sentido = 'salida' AND tipo <> 'comision' AND fecha >= ?");
+        $sal->execute([$k, $cta['fecha_saldo_inicial']]);
+        $salidas = [];
+        // Si la cuenta no la cobra (apagada o en dólares), sus cargos se anulan
+        if ($cta['moneda'] === 'HNL' && (int)$cta['ley_poblacional'] === 1)
+            foreach ($sal->fetchAll(PDO::FETCH_ASSOC) as $s) $salidas['LP#' . $s['id']] = $s;
+        $lp = $pdo->prepare("SELECT id, referencia, gasto_id, monto, fecha FROM movimientos_bancarios WHERE cuenta_id = ? AND tipo = 'comision' AND referencia LIKE 'LP#%' AND anulado = 0");
+        $lp->execute([$k]);
+        $hechos = [];
+        $meses = [];
+        foreach ($lp->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            if (!isset($salidas[$c['referencia']])) {   // su salida se anuló: se anula el cargo
+                $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ?")->execute([$c['id']]);
+                if ($c['gasto_id']) $meses[(int)$c['gasto_id']] = true;
+                continue;
+            }
+            $hechos[$c['referencia']] = true;
+        }
+        foreach ($salidas as $ref => $s) {
+            if (isset($hechos[$ref])) continue;
+            $cargo = leyPoblacionalMonto((float)$s['monto']);
+            if ($cargo <= 0) continue;
+            // Gasto del mes de esa cuenta (uno solo, se va sumando)
+            $mesRef = 'LP-' . $k . '-' . substr($s['fecha'], 0, 7);
+            $g = $pdo->prepare("SELECT id FROM gastos WHERE cliente_id = ? AND factura_ref = ? LIMIT 1");
+            $g->execute([$cid, $mesRef]);
+            $gid = (int)$g->fetchColumn();
+            if (!$gid) {
+                $cat = $pdo->prepare("SELECT id FROM categorias_gastos WHERE cliente_id = ? AND nombre IN ('Otros gastos', 'Comisiones bancarias') ORDER BY nombre = 'Comisiones bancarias' DESC LIMIT 1");
+                $cat->execute([$cid]);
+                $fin = date('Y-m-t', strtotime($s['fecha']));
+                $pdo->prepare("INSERT INTO gastos (cliente_id, categoria_id, descripcion, monto, fecha, frecuencia, tipo, naturaleza, metodo_pago, proveedor, factura_ref, notas, estado, usuario_id)
+                               VALUES (?, ?, ?, 0, ?, 'unico', 'variable', 'gasto', 'otro', ?, ?, ?, 'pagado', ?)")
+                    ->execute([$cid, (int)$cat->fetchColumn() ?: null, 'Ley Poblacional ' . $MES[(int)substr($s['fecha'], 5, 2)] . ' ' . substr($s['fecha'], 0, 4) . ' — ' . $cta['banco'] . ' ' . $cta['numero'],
+                               $fin, $cta['banco'], $mesRef, 'Tasa de Seguridad Poblacional: L 2 por cada L 1,000 o fracción de cada débito de la cuenta. Se suma sola con cada salida (ver Bancos).', $usuario ?: null]);
+                $gid = (int)$pdo->lastInsertId();
+            }
+            $pdo->prepare("INSERT INTO movimientos_bancarios (cliente_id, cuenta_id, fecha, sentido, tipo, monto, descripcion, referencia, gasto_id, usuario_id)
+                           VALUES (?, ?, ?, 'salida', 'comision', ?, ?, ?, ?, ?)")
+                ->execute([$cid, $k, $s['fecha'], $cargo, mb_substr('Ley Poblacional · ' . $s['descripcion'], 0, 255), $ref, $gid, $usuario ?: null]);
+            $meses[$gid] = true;
+        }
+        // El gasto de cada mes = la suma de sus cargos vigentes
+        foreach (array_keys($meses) as $gid) {
+            $t = $pdo->prepare("SELECT COALESCE(SUM(monto), 0) FROM movimientos_bancarios WHERE gasto_id = ? AND tipo = 'comision' AND anulado = 0");
+            $t->execute([$gid]);
+            $total = (float)$t->fetchColumn();
+            $pdo->prepare("UPDATE gastos SET monto = ?, estado = IF(? > 0, 'pagado', 'anulado') WHERE id = ? AND cliente_id = ?")->execute([$total, $total, $gid, $cid]);
+        }
+    }
 }
 
 /**
@@ -209,6 +297,7 @@ function bancoAnularMovimiento(PDO $pdo, int $cid, int $movId): void
     } else {
         $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ?")->execute([$movId]);
     }
+    bancoLeyPoblacionalSincronizar($pdo, $cid, (int)$m['cuenta_id']);   // si era una salida, se anula su Ley Poblacional
 }
 
 // ── Cheques ──────────────────────────────────────────────────────────────────
@@ -267,6 +356,7 @@ function bancoAnularCheque(PDO $pdo, int $cid, int $id, string $motivo): void
     $ch = bancoChequeDeEmpresa($pdo, $cid, $id);
     if ($ch['estado'] === 'anulado') throw new Exception("El cheque ya está anulado.");
     $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE cheque_id = ? AND cliente_id = ?")->execute([$id, $cid]);
+    bancoLeyPoblacionalSincronizar($pdo, $cid);
     $pdo->prepare("UPDATE cheques SET estado = 'anulado', motivo_anulacion = ? WHERE id = ?")->execute([mb_substr($motivo, 0, 255), $id]);
 }
 
