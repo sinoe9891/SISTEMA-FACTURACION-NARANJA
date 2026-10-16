@@ -21,6 +21,11 @@ $stmtCAIs = $pdo->prepare("
 $stmtCAIs->execute([$cliente_id, $establecimiento_activo]);
 $cais = $stmtCAIs->fetchAll();
 
+// Mismo alcance que la opción de subsanaciones: todos los CAI y períodos del establecimiento.
+$stmtSubsanaciones = $pdo->prepare('SELECT COUNT(*) FROM facturas WHERE cliente_id = ? AND establecimiento_id = ? AND requiere_subsanacion = 1');
+$stmtSubsanaciones->execute([$cliente_id, $establecimiento_activo]);
+$totalSubsanaciones = (int)$stmtSubsanaciones->fetchColumn();
+
 $subsanacion = in_array($_GET['subsanacion'] ?? '', ['0', '1', '2'], true) ? $_GET['subsanacion'] : '';
 if (in_array($_GET['estado'] ?? '', ['sub_0', 'sub_1', 'sub_2'], true)) $subsanacion = substr($_GET['estado'], 4);
 $estadoFiltro = in_array($_GET['estado'] ?? '', ['emitida', 'anulada', 'borrador'], true) ? $_GET['estado'] : '';
@@ -1341,7 +1346,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 <option disabled>────────────────────</option>
 <optgroup label="Seguimiento de subsanación">
 <?php foreach (['1'=>'Requieren subsanación', '2'=>'Subsanadas', '0'=>'Sin subsanación'] as $valorSub=>$textoSub): ?>
-<option value="sub_<?= $valorSub ?>" <?= $estadoFiltro === '' && $subsanacion === (string)$valorSub ? 'selected' : '' ?>><?= $textoSub ?></option>
+<option value="sub_<?= $valorSub ?>" <?= $estadoFiltro === '' && $subsanacion === (string)$valorSub ? 'selected' : '' ?>><?= $textoSub ?><?= (string)$valorSub === '1' ? ' (' . $totalSubsanaciones . ')' : '' ?></option>
 <?php endforeach; ?>
 </optgroup>
 </select></div>
