@@ -117,7 +117,7 @@ $hoyStr = date('Y-m-d');
 foreach ($stPC->fetchAll(PDO::FETCH_ASSOC) as $f) {
     $ult = (int)date('t', mktime(0, 0, 0, (int)$f['pm'], 1, (int)$f['pa']));
     $vence = sprintf('%04d-%02d-%02d', $f['pa'], $f['pm'], min(max(1, (int)$f['dia_pago']), $ult));
-    if ($vence < $f['emision']) $vence = $f['emision'];
+    // Igual que Cuentas por cobrar: si se facturó después del día de pago de su mes, se debe desde ese día (no desde que se emitió)
     $k = (int)$f['contrato_id'];
     $porCobrar[$k] ??= ['venc_n' => 0, 'venc_total' => 0.0, 'venc_dias' => 0, 'venc_desde' => null, 'pend_n' => 0, 'pend_total' => 0.0, 'proxima' => null];
     if ($vence < $hoyStr) {
@@ -130,6 +130,12 @@ foreach ($stPC->fetchAll(PDO::FETCH_ASSOC) as $f) {
         $porCobrar[$k]['pend_total'] += (float)$f['total'];
         if (!$porCobrar[$k]['proxima'] || $vence < $porCobrar[$k]['proxima']) $porCobrar[$k]['proxima'] = $vence;
     }
+}
+
+/** Clase del semáforo de un atraso: 1–7 días, 8–30 días, más de 30 días (para que no todo sea rojo). */
+function ctSemAtraso(int $dias): string
+{
+    return $dias <= 7 ? 'ct-sem-atr1' : ($dias <= 30 ? 'ct-sem-atr2' : 'ct-sem-atr3');
 }
 
 // Orden por urgencia de cobro (no por estado): 1) atrasados —facturas o pagos del plan con la fecha de pago ya pasada,
@@ -258,14 +264,14 @@ $celdaCobertura = function (array $c) use ($mesesCorto, $porCobrar, $hoyStr, $co
     }
     // Pagos del plan vencidos sin cobrar (con o sin factura de por medio)
     if (!empty($c['plan']['venc_n'])) {
-        $h .= '<a class="ct-cob ct-sem ct-sem-rojo d-block" href="facturas_contrato?contrato_id=' . (int)$c['id'] . '#planPagos" title="Pagos del plan de pagos cuya fecha ya pasó y no se han cobrado">'
+        $h .= '<a class="ct-cob ct-sem ' . ctSemAtraso((int)$c['plan']['venc_dias']) . ' d-block" href="facturas_contrato?contrato_id=' . (int)$c['id'] . '#planPagos" title="Pagos del plan de pagos cuya fecha ya pasó y no se han cobrado">'
             . $c['plan']['venc_n'] . ' pago' . ($c['plan']['venc_n'] > 1 ? 's' : '') . ' del plan vencido' . ($c['plan']['venc_n'] > 1 ? 's' : '') . ' · L ' . number_format($c['plan']['venc_total'], 2) . ' (hace ' . $c['plan']['venc_dias'] . ' d)</a>';
     }
-    // Cobro de lo ya facturado con semáforo: rojo vencida; naranja ≤ 3 días; amarillo ≤ 7; gris más adelante
+    // Cobro de lo ya facturado con semáforo: atrasos por grados (≤7, ≤30, más); por vencer naranja ≤ 3 días, amarillo ≤ 7, gris más adelante
     $pc = $porCobrar[(int)$c['id']] ?? null;
     $url = 'facturas_contrato?contrato_id=' . (int)$c['id'];
     if ($pc && $pc['venc_n']) {
-        $h .= '<a class="ct-cob ct-sem ct-sem-rojo" href="' . $url . '" title="Facturas cuya fecha de cobro ya pasó">' . $pc['venc_n'] . ' vencida' . ($pc['venc_n'] > 1 ? 's' : '')
+        $h .= '<a class="ct-cob ct-sem ' . ctSemAtraso((int)$pc['venc_dias']) . '" href="' . $url . '" title="Facturas cuya fecha de cobro ya pasó">' . $pc['venc_n'] . ' vencida' . ($pc['venc_n'] > 1 ? 's' : '')
             . ' · L ' . number_format($pc['venc_total'], 2) . ' (hace ' . $pc['venc_dias'] . ' d)</a>';
     }
     if ($pc && $pc['pend_n']) {
@@ -692,6 +698,9 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
     /* Días para el cobro */
     .dias-pill { display: inline-block; padding: .15rem .5rem; border-radius: 20px; font-size: .72rem; font-weight: 700; }
     .dias-atraso { background: #dc2626; color: #fff; }
+    .dias-atr1 { background: #fdba74; color: #7c2d12; }
+    .dias-atr2 { background: #ef4444; color: #fff; }
+    .dias-atr3 { background: #991b1b; color: #fff; }
     .dias-3 { background: #f97316; color: #fff; }
     .dias-5 { background: #facc15; color: #713f12; }
     .dias-resto { background: #e2e8f0; color: #475569; }
@@ -1137,10 +1146,10 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                 $dCls = 'dias-inicia';
                                 $dTxt = "En {$dias}d";
                             } elseif ($dias < 0) {
-                                $dCls = 'dias-atraso';
+                                $dCls = 'dias-atr' . (-$dias <= 7 ? 1 : (-$dias <= 30 ? 2 : 3));   // atraso por grados, no todo rojo
                                 $dTxt = 'Atrasado ' . -$dias . 'd';
                             } elseif ($dias === 0) {
-                                $dCls = 'dias-atraso';
+                                $dCls = 'dias-3';
                                 $dTxt = '¡Hoy!';
                             } elseif ($dias <= 3) {
                                 $dCls = 'dias-3';
@@ -1321,11 +1330,11 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                         <small class="text-muted">Primer cobro</small>
                                     <?php else:
                                         if ($diasPago < 0) {
-                                            $t = 'Vencido hace ' . -$diasPago . 'd';
-                                            $cls = 'text-danger fw-bold';
+                                            $t = 'Atrasado ' . -$diasPago . 'd';
+                                            $cls = 'ct-sem ' . ctSemAtraso(-$diasPago);
                                         } elseif ($diasPago === 0) {
                                             $t = '¡Hoy!';
-                                            $cls = 'text-danger fw-bold';
+                                            $cls = 'ct-sem ct-sem-naranja';
                                         } elseif ($diasPago <= 3) {
                                             $t = "En {$diasPago}d ⚠";
                                             $cls = 'text-danger';

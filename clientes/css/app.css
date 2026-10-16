@@ -1329,6 +1329,10 @@ button.app-stat:disabled { cursor: default; opacity: .6; transform: none; box-sh
 .ct-sem-naranja { background: #ffedd5; color: #9a3412; }
 .ct-sem-amarillo { background: #fef9c3; color: #854d0e; }
 .ct-sem-gris { background: #f1f5f9; color: #475569; }
+/* Atrasos también por grados (no todo rojo): 1–7 días, 8–30 días, más de 30 días */
+.ct-sem-atr1 { background: #ffedd5; color: #c2410c; }
+.ct-sem-atr2 { background: #fee2e2; color: #b91c1c; }
+.ct-sem-atr3 { background: #b91c1c; color: #fff; }
 
 /* ── Buscador con autocompletado para listas largas (clientes/js/select-buscar.js, <select data-buscar>) ── */
 .sb-oculto { position: absolute !important; opacity: 0 !important; width: 1px !important; height: 1px !important; pointer-events: none !important; overflow: hidden; }
