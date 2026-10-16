@@ -16,6 +16,8 @@ try {
     facturaGuardarSubsanacion($pdo, 999999, $id, ['subsanacion_presente'=>'1']);
     if ((int)$leer() !== 1) throw new Exception('Sin aislamiento');
     if ($pdo->query("SELECT COUNT(*) FROM facturas WHERE id=$id AND requiere_subsanacion=0")->fetchColumn() != 0) throw new Exception('Aparece en alertas');
+    facturaGuardarSubsanacion($pdo, 2, $id, ['subsanacion_presente'=>'1', 'requiere_subsanacion'=>'2']);
+    if ((int)$leer() !== 2) throw new Exception('No guardó subsanada');
     facturaGuardarSubsanacion($pdo, 2, $id, ['subsanacion_presente'=>'1']);
     if ((int)$leer() !== 0) throw new Exception('No desmarcó');
     if ($fiscal() !== $antes) throw new Exception('Cambió datos fiscales');

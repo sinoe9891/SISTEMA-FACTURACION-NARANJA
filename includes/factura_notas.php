@@ -12,6 +12,8 @@ function facturaGuardarNotas(PDO $pdo, int $cid, int $id, array $datos): void
 function facturaGuardarSubsanacion(PDO $pdo, int $cid, int $id, array $datos): void
 {
     if (!isset($datos['subsanacion_presente'])) return;
-    $valor = ($datos['requiere_subsanacion'] ?? '') === '1' ? 1 : 0;
+    $valor = (string)($datos['requiere_subsanacion'] ?? '0');
+    if (!in_array($valor, ['0', '1', '2'], true)) throw new InvalidArgumentException('Estado de subsanación inválido.');
+    $valor = (int)$valor;
     $pdo->prepare('UPDATE facturas SET requiere_subsanacion = ? WHERE id = ? AND cliente_id = ?')->execute([$valor, $id, $cid]);
 }

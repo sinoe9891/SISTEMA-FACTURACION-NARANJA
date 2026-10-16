@@ -557,11 +557,13 @@ require_once '../../includes/templates/header.php';
 		</div><!-- /row -->
 	<div class="card border-0 shadow-sm my-3"><div class="card-body">
 <input type="hidden" name="subsanacion_presente" value="1">
-<div class="form-check mb-2">
-<input type="checkbox" class="form-check-input" name="requiere_subsanacion" id="requiereSubsanacion" value="1" <?= !empty($factura['requiere_subsanacion']) ? 'checked' : '' ?>>
-<label class="form-check-label" for="requiereSubsanacion">Requiere subsanación</label>
-</div>
-<div class="form-text mb-3">Seguimiento interno: se excluye de la alerta de facturas no declaradas, sin marcarla como declarada ni modificar sus importes. Puedes encontrarla con el filtro Subsanación del historial y explicar el motivo en las notas.</div>
+<label class="form-label" for="requiereSubsanacion">Estado de subsanación</label>
+<select class="form-select mb-2" name="requiere_subsanacion" id="requiereSubsanacion">
+<?php foreach ([0 => 'Sin subsanación', 1 => 'Requiere subsanación', 2 => 'Subsanada'] as $valorSub => $textoSub): ?>
+<option value="<?= $valorSub ?>" <?= (int)($factura['requiere_subsanacion'] ?? 0) === $valorSub ? 'selected' : '' ?>><?= $textoSub ?></option>
+<?php endforeach; ?>
+</select>
+<div class="form-text mb-3">Solo las pendientes de subsanación se excluyen de la alerta de no declaradas. Marcar como subsanada no equivale a declararla. Explica el seguimiento en las notas internas.</div>
 <label class="form-label fw-semibold" for="notasInternas">Notas internas</label>
 <textarea class="form-control" id="notasInternas" name="notas_internas" rows="3" maxlength="5000" placeholder="Seguimiento, acuerdos o información interna…"><?= htmlspecialchars($factura['notas_internas'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
 <div class="form-text">Solo para uso interno. No se incluyen en el PDF ni en los correos al cliente. Máximo 5,000 caracteres.</div>

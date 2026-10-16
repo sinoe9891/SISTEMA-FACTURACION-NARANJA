@@ -21,7 +21,8 @@ $stmtCAIs = $pdo->prepare("
 $stmtCAIs->execute([$cliente_id, $establecimiento_activo]);
 $cais = $stmtCAIs->fetchAll();
 
-$subsanacion = in_array($_GET['subsanacion'] ?? '', ['0', '1'], true) ? $_GET['subsanacion'] : '';
+$subsanacion = in_array($_GET['subsanacion'] ?? '', ['0', '1', '2'], true) ? $_GET['subsanacion'] : '';
+$estadoFiltro = in_array($_GET['estado'] ?? '', ['emitida', 'anulada', 'borrador'], true) ? $_GET['estado'] : '';
 $caix = null;
 if (isset($_GET['cai_id']) && ctype_digit($_GET['cai_id'])) {
 	$caix = intval($_GET['cai_id']);
@@ -35,7 +36,7 @@ if (isset($_GET['cai_id']) && ctype_digit($_GET['cai_id'])) {
 	if (!$caix_valid) $caix = null;
 }
 if (count($cais) === 1) $caix = $cais[0]['id'];
-if ($caix === null && !isset($_GET['cai_id']) && $subsanacion !== '1') {
+if ($caix === null && !isset($_GET['cai_id']) && !in_array($subsanacion, ['1', '2'], true)) {
 	foreach ($cais as $cai) {
 		if ($cai['activo'] == 1) {
 			$caix = $cai['id'];
@@ -52,6 +53,7 @@ if ($fecha_hasta && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_hasta)) $fecha_h
 
 $params     = [$cliente_id, $establecimiento_activo];
 $whereExtra = "";
+if ($estadoFiltro !== '') { $whereExtra .= " AND f.estado = ?"; $params[] = $estadoFiltro; }
 if ($subsanacion !== '') {
     $whereExtra .= " AND f.requiere_subsanacion = ?";
     $params[] = (int)$subsanacion;
@@ -163,7 +165,7 @@ if (!$fecha_desde && !$fecha_hasta) {
 		$facturas,
 		fn($f) =>
 		$f['estado'] === 'emitida' &&
-			empty($f['requiere_subsanacion']) && ($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no') &&
+			(int)$f['requiere_subsanacion'] !== 1 && ($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no') &&
 			$f['fecha_emision'] >= $alerta_desde &&
 			$f['fecha_emision'] <= $alerta_hasta
 	);
@@ -174,7 +176,7 @@ if (!$fecha_desde && !$fecha_hasta) {
 		$facturas,
 		fn($f) =>
 		$f['estado'] === 'emitida' &&
-			empty($f['requiere_subsanacion']) && ($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no')
+			(int)$f['requiere_subsanacion'] !== 1 && ($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no')
 	);
 	$mostrar_alerta_isv  = true;
 	$dias_restantes      = null; // no aplica semáforo cuando hay filtro explícito
@@ -191,7 +193,7 @@ $stmtNoDeclAtrasadas = $pdo->prepare("
 	SELECT COUNT(*) AS cantidad, IFNULL(SUM(isv_15 + isv_18), 0) AS isv_pendiente
 	FROM facturas
 	WHERE cliente_id = ? AND establecimiento_id = ?
-	  AND estado = 'emitida' AND estado_declarada = 0 AND requiere_subsanacion = 0
+	  AND estado = 'emitida' AND estado_declarada = 0 AND requiere_subsanacion <> 1
 	  AND fecha_emision < ?
 ");
 $stmtNoDeclAtrasadas->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual]);
@@ -202,7 +204,7 @@ $isv_no_decl_atrasadas  = (float)$noDeclAtrasadas['isv_pendiente'];
 // Identificar las pendientes aunque la tabla esté mostrando otro CAI o período.
 $stmtDetalleNoDecl = $pdo->prepare("SELECT correlativo, fecha_emision, cai_id, (isv_15 + isv_18) AS isv
     FROM facturas WHERE cliente_id = ? AND establecimiento_id = ?
-    AND estado = 'emitida' AND estado_declarada = 0 AND requiere_subsanacion = 0 AND fecha_emision < ?
+    AND estado = 'emitida' AND estado_declarada = 0 AND requiere_subsanacion <> 1 AND fecha_emision < ?
     ORDER BY fecha_emision ASC, id ASC LIMIT 8");
 $stmtDetalleNoDecl->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual]);
 $detalleNoDecl = $stmtDetalleNoDecl->fetchAll(PDO::FETCH_ASSOC);
@@ -212,7 +214,7 @@ $stmtNoDeclMesActual = $pdo->prepare("
 	SELECT COUNT(*) AS cantidad, IFNULL(SUM(isv_15 + isv_18), 0) AS isv_mes_actual
 	FROM facturas
 	WHERE cliente_id = ? AND establecimiento_id = ?
-	  AND estado = 'emitida' AND estado_declarada = 0 AND requiere_subsanacion = 0
+	  AND estado = 'emitida' AND estado_declarada = 0 AND requiere_subsanacion <> 1
 	  AND fecha_emision >= ? AND fecha_emision <= ?
 ");
 $stmtNoDeclMesActual->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual, $ultimo_dia_mes_actual]);
@@ -223,8 +225,9 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
-.fh-nota-btn { display:inline-flex; align-items:center; gap:.35rem; padding:.25rem .5rem; border:1px solid #93c5fd; border-radius:6px; background:#eff6ff; color:#1d4ed8; font-size:.75rem; cursor:pointer; }
-.fh-nota-btn:hover { background:#dbeafe; }
+.fh-nota-btn { display:inline-flex; align-items:center; gap:.25rem; padding:0; border:0; background:transparent; color:#2563eb; font-size:.7rem; line-height:1.4; text-align:left; cursor:pointer; }
+.fh-nota-btn svg { width:13px; height:13px; flex-shrink:0; }
+.fh-nota-btn:hover { color:#1d4ed8; text-decoration:underline; }
 .fh-nota-btn:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
 .fh-nota-contenido { white-space:pre-wrap !important; overflow-wrap:anywhere; text-align:left !important; max-height:60vh; overflow-y:auto; }
 
@@ -410,11 +413,14 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 
 	.fh-filter-grid {
 		display: grid;
-		grid-template-columns: 2fr 1.2fr 1fr 1fr auto;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: .75rem;
 		align-items: end;
 	}
 
+	.fh-filter-grid > div { min-width:0; }
+	.fh-filter-grid select, .fh-filter-grid input { width:100%; min-width:0; max-width:100%; }
+	.fh-filter-grid .fh-filter-btns { grid-column:1/-1; }
 	.fh-label {
 		font-size: .78rem;
 		font-weight: 600;
@@ -606,6 +612,10 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		font-weight: 600;
 	}
 
+	.fh-toolbar { min-width:0; max-width:100%; }
+	.fh-search-wrap { min-width:0; max-width:100%; }
+	.fh-search { max-width:100%; }
+	.fh-page { min-width:0; }
 	.fh-table-wrap {
 		overflow-x: auto;
 	}
@@ -1110,12 +1120,6 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			grid-column: 1/-1;
 		}
 
-		.fh-table thead th:nth-child(5),
-		.fh-table tbody td:nth-child(5),
-		.fh-table thead th:nth-child(6),
-		.fh-table tbody td:nth-child(6) {
-			display: none;
-		}
 	}
 
 	@media(max-width:480px) {
@@ -1123,10 +1127,12 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			grid-template-columns: 1fr;
 		}
 
-		.fh-table thead th:nth-child(3),
-		.fh-table tbody td:nth-child(3) {
-			display: none;
-		}
+        .fh-filter-card, .fh-card-header { padding:1rem; }
+        .fh-toolbar { width:100%; }
+        .fh-search-wrap { flex:1 1 100%; width:100%; }
+        .fh-search { width:100%; }
+        .fh-filter-btns { flex-wrap:wrap; }
+
 	}
 </style>
 
@@ -1316,9 +1322,18 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 <select class="fh-select" name="subsanacion" id="fhSubsanacion">
 <option value="">Todas las facturas</option>
 <option value="1" <?= $subsanacion === '1' ? 'selected' : '' ?>>Requieren subsanación</option>
+<option value="2" <?= $subsanacion === '2' ? 'selected' : '' ?>>Subsanadas</option>
 <option value="0" <?= $subsanacion === '0' ? 'selected' : '' ?>>Sin subsanación</option>
-</select><small>Al elegir pendientes, se buscan todos los CAI y períodos del establecimiento.</small>
+</select>
 </div>
+<div>
+<label class="fh-label" for="fhEstado">Estado de factura</label>
+<select class="fh-select" id="fhEstado" name="estado">
+<option value="">Todos los estados</option>
+<?php foreach (['emitida'=>'Emitidas', 'anulada'=>'Anuladas', 'borrador'=>'Borradores'] as $valorEstado=>$textoEstado): ?>
+<option value="<?= $valorEstado ?>" <?= $estadoFiltro === $valorEstado ? 'selected' : '' ?>><?= $textoEstado ?></option>
+<?php endforeach; ?>
+</select></div>
 <div class="fh-filter-btns">
 						<button type="submit" class="btn-filter"><i class="bi bi-search"></i> Filtrar</button>
 						<a href="?" class="btn-clear-filter"><i class="bi bi-x-lg"></i> Limpiar</a>
@@ -1331,7 +1346,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 				(() => {
 					const f = document.getElementById('fhFilterForm');
 					const desde = f.querySelector('[name=fecha_desde]'), hasta = f.querySelector('[name=fecha_hasta]');
-					const selSub = f.querySelector('[name=subsanacion]');
+					const selEstado = f.querySelector('[name=estado]');
+ const selSub = f.querySelector('[name=subsanacion]');
 					const selCai = f.querySelector('select[name=cai_id]'), selPer = document.getElementById('fhPeriodo');
 					const btn = f.querySelector('.btn-filter'), btnHtml = btn.innerHTML;
 					const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -1386,14 +1402,15 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 							if (yo === pedido) btn.innerHTML = btnHtml;
 						}
 					};
-					selSub.addEventListener('change', () => {
- if (selSub.value === '1') { if (!selCai.disabled) selCai.value = ''; desde.value = hasta.value = ''; llenarPeriodos(); }
+					selEstado.addEventListener('change', aplicar);
+ selSub.addEventListener('change', () => {
+ if (['1', '2'].includes(selSub.value)) { if (!selCai.disabled) selCai.value = ''; desde.value = hasta.value = ''; llenarPeriodos(); }
  aplicar();
 });
 f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 					f.querySelector('.btn-clear-filter')?.addEventListener('click', e => {
 						e.preventDefault();
- selSub.value = '';
+ selSub.value = ''; selEstado.value = '';
 						desde.value = hasta.value = '';
 						if (selCai && !selCai.disabled) {
 							const activo = [...selCai.options].find(o => o.dataset.activo === '1');
@@ -1492,7 +1509,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 	<div class="fh-card">
 		<div class="fh-card-header">
 			<span class="fh-card-title"><i class="bi bi-table"></i> Facturas</span>
-			<div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+			<div class="fh-toolbar" style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
 				<a href="generar_factura" class="btn-filter" style="text-decoration:none;"><i class="bi bi-plus-lg"></i>
 					Nueva Factura</a>
 				<div class="fh-search-wrap">
@@ -1514,7 +1531,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 			</div>
 		</div>
 
-		<div class="fh-table-wrap">
+		<div class="fh-table-wrap" role="region" aria-label="Listado de facturas, desliza horizontalmente para ver todas las columnas" tabindex="0">
 			<div class="fh-bulk-actions" id="fhBulkActions" style="display:none;">
 				<span class="fh-bulk-text" id="fhBulkText">No hay facturas seleccionadas</span>
 				<div class="fh-actions">
@@ -1588,14 +1605,14 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 								<?php endif; ?>
 							</td>
 							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
-							<td data-col="receptor"><?= htmlspecialchars($f['receptor']) ?>
+							<td><span data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></span>
 <?php if (!empty($f['requiere_subsanacion']) || !empty($f['notas_internas'])): ?>
 <div class="mt-1"><button type="button" class="fh-nota-btn"
  data-factura="<?= htmlspecialchars($f['correlativo'], ENT_QUOTES, 'UTF-8') ?>"
- data-nota="<?= htmlspecialchars($f['notas_internas'] ?: 'Esta factura requiere subsanación. Aún no se ha agregado una nota interna.', ENT_QUOTES, 'UTF-8') ?>"
+ data-nota="<?= htmlspecialchars($f['notas_internas'] ?: ((int)$f['requiere_subsanacion'] === 2 ? 'Subsanación resuelta. Sin nota interna adicional.' : 'Esta factura requiere subsanación. Aún no se ha agregado una nota interna.'), ENT_QUOTES, 'UTF-8') ?>"
  aria-label="Ver nota interna de factura <?= htmlspecialchars($f['correlativo'], ENT_QUOTES, 'UTF-8') ?>">
-<i class="bi bi-file-earmark-text" aria-hidden="true"></i>
-<?= !empty($f['requiere_subsanacion']) ? 'Subsanación · Ver nota' : 'Ver nota interna' ?>
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg>
+<?= (int)$f['requiere_subsanacion'] === 2 ? 'Subsanada · Ver nota' : ((int)$f['requiere_subsanacion'] === 1 ? 'Subsanación · Ver nota' : 'Ver nota interna') ?>
 </button></div>
 <?php endif; ?>
 </td>
