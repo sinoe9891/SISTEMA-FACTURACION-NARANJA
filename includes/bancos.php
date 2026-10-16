@@ -274,3 +274,26 @@ function bancoMoneda(float $monto, string $moneda): string
 {
     return ($moneda === 'USD' ? '$ ' : 'L ') . number_format($monto, 2);
 }
+
+/**
+ * El pago de un gasto sale de una cuenta bancaria: registra la salida (tipo «pago de gasto») ligada al gasto.
+ * No duplica: si el gasto ya tiene una salida vigente, no hace nada. Devuelve el id del movimiento o null.
+ */
+function bancoSalidaGasto(PDO $pdo, int $cid, int $gastoId, int $cuentaId, int $usuario): ?int
+{
+    if (!$cuentaId || !bancosDisponible($pdo)) return null;
+    $st = $pdo->prepare("SELECT COUNT(*) FROM movimientos_bancarios WHERE cliente_id = ? AND gasto_id = ? AND anulado = 0");
+    $st->execute([$cid, $gastoId]);
+    if ((int)$st->fetchColumn()) return null;
+    $st = $pdo->prepare("SELECT id, descripcion, monto, fecha, factura_ref, estado FROM gastos WHERE id = ? AND cliente_id = ?");
+    $st->execute([$gastoId, $cid]);
+    $g = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$g || $g['estado'] !== 'pagado') return null;
+    $cuenta = bancoCuenta($pdo, $cid, $cuentaId, true);
+    if ($cuenta['moneda'] !== 'HNL') throw new Exception("Los gastos son en lempiras: elige una cuenta en lempiras.");
+    return bancoInsertarMovimiento($pdo, $cid, $cuentaId, [
+        'fecha' => $g['fecha'], 'sentido' => 'salida', 'tipo' => 'pago_gasto', 'monto' => (float)$g['monto'],
+        'descripcion' => mb_substr('Pago: ' . $g['descripcion'], 0, 255),
+        'referencia' => $g['factura_ref'], 'gasto_id' => (int)$g['id'], 'usuario_id' => $usuario,
+    ]);
+}

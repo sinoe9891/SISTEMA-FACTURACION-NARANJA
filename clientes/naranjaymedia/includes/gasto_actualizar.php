@@ -164,6 +164,12 @@ try {
                 'tarjeta_id' => $tarjeta_id, 'proveedor' => $proveedor,
             ]), $cid, $usuario_id);
         }
+    // El pago salió de una cuenta bancaria: queda la salida en Bancos (no se duplica si ya la tiene)
+        $cuentaSalida = (int)($_POST['cuenta_id'] ?? 0);
+        if ($cuentaSalida && ($_POST['metodo_pago'] ?? '') !== 'tarjeta') {
+            require_once __DIR__ . '/../../../includes/bancos.php';
+            foreach ([$gasto_id] as $idSal) bancoSalidaGasto($pdo, $cid, (int)$idSal, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
+        }
         $pdo->commit();
         $mensaje = 'Ambas quincenas del grupo actualizadas correctamente.';
     } else {
@@ -231,6 +237,12 @@ try {
         // Proveedor del catálogo (si no cambió el nombre, se conserva el que tenía ligado)
         require_once __DIR__ . '/../../../includes/proveedores.php';
         proveedorVincular($pdo, $cid, 'gastos', [$gasto_id], $gastoActual['proveedor'] ?? null);
+        // El pago salió de una cuenta bancaria: queda la salida en Bancos (no se duplica si ya la tiene)
+        $cuentaSalida = (int)($_POST['cuenta_id'] ?? 0);
+        if ($cuentaSalida && ($_POST['metodo_pago'] ?? '') !== 'tarjeta') {
+            require_once __DIR__ . '/../../../includes/bancos.php';
+            foreach ([$gasto_id] as $idSal) bancoSalidaGasto($pdo, $cid, (int)$idSal, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
+        }
         $pdo->commit();
         $mensaje = 'Gasto actualizado correctamente.';
     }

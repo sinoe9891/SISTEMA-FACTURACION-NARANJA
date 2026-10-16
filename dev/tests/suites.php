@@ -3007,3 +3007,29 @@ suite('Cotizaciones: categorías con su Incluye y sus Condiciones', function () 
 require __DIR__ . '/contrato_duplicar.php';
 
 require __DIR__ . "/factura_subsanacion_http.php";
+
+suite('Gastos: al registrar un gasto pagado se elige de qué cuenta salió', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $c->post('includes/banco_accion.php', ['accion' => 'cuenta_guardar', 'banco' => 'QA Salida', 'numero' => '777', 'tipo' => 'ahorro', 'moneda' => 'HNL', 'saldo_inicial' => 0, 'fecha_saldo_inicial' => date('Y-m-01')]);
+    $cta = (int)$pdo->query("SELECT id FROM cuentas_bancarias WHERE banco='QA Salida' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $cat = $pdo->query("SELECT id FROM categorias_gastos WHERE cliente_id=2 LIMIT 1")->fetchColumn();
+    $g = $c->get('gastos');
+    check('el formulario tiene «Sale de la cuenta»', sinErroresPhp($g['body']) && str_contains($g['body'], 'id="g_cuenta"'), errorPhp($g['body']));
+    $base = ['monto' => 321.5, 'fecha' => date('Y-m-d'), 'tipo' => 'variable', 'frecuencia' => 'unico', 'estado' => 'pagado', 'categoria_id' => $cat, 'cuenta_id' => $cta];
+    $r = $c->post('includes/gasto_guardar.php', $base + ['descripcion' => 'QA salida banco', 'metodo_pago' => 'transferencia']);
+    $gid = (int)$pdo->query("SELECT id FROM gastos WHERE descripcion='QA salida banco' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $mov = fn($id) => (int)$pdo->query("SELECT COUNT(*) FROM movimientos_bancarios WHERE gasto_id=$id AND anulado=0 AND cuenta_id=$cta AND sentido='salida'")->fetchColumn();
+    check('el gasto pagado con transferencia queda como salida de esa cuenta', ($r['json']['success'] ?? false) && $mov($gid) === 1, $r['body']);
+    $c->post('includes/gasto_actualizar.php', $base + ['gasto_id' => $gid, 'descripcion' => 'QA salida banco', 'metodo_pago' => 'transferencia']);
+    check('al editarlo no se duplica la salida', $mov($gid) === 1);
+    $c->post('includes/gasto_guardar.php', $base + ['descripcion' => 'QA salida tarjeta', 'metodo_pago' => 'tarjeta']);
+    $gt = (int)$pdo->query("SELECT id FROM gastos WHERE descripcion='QA salida tarjeta' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    check('con tarjeta no sale del banco (sale al pagar la tarjeta)', $gt && $mov($gt) === 0);
+    $c->post('includes/gasto_guardar.php', array_merge($base, ['descripcion' => 'QA salida pendiente', 'metodo_pago' => 'transferencia', 'estado' => 'pendiente']));
+    $gp = (int)$pdo->query("SELECT id FROM gastos WHERE descripcion='QA salida pendiente' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    check('un gasto pendiente no sale del banco', $gp && $mov($gp) === 0);
+    $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id=$cta");
+    $pdo->exec("DELETE FROM gastos WHERE id IN ($gid, $gt, $gp)");
+    $pdo->exec("DELETE FROM cuentas_bancarias WHERE id=$cta");
+});

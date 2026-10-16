@@ -183,6 +183,13 @@ try {
         $pdo->prepare("UPDATE gastos SET cobrar_desde = ?, cobrar_aviso_dias = ? WHERE id IN (" . implode(',', array_map('intval', $ids_creados)) . ") AND cliente_id = ? AND cobrar_receptor_id IS NOT NULL")->execute([$cDesde, $cAviso, $cid]);
     }
 
+    // El pago salió de una cuenta bancaria: queda la salida en Bancos (no se duplica si ya la tiene)
+    $cuentaSalida = (int)($_POST['cuenta_id'] ?? 0);
+    if ($cuentaSalida && ($_POST['metodo_pago'] ?? '') !== 'tarjeta') {
+        require_once __DIR__ . '/../../../includes/bancos.php';
+        foreach ($ids_creados as $idSal) bancoSalidaGasto($pdo, $cid, (int)$idSal, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
+    }
+
     // Proveedor del catálogo
     require_once __DIR__ . '/../../../includes/proveedores.php';
     proveedorVincular($pdo, $cid, 'gastos', $ids_creados);

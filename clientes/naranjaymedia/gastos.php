@@ -103,7 +103,8 @@ if ($gcDisponible) {
 }
 
 /* ── Gastos con filtros ───────────────────────────────────────────────────── */
-$sql    = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono" . ($gcDisponible ? ", fc.correlativo AS cobrado_correlativo" : '') . "
+$sql    = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono" . ($gcDisponible ? ", fc.correlativo AS cobrado_correlativo" : '')
+           . ($cuentas_pago ? ", (SELECT CONCAT(b.banco, ' ', b.numero) FROM movimientos_bancarios m JOIN cuentas_bancarias b ON b.id = m.cuenta_id WHERE m.gasto_id = g.id AND m.anulado = 0 LIMIT 1) AS banco_salida" : ", NULL AS banco_salida") . "
            FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id" . ($gcDisponible ? " LEFT JOIN facturas fc ON fc.id = g.cobrado_factura_id" : '') . "
            WHERE g.cliente_id=? AND g.fecha BETWEEN ? AND ?";
 $params = [$cliente_id, $fecha_ini, $fecha_fin];
@@ -1236,6 +1237,19 @@ $total  = count($gastos);
                             <?php endif; ?>
                         </div>
 
+                        <?php if ($cuentas_pago): ?>
+                        <!-- De qué cuenta salió el pago (solo pagado y sin tarjeta: lo de tarjeta sale al pagar la tarjeta) -->
+                        <div class="col-md-6" id="grpCuentaGasto" style="display:none">
+                            <label class="mf-label">Sale de la cuenta <span class="text-muted fw-normal" style="text-transform:none;letter-spacing:0">(opcional)</span></label>
+                            <select name="cuenta_id" id="g_cuenta" class="mf-select">
+                                <option value="">— No registrar en banco —</option>
+                                <?php foreach ($cuentas_pago as $cp): ?><option value="<?= (int)$cp['id'] ?>"><?= htmlspecialchars($cp['banco'] . ' ' . $cp['numero']) ?></option><?php endforeach; ?>
+                            </select>
+                            <div id="g_cuenta_ya" class="small text-success mt-1" style="display:none"></div>
+                            <small class="text-muted" style="font-size:.72rem">Si eliges una cuenta, el pago queda como salida en Bancos.</small>
+                        </div>
+                        <?php endif; ?>
+
                         <!-- Días de pago (solo fijo mensual/quincenal) -->
                         <div class="col-md-3" id="grpDia1" style="display:none"><label class="mf-label">Día de
                                 pago</label><input type="number" name="dia_pago" id="g_dia1" class="mf-input" min="1"
@@ -1638,6 +1652,15 @@ $total  = count($gastos);
         document.getElementById('grpDia2G').style.display = (esFijo && f === 'quincenal') ? '' : 'none';
         document.getElementById('grpFechaVenc').style.display = esFijo ? '' : 'none';
         document.getElementById('grpTarjetaGasto').style.display = m === 'tarjeta' ? '' : 'none';
+        // «Sale de la cuenta»: solo si está pagado y no fue con tarjeta; si ya salió del banco, solo se informa
+        const gc = document.getElementById('grpCuentaGasto');
+        if (gc) {
+            const ya = gc.dataset.ya || '';
+            gc.style.display = document.getElementById('g_estado').value === 'pagado' && m !== 'tarjeta' ? '' : 'none';
+            document.getElementById('g_cuenta').style.display = ya ? 'none' : '';
+            document.getElementById('g_cuenta_ya').style.display = ya ? '' : 'none';
+            document.getElementById('g_cuenta_ya').innerHTML = ya ? '<i class="bi bi-bank me-1"></i>Ya salió de ' + ya.replace(/[<>&"]/g, '') : '';
+        }
         // Info de anual
         const help = document.getElementById('frec_help');
         if (f === 'anual') {
@@ -1648,6 +1671,7 @@ $total  = count($gastos);
     document.getElementById('g_tipo').addEventListener('change', toggleCamposGasto);
     document.getElementById('g_frec').addEventListener('change', toggleCamposGasto);
     document.getElementById('g_metodo').addEventListener('change', toggleCamposGasto);
+    document.getElementById('g_estado').addEventListener('change', toggleCamposGasto);
 
     // Cuando se selecciona un colaborador, auto-fill proveedor si está vacío
     document.getElementById('g_colab').addEventListener('change', function() {
@@ -1664,6 +1688,8 @@ $total  = count($gastos);
     document.getElementById('g_cobrar')?.addEventListener('change', gsCobroAviso);
 
     function limpiarModalGasto() {
+        const gcNu = document.getElementById('grpCuentaGasto');
+        if (gcNu) gcNu.dataset.ya = '';
         document.getElementById('formGasto').reset();
         document.getElementById('g_id').value = '';
         document.getElementById('g_fecha').value = new Date().toISOString().slice(0, 10);
@@ -1720,6 +1746,8 @@ $total  = count($gastos);
             document.getElementById('g_notas').value = g.notas || '';
             document.getElementById('g_colab').value =
                 ''; // Colaborador no guardado en gastos directamente (usa proveedor)
+            const gcEd = document.getElementById('grpCuentaGasto');
+            if (gcEd) { gcEd.dataset.ya = g.banco_salida || ''; document.getElementById('g_cuenta').value = ''; }
             document.getElementById('g_metodo').value = g.metodo_pago || 'efectivo';
             document.getElementById('g_metodo').dispatchEvent(new Event('change'));
             if (g.tarjeta_id) document.getElementById('g_tarjeta').value = g.tarjeta_id;
