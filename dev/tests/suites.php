@@ -2175,8 +2175,8 @@ suite('Pagos del plan vencidos en Contratos y Cuentas por cobrar', function () {
         ['tipo' => 'anticipo', 'concepto' => 'QA anticipo vencido', 'fecha' => date('Y-m-d', strtotime('-4 days')), 'monto' => 1234],
         ['tipo' => 'cuota', 'concepto' => 'QA cuota próxima', 'fecha' => date('Y-m-d', strtotime('+6 days')), 'monto' => 2000]])]);
     $r = $c->get('contratos');
-    check('Contratos marca en rojo los pagos del plan vencidos y el próximo cobro sale del plan', sinErroresPhp($r['body']) && str_contains($r['body'], '1 pago del plan vencido · L 1,234.00')
-        && str_contains($r['body'], 'Vencido hace 4d') && str_contains($r['body'], 'Plan de pagos'), errorPhp($r['body']));
+    check('Contratos marca los pagos del plan vencidos con semáforo y el próximo cobro sale del plan', sinErroresPhp($r['body']) && str_contains($r['body'], '1 pago del plan vencido · L 1,234.00')
+        && str_contains($r['body'], 'Atrasado 4d') && str_contains($r['body'], 'ct-sem-atr1') && str_contains($r['body'], 'Plan de pagos'), errorPhp($r['body']));   // atraso de pocos días: naranja, no rojo
     $r = $c->get('cuentas_cobrar');
     check('Cuentas por cobrar lista los pagos del plan (vencidos y próximos 30 días)', sinErroresPhp($r['body']) && str_contains($r['body'], 'id="planCobrar"') && str_contains($r['body'], 'QA anticipo vencido')
         && str_contains($r['body'], 'QA cuota próxima') && str_contains($r['body'], 'Planes de pago vencidos'), errorPhp($r['body']));
