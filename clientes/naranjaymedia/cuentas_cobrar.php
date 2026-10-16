@@ -82,12 +82,13 @@ require_once '../../includes/templates/header.php';
         <div class="app-card-header"><span><i class="bi bi-people me-1"></i> Por cliente</span><small class="text-muted fw-normal">Clic en el nombre para ver su estado de cuenta</small></div>
         <div class="table-responsive">
             <table data-paginar class="table app-table">
-                <thead><tr><th class="app-n">#</th><th>Cliente</th><th>Meses adeudados</th><th class="app-num">Facturas</th><?php foreach ($tramos as $t => $v): ?><th class="app-num"><?= $t ?></th><?php endforeach; ?><th class="app-num">Saldo</th><?php if ($puedeCorreo): ?><th></th><?php endif; ?></tr></thead>
+                <thead><tr><th class="app-n">#</th><th style="width:28px"></th><th>Cliente</th><th>Meses adeudados</th><th class="app-num">Facturas</th><?php foreach ($tramos as $t => $v): ?><th class="app-num"><?= $t ?></th><?php endforeach; ?><th class="app-num">Saldo</th><?php if ($puedeCorreo): ?><th></th><?php endif; ?></tr></thead>
                 <tbody>
-                    <?php if (!$porCliente): ?><tr><td colspan="10" class="text-center text-muted py-4"><i class="bi bi-check-circle text-success"></i> No hay saldos pendientes.</td></tr><?php endif; ?>
+                    <?php if (!$porCliente): ?><tr><td colspan="11" class="text-center text-muted py-4"><i class="bi bi-check-circle text-success"></i> No hay saldos pendientes.</td></tr><?php endif; ?>
                     <?php $nCli = 0; foreach ($porCliente as $rid => $p): ksort($p['meses']); $mesesTxt = array_map(fn($k) => $periodo((int)substr($k, 5), substr($k, 0, 4)), array_keys($p['meses'])); ?>
-                        <tr>
+                        <tr data-fila class="cxc-cli" data-rid="<?= (int)$rid ?>" style="cursor:pointer" title="Clic para ver sus facturas pendientes">
                             <td class="app-n"><?= ++$nCli ?></td>
+                            <td><i class="bi bi-chevron-right cxc-chev text-muted"></i></td>
                             <td><a href="estado_cuenta?receptor_id=<?= (int)$rid ?>" title="Ver estado de cuenta"><?= htmlspecialchars($p['nombre']) ?></a><?= $p['mayor'] > 90 ? ' <span class="app-badge app-badge-danger">+90 días</span>' : '' ?><div class="small text-muted"><?= htmlspecialchars($p['rtn'] ?? '') ?></div></td>
                             <td class="small"><?= htmlspecialchars(implode(', ', $mesesTxt)) ?><div class="text-muted">Debe desde el <?= date('d/m/Y', strtotime($p['desde'])) ?></div></td>
                             <td class="app-num"><?= $p['facturas'] ?></td>
@@ -95,6 +96,34 @@ require_once '../../includes/templates/header.php';
                             <td class="app-num fw-semibold"><?= $L($p['saldo']) ?></td>
                             <?php if ($puedeCorreo): ?><td class="text-end"><a class="btn btn-sm btn-outline-primary text-nowrap" href="nuevo_cobro?receptor_id=<?= (int)$rid ?>" title="Enviar o programar el cobro de su saldo por correo"><i class="bi bi-send"></i> Cobrar por correo</a></td><?php endif; ?>
                         </tr>
+                        <?php // Desplegable: sus facturas sin pagar, con el saldo de cada una y la suma
+                        $susFacturas = array_values(array_filter($facturas, fn($f) => (int)$f['receptor_id'] === (int)$rid));
+                        usort($susFacturas, fn($a, $b) => strcmp($a['fecha_emision'], $b['fecha_emision'])); ?>
+                        <tr class="cxc-det d-none" data-rid="<?= (int)$rid ?>"><td colspan="<?= $puedeCorreo ? 11 : 10 ?>" class="p-0" style="background:#f8fafc">
+                            <div class="table-responsive px-3 py-2">
+                            <table class="table table-sm mb-0 small" style="background:#fff">
+                                <thead class="table-light"><tr><th>Factura</th><th>Período</th><th>Emisión</th><th class="app-num">Días</th><th class="app-num">Total</th><th class="app-num">Abonado</th><th class="app-num">Saldo</th><?php if ($puedeCobrar): ?><th></th><?php endif; ?></tr></thead>
+                                <tbody>
+                                <?php foreach ($susFacturas as $f): $tf = cxcTramo((int)$f['dias']); ?>
+                                    <tr>
+                                        <td class="font-monospace text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
+                                        <td class="text-nowrap"><?= $periodo($f['periodo_mes'], $f['periodo_anio']) ?></td>
+                                        <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
+                                        <td class="app-num"><span class="app-badge app-badge-<?= $colorTramo[$tf] ?>"><?= (int)$f['dias'] ?></span></td>
+                                        <td class="app-num"><?= number_format((float)$f['total'], 2) ?></td>
+                                        <td class="app-num text-success"><?= (float)$f['abonado'] > 0 ? number_format((float)$f['abonado'], 2) : '—' ?></td>
+                                        <td class="app-num fw-semibold"><?= number_format((float)$f['saldo'], 2) ?></td>
+                                        <?php if ($puedeCobrar): ?><td class="text-end"><a class="btn btn-sm btn-outline-success py-0" href="#" data-cobrar="<?= (int)$f['id'] ?>" title="Registrar cobro"><i class="bi bi-cash-coin"></i></a></td><?php endif; ?>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                                <tfoot><tr class="fw-bold"><td colspan="4" class="text-end">Total de <?= count($susFacturas) ?> factura<?= count($susFacturas) === 1 ? '' : 's' ?></td>
+                                    <td class="app-num"><?= number_format(array_sum(array_column($susFacturas, 'total')), 2) ?></td>
+                                    <td class="app-num text-success"><?= number_format(array_sum(array_column($susFacturas, 'abonado')), 2) ?></td>
+                                    <td class="app-num"><?= $L($p['saldo']) ?></td><?php if ($puedeCobrar): ?><td></td><?php endif; ?></tr></tfoot>
+                            </table>
+                            </div>
+                        </td></tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
@@ -207,6 +236,26 @@ require_once '../../includes/templates/header.php';
 (function () {
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const L = v => 'L ' + Number(v).toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Por cliente: clic en la fila abre o cierra sus facturas pendientes
+    document.querySelectorAll('tr.cxc-cli').forEach(tr => tr.addEventListener('click', e => {
+        if (e.target.closest('a, button')) return;
+        const det = document.querySelector(`tr.cxc-det[data-rid="${tr.dataset.rid}"]`), abrir = det.classList.contains('d-none');
+        det.classList.toggle('d-none', !abrir);
+        tr.querySelector('.cxc-chev').className = 'bi cxc-chev text-muted ' + (abrir ? 'bi-chevron-down' : 'bi-chevron-right');
+    }));
+    // Al cambiar de página se cierran los desplegables abiertos
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.app-page-btn')) return;
+        document.querySelectorAll('tr.cxc-det').forEach(d => d.classList.add('d-none'));
+        document.querySelectorAll('.cxc-chev').forEach(i => i.className = 'bi bi-chevron-right cxc-chev text-muted');
+    });
+    // «Registrar cobro» desde el desplegable: usa el mismo botón de la tabla de facturas
+    document.addEventListener('click', e => {
+        const a = e.target.closest('[data-cobrar]');
+        if (!a) return;
+        e.preventDefault();
+        document.querySelector(`.btn-cobrar[data-id="${a.dataset.cobrar}"]`)?.click();
+    });
     AppTabla('#tablaPendientes', { buscar: '#buscarFactura', porPagina: '#porPagina', pie: '#pendientesPie', vacio: 'Sin facturas pendientes.' });
 
     const form = document.getElementById('formCobro');

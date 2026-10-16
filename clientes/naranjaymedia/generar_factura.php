@@ -629,23 +629,26 @@ require_once '../../includes/templates/header.php';
             i15 = 0,
             i18 = 0;
         const exo = document.getElementById('exonerado').checked;
+        // Redondeo a centavos por línea, igual que el servidor (17,391.30 × 15 % = 2,608.70, no 2,608.69)
+        const r2 = n => Math.round(Number(Number(n).toPrecision(15) + "e2")) / 100;   // como round() de PHP
         document.querySelectorAll('.producto-item').forEach(item => {
             const c = parseFloat(item.querySelector('input[name$="[cantidad]"]')?.value) || 0;
             const p = parseFloat(item.querySelector('input[name$="[precio]"]')?.value) || 0;
             const v = parseInt(item.querySelector('select[name$="[id]"]')?.selectedOptions[0]?.dataset.isv) || 0;
-            const t = c * p;
+            const t = r2(c * p);
             sub += t;
             if (!exo) {
                 if (v === 15) {
-                    i15 += t * .15;
+                    i15 += r2(t * .15);
                     g15 += t;
                 } else if (v === 18) {
-                    i18 += t * .18;
+                    i18 += r2(t * .18);
                     g18 += t;
                 }
             }
         });
-        const total = sub + i15 + i18;
+        sub = r2(sub); i15 = r2(i15); i18 = r2(i18); g15 = r2(g15); g18 = r2(g18);
+        const total = r2(sub + i15 + i18);
         const fmt = n => 'L ' + n.toLocaleString('es-HN', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2

@@ -660,6 +660,8 @@ require_once '../../includes/templates/header.php';
 			i15 = 0,
 			i18 = 0;
 		const exo = document.getElementById('exonerado').checked;
+		// Redondeo a centavos por línea, igual que el servidor (17,391.30 × 15 % = 2,608.70, no 2,608.69)
+		const r2 = n => Math.round(Number(Number(n).toPrecision(15) + "e2")) / 100;   // como round() de PHP
 		document.querySelectorAll('#productos-container .producto-item').forEach(item => {
 			const cantidad = parseFloat(item.querySelector('input[name$="[cantidad]"]').value) || 0;
 			const puInput = item.querySelector('input[name$="[precio_unitario]"]');
@@ -667,21 +669,22 @@ require_once '../../includes/templates/header.php';
 			// Usar precio_unitario si está disponible, si no usar precio/cantidad
 			let pu = puInput ? (parseFloat(puInput.value) || 0) : 0;
 			if (!pu && stInput && cantidad) pu = (parseFloat(stInput.value) || 0) / cantidad;
-			const t = cantidad * pu;
+			const t = r2(cantidad * pu);
 			sub += t;
 			if (!exo) {
 				const sel = item.querySelector('select[name$="[id]"]');
 				const v = parseInt(sel?.selectedOptions[0]?.getAttribute('data-isv')) || 0;
 				if (v === 15) {
-					i15 += t * .15;
+					i15 += r2(t * .15);
 					g15 += t;
 				} else if (v === 18) {
-					i18 += t * .18;
+					i18 += r2(t * .18);
 					g18 += t;
 				}
 			}
 		});
-		const total = sub + i15 + i18;
+		sub = r2(sub); i15 = r2(i15); i18 = r2(i18); g15 = r2(g15); g18 = r2(g18);
+		const total = r2(sub + i15 + i18);
 		const fmt = n => 'L ' + n.toLocaleString('es-HN', {
 			minimumFractionDigits: 2,
 			maximumFractionDigits: 2
