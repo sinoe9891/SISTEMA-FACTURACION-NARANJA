@@ -338,6 +338,7 @@ try {
 
 	require_once '../../includes/factura_notas.php';
 	facturaGuardarNotas($pdo, (int)$cliente_factura, (int)$factura_id, $_POST);
+ facturaGuardarSubsanacion($pdo, (int)$cliente_factura, (int)$factura_id, $_POST);
 	$pdo->commit();
 
 	header("Location: lista_facturas?success=1");

@@ -21,6 +21,7 @@ $stmtCAIs = $pdo->prepare("
 $stmtCAIs->execute([$cliente_id, $establecimiento_activo]);
 $cais = $stmtCAIs->fetchAll();
 
+$subsanacion = in_array($_GET['subsanacion'] ?? '', ['0', '1'], true) ? $_GET['subsanacion'] : '';
 $caix = null;
 if (isset($_GET['cai_id']) && ctype_digit($_GET['cai_id'])) {
 	$caix = intval($_GET['cai_id']);
@@ -34,7 +35,7 @@ if (isset($_GET['cai_id']) && ctype_digit($_GET['cai_id'])) {
 	if (!$caix_valid) $caix = null;
 }
 if (count($cais) === 1) $caix = $cais[0]['id'];
-if ($caix === null && !isset($_GET['cai_id'])) {
+if ($caix === null && !isset($_GET['cai_id']) && $subsanacion !== '1') {
 	foreach ($cais as $cai) {
 		if ($cai['activo'] == 1) {
 			$caix = $cai['id'];
@@ -51,6 +52,10 @@ if ($fecha_hasta && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_hasta)) $fecha_h
 
 $params     = [$cliente_id, $establecimiento_activo];
 $whereExtra = "";
+if ($subsanacion !== '') {
+    $whereExtra .= " AND f.requiere_subsanacion = ?";
+    $params[] = (int)$subsanacion;
+}
 if ($caix) {
 	$whereExtra .= " AND f.cai_id = ?";
 	$params[] = $caix;
@@ -68,7 +73,7 @@ $stmtFacturas = $pdo->prepare("
     SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.subtotal,
            f.estado, f.pagada, f.enviada_receptor, f.estado_declarada,
            (f.isv_15 + f.isv_18) AS isv_total,
-           f.notas_internas, f.receptor_id, cf.nombre AS receptor
+           f.requiere_subsanacion, f.notas_internas, f.receptor_id, cf.nombre AS receptor
     FROM facturas f
     INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
     WHERE f.cliente_id = ? AND f.establecimiento_id = ?
@@ -158,7 +163,7 @@ if (!$fecha_desde && !$fecha_hasta) {
 		$facturas,
 		fn($f) =>
 		$f['estado'] === 'emitida' &&
-			($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no') &&
+			empty($f['requiere_subsanacion']) && ($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no') &&
 			$f['fecha_emision'] >= $alerta_desde &&
 			$f['fecha_emision'] <= $alerta_hasta
 	);
@@ -169,7 +174,7 @@ if (!$fecha_desde && !$fecha_hasta) {
 		$facturas,
 		fn($f) =>
 		$f['estado'] === 'emitida' &&
-			($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no')
+			empty($f['requiere_subsanacion']) && ($f['estado_declarada'] == 0 || $f['estado_declarada'] === 'no')
 	);
 	$mostrar_alerta_isv  = true;
 	$dias_restantes      = null; // no aplica semáforo cuando hay filtro explícito
@@ -186,7 +191,7 @@ $stmtNoDeclAtrasadas = $pdo->prepare("
 	SELECT COUNT(*) AS cantidad, IFNULL(SUM(isv_15 + isv_18), 0) AS isv_pendiente
 	FROM facturas
 	WHERE cliente_id = ? AND establecimiento_id = ?
-	  AND estado = 'emitida' AND estado_declarada = 0
+	  AND estado = 'emitida' AND estado_declarada = 0 AND requiere_subsanacion = 0
 	  AND fecha_emision < ?
 ");
 $stmtNoDeclAtrasadas->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual]);
@@ -197,7 +202,7 @@ $isv_no_decl_atrasadas  = (float)$noDeclAtrasadas['isv_pendiente'];
 // Identificar las pendientes aunque la tabla esté mostrando otro CAI o período.
 $stmtDetalleNoDecl = $pdo->prepare("SELECT correlativo, fecha_emision, cai_id, (isv_15 + isv_18) AS isv
     FROM facturas WHERE cliente_id = ? AND establecimiento_id = ?
-    AND estado = 'emitida' AND estado_declarada = 0 AND fecha_emision < ?
+    AND estado = 'emitida' AND estado_declarada = 0 AND requiere_subsanacion = 0 AND fecha_emision < ?
     ORDER BY fecha_emision ASC, id ASC LIMIT 8");
 $stmtDetalleNoDecl->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual]);
 $detalleNoDecl = $stmtDetalleNoDecl->fetchAll(PDO::FETCH_ASSOC);
@@ -207,7 +212,7 @@ $stmtNoDeclMesActual = $pdo->prepare("
 	SELECT COUNT(*) AS cantidad, IFNULL(SUM(isv_15 + isv_18), 0) AS isv_mes_actual
 	FROM facturas
 	WHERE cliente_id = ? AND establecimiento_id = ?
-	  AND estado = 'emitida' AND estado_declarada = 0
+	  AND estado = 'emitida' AND estado_declarada = 0 AND requiere_subsanacion = 0
 	  AND fecha_emision >= ? AND fecha_emision <= ?
 ");
 $stmtNoDeclMesActual->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual, $ultimo_dia_mes_actual]);
@@ -1301,7 +1306,15 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 						<input type="date" name="fecha_hasta" class="fh-date"
 							value="<?= htmlspecialchars($_GET['fecha_hasta'] ?? '') ?>">
 					</div>
-					<div class="fh-filter-btns">
+					<div>
+<label class="fh-label" for="fhSubsanacion">Subsanación</label>
+<select class="fh-select" name="subsanacion" id="fhSubsanacion">
+<option value="">Todas las facturas</option>
+<option value="1" <?= $subsanacion === '1' ? 'selected' : '' ?>>Requieren subsanación</option>
+<option value="0" <?= $subsanacion === '0' ? 'selected' : '' ?>>Sin subsanación</option>
+</select><small>Al elegir pendientes, se buscan todos los CAI y períodos del establecimiento.</small>
+</div>
+<div class="fh-filter-btns">
 						<button type="submit" class="btn-filter"><i class="bi bi-search"></i> Filtrar</button>
 						<a href="?" class="btn-clear-filter"><i class="bi bi-x-lg"></i> Limpiar</a>
 					</div>
@@ -1313,6 +1326,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 				(() => {
 					const f = document.getElementById('fhFilterForm');
 					const desde = f.querySelector('[name=fecha_desde]'), hasta = f.querySelector('[name=fecha_hasta]');
+					const selSub = f.querySelector('[name=subsanacion]');
 					const selCai = f.querySelector('select[name=cai_id]'), selPer = document.getElementById('fhPeriodo');
 					const btn = f.querySelector('.btn-filter'), btnHtml = btn.innerHTML;
 					const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -1367,9 +1381,14 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 							if (yo === pedido) btn.innerHTML = btnHtml;
 						}
 					};
-					f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
+					selSub.addEventListener('change', () => {
+ if (selSub.value === '1') { if (!selCai.disabled) selCai.value = ''; desde.value = hasta.value = ''; llenarPeriodos(); }
+ aplicar();
+});
+f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 					f.querySelector('.btn-clear-filter')?.addEventListener('click', e => {
 						e.preventDefault();
+ selSub.value = '';
 						desde.value = hasta.value = '';
 						if (selCai && !selCai.disabled) {
 							const activo = [...selCai.options].find(o => o.dataset.activo === '1');
@@ -1565,6 +1584,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 							</td>
 							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
 							<td data-col="receptor"><?= htmlspecialchars($f['receptor']) ?>
+<?php if (!empty($f['requiere_subsanacion'])): ?><div class="small mt-1"><span style="color:#c65d00" aria-hidden="true">●</span> Requiere subsanación</div><?php endif; ?>
 <?php if (!empty($f['notas_internas'])): ?><details class="small mt-1"><summary class="text-muted">Nota interna</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;max-width:350px"><?= htmlspecialchars($f['notas_internas'], ENT_QUOTES, 'UTF-8') ?></div></details><?php endif; ?>
 </td>
 							<td data-col="total" data-sort-val="<?= $f['total'] ?>"><strong>L

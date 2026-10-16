@@ -212,7 +212,7 @@ $stmtNoDeclaradas = $pdo->prepare("
 	WHERE cliente_id = ? 
 	  AND establecimiento_id = ?
 	  AND estado = 'emitida'
-	  AND estado_declarada = 0
+	  AND estado_declarada = 0 AND requiere_subsanacion = 0
 	  AND fecha_emision < ?
 ");
 $stmtNoDeclaradas->execute([$cliente_id, $establecimiento_activo, $primer_dia_mes_actual]);
@@ -225,7 +225,7 @@ $isv_pendiente = (float)$no_declaradas['isv_pendiente'];
 $stmtNoDeclLista = $pdo->prepare("
 	SELECT f.id, f.correlativo, DATE(f.fecha_emision) AS fecha, (f.isv_15 + f.isv_18) AS isv, f.cai_id
 	FROM facturas f
-	WHERE f.cliente_id = ? AND f.establecimiento_id = ? AND f.estado = 'emitida' AND f.estado_declarada = 0 AND f.fecha_emision < ?
+	WHERE f.cliente_id = ? AND f.establecimiento_id = ? AND f.estado = 'emitida' AND f.estado_declarada = 0 AND f.requiere_subsanacion = 0 AND f.fecha_emision < ?
 	ORDER BY f.fecha_emision, f.correlativo
 	LIMIT 50
 ");
@@ -285,7 +285,7 @@ $stmtActualMes = $pdo->prepare("
 	WHERE cliente_id = ? 
 	  AND establecimiento_id = ?
 	  AND estado = 'emitida'
-	  AND estado_declarada = 0
+	  AND estado_declarada = 0 AND requiere_subsanacion = 0
 	  AND fecha_emision >= ? AND fecha_emision <= ?
 ");
 $stmtActualMes->execute([

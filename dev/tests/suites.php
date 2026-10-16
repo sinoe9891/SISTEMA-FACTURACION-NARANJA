@@ -3005,3 +3005,5 @@ suite('Cotizaciones: categorías con su Incluye y sus Condiciones', function () 
 });
 
 require __DIR__ . '/contrato_duplicar.php';
+
+require __DIR__ . "/factura_subsanacion_http.php";
