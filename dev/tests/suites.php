@@ -3003,3 +3003,5 @@ suite('Cotizaciones: categorías con su Incluye y sus Condiciones', function () 
     check('el facturador no administra categorías', !($y['json']['success'] ?? true));
     $pdo->exec("DELETE FROM cotizaciones WHERE id = $id");
 });
+
+require __DIR__ . '/contrato_duplicar.php';

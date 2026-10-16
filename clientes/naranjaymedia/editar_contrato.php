@@ -1,5 +1,6 @@
 <?php
-$titulo = 'Editar Contrato';
+$duplicar = isset($_GET['duplicar']) && $_GET['duplicar'] === '1';
+$titulo = $duplicar ? 'Duplicar Contrato' : 'Editar Contrato';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
@@ -25,14 +26,20 @@ if (!$contrato) {
 }
 
 $tipo_actual = $contrato['tipo_contrato'] ?? 'estandar';
+if ($duplicar) {
+    $contrato['fecha_inicio'] = '';
+    $contrato['fecha_fin'] = null;
+    $contrato['estado'] = 'activo';
+}
+
 
 // Plan de pagos y pagos anticipados (opcionales: no todos los contratos los usan)
-$hayPlan = planDisponible($pdo);
+$hayPlan = !$duplicar && planDisponible($pdo);
 $planLineas = $hayPlan ? planLineas($pdo, $cliente_id, $id) : [];
 $planRes = planResumen($planLineas);
-$antVig = anticiposDisponible($pdo) ? array_filter(anticiposContrato($pdo, $cliente_id, $id), fn($a) => !(int)$a['anulado']) : [];
+$antVig = !$duplicar && anticiposDisponible($pdo) ? array_filter(anticiposContrato($pdo, $cliente_id, $id), fn($a) => !(int)$a['anulado']) : [];
 $antSinAplicar = round(array_sum(array_map(fn($a) => $a['factura_id'] ? 0 : (float)$a['monto'], $antVig)), 2);
-$isvApartar = $tipo_actual === 'sin_factura' ? 0.0 : planIsvPorApartar($pdo, $cliente_id, $id);
+$isvApartar = $duplicar || $tipo_actual === 'sin_factura' ? 0.0 : planIsvPorApartar($pdo, $cliente_id, $id);
 
 // ── Servicios actuales ────────────────────────────────────────────────────────
 $stmtSvcs = $pdo->prepare("
@@ -549,7 +556,7 @@ require_once '../../includes/templates/header.php';
     <!-- Hero -->
     <div class="ec-hero">
         <div>
-            <h4 class="ec-hero-title"><i class="bi bi-pencil-square me-2"></i>Editar Contrato</h4>
+            <h4 class="ec-hero-title"><i class="bi bi-pencil-square me-2"></i><?= htmlspecialchars($titulo) ?></h4>
             <p class="ec-hero-sub">
                 <?= htmlspecialchars($contrato['nombre_contrato']) ?> &nbsp;·&nbsp; ID #<?= $contrato['id'] ?>
             </p>
@@ -575,8 +582,9 @@ require_once '../../includes/templates/header.php';
         </div>
     </div>
 
+    <?php if ($duplicar): ?><div class="alert alert-info">Estás preparando una copia del contrato #<?= (int)$id ?>. Elige la fecha de inicio y vencimiento, y revisa los montos de los servicios o turnos. Se creará un contrato nuevo; las facturas, pagos y planes anteriores permanecen en el original.</div><?php endif; ?>
     <form id="formEditar" novalidate>
-        <input type="hidden" name="id" value="<?= $contrato['id'] ?>">
+        <?php if (!$duplicar): ?><input type="hidden" name="id" value="<?= $contrato['id'] ?>"><?php endif; ?>
 
         <!-- ── SECCIÓN 1: Tipo ──────────────────────────────────────────── -->
         <div class="ec-card">
@@ -836,7 +844,7 @@ require_once '../../includes/templates/header.php';
                     </div>
                     <div class="col-md-3">
                         <label class="mf-label">Estado</label>
-                        <select name="estado" class="mf-select">
+                        <select name="estado" class="mf-select" <?= $duplicar ? 'disabled' : '' ?>>
                             <option value="borrador" <?= $contrato['estado'] === 'borrador' ? 'selected' : '' ?>>📝 Borrador (no se factura ni cobra)</option>
                             <option value="activo" <?= $contrato['estado'] === 'activo'   ? 'selected' : '' ?>>✅ Activo
                             </option>
@@ -952,7 +960,7 @@ require_once '../../includes/templates/header.php';
         <div class="d-flex gap-3 justify-content-end align-items-center">
             <a href="contratos" class="btn btn-outline-secondary px-4">Cancelar</a>
             <button type="submit" class="btn-save" id="btnGuardar">
-                <i class="bi bi-floppy-fill"></i> Guardar Cambios
+                <i class="bi bi-floppy-fill"></i> <?= $duplicar ? 'Crear copia del contrato' : 'Guardar Cambios' ?>
             </button>
         </div>
     </form>
@@ -1309,12 +1317,13 @@ require_once '../../includes/templates/header.php';
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Guardando…';
 
-        fetch('includes/contrato_actualizar.php', {
+        fetch(<?= json_encode($duplicar ? 'includes/contrato_guardar.php' : 'includes/contrato_actualizar.php') ?>, {
                 method: 'POST',
                 body: new FormData(this)
             })
             .then(r => r.json()).then(async d => {
                 if (d.success) {
+                    const destinoId = <?= $duplicar ? 'true' : 'false' ?> ? Number(d.contrato_id) : <?= (int)$id ?>;
                     // Plan de pagos: se guarda si se usa; si se apagó y había plan, se quita (las líneas cobradas lo impiden)
                     const usar = document.getElementById('ppActivar')?.checked;
                     let avisoPlan = '', errPlan = false;
@@ -1332,11 +1341,11 @@ require_once '../../includes/templates/header.php';
                     }
                     Swal.fire({
                             icon: errPlan ? 'warning' : 'success',
-                            title: '¡Cambios guardados!',
-                            text: 'El contrato fue actualizado.' + avisoPlan,
+                            title: <?= json_encode($duplicar ? '¡Contrato duplicado!' : '¡Cambios guardados!') ?>,
+                            text: <?= json_encode($duplicar ? 'Se creó un contrato nuevo.' : 'El contrato fue actualizado.') ?> + avisoPlan,
                             confirmButtonText: 'Ver el contrato'
                         })
-                        .then(() => window.location.href = 'facturas_contrato?contrato_id=<?= (int)$id ?>');
+                        .then(() => window.location.href = 'facturas_contrato?contrato_id=' + destinoId);
                 } else {
                     Swal.fire({
                         icon: 'error',
@@ -1344,7 +1353,7 @@ require_once '../../includes/templates/header.php';
                         text: d.error || 'Error inesperado.'
                     });
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="bi bi-floppy-fill"></i> Guardar Cambios';
+                    btn.innerHTML = '<i class="bi bi-floppy-fill"></i> <?= $duplicar ? 'Crear copia del contrato' : 'Guardar Cambios' ?>';
                 }
             }).catch(() => {
                 Swal.fire({
@@ -1352,7 +1361,7 @@ require_once '../../includes/templates/header.php';
                     title: 'Error de conexión'
                 });
                 btn.disabled = false;
-                btn.innerHTML = '<i class="bi bi-floppy-fill"></i> Guardar Cambios';
+                btn.innerHTML = '<i class="bi bi-floppy-fill"></i> <?= $duplicar ? 'Crear copia del contrato' : 'Guardar Cambios' ?>';
             });
     });
 

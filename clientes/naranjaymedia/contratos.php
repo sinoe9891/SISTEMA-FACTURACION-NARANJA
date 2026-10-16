@@ -1154,6 +1154,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                 <td class="text-center"><div class="ct-actions justify-content-center">
                                     <a href="facturas_contrato?contrato_id=<?= $p['id'] ?>" class="btn-fa btn-fa-receipt" title="Ver contrato y sus facturas"><i class="bi bi-eye"></i></a>
                                     <a href="editar_contrato?id=<?= $p['id'] ?>" class="btn-fa btn-fa-edit" title="Editar contrato"><i class="bi bi-pencil-fill"></i></a>
+                                    <a href="editar_contrato?id=<?= (int)$p['id'] ?>&amp;duplicar=1" class="btn-fa btn-fa-edit" title="Duplicar contrato" aria-label="Duplicar contrato"><i class="bi bi-copy"></i></a>
                                     <?php if ($facturado || $noIniciado): ?>
                                         <span class="btn-fa btn-fa-dis" title="<?= $noIniciado ? 'No iniciado' : 'Ya facturado este mes' ?>"><i class="bi bi-file-earmark-plus"></i></span>
                                     <?php else: ?>
@@ -1331,6 +1332,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                     <a href="editar_contrato?id=<?= $c['id'] ?>" class="btn-fa btn-fa-edit" title="Editar">
                                         <i class="bi bi-pencil-fill"></i>
                                     </a>
+                                    <a href="editar_contrato?id=<?= (int)$c['id'] ?>&amp;duplicar=1" class="btn-fa btn-fa-edit" title="Duplicar contrato" aria-label="Duplicar contrato"><i class="bi bi-copy"></i></a>
                                     <?php if ($c['estado'] === 'activo'): ?>
                                         <?php if ($noIniciado || $facturado): ?>
                                             <span class="btn-fa btn-fa-dis"
