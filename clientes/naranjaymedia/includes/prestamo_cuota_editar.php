@@ -83,6 +83,12 @@ try {
         }
     }
 
+    // Si deja de estar pagada y su pago había entrado a un banco, se anula ese depósito
+    if ($estado_anterior === 'pagado' && $nuevo_estado !== 'pagado' && !empty($cuota['movimiento_id'])) {
+        $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ? AND cliente_id = ? AND conciliado = 0")->execute([(int)$cuota['movimiento_id'], $cliente_id]);
+        $pdo->prepare("UPDATE colaborador_prestamo_cuotas SET movimiento_id = NULL WHERE id = ?")->execute([$cuota_id]);
+    }
+
     // Verificar si quedan cuotas pendientes después de este cambio
     // (para determinar si el préstamo queda pagado)
     $stmtPend = $pdo->prepare("

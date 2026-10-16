@@ -3085,6 +3085,12 @@ $tipos_btn_p = [
                             <option value="otro">🔷 Otro</option>
                         </select>
                     </div>
+                    <?php if ($cuentasPago): ?>
+                    <div class="mb-2" id="pagarCuotaCuenta" style="display:none"><label class="mf-label">Depositado en <span class="text-muted fw-normal" style="text-transform:none;letter-spacing:0">(opcional)</span></label>
+                        <select name="cuenta_id" class="mf-select"><option value="">— No registrar en banco —</option>
+                            <?php foreach ($cuentasPago as $cb): ?><option value="<?= (int)$cb['id'] ?>"><?= htmlspecialchars($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?></select>
+                        <small class="text-muted" style="font-size:.72rem">Si eliges una cuenta, el pago entra a Bancos como depósito.</small></div>
+                    <?php endif; ?>
                     <div><label class="mf-label">Notas</label><input type="text" name="notas" class="mf-input"
                             placeholder="Referencia…"></div>
                 </form>
@@ -3635,6 +3641,15 @@ $tipos_btn_p = [
     });
 
     /* ══ PAGAR CUOTA ═══════════════════════════════════════════════════════════ */
+    // «Depositado en» solo si entra dinero (con descuento de nómina no pasa por el banco)
+    function cuotaCuentaVisible() {
+        const fpc = document.getElementById('formPagarCuota'), g = document.getElementById('pagarCuotaCuenta');
+        if (!g) return;
+        const v = fpc.elements.metodo_pago.value !== 'descuento_nomina';
+        g.style.display = v ? '' : 'none';
+        if (!v) fpc.elements.cuenta_id.value = '';
+    }
+    document.getElementById('formPagarCuota')?.elements.metodo_pago.addEventListener('change', cuotaCuentaVisible);
     document.addEventListener('click', e => {
         const btn = e.target.closest('.btn-pagar-cuota');
         if (!btn) return;
@@ -3642,6 +3657,9 @@ $tipos_btn_p = [
         document.getElementById('pagarCuotaNum').textContent = '#' + btn.dataset.cuotaNum;
         document.getElementById('pagarCuotaMonto').textContent = 'L ' + btn.dataset.monto;
         document.getElementById('formPagarCuota').querySelector('[name=notas]').value = '';
+        const fpc = document.getElementById('formPagarCuota');
+        if (fpc.elements.cuenta_id) fpc.elements.cuenta_id.value = '';
+        cuotaCuentaVisible();
         new bootstrap.Modal(document.getElementById('modalPagarCuota')).show();
     });
     document.getElementById('btnConfirmarCuota').addEventListener('click', function() {

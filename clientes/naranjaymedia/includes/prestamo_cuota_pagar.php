@@ -59,6 +59,25 @@ try {
     ");
     $stmtUpd->execute([$fecha_pago, $metodo_pago, $notas, $cuota_id]);
 
+    // Opcional: el pago entró a una cuenta bancaria (no aplica al descuento de nómina)
+    $cuentaDep = (int)($_POST['cuenta_id'] ?? 0);
+    if ($cuentaDep && $metodo_pago !== 'descuento_nomina') {
+        require_once '../../../includes/bancos.php';
+        if (bancosDisponible($pdo)) {
+            $cta = bancoCuenta($pdo, $cliente_id, $cuentaDep, true);
+            if ($cta['moneda'] !== 'HNL') throw new Exception("Elige una cuenta en lempiras.");
+            $stN = $pdo->prepare("SELECT c.nombre FROM colaboradores c WHERE c.id = ?");
+            $stN->execute([(int)$cuota['colaborador_id']]);
+            $movCuota = bancoInsertarMovimiento($pdo, $cliente_id, $cuentaDep, [
+                'fecha' => bancoFecha($fecha_pago), 'sentido' => 'entrada', 'tipo' => 'deposito', 'monto' => (float)$cuota['monto'],
+                'descripcion' => mb_substr('Pago de cuota #' . $cuota['numero_cuota'] . ' de préstamo · ' . (string)$stN->fetchColumn(), 0, 255),
+                'referencia' => $notas ?: null, 'usuario_id' => (int)($_SESSION['usuario_id'] ?? 0),
+            ]);
+            if ($pdo->query("SHOW COLUMNS FROM colaborador_prestamo_cuotas LIKE 'movimiento_id'")->fetchColumn())
+                $pdo->prepare("UPDATE colaborador_prestamo_cuotas SET movimiento_id = ? WHERE id = ?")->execute([$movCuota, $cuota_id]);
+        }
+    }
+
     // Reducir saldo del préstamo
     $nuevo_saldo = max(0, round((float)$cuota['saldo_pendiente'] - (float)$cuota['monto'], 2));
 

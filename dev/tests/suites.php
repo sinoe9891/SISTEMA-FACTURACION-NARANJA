@@ -3061,3 +3061,32 @@ suite('Bancos: Ley Poblacional (L 2 por cada L 1,000 o fracción) en cada salida
     $pdo->exec("DELETE FROM gastos WHERE cliente_id=2 AND (descripcion LIKE 'QA LP %' OR factura_ref='LP-$cta-" . date('Y-m') . "')");
     $pdo->exec("DELETE FROM cuentas_bancarias WHERE id=$cta");
 });
+
+suite('Préstamos a colaboradores: el pago de una cuota puede entrar a una cuenta bancaria', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $col = (int)$pdo->query("SELECT id FROM colaboradores WHERE cliente_id=2 ORDER BY id LIMIT 1")->fetchColumn();
+    $c->post('includes/banco_accion.php', ['accion' => 'cuenta_guardar', 'banco' => 'QA Cuota', 'numero' => '999', 'tipo' => 'ahorro', 'moneda' => 'HNL', 'saldo_inicial' => 0, 'fecha_saldo_inicial' => date('Y-m-01'), 'ley_poblacional' => 1]);
+    $cta = (int)$pdo->query("SELECT id FROM cuentas_bancarias WHERE banco='QA Cuota' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $c->post('includes/prestamo_guardar.php', ['colaborador_id' => $col, 'tipo' => 'prestamo', 'monto_total' => 900, 'descripcion' => 'QA préstamo cuota banco', 'fecha' => date('Y-m-d'), 'num_cuotas' => 3, 'frecuencia_cuota' => 'mensual']);
+    $pid = (int)$pdo->query("SELECT id FROM colaborador_prestamos WHERE descripcion='QA préstamo cuota banco' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $cu = $pdo->query("SELECT * FROM colaborador_prestamo_cuotas WHERE prestamo_id=$pid ORDER BY numero_cuota LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    check('el préstamo de prueba tiene sus cuotas', (bool)$cu);
+    if (!$cu) return;
+    $v = $c->get('colaborador_ver', ['id' => $col]);
+    check('la ventana de pagar cuota tiene «Depositado en»', sinErroresPhp($v['body']) && str_contains($v['body'], 'id="pagarCuotaCuenta"'), errorPhp($v['body']));
+    $r = $c->post('includes/prestamo_cuota_pagar.php', ['cuota_id' => $cu['id'], 'fecha_pago' => date('Y-m-d'), 'metodo_pago' => 'transferencia', 'cuenta_id' => $cta, 'notas' => 'QA']);
+    $mov = (int)$pdo->query("SELECT movimiento_id FROM colaborador_prestamo_cuotas WHERE id={$cu['id']}")->fetchColumn();
+    $dep = $pdo->query("SELECT sentido, monto, anulado FROM movimientos_bancarios WHERE id=$mov")->fetch(PDO::FETCH_ASSOC);
+    check('el pago de la cuota entra a la cuenta como depósito (sin Ley Poblacional: es una entrada)', ($r['success'] ?? $r['json']['success'] ?? false) && $dep && $dep['sentido'] === 'entrada' && (float)$dep['monto'] === (float)$cu['monto']
+        && !(int)$pdo->query("SELECT COUNT(*) FROM movimientos_bancarios WHERE cuenta_id=$cta AND tipo='comision' AND anulado=0")->fetchColumn(), $r['body']);
+    $c->post('includes/prestamo_cuota_editar.php', ['cuota_id' => $cu['id'], 'estado' => 'pendiente', 'fecha_esperada' => $cu['fecha_esperada'], 'monto' => $cu['monto']]);
+    check('si la cuota vuelve a pendiente, se anula el depósito', (int)$pdo->query("SELECT anulado FROM movimientos_bancarios WHERE id=$mov")->fetchColumn() === 1);
+    $cu2 = (int)$pdo->query("SELECT id FROM colaborador_prestamo_cuotas WHERE prestamo_id=$pid AND numero_cuota=2")->fetchColumn();
+    $c->post('includes/prestamo_cuota_pagar.php', ['cuota_id' => $cu2, 'fecha_pago' => date('Y-m-d'), 'metodo_pago' => 'descuento_nomina', 'cuenta_id' => $cta]);
+    check('con descuento de nómina no entra nada al banco', !(int)$pdo->query("SELECT COALESCE(movimiento_id,0) FROM colaborador_prestamo_cuotas WHERE id=$cu2")->fetchColumn());
+    $pdo->exec("DELETE FROM colaborador_prestamo_cuotas WHERE prestamo_id=$pid");
+    $pdo->exec("DELETE FROM colaborador_prestamos WHERE id=$pid");
+    $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id=$cta");
+    $pdo->exec("DELETE FROM cuentas_bancarias WHERE id=$cta");
+});
