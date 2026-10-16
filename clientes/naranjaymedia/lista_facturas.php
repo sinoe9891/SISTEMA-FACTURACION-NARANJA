@@ -421,7 +421,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 
 	.fh-filter-grid {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(5, minmax(0, 1fr));
 		gap: .75rem;
 		align-items: end;
 	}
@@ -1113,6 +1113,10 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		.fh-dual-card-row {
 			grid-template-columns: 1fr 1fr;
 		}
+	}
+
+	@media(max-width:1199px) {
+		.fh-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 	}
 
 	@media(max-width:768px) {
