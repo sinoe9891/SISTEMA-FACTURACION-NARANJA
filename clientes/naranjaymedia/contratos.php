@@ -119,9 +119,10 @@ foreach ($stPC->fetchAll(PDO::FETCH_ASSOC) as $f) {
     $vence = sprintf('%04d-%02d-%02d', $f['pa'], $f['pm'], min(max(1, (int)$f['dia_pago']), $ult));
     if ($vence < $f['emision']) $vence = $f['emision'];
     $k = (int)$f['contrato_id'];
-    $porCobrar[$k] ??= ['venc_n' => 0, 'venc_total' => 0.0, 'venc_dias' => 0, 'pend_n' => 0, 'pend_total' => 0.0, 'proxima' => null];
+    $porCobrar[$k] ??= ['venc_n' => 0, 'venc_total' => 0.0, 'venc_dias' => 0, 'venc_desde' => null, 'pend_n' => 0, 'pend_total' => 0.0, 'proxima' => null];
     if ($vence < $hoyStr) {
         $porCobrar[$k]['venc_n']++;
+        if (!$porCobrar[$k]['venc_desde'] || $vence < $porCobrar[$k]['venc_desde']) $porCobrar[$k]['venc_desde'] = $vence;
         $porCobrar[$k]['venc_total'] += (float)$f['total'];
         $porCobrar[$k]['venc_dias'] = max($porCobrar[$k]['venc_dias'], (int)((strtotime($hoyStr) - strtotime($vence)) / 86400));
     } else {
@@ -130,6 +131,32 @@ foreach ($stPC->fetchAll(PDO::FETCH_ASSOC) as $f) {
         if (!$porCobrar[$k]['proxima'] || $vence < $porCobrar[$k]['proxima']) $porCobrar[$k]['proxima'] = $vence;
     }
 }
+
+// Orden por urgencia de cobro (no por estado): 1) atrasados —facturas o pagos del plan con la fecha de pago ya pasada,
+// aunque el contrato esté vencido—, el más atrasado primero; 2) lo que viene, por fecha; 3) al final, los vencidos o
+// terminados sin nada pendiente. Un vencido con cobros pendientes sigue en «Próximas fechas de cobro».
+foreach ($contratos as &$c) {
+    $pc = $porCobrar[(int)$c['id']] ?? null;
+    $c['atraso'] = max((int)($pc['venc_dias'] ?? 0), (int)($c['plan']['venc_dias'] ?? 0));
+    // Un cancelado solo «debe» sus facturas emitidas (los pagos del plan que quedaron ya no se cobran)
+    $c['debe_algo'] = !empty($pc['venc_n']) || !empty($pc['pend_n']) || ($c['estado'] !== 'cancelado' && ($c['atraso'] > 0 || !empty($c['plan']['prox'])));
+    if ($c['estado'] === 'cancelado' && empty($pc['venc_n'])) $c['atraso'] = 0;
+    if ($c['atraso'] > 0 && empty($c['plan']['venc_n'])) {   // atrasado por una factura sin pagar: se muestra desde cuándo
+        $c['proxima_fecha_pago'] = $pc['venc_desde'];
+        $c['dias_para_pago'] = -$c['atraso'];
+    } elseif ($c['estado'] !== 'activo' && !empty($pc['proxima'])) {   // vencido con una factura que aún no vence
+        $c['proxima_fecha_pago'] = $pc['proxima'];
+        $c['dias_para_pago'] = (int)((strtotime($pc['proxima']) - strtotime($hoyStr)) / 86400);
+    }
+    $c['grupo_orden'] = $c['atraso'] > 0 ? 0 : (($c['estado'] === 'activo' || $c['debe_algo']) ? 1 : 2);
+}
+unset($c);
+usort($contratos, function ($a, $b) {
+    if ($a['grupo_orden'] !== $b['grupo_orden']) return $a['grupo_orden'] <=> $b['grupo_orden'];
+    if ($a['grupo_orden'] === 0) return $b['atraso'] <=> $a['atraso'];                                   // el más atrasado primero
+    if ($a['grupo_orden'] === 1) return (int)$a['dias_para_pago'] <=> (int)$b['dias_para_pago'];        // el más próximo primero
+    return strcmp((string)$b['fecha_fin'], (string)$a['fecha_fin']);                                    // terminados: el más reciente primero
+});
 
 // Cobros por correo programados (aún sin enviar) de cada contrato: por sus facturas, recibos o pagos del plan
 $cobroProg = [];
@@ -1071,8 +1098,8 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
 
     <!-- Próximos cobros (top 10 activos) -->
     <?php
-    $proximos = array_filter($contratos, fn($c) => $c['estado'] === 'activo' && ($c['tipo_contrato'] !== 'proyecto' || !empty($c['plan']['prox'])));
-    usort($proximos, fn($a, $b) => (int)$a['dias_para_pago'] - (int)$b['dias_para_pago']);
+    // Activos, y también vencidos que todavía deben algo; ya vienen en orden de urgencia (atrasados primero)
+    $proximos = array_values(array_filter($contratos, fn($c) => ($c['estado'] === 'activo' && ($c['tipo_contrato'] !== 'proyecto' || !empty($c['plan']['prox']))) || ($c['estado'] !== 'activo' && $c['debe_algo'])));
     // Prioridad: los que se cobran en 5 días o menos (y los atrasados); el resto con «Cargar más»
     $nPrioridad = count(array_filter($proximos, fn($c) => (int)$c['dias_para_pago'] <= 5));
     ?>
@@ -1133,6 +1160,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                 <td class="text-end fw-bold">L <?= number_format((float)($p['monto_proximo'] ?? $p['monto']), 2) ?></td>
                                 <td class="text-center">
                                     <div class="fw-semibold small"><?= htmlspecialchars($p['proxima_fecha_pago']) ?></div>
+                                    <?php if ($p['estado'] !== 'activo'): ?><span class="badge bg-light text-secondary border small">Contrato <?= htmlspecialchars($p['estado']) ?></span><br><?php endif; ?>
                                     <small class="text-muted"><?= isset($p['plan']) ? 'Plan de pagos' : 'Día ' . (int)$p['dia_pago'] . ' c/mes' ?></small>
                                     <?php if ($noIniciado): ?><br><span class="badge bg-secondary small">Inicia
                                             <?= $p['fecha_inicio'] ?></span><?php endif; ?>
@@ -1287,7 +1315,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                                 <?= $celdaCobertura($c) ?>
                             </td>
                             <td>
-                                <?php if ($c['estado'] === 'activo' && $diasPago !== null && ($c['tipo_contrato'] !== 'proyecto' || !empty($c['plan']['prox']))): ?>
+                                <?php if ((($c['estado'] === 'activo' && ($c['tipo_contrato'] !== 'proyecto' || !empty($c['plan']['prox']))) || ($c['estado'] !== 'activo' && $c['debe_algo'])) && $diasPago !== null): ?>
                                     <div class="fw-semibold small"><?= htmlspecialchars($c['proxima_fecha_pago']) ?></div>
                                     <?php if ($noIniciado): ?>
                                         <small class="text-muted">Primer cobro</small>
