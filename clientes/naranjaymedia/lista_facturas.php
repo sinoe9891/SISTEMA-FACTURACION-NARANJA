@@ -223,6 +223,11 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
+.fh-nota-btn { display:inline-flex; align-items:center; gap:.35rem; padding:.25rem .5rem; border:1px solid #93c5fd; border-radius:6px; background:#eff6ff; color:#1d4ed8; font-size:.75rem; cursor:pointer; }
+.fh-nota-btn:hover { background:#dbeafe; }
+.fh-nota-btn:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
+.fh-nota-contenido { white-space:pre-wrap !important; overflow-wrap:anywhere; text-align:left !important; max-height:60vh; overflow-y:auto; }
+
 	:root {
 		--brand: #4f46e5;
 		--brand-light: #eef2ff;
@@ -1584,8 +1589,15 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 							</td>
 							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
 							<td data-col="receptor"><?= htmlspecialchars($f['receptor']) ?>
-<?php if (!empty($f['requiere_subsanacion'])): ?><div class="small mt-1"><span style="color:#c65d00" aria-hidden="true">●</span> Requiere subsanación</div><?php endif; ?>
-<?php if (!empty($f['notas_internas'])): ?><details class="small mt-1"><summary class="text-muted">Nota interna</summary><div style="white-space:pre-wrap;overflow-wrap:anywhere;max-width:350px"><?= htmlspecialchars($f['notas_internas'], ENT_QUOTES, 'UTF-8') ?></div></details><?php endif; ?>
+<?php if (!empty($f['requiere_subsanacion']) || !empty($f['notas_internas'])): ?>
+<div class="mt-1"><button type="button" class="fh-nota-btn"
+ data-factura="<?= htmlspecialchars($f['correlativo'], ENT_QUOTES, 'UTF-8') ?>"
+ data-nota="<?= htmlspecialchars($f['notas_internas'] ?: 'Esta factura requiere subsanación. Aún no se ha agregado una nota interna.', ENT_QUOTES, 'UTF-8') ?>"
+ aria-label="Ver nota interna de factura <?= htmlspecialchars($f['correlativo'], ENT_QUOTES, 'UTF-8') ?>">
+<i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+<?= !empty($f['requiere_subsanacion']) ? 'Subsanación · Ver nota' : 'Ver nota interna' ?>
+</button></div>
+<?php endif; ?>
 </td>
 							<td data-col="total" data-sort-val="<?= $f['total'] ?>"><strong>L
 									<?= number_format($f['total'], 2) ?></strong></td>
@@ -2369,6 +2381,23 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 				});
 		});
 	}
+</script>
+
+
+<script>
+document.addEventListener('click', function (event) {
+    const boton = event.target.closest('.fh-nota-btn');
+    if (!boton) return;
+    Swal.fire({
+        titleText: 'Nota interna · ' + boton.dataset.factura,
+        text: boton.dataset.nota,
+        icon: 'info',
+        confirmButtonText: 'Cerrar',
+        confirmButtonColor: '#2563eb',
+        width: 640,
+        customClass: { htmlContainer: 'fh-nota-contenido' }
+    });
+});
 </script>
 
 <?php require_once '../../includes/templates/footer.php'; ?>
