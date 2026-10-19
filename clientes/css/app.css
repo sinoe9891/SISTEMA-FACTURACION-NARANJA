@@ -1345,6 +1345,9 @@ button.app-stat:disabled { cursor: default; opacity: .6; transform: none; box-sh
 .sb-widget .sb-op.activo { background: var(--bs-primary-bg-subtle, #e0f2fe); }
 .sb-widget .sb-op.elegido { font-weight: 600; }
 .sb-widget .sb-op mark { padding: 0; background: #fde68a; color: inherit; border-radius: 2px; }
+.sb-widget .sb-grupo { padding: .5rem .75rem .2rem; font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--bs-secondary-color, #64748b); border-top: 1px solid var(--bs-border-color, #eef2f7); }
+.sb-widget .sb-grupo:first-child { border-top: 0; }
+.sb-widget .sb-op.sb-en-grupo { padding-left: 1.25rem; }
 .sb-widget .sb-vacio { padding: .5rem .75rem; font-size: .82rem; color: var(--bs-secondary-color, #64748b); }
 .sb-widget.sb-disabled .sb-input { background-color: var(--bs-secondary-bg, #e9ecef); }
 

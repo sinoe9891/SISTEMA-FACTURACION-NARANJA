@@ -6,6 +6,7 @@
  *   - el código le pone otro valor (select.value = … / selectedIndex = …),
  *   - se clona una fila con el select (agregar línea): se arma de nuevo para la copia.
  * Búsqueda sin acentos ni mayúsculas, por cualquier parte del texto. Teclado: ↑ ↓ Enter Esc.
+ * Si el <select> tiene <optgroup>, la lista muestra sus títulos como divisiones (también al filtrar).
  */
 (function () {
     const vivos = new WeakMap();   // select → widget armado
@@ -43,8 +44,15 @@
             filtradas = [...sel.options].filter(o => o.value !== '' && !o.disabled && (!nq || norm(o.text).includes(nq)));
             activo = filtradas.findIndex(o => o.selected);
             if (activo < 0 && nq) activo = 0;
+            let grupo = null;
+            const titulo = o => {   // título del optgroup cuando cambia de grupo
+                const g = o.parentElement && o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : null;
+                if (g === grupo) return '';
+                grupo = g;
+                return g ? `<div class="sb-grupo" role="presentation">${esc(g)}</div>` : '';
+            };
             lista.innerHTML = filtradas.length
-                ? filtradas.slice(0, 200).map((o, i) => `<div class="sb-op${i === activo ? ' activo' : ''}${o.selected ? ' elegido' : ''}" data-i="${i}" role="option">${resaltar(o.text.trim(), nq)}</div>`).join('')
+                ? filtradas.slice(0, 200).map((o, i) => titulo(o) + `<div class="sb-op${i === activo ? ' activo' : ''}${o.selected ? ' elegido' : ''}${o.parentElement && o.parentElement.tagName === 'OPTGROUP' ? ' sb-en-grupo' : ''}" data-i="${i}" role="option">${resaltar(o.text.trim(), nq)}</div>`).join('')
                   + (filtradas.length > 200 ? `<div class="sb-vacio">… ${filtradas.length - 200} más: sigue escribiendo para filtrar</div>` : '')
                 : '<div class="sb-vacio">Sin resultados</div>';
             lista.hidden = false;
