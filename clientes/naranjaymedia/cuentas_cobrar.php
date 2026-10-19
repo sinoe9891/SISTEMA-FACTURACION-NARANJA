@@ -140,11 +140,12 @@ require_once '../../includes/templates/header.php';
         <div class="px-3 pt-2 small text-muted">Pagos acordados que aún no se cobran ni se facturan (por ejemplo, contratos con recibo). No se suman a las facturas de arriba ni al Balance hasta que se facture o se emita el recibo.</div>
         <div class="table-responsive">
             <table data-paginar class="table app-table">
-                <thead><tr><th class="app-n">#</th><th>Fecha de pago</th><th>Cliente</th><th>Concepto</th><th class="app-num">Total</th><th>Estado</th><th class="text-end"></th></tr></thead>
+                <thead><tr><?php if ($puedeCorreo): ?><th style="width:28px"><input type="checkbox" class="form-check-input cx-todos" data-tabla="plan" title="Marcar los de esta página"></th><?php endif; ?><th class="app-n">#</th><th>Fecha de pago</th><th>Cliente</th><th>Concepto</th><th class="app-num">Total</th><th>Estado</th><th class="text-end"></th></tr></thead>
                 <tbody>
                     <?php $nPl = 0; foreach ($planCobrar as $l): $d = -(int)$l['dias'];
                         [$sbg, $sfg, $stx] = $d < 0 ? ['#fee2e2', '#991b1b', 'Vencido hace ' . -$d . ' día' . ($d < -1 ? 's' : '')] : ($d === 0 ? ['#ffedd5', '#9a3412', 'Vence hoy'] : ($d <= 3 ? ['#ffedd5', '#9a3412', 'En ' . $d . ' día' . ($d > 1 ? 's' : '')] : ($d <= 7 ? ['#fef9c3', '#854d0e', 'En ' . $d . ' días'] : ['#f1f5f9', '#475569', 'En ' . $d . ' días']))); ?>
                         <tr>
+                            <?php if ($puedeCorreo): ?><td><input type="checkbox" class="form-check-input cx-sel" data-tabla="plan" data-id="<?= (int)$l['id'] ?>" data-cliente="<?= (int)$l['receptor_id'] ?>" data-monto="<?= (float)$l['total'] ?>" aria-label="Seleccionar pago del plan"></td><?php endif; ?>
                             <td class="app-n"><?= ++$nPl ?></td>
                             <td class="text-nowrap"><?= date('d/m/Y', strtotime($l['fecha'])) ?></td>
                             <td><a href="estado_cuenta?receptor_id=<?= $l['receptor_id'] ?>"><?= htmlspecialchars($l['receptor']) ?></a><div class="small text-muted">Contrato #<?= (int)$l['contrato_id'] ?><?= $l['con_recibo'] ? ' · con recibo' : '' ?></div></td>
@@ -173,10 +174,11 @@ require_once '../../includes/templates/header.php';
         </div>
         <div class="table-responsive">
             <table class="table app-table" id="tablaPendientes">
-                <thead><tr><th class="app-n">#</th><th>Factura</th><th>Cliente</th><th>Período</th><th>Emisión</th><th class="app-num">Días</th><th class="app-num">Total</th><th class="app-num">Abonado</th><th class="app-num">Saldo</th><th class="text-end">Acciones</th></tr></thead>
+                <thead><tr><?php if ($puedeCorreo): ?><th style="width:28px"><input type="checkbox" class="form-check-input cx-todos" data-tabla="factura" title="Marcar los de esta página"></th><?php endif; ?><th class="app-n">#</th><th>Factura</th><th>Cliente</th><th>Período</th><th>Emisión</th><th class="app-num">Días</th><th class="app-num">Total</th><th class="app-num">Abonado</th><th class="app-num">Saldo</th><th class="text-end">Acciones</th></tr></thead>
                 <tbody>
                     <?php foreach ($facturas as $f): $t = cxcTramo((int)$f['dias']); ?>
                         <tr data-fila data-cliente="<?= (int)$f['receptor_id'] ?>" data-buscar="<?= htmlspecialchars(mb_strtolower($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $periodo($f['periodo_mes'], $f['periodo_anio']))) ?>">
+                            <?php if ($puedeCorreo): ?><td><input type="checkbox" class="form-check-input cx-sel" data-tabla="factura" data-id="<?= (int)$f['id'] ?>" data-cliente="<?= (int)$f['receptor_id'] ?>" data-monto="<?= (float)$f['saldo'] ?>" aria-label="Seleccionar factura <?= htmlspecialchars($f['correlativo']) ?>"></td><?php endif; ?>
                             <td class="app-n"></td>
                             <td class="font-monospace small text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
                             <td><a href="estado_cuenta?receptor_id=<?= (int)$f['receptor_id'] ?>"><?= htmlspecialchars($f['receptor']) ?></a></td>
@@ -294,6 +296,54 @@ require_once '../../includes/templates/header.php';
 
 })();
 </script>
+
+<?php if ($instalado && $puedeCorreo): ?>
+<!-- Selección múltiple: cobrar por correo varias facturas o pagos del plan de un mismo cliente -->
+<div id="cxBarra" class="d-none" style="position:sticky;bottom:12px;z-index:20;margin-top:12px">
+    <div class="app-card app-card-body d-flex flex-wrap align-items-center gap-2 shadow" style="border-color:#bfdbfe">
+        <span id="cxBarraTxt" class="fw-semibold"></span>
+        <span class="ms-auto d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="cxLimpiar">Quitar selección</button>
+            <button type="button" class="btn btn-sm btn-primary" id="cxCorreo"><i class="bi bi-send me-1"></i> Cobrar por correo</button>
+        </span>
+    </div>
+</div>
+<script>
+(() => {
+    const L = n => 'L ' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const marcadas = () => [...document.querySelectorAll('.cx-sel:checked')];
+    const pintar = () => {
+        const m = marcadas(), bar = document.getElementById('cxBarra');
+        bar.classList.toggle('d-none', !m.length);
+        const nf = m.filter(c => c.dataset.tabla === 'factura').length, np = m.length - nf;
+        const suma = m.reduce((t, c) => t + (+c.dataset.monto || 0), 0);
+        document.getElementById('cxBarraTxt').textContent = [nf ? nf + ' factura' + (nf > 1 ? 's' : '') : '', np ? np + ' pago' + (np > 1 ? 's' : '') + ' del plan' : ''].filter(Boolean).join(' y ') + ' · ' + L(suma);
+        document.querySelectorAll('.cx-todos').forEach(t => {
+            const vis = [...document.querySelectorAll(`.cx-sel[data-tabla="${t.dataset.tabla}"]`)].filter(c => c.closest('tr').style.display !== 'none');
+            const on = vis.filter(c => c.checked).length;
+            t.checked = vis.length > 0 && on === vis.length; t.indeterminate = on > 0 && on < vis.length;
+        });
+    };
+    document.addEventListener('change', e => {
+        if (e.target.classList.contains('cx-todos')) {
+            document.querySelectorAll(`.cx-sel[data-tabla="${e.target.dataset.tabla}"]`).forEach(c => { if (c.closest('tr').style.display !== 'none') c.checked = e.target.checked; });
+        }
+        if (e.target.matches('.cx-sel, .cx-todos')) pintar();
+    });
+    document.getElementById('cxLimpiar').addEventListener('click', () => { marcadas().forEach(c => c.checked = false); pintar(); });
+    // Igual que «Cobrar por correo» del Historial de facturas: abre Cobros por correo con lo elegido (un correo por cliente)
+    document.getElementById('cxCorreo').addEventListener('click', () => {
+        const m = marcadas();
+        if (!m.length) return;
+        const clientes = new Set(m.map(c => c.dataset.cliente));
+        if (clientes.size > 1) return Swal.fire('Varios clientes', 'Cada correo va a un solo cliente. Selecciona facturas o pagos de un mismo cliente.', 'info');
+        const fac = m.filter(c => c.dataset.tabla === 'factura').map(c => c.dataset.id), plan = m.filter(c => c.dataset.tabla === 'plan').map(c => c.dataset.id);
+        if (fac.length && plan.length) return Swal.fire('Envíalos por separado', 'Las facturas van como cobro de saldo y los pagos del plan como recordatorio de pago: selecciona solo uno de los dos tipos.', 'info');
+        location.href = 'nuevo_cobro?receptor_id=' + [...clientes][0] + (fac.length ? '&tipo=saldo_pendiente&facturas=' + fac.join(',') : '&tipo=recordatorio_pago&plan=' + plan.join(','));
+    });
+})();
+</script>
+<?php endif; ?>
 
 <?php if ($instalado) require __DIR__ . '/includes/_modal_abonos.php'; ?>
 <?php require_once '../../includes/templates/footer.php'; ?>

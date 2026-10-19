@@ -3131,3 +3131,10 @@ suite('Pagos recibidos: lista de abonos, recibos y anticipos; editar la cuenta y
     $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id IN ($a, $b)");
     $pdo->exec("DELETE FROM cuentas_bancarias WHERE id IN ($a, $b)");
 });
+
+suite('Cuentas por cobrar: selección múltiple y «Cobrar por correo» como en el Historial de facturas', function () {
+    $r = login('qa.admin@local.test')->get('cuentas_cobrar');
+    check('las facturas pendientes tienen casillas y la barra de cobro por correo', sinErroresPhp($r['body']) && str_contains($r['body'], 'class="form-check-input cx-sel" data-tabla="factura"') && str_contains($r['body'], 'id="cxCorreo"') && str_contains($r['body'], "nuevo_cobro?receptor_id="), errorPhp($r['body']));
+    $f = login('qa.facturador@local.test')->get('cuentas_cobrar');
+    check('sin permiso de Cobros por correo no salen las casillas', !str_contains($f['body'], 'id="cxCorreo"') || permisoMenu(db(), 'facturador', 'cobros_programados'));
+});
