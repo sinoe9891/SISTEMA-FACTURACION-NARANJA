@@ -13,6 +13,8 @@ try {
     $cid = (int)cliente_actual();
     if (!$cid || !proveedoresDisponible($pdo)) throw new Exception("Falta instalar el módulo de proveedores.");
     $accion = $_POST['accion'] ?? '';
+    // El rol Gastos operativos solo da de alta proveedores nuevos (desde el gasto); editarlos es de quien maneja Proveedores
+    if (USUARIO_ROL === 'operativo' && ($accion !== 'guardar' || (int)($_POST['id'] ?? 0))) throw new Exception("Tu rol solo puede agregar proveedores nuevos.");
     if ($accion === 'guardar') {
         $p = proveedorGuardar($pdo, $cid, $_POST, (int)($_POST['id'] ?? 0));
         echo json_encode(['success' => true, 'message' => 'Proveedor guardado.', 'proveedor' => ['id' => (int)$p['id'], 'nombre' => $p['nombre'], 'tipo' => $p['tipo'], 'logo' => $p['logo']]], JSON_UNESCAPED_UNICODE);

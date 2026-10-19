@@ -76,6 +76,10 @@ try {
             gastosOpReabrir($pdo, $cid, $uid, $rol, $id);
             $msg = 'El gasto volvió a «Por revisar».';
             break;
+        case 'tipo_crear':   // alta rápida desde el gasto (también el colaborador)
+            $extra['tipo'] = gastosOpTipoCrear($pdo, $cid, (string)($_POST['nombre'] ?? ''), !empty($_POST['es_pauta']));
+            $msg = 'Tipo agregado.';
+            break;
         case 'tipo_guardar':
             if (!gastosOpEsAdmin($rol)) throw new Exception("Solo un administrador maneja los tipos.");
             $extra['id'] = gastosOpTipoGuardar($pdo, $cid, $_POST);

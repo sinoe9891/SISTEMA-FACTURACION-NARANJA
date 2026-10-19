@@ -94,6 +94,9 @@ foreach (gastosPorCobrar($pdo, (int)$cliente_id) as $gc) {
         'pct' => $gc['comision_pct'] !== null ? (float)$gc['comision_pct'] : null, 'precio' => $gc['comision_pct'] !== null ? round((float)$gc['monto'] * (1 + (float)$gc['comision_pct'] / 100), 2) : null];
     foreach ($gruposGc[(int)$gc['cobrar_receptor_id']] ?? [(int)$gc['cobrar_receptor_id']] as $rid) $gastosCobrar[$rid][] = $fila;
 }
+// Gastos operativos que aún no se aprueban (no se pueden cobrar todavía): solo aviso
+require_once '../../includes/gastos_operativos.php';
+$gastosOpPend = gastosOpPendientesPorCliente($pdo, (int)$cliente_id, $gruposGc);
 require_once '../../includes/templates/header.php';
 ?>
 
@@ -372,7 +375,8 @@ require_once '../../includes/templates/header.php';
                                 <div class="alert alert-warning mb-0 py-2 small">
                                     <div class="fw-semibold mb-1"><i class="bi bi-arrow-repeat me-1"></i>Gastos pendientes de cobrarle a este cliente</div>
                                     <div id="listaGastosCobrar"></div>
-                                    <div class="text-muted mt-1">Agrega la línea en el detalle y marca aquí los que incluyes: al guardar quedan como cobrados en esta factura.</div>
+                                    <div class="text-muted mt-1" id="gcAyuda">Agrega la línea en el detalle y marca aquí los que incluyes: al guardar quedan como cobrados en esta factura.</div>
+                                    <div class="mt-1" id="gcOperativos"></div>
                                 </div>
                             </div>
                         </div>
@@ -532,9 +536,12 @@ require_once '../../includes/templates/header.php';
 
     /* ── Gastos que se le cobran al cliente ─────────────────────────────────── */
     const GASTOS_COBRAR = <?= json_encode($gastosCobrar, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+    const GASTOS_OP_PEND = <?= json_encode($gastosOpPend) ?>;
     function pintarGastosCobrar(rId) {
-        const lista = GASTOS_COBRAR[rId] || [], cont = document.getElementById('bloqueGastosCobrar');
-        cont.classList.toggle('d-none', !lista.length);
+        const lista = GASTOS_COBRAR[rId] || [], cont = document.getElementById('bloqueGastosCobrar'), op = GASTOS_OP_PEND[rId];
+        cont.classList.toggle('d-none', !lista.length && !op);
+        document.getElementById('gcAyuda').hidden = !lista.length;
+        document.getElementById('gcOperativos').innerHTML = op ? `<i class="bi bi-hourglass-split me-1"></i>Además hay <strong>${op.n}</strong> gasto${op.n > 1 ? 's' : ''} operativo${op.n > 1 ? 's' : ''} por aprobar (L ${op.l.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}): apruébalos para poder cobrarlos. <a href="gastos_operativos?estado=pendiente&desde=2000-01-01&cuenta=${op.cuenta}" target="_blank">Revisarlos</a>` : '';
         const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         document.getElementById('listaGastosCobrar').innerHTML = lista.map(g => `<div class="form-check">
             <input class="form-check-input" type="checkbox" name="gastos_cobrar[]" value="${g.id}" id="gc${g.id}">

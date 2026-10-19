@@ -82,3 +82,40 @@ suite('Programas: contrato, factura, correo y gastos operativos por programa', f
     $pdo->prepare("UPDATE contratos SET programa_id = ? WHERE id = ?")->execute([$antesProg ?: null, $ct]);
     $pdo->exec("DELETE FROM programas WHERE id = $pid");
 });
+
+suite('Gastos operativos: tipo y proveedor con búsqueda y alta rápida; aviso al facturar', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $oid = (int)$pdo->query("SELECT id FROM usuarios WHERE correo = 'qa.operativo@local.test'")->fetchColumn();
+    if (!$oid) { check('existe el usuario operativo de QA', false); return; }
+    $c->post('includes/gasto_operativo_accion.php', ['accion' => 'asignar', 'usuario_id' => $oid, 'cuentas[0]' => 'c:1']);
+    $op = login('qa.operativo@local.test');
+    $p = $op->get('gastos_operativos');
+    check('el formulario trae tipo y proveedor con buscador y «Agregar nuevo»', sinErroresPhp($p['body']) && str_contains($p['body'], 'name="tipo_id" class="form-select" required data-buscar') && str_contains($p['body'], 'proveedor-select') && str_contains($p['body'], 'Agregar tipo nuevo'), errorPhp($p['body']));
+    $nom = 'QA Pinterest Ads ' . time();
+    $r = $op->post('includes/gasto_operativo_accion.php', ['accion' => 'tipo_crear', 'nombre' => $nom, 'es_pauta' => 1]);
+    $tid = (int)($r['json']['tipo']['id'] ?? 0);
+    check('el colaborador agrega un tipo (pauta)', $tid && (int)$pdo->query("SELECT es_pauta FROM gastos_op_tipos WHERE id = $tid")->fetchColumn() === 1, $r['body']);
+    $r2 = $op->post('includes/gasto_operativo_accion.php', ['accion' => 'tipo_crear', 'nombre' => $nom]);
+    check('si ya existe, usa el mismo', (int)($r2['json']['tipo']['id'] ?? 0) === $tid);
+    $r = $op->post('includes/proveedor_accion.php', ['accion' => 'guardar', 'nombre' => 'QA Proveedor op ' . time(), 'tipo' => 'empresa']);
+    $prov = (int)($r['json']['proveedor']['id'] ?? 0);
+    check('el colaborador agrega un proveedor al catálogo', $prov > 0, $r['body']);
+    $r = $op->post('includes/proveedor_accion.php', ['accion' => 'guardar', 'id' => $prov, 'nombre' => 'cambiado']);
+    check('pero no edita proveedores', !($r['json']['success'] ?? true));
+    $r = $op->post('includes/gasto_operativo_accion.php', ['accion' => 'guardar', 'cuenta' => 'c:1', 'tipo_id' => $tid, 'fecha' => date('Y-m-d'), 'descripcion' => 'QA pauta nueva', 'moneda' => 'HNL', 'monto' => 400,
+        'metodo_pago' => 'tarjeta', 'pauta_inicio' => date('Y-m-d'), 'pauta_fin' => date('Y-m-d'), 'proveedor' => 'x', 'proveedor_id' => $prov, 'cobrar_cliente' => 1]);
+    $gid = (int)($r['json']['id'] ?? 0);
+    $g = $pdo->query("SELECT proveedor, proveedor_id FROM gastos_operativos WHERE id = $gid")->fetch(PDO::FETCH_ASSOC);
+    check('el gasto guarda el proveedor del catálogo (con su nombre)', $g && (int)$g['proveedor_id'] === $prov && str_starts_with($g['proveedor'], 'QA Proveedor op'), $r['body']);
+    $gf = $c->get('generar_factura', ['receptor_id' => 1]);
+    check('al facturarle al cliente avisa los gastos operativos por aprobar', sinErroresPhp($gf['body']) && preg_match('/GASTOS_OP_PEND = \{[^;]*"1":\{"n":\d+/', $gf['body']), errorPhp($gf['body']));
+    $r = $c->post('includes/gasto_operativo_accion.php', ['accion' => 'aprobar', 'id' => $gid, 'registro' => 'nuevo']);
+    $gasto = (int)($r['json']['gasto_id'] ?? 0);
+    check('al aprobarlo, el gasto de la empresa queda con ese proveedor', $gasto && (int)$pdo->query("SELECT proveedor_id FROM gastos WHERE id = $gasto")->fetchColumn() === $prov, $r['body']);
+    $pdo->exec("DELETE FROM gastos WHERE id = $gasto");
+    $pdo->exec("DELETE FROM gastos_operativos WHERE id = $gid");
+    $pdo->exec("DELETE FROM gastos_op_tipos WHERE id = $tid");
+    $pdo->exec("DELETE FROM proveedores WHERE id = $prov");
+    $pdo->exec("DELETE FROM usuarios_clientes WHERE usuario_id = $oid");
+});

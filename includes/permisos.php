@@ -49,7 +49,7 @@ const PERMISOS_ACCIONES = [
     'gasto_archivo' => ['gastos', 'cuentas_pagar', 'colaboradores', 'pagos_nomina', 'bouchers'],
     'boucher_lote' => ['bouchers', 'pagos_nomina', 'colaboradores'], 'boucher_pdf' => ['bouchers', 'pagos_nomina', 'colaboradores', 'gastos'],
     'licencia_accion' => ['licencias'], 'licencias_exportar' => ['licencias'],
-    'proveedor_accion' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar'], 'proveedor_logo' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar'],
+    'proveedor_accion' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar', 'gastos_operativos'], 'proveedor_logo' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar'],
     'gasto_operativo_accion' => ['gastos_operativos'], 'gasto_operativo_archivo' => ['gastos_operativos'], 'gastos_operativos_exportar' => ['gastos_operativos'],
     'categoria_gasto_guardar' => ['categorias_gastos'], 'categoria_gasto_actualizar' => ['categorias_gastos'], 'categoria_gasto_eliminar' => ['categorias_gastos'],
     // Bancos

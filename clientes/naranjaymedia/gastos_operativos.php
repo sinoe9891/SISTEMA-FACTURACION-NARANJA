@@ -186,11 +186,13 @@ require_once '../../includes/templates/header.php';
             <div id="gAviso"></div>
             <input type="hidden" name="accion" value="guardar"><input type="hidden" name="id">
             <fieldset id="gCampos"><div class="row g-2">
-                <div class="col-md-6"><label class="form-label">Cliente, programa o contrato *</label><select name="cuenta" class="form-select" required><option value="">— Elegir —</option>
+                <div class="col-md-6"><label class="form-label">Cliente, programa o contrato *</label><select name="cuenta" class="form-select" required data-buscar><option value="">— Buscar cliente, programa o contrato —</option>
                     <?php foreach (array_unique(array_column($clientes, 'grupo')) as $gr): ?><optgroup label="<?= $e($gr) ?>">
-                        <?php foreach ($clientes as $c): if ($c['grupo'] !== $gr) continue; ?><option value="<?= $c['clave'] ?>"><?= $e($c['nombre']) ?></option><?php endforeach; ?></optgroup><?php endforeach; ?></select></div>
-                <div class="col-md-6"><label class="form-label">Tipo de gasto *</label><select name="tipo_id" class="form-select" required><option value="">— Elegir —</option>
-                    <?php foreach ($tipos as $t): ?><option value="<?= (int)$t['id'] ?>" data-pauta="<?= (int)$t['es_pauta'] ?>" <?= (int)$t['activo'] ? '' : 'data-inactivo="1"' ?>><?= $e($t['nombre']) ?></option><?php endforeach; ?></select></div>
+                        <?php foreach ($clientes as $c): if ($c['grupo'] !== $gr) continue; ?><option value="<?= $c['clave'] ?>" data-empresas="<?= $e($c['empresas'] ?? '') ?>"><?= $e($c['nombre']) ?></option><?php endforeach; ?></optgroup><?php endforeach; ?></select></div>
+                <div class="col-md-6"><label class="form-label">Tipo de gasto *</label><select name="tipo_id" class="form-select" required data-buscar><option value="">— Buscar o elegir —</option>
+                    <?php foreach ($tipos as $t): if (!(int)$t['activo']) continue; ?><option value="<?= (int)$t['id'] ?>" data-pauta="<?= (int)$t['es_pauta'] ?>"><?= $e($t['nombre']) ?></option><?php endforeach; ?>
+                    <option value="__nuevo__">➕ Agregar tipo nuevo…</option></select></div>
+                <div class="col-12 g-empresas" hidden><div class="small text-muted"><i class="bi bi-arrow-repeat me-1"></i>Empresas de este contrato: <span></span>. A cuál se le cobra se decide al facturar.</div></div>
                 <div class="col-12 g-pauta" hidden><div class="row g-2 p-2 rounded-3" style="background:#f0f9ff;border:1px solid #bae6fd">
                     <div class="col-md-6"><label class="form-label small mb-1">Campaña</label><input name="campana" class="form-control form-control-sm" maxlength="200" placeholder="Ej.: Lanzamiento promoción octubre"></div>
                     <div class="col-6 col-md-3"><label class="form-label small mb-1">Inicio de la pauta *</label><input type="date" name="pauta_inicio" class="form-control form-control-sm"></div>
@@ -204,7 +206,7 @@ require_once '../../includes/templates/header.php';
                 <div class="col-md-6"><label class="form-label">Cómo se pagó</label><select name="metodo_pago" class="form-select"><?php foreach (GASTO_OP_METODOS as $k => $t): ?><option value="<?= $k ?>"><?= $t ?></option><?php endforeach; ?></select></div>
                 <div class="col-md-6 g-tarjeta"><label class="form-label">Tarjeta</label><select name="tarjeta_id" class="form-select"><option value="">— Sin especificar —</option>
                     <?php foreach ($tarjetas as $t): ?><option value="<?= (int)$t['id'] ?>"><?= $e($t['banco'] . ' ' . strtoupper($t['tipo']) . ' •••• ' . $t['ultimos_digitos']) ?></option><?php endforeach; ?></select></div>
-                <div class="col-md-6"><label class="form-label">Proveedor <span class="text-muted small">(opcional)</span></label><input name="proveedor" class="form-control" maxlength="150" placeholder="Ej.: Meta Platforms, Texaco, Restaurante…"></div>
+                <div class="col-md-6"><label class="form-label">Proveedor <span class="text-muted small">(opcional · búscalo o agrégalo)</span></label><?php $psId = 'gProveedor'; $psValor = ''; $psClase = 'form-select'; require '../../includes/templates/proveedor_select.php'; ?></div>
                 <div class="col-md-6"><label class="form-label">N.º de factura o recibo <span class="text-muted small">(opcional)</span></label><input name="factura_ref" class="form-control" maxlength="100"></div>
                 <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="cobrar_cliente" value="1" id="gCobrar" checked><label class="form-check-label" for="gCobrar">Se le cobra al cliente (al aprobarlo aparece al facturarle)</label></div></div>
                 <div class="col-12"><label class="form-label">Notas <span class="text-muted small">(opcional)</span></label><textarea name="notas" class="form-control" rows="2" maxlength="3000"></textarea></div>
@@ -347,6 +349,9 @@ require_once '../../includes/templates/header.php';
     const m = new bootstrap.Modal(document.getElementById('mGasto')), fg = document.getElementById('fGasto');
     const campos = document.getElementById('gCampos'), arch = document.getElementById('gArchivos');
     const pintar = () => {
+        const oc = fg.cuenta.selectedOptions[0], emp = oc?.dataset.empresas || '';
+        fg.querySelector('.g-empresas').hidden = !emp;
+        fg.querySelector('.g-empresas span').textContent = emp;
         const o = fg.tipo_id.selectedOptions[0];
         const pauta = o?.dataset.pauta === '1';
         fg.querySelector('.g-pauta').hidden = !pauta;
@@ -361,6 +366,20 @@ require_once '../../includes/templates/header.php';
         document.getElementById('gDiasPauta').textContent = d > 0 ? d + ' día' + (d === 1 ? '' : 's') + ' de pauta' : '';
     };
     fg.addEventListener('input', pintar); fg.addEventListener('change', pintar);
+    // Alta rápida de un tipo de gasto
+    fg.tipo_id.addEventListener('change', async () => {
+        if (fg.tipo_id.value !== '__nuevo__') return;
+        const r = await Swal.fire({ title: 'Nuevo tipo de gasto', showCancelButton: true, confirmButtonText: 'Agregar', cancelButtonText: 'Cancelar',
+            html: '<input id="tnNom" class="swal2-input" placeholder="Ej.: Pinterest Ads, Viáticos de sesión de fotos" maxlength="80"><label class="d-block mt-2"><input type="checkbox" id="tnPauta"> Es pauta (pide campaña y fechas)</label>',
+            preConfirm: async () => {
+                const fd = new FormData(); fd.append('accion', 'tipo_crear'); fd.append('nombre', document.getElementById('tnNom').value); if (document.getElementById('tnPauta').checked) fd.append('es_pauta', '1');
+                try { return (await post(fd)).tipo; } catch (err) { Swal.showValidationMessage(err.message); return false; }
+            } });
+        if (!r.isConfirmed || !r.value) { fg.tipo_id.value = ''; pintar(); return; }
+        let o = [...fg.tipo_id.options].find(x => x.value == r.value.id);
+        if (!o) { o = new Option(r.value.nombre, r.value.id); o.dataset.pauta = r.value.es_pauta; fg.tipo_id.add(o, fg.tipo_id.options[fg.tipo_id.options.length - 1]); }
+        fg.tipo_id.value = String(r.value.id); pintar();
+    });
     const pintarArchivos = (lista, puedeSubir) => {
         arch.innerHTML = lista.length ? lista.map(a => `<div class="d-flex align-items-center gap-2 border rounded-2 px-2 py-1 mb-1 small">
             <i class="bi bi-${/\.(pdf)$/i.test(a.nombre) ? 'file-earmark-pdf text-danger' : /\.(xlsx?|csv)$/i.test(a.nombre) ? 'file-earmark-excel text-success' : 'image text-primary'}"></i>
@@ -381,10 +400,12 @@ require_once '../../includes/templates/header.php';
             if (!d.success) return Swal.fire('No se pudo', d.error, 'error');
             const g = d.gasto;
             fg.cuenta.value = g.contrato_id ? 'k:' + g.contrato_id : (g.programa_id ? 'p:' + g.programa_id : 'c:' + g.receptor_id);
-            for (const k of ['tipo_id', 'fecha', 'descripcion', 'moneda', 'monto', 'tasa_cambio', 'metodo_pago', 'tarjeta_id', 'campana', 'pauta_inicio', 'pauta_fin', 'proveedor', 'factura_ref', 'notas'])
+            for (const k of ['tipo_id', 'fecha', 'descripcion', 'moneda', 'monto', 'tasa_cambio', 'metodo_pago', 'tarjeta_id', 'campana', 'pauta_inicio', 'pauta_fin', 'factura_ref', 'notas'])
                 if (fg[k]) fg[k].value = g[k] ?? '';
             [...fg.tipo_id.options].forEach(o => { if (o.value == g.tipo_id) o.hidden = false; });
             fg.cobrar_cliente.checked = +g.cobrar_cliente === 1;
+            if (window.proveedorSelectValor) proveedorSelectValor(document.getElementById('gProveedor'), g.proveedor || '');
+            if (g.tipo_id && ![...fg.tipo_id.options].some(o => o.value == g.tipo_id)) { const o = new Option(g.tipo, g.tipo_id); o.dataset.pauta = g.es_pauta; fg.tipo_id.add(o, fg.tipo_id.options[1]); fg.tipo_id.value = String(g.tipo_id); }
             editable = g.puede_editar;
             document.getElementById('gTitulo').textContent = 'Gasto #' + g.id + ' · ' + (g.contrato || (g.cliente + (g.programa ? ' → ' + g.programa : '')));
             const est = { pendiente: ['warning', 'Por revisar'], aprobado: ['success', 'Aprobado' + (g.revisado_por_nombre ? ' por ' + g.revisado_por_nombre : '') + (g.gasto_id ? ' · Gastos N.º ' + g.gasto_id : '')], rechazado: ['danger', 'Rechazado: ' + (g.motivo_rechazo || '') + ' — corrígelo y guárdalo para enviarlo otra vez'] }[g.estado];
@@ -397,6 +418,7 @@ require_once '../../includes/templates/header.php';
         } else {
             document.getElementById('gTitulo').textContent = 'Registrar gasto';
             fg.fecha.value = new Date().toLocaleDateString('en-CA');
+            if (window.proveedorSelectValor) proveedorSelectValor(document.getElementById('gProveedor'), '');
             const opc = fg.cuenta.querySelectorAll('option[value]:not([value=""])');
             if (opc.length === 1) fg.cuenta.value = opc[0].value;
             if (f.cuenta.value) fg.cuenta.value = f.cuenta.value;

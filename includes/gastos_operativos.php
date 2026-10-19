@@ -166,13 +166,14 @@ function gastosOpCuentas(PDO $pdo, int $cid, ?array $perm): array
                 $out[] = ['clave' => 'p:' . $p['id'], 'nombre' => $nom . ' → ' . $p['nombre'], 'grupo' => 'Programas', 'receptor_id' => $rid, 'programa_id' => (int)$p['id'], 'contrato_id' => null];
     }
     if (gastosOpConProgramas($pdo)) {
-        $st = $pdo->prepare("SELECT c.id, c.receptor_id, c.nombre_contrato, (SELECT COUNT(*) FROM contratos_clientes_rotativos r WHERE r.contrato_id = c.id AND r.activo = 1) AS empresas
+        $st = $pdo->prepare("SELECT c.id, c.receptor_id, c.nombre_contrato, (SELECT COUNT(*) FROM contratos_clientes_rotativos r WHERE r.contrato_id = c.id AND r.activo = 1) AS empresas,
+                                    (SELECT GROUP_CONCAT(cf.nombre ORDER BY r.orden SEPARATOR ' · ') FROM contratos_clientes_rotativos r JOIN clientes_factura cf ON cf.id = r.receptor_id WHERE r.contrato_id = c.id AND r.activo = 1) AS empresas_nombres
                              FROM contratos c WHERE c.cliente_id = ? AND c.tipo_contrato = 'rotativo' AND c.estado = 'activo' ORDER BY c.nombre_contrato");
         $st->execute([$cid]);
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $k)
             if ($perm === null || in_array((int)$k['id'], $perm['k'], true))
                 $out[] = ['clave' => 'k:' . $k['id'], 'nombre' => ($k['nombre_contrato'] ?: 'Contrato #' . $k['id']) . ' (contrato de ' . (int)$k['empresas'] . ' empresas)', 'grupo' => 'Contratos con varias empresas',
-                    'receptor_id' => (int)$k['receptor_id'], 'programa_id' => null, 'contrato_id' => (int)$k['id']];
+                    'receptor_id' => (int)$k['receptor_id'], 'programa_id' => null, 'contrato_id' => (int)$k['id'], 'empresas' => (string)$k['empresas_nombres']];
     }
     return $out;
 }
@@ -380,7 +381,18 @@ function gastosOpGuardar(PDO $pdo, int $cid, int $uid, string $rol, array $d, ?a
         if ($fin < $ini) throw new Exception("La pauta no puede terminar antes de empezar.");
     }
     $txt = fn($k, $max) => ($v = mb_substr(trim((string)($d[$k] ?? '')), 0, $max)) === '' ? null : $v;
-    $vals = [$receptor, (int)$tipo['id'], $fecha, $desc, $txt('proveedor', 150), $txt('factura_ref', 100), $moneda, $monto, $tasa, $lempiras, $metodo, $tarjeta,
+    // Proveedor del catálogo (si viene su id, el nombre es el del catálogo)
+    $provId = (int)($d['proveedor_id'] ?? 0) ?: null;
+    $provNom = $txt('proveedor', 150);
+    if ($provNom === '__nuevo__') $provNom = null;
+    if ($provId) {
+        $st = $pdo->prepare("SELECT nombre FROM proveedores WHERE id = ? AND cliente_id = ?");
+        $st->execute([$provId, $cid]);
+        $n = $st->fetchColumn();
+        if ($n === false) throw new Exception("Proveedor no válido.");
+        $provNom = $n;
+    }
+    $vals = [$receptor, (int)$tipo['id'], $fecha, $desc, $provNom, $txt('factura_ref', 100), $moneda, $monto, $tasa, $lempiras, $metodo, $tarjeta,
         $campana, $ini, $fin, !empty($d['cobrar_cliente']) ? 1 : 0, $txt('notas', 3000)];
     if ($id) {
         $pdo->prepare("UPDATE gastos_operativos SET receptor_id = ?, tipo_id = ?, fecha = ?, descripcion = ?, proveedor = ?, factura_ref = ?, moneda = ?, monto = ?, tasa_cambio = ?,
@@ -388,12 +400,14 @@ function gastosOpGuardar(PDO $pdo, int $cid, int $uid, string $rol, array $d, ?a
                        estado = 'pendiente', motivo_rechazo = NULL WHERE id = ? AND cliente_id = ?")->execute([...$vals, $id, $cid]);
         gastosOpLog($pdo, $id, $uid, 'editado', $antes['estado'] === 'rechazado' ? 'Corregido y enviado otra vez a revisión' : null);
         if (gastosOpConProgramas($pdo)) $pdo->prepare("UPDATE gastos_operativos SET programa_id = ?, contrato_id = ? WHERE id = ?")->execute([$programa, $contrato, $id]);
+        gastosOpProveedorId($pdo, $id, $provId);
         return $id;
     }
     $pdo->prepare("INSERT INTO gastos_operativos (receptor_id, tipo_id, fecha, descripcion, proveedor, factura_ref, moneda, monto, tasa_cambio, monto_lempiras, metodo_pago, tarjeta_id,
                    campana, pauta_inicio, pauta_fin, cobrar_cliente, notas, cliente_id, usuario_id) VALUES (" . implode(',', array_fill(0, 19, '?')) . ")")->execute([...$vals, $cid, $uid]);
     $id = (int)$pdo->lastInsertId();
     if (gastosOpConProgramas($pdo)) $pdo->prepare("UPDATE gastos_operativos SET programa_id = ?, contrato_id = ? WHERE id = ?")->execute([$programa, $contrato, $id]);
+    gastosOpProveedorId($pdo, $id, $provId);
     gastosOpLog($pdo, $id, $uid, 'creado');
     return $id;
 }
@@ -528,6 +542,7 @@ function gastosOpRevisar(PDO $pdo, int $cid, int $uid, string $rol, int $id, str
             ->execute([$cid, $cat, $desc, (float)$g['monto_lempiras'], $g['fecha'], $metodo, $metodo === 'tarjeta' ? ($g['tarjeta_id'] ?: null) : null, $g['proveedor'], $g['factura_ref'], $notas,
                 $adj, $adjNom, $propio ? 'pendiente' : 'pagado', $uid, (int)$g['cobrar_cliente'] ? (int)$g['receptor_id'] : null, $propio ? date('Y-m-d') : null]);
         $gastoId = (int)$pdo->lastInsertId();
+        if (!empty($g['proveedor_id'])) $pdo->prepare("UPDATE gastos SET proveedor_id = ? WHERE id = ?")->execute([(int)$g['proveedor_id'], $gastoId]);
     } elseif ($registro !== 'ninguno') throw new Exception("Elige cómo registrarlo en Gastos.");
     $pdo->prepare("UPDATE gastos_operativos SET estado = 'aprobado', motivo_rechazo = NULL, revisado_por = ?, revisado_en = NOW(), gasto_id = ? WHERE id = ?")->execute([$uid, $gastoId, $id]);
     gastosOpLog($pdo, $id, $uid, 'aprobado', $gastoId ? ($registro === 'nuevo' ? 'Registrado en Gastos como N.º ' : 'Ligado al gasto N.º ') . $gastoId : 'Sin registrar en Gastos');
@@ -553,6 +568,47 @@ function gastosOpReabrir(PDO $pdo, int $cid, int $uid, string $rol, int $id): vo
     }
     $pdo->prepare("UPDATE gastos_operativos SET estado = 'pendiente', revisado_por = NULL, revisado_en = NULL, gasto_id = NULL WHERE id = ?")->execute([$id]);
     gastosOpLog($pdo, $id, $uid, 'reabierto', $det);
+}
+
+function gastosOpProveedorId(PDO $pdo, int $id, ?int $provId): void
+{
+    static $ok = null;
+    if ($ok === null) { try { $ok = (bool)$pdo->query("SHOW COLUMNS FROM gastos_operativos LIKE 'proveedor_id'")->fetchColumn(); } catch (Throwable $e) { $ok = false; } }
+    if ($ok) $pdo->prepare("UPDATE gastos_operativos SET proveedor_id = ? WHERE id = ?")->execute([$provId, $id]);
+}
+
+/** Alta rápida de un tipo desde el gasto (colaborador o administrador): solo nombre y si es pauta. Si ya existe, devuelve ese. */
+function gastosOpTipoCrear(PDO $pdo, int $cid, string $nombre, bool $pauta): array
+{
+    $nombre = mb_substr(trim(preg_replace('/\s+/u', ' ', $nombre)), 0, 80);
+    if ($nombre === '') throw new Exception("Escribe el nombre del tipo.");
+    $st = $pdo->prepare("SELECT id, nombre, es_pauta, activo FROM gastos_op_tipos WHERE cliente_id = ? AND nombre = ?");
+    $st->execute([$cid, $nombre]);
+    if ($t = $st->fetch(PDO::FETCH_ASSOC)) {
+        if (!(int)$t['activo']) $pdo->prepare("UPDATE gastos_op_tipos SET activo = 1 WHERE id = ?")->execute([$t['id']]);
+        return ['id' => (int)$t['id'], 'nombre' => $t['nombre'], 'es_pauta' => (int)$t['es_pauta']];
+    }
+    $id = gastosOpTipoGuardar($pdo, $cid, ['nombre' => $nombre, 'icono' => $pauta ? 'bi-megaphone' : 'bi-tag', 'es_pauta' => $pauta ? 1 : 0]);
+    return ['id' => $id, 'nombre' => $nombre, 'es_pauta' => $pauta ? 1 : 0];
+}
+
+/**
+ * Gastos operativos aún por aprobar que se le cobrarán al cliente (para avisar al facturar). receptor_id => [n, lempiras].
+ * Los de un contrato con varias empresas salen para todas ellas.
+ */
+function gastosOpPendientesPorCliente(PDO $pdo, int $cid, array $grupos): array
+{
+    if (!gastosOpDisponible($pdo)) return [];
+    $st = $pdo->prepare("SELECT receptor_id, COUNT(*) n, SUM(monto_lempiras) l FROM gastos_operativos WHERE cliente_id = ? AND estado = 'pendiente' AND cobrar_cliente = 1 GROUP BY receptor_id");
+    $st->execute([$cid]);
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r)
+        foreach ($grupos[(int)$r['receptor_id']] ?? [(int)$r['receptor_id']] as $rid) {
+            $out[$rid] ??= ['n' => 0, 'l' => 0.0, 'cuenta' => 'c:' . (int)$r['receptor_id']];
+            $out[$rid]['n'] += (int)$r['n'];
+            $out[$rid]['l'] += (float)$r['l'];
+        }
+    return $out;
 }
 
 /** Cuántos esperan revisión (aviso del menú para el administrador). */
