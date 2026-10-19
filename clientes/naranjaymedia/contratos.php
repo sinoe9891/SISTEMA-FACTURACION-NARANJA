@@ -696,7 +696,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
     .ct-leyenda .sem-pill { cursor: pointer; border: 1px solid transparent; }
     .ct-leyenda .sem-pill.on { border-color: currentColor; }
     /* Días para el cobro */
-    .dias-pill { display: inline-block; padding: .15rem .5rem; border-radius: 20px; font-size: .72rem; font-weight: 700; }
+    .dias-pill { display: inline-block; padding: .2rem .6rem; border-radius: 20px; font-size: .72rem; font-weight: 700; white-space: nowrap; min-width: 52px; text-align: center; }
     .dias-atraso { background: #dc2626; color: #fff; }
     .dias-atr1 { background: #fdba74; color: #7c2d12; }
     .dias-atr2 { background: #ef4444; color: #fff; }
