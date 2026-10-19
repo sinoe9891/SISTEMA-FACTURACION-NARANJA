@@ -186,7 +186,7 @@ require_once '../../includes/templates/header.php';
             <div id="gAviso"></div>
             <input type="hidden" name="accion" value="guardar"><input type="hidden" name="id">
             <fieldset id="gCampos"><div class="row g-2">
-                <div class="col-md-6"><label class="form-label">Cliente, programa o contrato *</label><select name="cuenta" class="form-select" required data-buscar><option value="">— Buscar cliente, programa o contrato —</option>
+                <div class="col-md-6"><label class="form-label">Cliente, programa o contrato *</label><select name="cuenta" class="form-select" required><option value="">— Elegir —</option>
                     <?php foreach (array_intersect(['Programas', 'Contratos con varias empresas', 'Clientes'], array_column($clientes, 'grupo')) as $gr): ?><optgroup label="<?= $e($gr) ?>">
                         <?php foreach ($clientes as $c): if ($c['grupo'] !== $gr) continue; ?><option value="<?= $c['clave'] ?>" data-empresas="<?= $e($c['empresas'] ?? '') ?>"><?= $e($c['nombre']) ?></option><?php endforeach; ?></optgroup><?php endforeach; ?></select></div>
                 <div class="col-md-6"><label class="form-label">Tipo de gasto *</label><select name="tipo_id" class="form-select" required data-buscar><option value="">— Buscar o elegir —</option>
