@@ -360,6 +360,14 @@ require_once '../../includes/templates/header.php';
                                 </select>
                                 <div class="form-text">Selecciona el contrato al que corresponde o «Sin contrato». Asociarla facilita el seguimiento mensual desde Contratos.</div>
                             </div>
+                            <?php $pgCid = (int)$cliente_id; $pgActual = null; $pgLabel = 'fv-form-label'; $pgSelect = 'form-select'; $pgReceptor = 'receptor_id'; require '../../includes/templates/programa_campo.php'; ?>
+                            <script>
+                                // El contrato trae su programa (PROGRESE o directo)
+                                document.getElementById('contrato_id').addEventListener('change', function () {
+                                    const ct = (<?= json_encode(array_column($contratosFactura, 'programa_id', 'id')) ?>)[this.value];
+                                    if (this.value && window.ProgramaElegir) ProgramaElegir(ct || null);
+                                });
+                            </script>
                             <div class="col-12 d-none" id="bloqueGastosCobrar">
                                 <div class="alert alert-warning mb-0 py-2 small">
                                     <div class="fw-semibold mb-1"><i class="bi bi-arrow-repeat me-1"></i>Gastos pendientes de cobrarle a este cliente</div>

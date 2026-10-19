@@ -669,6 +669,22 @@ if ($establecimiento_activo) {
 		</form>
 	</div>
 
+	<!-- Programas del cliente (p. ej. Aldea Global → PROGRESE): cada contrato y factura indica si es directo o de un programa -->
+	<div class="cf-form-card mt-3" id="pgCard">
+		<div class="cf-form-card-header">
+			<div class="cf-form-card-header-icon"><i class="bi bi-diagram-3"></i></div>
+			<h5 class="cf-form-card-title">Programas</h5>
+			<button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="pgNuevo"><i class="bi bi-plus-lg"></i> Agregar programa</button>
+		</div>
+		<div class="cf-form-body">
+			<p class="text-muted small mb-3">Si el cliente tiene programas o proyectos internos (p. ej. Aldea Global → PROGRESE), agrégalos aquí. En cada contrato eliges si es directo al cliente o de un programa; sus facturas salen con «Programa: …» y los correos de cobro lo mencionan.</p>
+			<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+				<thead><tr><th>Programa</th><th>Notas</th><th class="text-center">Contratos</th><th class="text-center">Facturas</th><th class="text-center">Activo</th><th></th></tr></thead>
+				<tbody id="pgFilas"><tr><td colspan="6" class="text-muted text-center py-3">Cargando…</td></tr></tbody>
+			</table></div>
+		</div>
+	</div>
+
 	<!-- Contactos adicionales: los marcados «Copiar en cobros» van en copia (CC) de los cobros por correo -->
 	<div class="cf-form-card mt-3" id="ccCard">
 		<div class="cf-form-card-header">
@@ -851,6 +867,41 @@ if ($establecimiento_activo) {
 			}
 		});
 		pedir().catch(e => $filas.innerHTML = `<tr><td colspan="7" class="text-danger text-center py-3">${esc(e.message)}</td></tr>`);
+	})();
+</script>
+
+<script>
+	/* ── Programas del cliente (se guardan al instante) ── */
+	(() => {
+		const URL_PG = 'includes/programa_accion.php', RID = <?= (int)$cliente['id'] ?>, $f = document.getElementById('pgFilas');
+		const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+		const cargar = async () => {
+			const d = await fetch(`${URL_PG}?receptor_id=${RID}`).then(r => r.json());
+			if (!d.success) { $f.innerHTML = `<tr><td colspan="6" class="text-danger text-center py-3">${esc(d.error)}</td></tr>`; return; }
+			$f.innerHTML = d.programas.length ? d.programas.map(p => `<tr class="${+p.activo ? '' : 'text-muted'}">
+				<td class="fw-semibold"><i class="bi bi-diagram-3 me-1 text-muted"></i>${esc(p.nombre)}</td><td class="small">${esc(p.notas)}</td>
+				<td class="text-center">${p.contratos}</td><td class="text-center">${p.facturas}</td><td class="text-center">${+p.activo ? '<i class="bi bi-check-circle-fill text-success"></i>' : 'No'}</td>
+				<td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary pg-editar" data-p='${esc(JSON.stringify(p))}'><i class="bi bi-pencil"></i></button></td></tr>`).join('')
+				: '<tr><td colspan="6" class="text-muted text-center py-3">Sin programas: todo es directo al cliente.</td></tr>';
+		};
+		const editar = async (p = {}) => {
+			const r = await Swal.fire({ title: p.id ? 'Editar programa' : 'Nuevo programa', confirmButtonText: 'Guardar', showCancelButton: true, cancelButtonText: 'Cancelar', focusConfirm: false,
+				html: `<input id="pgNom" class="swal2-input" placeholder="Nombre (ej.: PROGRESE)" maxlength="120" value="${esc(p.nombre || '')}">
+					<input id="pgNotas" class="swal2-input" placeholder="Notas (opcional)" maxlength="255" value="${esc(p.notas || '')}">
+					${p.id ? `<label class="d-block mt-2"><input type="checkbox" id="pgAct" ${+p.activo ? 'checked' : ''}> Activo</label>` : ''}`,
+				preConfirm: () => { const n = document.getElementById('pgNom').value.trim(); if (!n) { Swal.showValidationMessage('Escribe el nombre.'); return false; }
+					return { nombre: n, notas: document.getElementById('pgNotas').value, activo: p.id ? (document.getElementById('pgAct').checked ? 1 : 0) : 1 }; } });
+			if (!r.isConfirmed) return;
+			const fd = new FormData(); fd.append('accion', 'guardar'); fd.append('receptor_id', RID); if (p.id) fd.append('id', p.id);
+			Object.entries(r.value).forEach(([k, v]) => fd.append(k, v));
+			const d = await fetch(URL_PG, { method: 'POST', body: fd }).then(x => x.json()).catch(() => ({ success: false, error: 'Error de conexión.' }));
+			if (!d.success) return Swal.fire('No se pudo', d.error, 'error');
+			Swal.fire({ icon: 'success', title: d.message, timer: 1100, showConfirmButton: false });
+			cargar();
+		};
+		document.getElementById('pgNuevo').addEventListener('click', () => editar());
+		$f.addEventListener('click', e => { const b = e.target.closest('.pg-editar'); if (b) editar(JSON.parse(b.dataset.p)); });
+		cargar();
 	})();
 </script>
 

@@ -79,13 +79,16 @@ if ($fecha_hasta) {
 	$params[] = $fecha_hasta;
 }
 
+require_once '../../includes/programas.php';
+$__conProg = programasDisponible($pdo);
 $stmtFacturas = $pdo->prepare("
-    SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.subtotal,
+    SELECT " . ($__conProg ? "pg.nombre" : "NULL") . " AS programa, f.id, f.correlativo, f.fecha_emision, f.total, f.subtotal,
            f.estado, f.pagada, f.enviada_receptor, f.estado_declarada,
            (f.isv_15 + f.isv_18) AS isv_total,
            f.requiere_subsanacion, f.notas_internas, f.receptor_id, cf.nombre AS receptor
     FROM facturas f
     INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
+    " . ($__conProg ? "LEFT JOIN programas pg ON pg.id = f.programa_id" : "") . "
     WHERE f.cliente_id = ? AND f.establecimiento_id = ?
     $whereExtra
     ORDER BY f.fecha_emision DESC
@@ -1619,7 +1622,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 						};
 					?>
 						<tr
-							data-search="<?= strtolower(htmlspecialchars($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision'])))) ?>">
+							data-search="<?= strtolower(htmlspecialchars($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $f['programa'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision'])))) ?>">
 							<td class="fh-select-col"><input type="checkbox" class="fh-row-check fh-row-select"
 									data-factura-id="<?= $f['id'] ?>" data-receptor-id="<?= (int)$f['receptor_id'] ?>" data-estado="<?= htmlspecialchars($f['estado']) ?>"></td>
 							<td data-sort-val="<?= htmlspecialchars($f['correlativo']) ?>"><span class="corr-mono" data-col="corr"><?= htmlspecialchars($f['correlativo']) ?></span>
@@ -1639,7 +1642,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 								<?php endif; ?>
 							</td>
 							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
-							<td><span data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></span>
+							<td><span data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></span><?= programaEtiqueta($f['programa']) ?>
 <?php if (!empty($f['requiere_subsanacion']) || !empty($f['notas_internas'])): ?>
 <div class="mt-1"><button type="button" class="fh-nota-btn"
  data-factura="<?= htmlspecialchars($f['correlativo'], ENT_QUOTES, 'UTF-8') ?>"

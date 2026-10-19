@@ -6,6 +6,7 @@ require_once '../../includes/intentos.php';
 require_once '../../includes/inventario.php';
 require_once '../../includes/factura_contrato.php';
 require_once '../../includes/moneda_factura.php';
+require_once '../../includes/programas.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 	die("Método no permitido.");
@@ -287,6 +288,9 @@ try {
 		$factura_id
 	);
 	$stmt->execute($valoresUpdate);
+	if (programasDisponible($pdo) && (array_key_exists('programa_id', $_POST) || $cambioContrato || $cambiar_receptor))
+		$pdo->prepare("UPDATE facturas SET programa_id = ? WHERE id = ?")->execute([facturaProgramaResolver($pdo, $cliente_factura,
+			$cambiar_receptor ? (int)$receptor_id : (int)$factura['receptor_id'], $contratoId, $_POST['programa_id'] ?? ($cambioContrato ? null : $factura['programa_id'] ?? null)), (int)$factura_id]);
 	if ($conMoneda) facturaGuardarMoneda($pdo, (int)$factura_id, $tasa, $moneda === 'USD' ? facturaTotalUsd($lineasUsd, (bool)$exonerado) : null, $preciosUsd);
 
 	if ($cambiar_receptor) {

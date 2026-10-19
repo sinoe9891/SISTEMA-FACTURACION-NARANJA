@@ -7,6 +7,7 @@
  */
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
+require_once '../../../includes/programas.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -160,6 +161,13 @@ try {
         $contrato_id,
         $cliente_id,
     ]);
+
+    // Programa del cliente (o directo): sus facturas lo toman también
+    if (programasDisponible($pdo) && array_key_exists('programa_id', $_POST)) {
+        $prog = programaValido($pdo, (int)$cliente_id, (int)$receptor_id, $_POST['programa_id']);
+        $pdo->prepare("UPDATE contratos SET programa_id = ? WHERE id = ? AND cliente_id = ?")->execute([$prog, $contrato_id, $cliente_id]);
+        contratoProgramaPropagar($pdo, (int)$cliente_id, $contrato_id, $prog);
+    }
 
     // Reemplazar servicios
     $pdo->prepare("DELETE FROM contratos_servicios WHERE contrato_id=?")->execute([$contrato_id]);

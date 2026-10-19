@@ -68,7 +68,7 @@ const PERMISOS_ACCIONES = [
     'correo_accion' => ['configuracion_correo', 'pagos_nomina', 'colaboradores', 'gastos'],
     // Catálogo
     'crear_cliente' => ['clientes'], 'editar_cliente' => ['clientes'], 'guardar_cliente' => ['clientes'], 'actualizar_cliente' => ['clientes'], 'eliminar_cliente' => ['clientes'],
-    'cliente_contactos' => ['clientes'],
+    'cliente_contactos' => ['clientes'], 'programa_accion' => ['clientes', 'contratos', 'crear_contrato', 'generar_factura', 'lista_facturas'],
     'prod_guardar' => ['productos'], 'productos_editar' => ['productos'], 'productos_borrar' => ['productos'],
     'productos_clientes_agregar' => ['productos_clientes'], 'productos_clientes_editar' => ['productos_clientes'], 'productos_clientes_eliminar' => ['productos_clientes'],
     // Ventas e inventario

@@ -17,7 +17,7 @@ $fechaOk = fn($v, $d) => (is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $
 $desde = $fechaOk($_GET['desde'] ?? null, date('Y-m-01'));
 $hasta = $fechaOk($_GET['hasta'] ?? null, date('Y-m-d'));
 if ($desde > $hasta) [$desde, $hasta] = [$hasta, $desde];
-$f = ['desde' => $desde, 'hasta' => $hasta, 'receptor' => (int)($_GET['cliente'] ?? 0), 'tipo' => (int)($_GET['tipo'] ?? 0),
+$f = ['desde' => $desde, 'hasta' => $hasta, 'cuenta' => preg_match('/^[cpk]:\d+$/', (string)($_GET['cuenta'] ?? '')) ? $_GET['cuenta'] : '', 'tipo' => (int)($_GET['tipo'] ?? 0),
     'estado' => isset(GASTO_OP_ESTADOS[$_GET['estado'] ?? '']) ? $_GET['estado'] : '', 'moneda' => in_array($_GET['moneda'] ?? '', ['HNL', 'USD'], true) ? $_GET['moneda'] : '',
     'usuario' => $esAdmin ? (int)($_GET['usuario'] ?? 0) : 0];
 $lista = array_reverse(gastosOpLista($pdo, $cid, gastosOpPermitidos($pdo, (int)USUARIO_ID, USUARIO_ROL), $f));   // del más viejo al más nuevo
@@ -27,7 +27,7 @@ $st = $pdo->prepare("SELECT * FROM clientes_saas WHERE id = ?");
 $st->execute([$cid]);
 $emp = $st->fetch(PDO::FETCH_ASSOC) ?: [];
 $clienteNom = '';
-if ($f['receptor']) { $st = $pdo->prepare("SELECT nombre FROM clientes_factura WHERE id = ? AND cliente_id = ?"); $st->execute([$f['receptor'], $cid]); $clienteNom = (string)$st->fetchColumn(); }
+if ($f['cuenta']) foreach (gastosOpCuentas($pdo, $cid, null) as $cu) if ($cu['clave'] === $f['cuenta']) $clienteNom = str_replace(' (directo)', '', $cu['nombre']);
 $archivosDe = function (int $id) use ($pdo): string {
     return implode(', ', array_map(fn($a) => $a['nombre'], gastosOpArchivos($pdo, $id)));
 };
@@ -35,11 +35,11 @@ $nombreBase = 'gastos_operativos_' . ($clienteNom ? preg_replace('/[^a-z0-9]+/',
 
 if (($_GET['formato'] ?? 'pdf') === 'xlsx') {
     $x = new XlsxSimple('Gastos operativos');
-    $x->columnas([['N.º', 7, 'entero'], ['Fecha', 12, 'fecha'], ['Cliente', 30], ['Tipo', 22], ['Descripción', 40], ['Campaña', 24], ['Inicio pauta', 12, 'fecha'], ['Fin pauta', 12, 'fecha'],
+    $x->columnas([['N.º', 7, 'entero'], ['Fecha', 12, 'fecha'], ['Cliente / programa / contrato', 34], ['Tipo', 22], ['Descripción', 40], ['Campaña', 24], ['Inicio pauta', 12, 'fecha'], ['Fin pauta', 12, 'fecha'],
         ['Proveedor', 20], ['Factura / recibo', 16], ['Moneda', 8], ['Monto', 13, 'dinero'], ['Tasa', 9], ['En lempiras', 14, 'dinero'], ['Pago', 22], ['Tarjeta', 22],
         ['Se cobra al cliente', 10], ['Estado', 12], ['Registrado por', 20], ['Gastos N.º', 10], ['Archivos', 40], ['Notas', 30]]);
     foreach ($lista as $g)
-        $x->fila([(int)$g['id'], $g['fecha'], $g['cliente'], $g['tipo'], $g['descripcion'], (string)$g['campana'], (string)$g['pauta_inicio'], (string)$g['pauta_fin'],
+        $x->fila([(int)$g['id'], $g['fecha'], gastosOpCuentaTexto($g), $g['tipo'], $g['descripcion'], (string)$g['campana'], (string)$g['pauta_inicio'], (string)$g['pauta_fin'],
             (string)$g['proveedor'], (string)$g['factura_ref'], $g['moneda'], (float)$g['monto'], $g['tasa_cambio'] ? (float)$g['tasa_cambio'] : '', (float)$g['monto_lempiras'],
             GASTO_OP_METODOS[$g['metodo_pago']], (string)$g['tarjeta'], (int)$g['cobrar_cliente'] ? 'Sí' : 'No', GASTO_OP_ESTADOS[$g['estado']][0], (string)$g['registrado_por'],
             $g['gasto_id'] ? (int)$g['gasto_id'] : '', $archivosDe((int)$g['id']), (string)$g['notas']], false, $g['estado'] === 'rechazado');
@@ -64,7 +64,7 @@ uasort($porTipo, fn($a, $b) => $b['L'] <=> $a['L']);
 $filas = '';
 foreach ($lista as $i => $g) {
     $rech = $g['estado'] === 'rechazado';
-    $filas .= '<tr class="' . ($i % 2 ? 'par' : '') . ($rech ? ' rech' : '') . '"><td>' . date('d/m/Y', strtotime($g['fecha'])) . '</td><td>' . $e($g['cliente']) . '</td><td>' . $e($g['tipo'])
+    $filas .= '<tr class="' . ($i % 2 ? 'par' : '') . ($rech ? ' rech' : '') . '"><td>' . date('d/m/Y', strtotime($g['fecha'])) . '</td><td>' . $e(gastosOpCuentaTexto($g)) . '</td><td>' . $e($g['tipo'])
         . ($g['pauta_inicio'] ? '<div class="sub">' . date('d/m', strtotime($g['pauta_inicio'])) . ' – ' . date('d/m/Y', strtotime($g['pauta_fin'])) . '</div>' : '') . '</td><td>' . $e($g['descripcion'])
         . '<div class="sub">' . $e(implode(' · ', array_filter([$g['campana'] ? 'Campaña: ' . $g['campana'] : '', $g['proveedor'], $g['factura_ref'] ? 'Fact. ' . $g['factura_ref'] : '', $g['tarjeta'] ? 'Tarjeta ' . $g['tarjeta'] : '']))) . '</div>'
         . (($a = $archivosDe((int)$g['id'])) ? '<div class="sub">📎 ' . $e($a) . '</div>' : '<div class="sub falta">Sin comprobante</div>') . '</td>'

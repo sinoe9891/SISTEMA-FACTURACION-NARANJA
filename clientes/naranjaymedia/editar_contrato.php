@@ -678,6 +678,7 @@ require_once '../../includes/templates/header.php';
                         <input type="text" name="nombre_contrato" class="mf-input"
                             value="<?= htmlspecialchars($contrato['nombre_contrato']) ?>" maxlength="200" required>
                     </div>
+                    <?php $pgCid = (int)$contrato['cliente_id']; $pgActual = $contrato['programa_id'] ?? null; $pgLabel = 'mf-label'; $pgSelect = 'mf-select'; require '../../includes/templates/programa_campo.php'; ?>
                 </div>
             </div>
         </div>

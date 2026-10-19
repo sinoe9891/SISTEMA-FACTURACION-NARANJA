@@ -170,11 +170,14 @@ try {
 		}
 
 		$placeholders = implode(',', array_fill(0, count($factura_ids), '?'));
+		require_once '../../includes/programas.php';
+		$conProg = programasDisponible($pdo);
 		$stmtFacturas = $pdo->prepare("
 			SELECT f.id, f.correlativo, f.total, f.receptor_id, f.cliente_id, f.enviada_receptor, f.fecha_emision,
-			       cf.nombre AS receptor_nombre, cf.contacto_nombre
+			       cf.nombre AS receptor_nombre, cf.contacto_nombre, " . ($conProg ? "pg.nombre" : "NULL") . " AS programa
 			FROM facturas f
 			INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
+			" . ($conProg ? "LEFT JOIN programas pg ON pg.id = f.programa_id" : "") . "
 			WHERE f.id IN ($placeholders)
 		");
 		$stmtFacturas->execute($factura_ids);
@@ -198,8 +201,12 @@ try {
 
 		$receptor_nombre = $facturasSel[0]['receptor_nombre'];
 		$contacto_nombre = trim($facturasSel[0]['contacto_nombre'] ?? '');
+		// Todas de un mismo programa (p. ej. PROGRESE): el saludo va al equipo del programa y el asunto lo nombra
+		$programas = array_values(array_unique(array_map(fn($f) => (string)$f['programa'], $facturasSel)));
+		$programaComun = count($programas) === 1 && $programas[0] !== '' ? $programas[0] : null;
 		// Saludo al equipo del cliente (el cobro suele ir a varias personas en copia)
-		$saludo = 'Buen día, equipo de ' . $receptor_nombre . ':';
+		$saludo = 'Buen día, equipo de ' . ($programaComun ?? $receptor_nombre) . ':';
+		if ($programaComun) $receptor_nombre = $programaComun . ' · ' . $receptor_nombre;
 
 		// Saldo real de cada factura (descuenta abonos registrados en cuentas por cobrar)
 		$abonos = [];
@@ -243,7 +250,8 @@ try {
 		$b = fn($v) => '<strong>' . htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8') . '</strong>';
 
 		// Línea de saldo de una factura, con el detalle de lo abonado
-		$lineaSaldo = fn($f, $fmt) => 'Factura N.° ' . $fmt($f['correlativo']) . ': ' . $fmt('L ' . number_format($f['saldo'], 2))
+		$progTag = fn($f) => !$programaComun && !empty($f['programa']) ? ' (Programa ' . $f['programa'] . ')' : '';
+		$lineaSaldo = fn($f, $fmt) => 'Factura N.° ' . $fmt($f['correlativo']) . $progTag($f) . ': ' . $fmt('L ' . number_format($f['saldo'], 2))
 			. ($f['abonado'] > 0 ? ' (saldo; total L ' . number_format((float)$f['total'], 2) . ', abonado L ' . number_format($f['abonado'], 2) . ')' : '');
 		$saldo_pendiente = implode("\n", array_map(fn($f) => $lineaSaldo($f, fn($v) => $v), $facturasPend));
 		$saldo_pendiente_html = implode("\n", array_map(fn($f) => $lineaSaldo($f, $b), $facturasPend));

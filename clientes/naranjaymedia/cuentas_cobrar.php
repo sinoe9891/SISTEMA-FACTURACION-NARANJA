@@ -106,7 +106,7 @@ require_once '../../includes/templates/header.php';
                                 <tbody>
                                 <?php foreach ($susFacturas as $f): $tf = cxcTramo((int)$f['dias']); ?>
                                     <tr>
-                                        <td class="font-monospace text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
+                                        <td class="font-monospace text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a><?= $f['programa'] ? '<div class="font-sans small text-muted"><i class="bi bi-diagram-3 me-1"></i>' . htmlspecialchars($f['programa']) . '</div>' : '' ?></td>
                                         <td class="text-nowrap"><?= $periodo($f['periodo_mes'], $f['periodo_anio']) ?></td>
                                         <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?><?= $f['desde'] < substr($f['fecha_emision'], 0, 10) ? '<div class="small text-danger" title="Es de un contrato: se cuenta desde el día de pago de su período">se debe desde el ' . date('d/m/Y', strtotime($f['desde'])) . '</div>' : '' ?></td>
                                         <td class="app-num"><span class="app-badge app-badge-<?= $colorTramo[$tf] ?>"><?= (int)$f['dias'] ?></span></td>
@@ -177,11 +177,11 @@ require_once '../../includes/templates/header.php';
                 <thead><tr><?php if ($puedeCorreo): ?><th style="width:28px"><input type="checkbox" class="form-check-input cx-todos" data-tabla="factura" title="Marcar los de esta página"></th><?php endif; ?><th class="app-n">#</th><th>Factura</th><th>Cliente</th><th>Período</th><th>Emisión</th><th class="app-num">Días</th><th class="app-num">Total</th><th class="app-num">Abonado</th><th class="app-num">Saldo</th><th class="text-end">Acciones</th></tr></thead>
                 <tbody>
                     <?php foreach ($facturas as $f): $t = cxcTramo((int)$f['dias']); ?>
-                        <tr data-fila data-cliente="<?= (int)$f['receptor_id'] ?>" data-buscar="<?= htmlspecialchars(mb_strtolower($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $periodo($f['periodo_mes'], $f['periodo_anio']))) ?>">
+                        <tr data-fila data-cliente="<?= (int)$f['receptor_id'] ?>" data-buscar="<?= htmlspecialchars(mb_strtolower($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $f['programa'] . ' ' . $periodo($f['periodo_mes'], $f['periodo_anio']))) ?>">
                             <?php if ($puedeCorreo): ?><td><input type="checkbox" class="form-check-input cx-sel" data-tabla="factura" data-id="<?= (int)$f['id'] ?>" data-cliente="<?= (int)$f['receptor_id'] ?>" data-monto="<?= (float)$f['saldo'] ?>" aria-label="Seleccionar factura <?= htmlspecialchars($f['correlativo']) ?>"></td><?php endif; ?>
                             <td class="app-n"></td>
                             <td class="font-monospace small text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
-                            <td><a href="estado_cuenta?receptor_id=<?= (int)$f['receptor_id'] ?>"><?= htmlspecialchars($f['receptor']) ?></a></td>
+                            <td><a href="estado_cuenta?receptor_id=<?= (int)$f['receptor_id'] ?>"><?= htmlspecialchars($f['receptor']) ?></a><?php if ($f['programa']): ?> <span class="badge rounded-pill text-bg-light border fw-normal"><i class="bi bi-diagram-3 me-1"></i><?= htmlspecialchars($f['programa']) ?></span><?php endif; ?></td>
                             <td class="text-nowrap small"><?= $periodo($f['periodo_mes'], $f['periodo_anio']) ?></td>
                             <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?><?= $f['desde'] < substr($f['fecha_emision'], 0, 10) ? '<div class="small text-danger" title="Es de un contrato: se cuenta desde el día de pago de su período">se debe desde el ' . date('d/m/Y', strtotime($f['desde'])) . '</div>' : '' ?></td>
                             <td class="app-num"><span class="app-badge app-badge-<?= $colorTramo[$t] ?>"><?= (int)$f['dias'] ?></span></td>

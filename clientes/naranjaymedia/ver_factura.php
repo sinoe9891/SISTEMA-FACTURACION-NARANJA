@@ -705,6 +705,7 @@ if (!function_exists('formatFecha')) {
 		<div class="d-flex justify-content-between align-items-start">
 			<div class="infocliente">
 				<strong>Cliente:</strong> <?= htmlspecialchars($factura['receptor_nombre']) ?><br>
+				<?php require_once '../../includes/programas.php'; if ($__prog = facturaProgramaNombre($pdo, $factura)): ?><strong>Programa:</strong> <?= htmlspecialchars($__prog) ?><br><?php endif; ?>
 				<strong>RTN:</strong> <?= htmlspecialchars($factura['receptor_rtn'] ?? '') ?><br>
 				<strong>Dirección:</strong> <?= htmlspecialchars($factura['receptor_direccion'] ?? '') ?><br>
 				<strong>Teléfono:</strong> <?= htmlspecialchars($factura['receptor_telefono'] ?? '') ?><br>

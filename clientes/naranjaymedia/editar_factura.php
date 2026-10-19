@@ -324,7 +324,15 @@ require_once '../../includes/templates/header.php';
                             <?php endforeach; ?>
                         </select>
                         <div class="form-text" id="contratoAyuda">Selecciona el contrato al que corresponde o «Sin contrato». La asociación se guarda al guardar la factura y no cambia sus productos ni importes.</div>
-                        </div></div>
+                        </div>
+                        <?php $pgCid = (int)$factura['cliente_id']; $pgActual = $factura['programa_id'] ?? null; $pgLabel = 'fe-form-label'; $pgSelect = 'form-select'; $pgReceptor = 'receptorSelect'; require '../../includes/templates/programa_campo.php'; ?>
+                        <script>
+                            document.getElementById('contratoSelect').addEventListener('change', function () {
+                                const ct = (<?= json_encode(array_column($contratosEdicion, 'programa_id', 'id')) ?>)[this.value];
+                                if (this.value && window.ProgramaElegir) ProgramaElegir(ct || null);
+                            });
+                        </script>
+                        </div>
                     </div>
                 </div>
 

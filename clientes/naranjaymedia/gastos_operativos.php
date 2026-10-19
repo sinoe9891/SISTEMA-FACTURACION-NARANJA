@@ -16,16 +16,16 @@ $fechaOk = fn($v, $d) => (is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $
 $desde = $fechaOk($_GET['desde'] ?? null, date('Y-m-01', strtotime('-2 months')));
 $hasta = $fechaOk($_GET['hasta'] ?? null, date('Y-m-d'));
 if ($desde > $hasta) [$desde, $hasta] = [$hasta, $desde];
-$filtros = ['desde' => $desde, 'hasta' => $hasta, 'receptor' => (int)($_GET['cliente'] ?? 0), 'tipo' => (int)($_GET['tipo'] ?? 0),
+$filtros = ['desde' => $desde, 'hasta' => $hasta, 'cuenta' => preg_match('/^[cpk]:\d+$/', (string)($_GET['cuenta'] ?? '')) ? $_GET['cuenta'] : '', 'tipo' => (int)($_GET['tipo'] ?? 0),
     'estado' => isset(GASTO_OP_ESTADOS[$_GET['estado'] ?? '']) ? $_GET['estado'] : '', 'moneda' => in_array($_GET['moneda'] ?? '', ['HNL', 'USD'], true) ? $_GET['moneda'] : '',
     'usuario' => $esAdmin ? (int)($_GET['usuario'] ?? 0) : 0, 'sin_archivo' => !empty($_GET['sin_archivo'])];
 
-$permitidos = $tipos = $clientes = $lista = $tarjetas = $categorias = $responsables = [];
+$permitidos = $tipos = $clientes = $cuentasTodas = $lista = $tarjetas = $categorias = $responsables = [];
 $porRevisar = 0;
 if ($instalado) {
     $permitidos = gastosOpPermitidos($pdo, $uid, USUARIO_ROL);
     $tipos = gastosOpTipos($pdo, $cid);
-    $clientes = gastosOpClientes($pdo, $cid, $permitidos);
+    $clientes = gastosOpCuentas($pdo, $cid, $permitidos);   // cuentas: cliente directo, programa o contrato rotativo
     $lista = gastosOpLista($pdo, $cid, $permitidos, $filtros);
     $st = $pdo->prepare("SELECT id, banco, tipo, ultimos_digitos FROM tarjetas WHERE cliente_id = ? AND activa = 1 ORDER BY banco, ultimos_digitos");
     $st->execute([$cid]);
@@ -35,6 +35,7 @@ if ($instalado) {
         $st->execute([$cid]);
         $categorias = $st->fetchAll(PDO::FETCH_ASSOC);
         $responsables = gastosOpResponsables($pdo, $cid);
+        $cuentasTodas = gastosOpCuentas($pdo, $cid, null);
         $porRevisar = gastosOpPorRevisar($pdo, $cid);
     }
 }
@@ -58,7 +59,7 @@ $rangos = [
     'Últimos 3 meses' => [date('Y-m-01', strtotime('-2 months')), $hoy->format('Y-m-d')],
     'Este año' => [$hoy->format('Y-01-01'), $hoy->format('Y-m-d')],
 ];
-$qsExport = http_build_query(array_filter(['desde' => $desde, 'hasta' => $hasta, 'cliente' => $filtros['receptor'] ?: null, 'tipo' => $filtros['tipo'] ?: null,
+$qsExport = http_build_query(array_filter(['desde' => $desde, 'hasta' => $hasta, 'cuenta' => $filtros['cuenta'] ?: null, 'tipo' => $filtros['tipo'] ?: null,
     'estado' => $filtros['estado'] ?: null, 'moneda' => $filtros['moneda'] ?: null, 'usuario' => $filtros['usuario'] ?: null]));
 $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
 require_once '../../includes/templates/header.php';
@@ -99,8 +100,8 @@ require_once '../../includes/templates/header.php';
     <div class="row g-2 align-items-end">
         <div class="col-6 col-md-2"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" value="<?= $desde ?>"></div>
         <div class="col-6 col-md-2"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" value="<?= $hasta ?>"></div>
-        <div class="col-12 col-md-<?= $esAdmin ? 2 : 3 ?>"><label class="form-label small">Cliente</label><select class="form-select form-select-sm" name="cliente" data-buscar><option value="">Todos</option>
-            <?php foreach ($clientes as $c): ?><option value="<?= (int)$c['id'] ?>" <?= $filtros['receptor'] === (int)$c['id'] ? 'selected' : '' ?>><?= $e($c['nombre']) ?></option><?php endforeach; ?></select></div>
+        <div class="col-12 col-md-<?= $esAdmin ? 2 : 3 ?>"><label class="form-label small">Cliente / programa</label><select class="form-select form-select-sm" name="cuenta" data-buscar><option value="">Todos</option>
+            <?php foreach ($clientes as $c): ?><option value="<?= $c['clave'] ?>" <?= $filtros['cuenta'] === $c['clave'] ? 'selected' : '' ?>><?= $e($c['nombre']) ?></option><?php endforeach; ?></select></div>
         <div class="col-6 col-md-2"><label class="form-label small">Tipo</label><select class="form-select form-select-sm" name="tipo"><option value="">Todos</option>
             <?php foreach ($tipos as $t): ?><option value="<?= (int)$t['id'] ?>" <?= $filtros['tipo'] === (int)$t['id'] ? 'selected' : '' ?>><?= $e($t['nombre']) ?></option><?php endforeach; ?></select></div>
         <div class="col-6 col-md-<?= $esAdmin ? 1 : 2 ?>"><label class="form-label small">Estado</label><select class="form-select form-select-sm" name="estado"><option value="">Todos</option>
@@ -147,10 +148,10 @@ require_once '../../includes/templates/header.php';
                 <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Cliente</th><th>Tipo</th><th>Descripción</th><th>Pago</th><th class="app-num">Monto</th><th class="app-num">En lempiras</th><th class="text-center">Archivos</th><th>Estado</th><th class="text-end no-orden"></th></tr></thead>
                 <tbody>
                 <?php foreach ($lista as $g): [$eTxt, $eBg, $eFg, $eIco] = GASTO_OP_ESTADOS[$g['estado']]; $rech = $g['estado'] === 'rechazado'; ?>
-                    <tr data-fila class="<?= $rech ? 'text-muted' : '' ?>" data-buscar="<?= $e(mb_strtolower($g['cliente'] . ' ' . $g['tipo'] . ' ' . $g['descripcion'] . ' ' . $g['proveedor'] . ' ' . $g['campana'] . ' ' . $g['factura_ref'] . ' ' . $g['registrado_por'] . ' #' . $g['id'])) ?>">
+                    <tr data-fila class="<?= $rech ? 'text-muted' : '' ?>" data-buscar="<?= $e(mb_strtolower($g['cliente'] . ' ' . $g['programa'] . ' ' . $g['contrato'] . ' ' . $g['tipo'] . ' ' . $g['descripcion'] . ' ' . $g['proveedor'] . ' ' . $g['campana'] . ' ' . $g['factura_ref'] . ' ' . $g['registrado_por'] . ' #' . $g['id'])) ?>">
                         <td class="app-n"></td>
                         <td class="text-nowrap" data-sort="<?= $g['fecha'] ?>"><?= date('d/m/Y', strtotime($g['fecha'])) ?></td>
-                        <td><?= $e($g['cliente']) ?></td>
+                        <td><?= $e($g['contrato'] ?: $g['cliente']) ?><?php if ($g['programa']): ?><div><span class="badge rounded-pill text-bg-light border fw-normal"><i class="bi bi-diagram-3 me-1"></i><?= $e($g['programa']) ?></span></div><?php endif; ?><?php if ($g['contrato']): ?><div class="small text-muted"><i class="bi bi-arrow-repeat me-1"></i>contrato de varias empresas</div><?php endif; ?></td>
                         <td class="small text-nowrap"><i class="bi <?= $e($g['tipo_icono']) ?> me-1 text-muted"></i><?= $e($g['tipo']) ?>
                             <?php if ($g['pauta_inicio']): ?><div class="text-muted"><i class="bi bi-calendar-range me-1"></i><?= date('d/m', strtotime($g['pauta_inicio'])) ?> – <?= date('d/m/Y', strtotime($g['pauta_fin'])) ?></div><?php endif; ?></td>
                         <td><?= $e($g['descripcion']) ?>
@@ -164,7 +165,7 @@ require_once '../../includes/templates/header.php';
                             <?php if ($g['gasto_id']): ?><div class="small text-muted">Gastos N.º <?= (int)$g['gasto_id'] ?></div><?php endif; ?></td>
                         <td class="text-end text-nowrap">
                             <button class="btn btn-sm btn-outline-primary go-ver" data-id="<?= (int)$g['id'] ?>" title="Ver, editar y adjuntar"><i class="bi bi-<?= $g['estado'] !== 'aprobado' && ($esAdmin || (int)$g['usuario_id'] === $uid) ? 'pencil' : 'eye' ?>"></i></button>
-                            <?php if ($esAdmin && $g['estado'] === 'pendiente'): ?><button class="btn btn-sm btn-success go-revisar" data-id="<?= (int)$g['id'] ?>" data-tipo-cat="<?= (int)array_column($tipos, 'categoria_id', 'id')[$g['tipo_id']] ?>" data-desc="<?= $e($g['cliente'] . ' · ' . $g['descripcion'] . ' · ' . monedaFmt($g['monto'], $g['moneda'])) ?>" data-cobrar="<?= (int)$g['cobrar_cliente'] ?>" title="Aprobar o rechazar"><i class="bi bi-check2-square"></i></button><?php endif; ?>
+                            <?php if ($esAdmin && $g['estado'] === 'pendiente'): ?><button class="btn btn-sm btn-success go-revisar" data-id="<?= (int)$g['id'] ?>" data-tipo-cat="<?= (int)array_column($tipos, 'categoria_id', 'id')[$g['tipo_id']] ?>" data-desc="<?= $e(gastosOpCuentaTexto($g) . ' · ' . $g['descripcion'] . ' · ' . monedaFmt($g['monto'], $g['moneda'])) ?>" data-cobrar="<?= (int)$g['cobrar_cliente'] ?>" title="Aprobar o rechazar"><i class="bi bi-check2-square"></i></button><?php endif; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -185,8 +186,9 @@ require_once '../../includes/templates/header.php';
             <div id="gAviso"></div>
             <input type="hidden" name="accion" value="guardar"><input type="hidden" name="id">
             <fieldset id="gCampos"><div class="row g-2">
-                <div class="col-md-6"><label class="form-label">Cliente *</label><select name="receptor_id" class="form-select" required><option value="">— Elegir —</option>
-                    <?php foreach ($clientes as $c): ?><option value="<?= (int)$c['id'] ?>"><?= $e($c['nombre']) ?></option><?php endforeach; ?></select></div>
+                <div class="col-md-6"><label class="form-label">Cliente, programa o contrato *</label><select name="cuenta" class="form-select" required><option value="">— Elegir —</option>
+                    <?php foreach (array_unique(array_column($clientes, 'grupo')) as $gr): ?><optgroup label="<?= $e($gr) ?>">
+                        <?php foreach ($clientes as $c): if ($c['grupo'] !== $gr) continue; ?><option value="<?= $c['clave'] ?>"><?= $e($c['nombre']) ?></option><?php endforeach; ?></optgroup><?php endforeach; ?></select></div>
                 <div class="col-md-6"><label class="form-label">Tipo de gasto *</label><select name="tipo_id" class="form-select" required><option value="">— Elegir —</option>
                     <?php foreach ($tipos as $t): ?><option value="<?= (int)$t['id'] ?>" data-pauta="<?= (int)$t['es_pauta'] ?>" <?= (int)$t['activo'] ? '' : 'data-inactivo="1"' ?>><?= $e($t['nombre']) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 g-pauta" hidden><div class="row g-2 p-2 rounded-3" style="background:#f0f9ff;border:1px solid #bae6fd">
@@ -288,10 +290,10 @@ require_once '../../includes/templates/header.php';
                         <button class="btn btn-sm btn-primary r-guardar">Guardar</button></div>
                     <input type="search" class="form-control form-control-sm mb-2 r-buscar" placeholder="Buscar cliente…">
                     <div class="row g-1" style="max-height:220px;overflow:auto">
-                        <?php foreach ($clientes as $c): ?><div class="col-md-6 r-cli" data-n="<?= $e(mb_strtolower($c['nombre'])) ?>"><div class="form-check"><input class="form-check-input" type="checkbox" value="<?= (int)$c['id'] ?>" id="r<?= (int)$u['id'] ?>_<?= (int)$c['id'] ?>" <?= in_array((int)$c['id'], $u['clientes'], true) ? 'checked' : '' ?>>
-                            <label class="form-check-label small" for="r<?= (int)$u['id'] ?>_<?= (int)$c['id'] ?>"><?= $e($c['nombre']) ?></label></div></div><?php endforeach; ?>
+                        <?php foreach ($cuentasTodas as $c): $idc = 'r' . (int)$u['id'] . '_' . str_replace(':', '_', $c['clave']); ?><div class="col-md-6 r-cli" data-n="<?= $e(mb_strtolower($c['nombre'])) ?>"><div class="form-check"><input class="form-check-input" type="checkbox" value="<?= $c['clave'] ?>" id="<?= $idc ?>" <?= in_array($c['clave'], $u['claves'], true) ? 'checked' : '' ?>>
+                            <label class="form-check-label small" for="<?= $idc ?>"><?= $c['grupo'] === 'Programas' ? '<i class="bi bi-diagram-3 me-1"></i>' : ($c['grupo'] === 'Clientes' ? '' : '<i class="bi bi-arrow-repeat me-1"></i>') ?><?= $e($c['nombre']) ?></label></div></div><?php endforeach; ?>
                     </div>
-                    <div class="small text-muted mt-1"><span class="r-cuenta"><?= count($u['clientes']) ?></span> cliente(s) asignado(s)</div>
+                    <div class="small text-muted mt-1"><span class="r-cuenta"><?= count($u['claves']) ?></span> asignado(s) · un cliente completo incluye sus programas; un programa o contrato, solo eso</div>
                 </div>
             <?php endforeach; ?>
         </div>
@@ -378,12 +380,13 @@ require_once '../../includes/templates/header.php';
             const d = await fetch(`${ACC}?ver=${id}`).then(r => r.json());
             if (!d.success) return Swal.fire('No se pudo', d.error, 'error');
             const g = d.gasto;
-            for (const k of ['receptor_id', 'tipo_id', 'fecha', 'descripcion', 'moneda', 'monto', 'tasa_cambio', 'metodo_pago', 'tarjeta_id', 'campana', 'pauta_inicio', 'pauta_fin', 'proveedor', 'factura_ref', 'notas'])
+            fg.cuenta.value = g.contrato_id ? 'k:' + g.contrato_id : (g.programa_id ? 'p:' + g.programa_id : 'c:' + g.receptor_id);
+            for (const k of ['tipo_id', 'fecha', 'descripcion', 'moneda', 'monto', 'tasa_cambio', 'metodo_pago', 'tarjeta_id', 'campana', 'pauta_inicio', 'pauta_fin', 'proveedor', 'factura_ref', 'notas'])
                 if (fg[k]) fg[k].value = g[k] ?? '';
             [...fg.tipo_id.options].forEach(o => { if (o.value == g.tipo_id) o.hidden = false; });
             fg.cobrar_cliente.checked = +g.cobrar_cliente === 1;
             editable = g.puede_editar;
-            document.getElementById('gTitulo').textContent = 'Gasto #' + g.id + ' · ' + g.cliente;
+            document.getElementById('gTitulo').textContent = 'Gasto #' + g.id + ' · ' + (g.contrato || (g.cliente + (g.programa ? ' → ' + g.programa : '')));
             const est = { pendiente: ['warning', 'Por revisar'], aprobado: ['success', 'Aprobado' + (g.revisado_por_nombre ? ' por ' + g.revisado_por_nombre : '') + (g.gasto_id ? ' · Gastos N.º ' + g.gasto_id : '')], rechazado: ['danger', 'Rechazado: ' + (g.motivo_rechazo || '') + ' — corrígelo y guárdalo para enviarlo otra vez'] }[g.estado];
             document.getElementById('gAviso').innerHTML = `<div class="alert alert-${est[0]} py-2 small">${esc(est[1])}${g.registrado_por ? ' · Registrado por ' + esc(g.registrado_por) : ''}</div>`;
             pintarArchivos(d.archivos, true);
@@ -394,8 +397,9 @@ require_once '../../includes/templates/header.php';
         } else {
             document.getElementById('gTitulo').textContent = 'Registrar gasto';
             fg.fecha.value = new Date().toLocaleDateString('en-CA');
-            if (fg.receptor_id.options.length === 2) fg.receptor_id.selectedIndex = 1;
-            const fc = f.cliente.value; if (fc) fg.receptor_id.value = fc;
+            const opc = fg.cuenta.querySelectorAll('option[value]:not([value=""])');
+            if (opc.length === 1) fg.cuenta.value = opc[0].value;
+            if (f.cuenta.value) fg.cuenta.value = f.cuenta.value;
             pintarArchivos([], true);
             document.getElementById('gEliminar').hidden = true;
             const re = document.getElementById('gReabrir'); if (re) re.hidden = true;
@@ -411,7 +415,7 @@ require_once '../../includes/templates/header.php';
         const fd = new FormData(fg);
         if (campos.disabled) fd.set('accion', 'archivos');
         else {
-            if (!fg.receptor_id.value || !fg.tipo_id.value || !fg.descripcion.value.trim() || !(+fg.monto.value > 0) || !fg.fecha.value) return Swal.fire('Faltan datos', 'Cliente, tipo, descripción, fecha y monto son obligatorios.', 'warning');
+            if (!fg.cuenta.value || !fg.tipo_id.value || !fg.descripcion.value.trim() || !(+fg.monto.value > 0) || !fg.fecha.value) return Swal.fire('Faltan datos', 'Cliente o programa, tipo, descripción, fecha y monto son obligatorios.', 'warning');
             if (!fg.querySelector('.g-pauta').hidden && (!fg.pauta_inicio.value || !fg.pauta_fin.value)) return Swal.fire('Fechas de la pauta', 'Escribe cuándo empieza y cuándo termina la pauta.', 'warning');
             if (!fg.id.value && !fg['archivos[]'].files.length) {
                 const r = await Swal.fire({ icon: 'question', title: '¿Sin comprobante?', text: 'Puedes adjuntarlo después, pero el gasto queda marcado «Sin comprobante».', showCancelButton: true, confirmButtonText: 'Guardar así', cancelButtonText: 'Adjuntar' });
@@ -487,7 +491,7 @@ require_once '../../includes/templates/header.php';
         const b = e.target.closest('.r-guardar'); if (!b) return;
         const u = b.closest('.r-usuario'), fd = new FormData();
         fd.append('accion', 'asignar'); fd.append('usuario_id', u.dataset.id);
-        u.querySelectorAll('.r-cli input:checked').forEach(i => fd.append('clientes[]', i.value));
+        u.querySelectorAll('.r-cli input:checked').forEach(i => fd.append('cuentas[]', i.value));
         try { const d = await post(fd); Swal.fire({ icon: 'success', title: d.message, timer: 1100, showConfirmButton: false }); } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
     });
 })();

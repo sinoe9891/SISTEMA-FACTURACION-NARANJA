@@ -30,7 +30,7 @@ $stmtLista = $pdo->prepare("
     SELECT c.*,
            cf.nombre AS receptor_nombre, cf.rtn AS receptor_rtn,
            cf.email AS receptor_email, cf.telefono AS receptor_tel,
-           p.nombre AS producto_nombre,
+           p.nombre AS producto_nombre, " . ((bool)$pdo->query("SHOW TABLES LIKE 'programas'")->fetchColumn() ? "(SELECT pg.nombre FROM programas pg WHERE pg.id = c.programa_id)" : "NULL") . " AS programa_nombre,
            (CASE
                WHEN c.tipo_contrato = 'sin_factura'
                THEN (SELECT COUNT(*) FROM contratos_recibos r WHERE r.contrato_id=c.id AND r.cliente_id=c.cliente_id AND r.estado='emitido' AND MONTH(r.fecha_emision)=MONTH(CURDATE()) AND YEAR(r.fecha_emision)=YEAR(CURDATE()))
@@ -230,6 +230,7 @@ $celdaCliente = function (array $c, bool $conDetalle) use ($rotEmpresas, $rotUlt
         return $h;
     }
     $h .= '<div class="fw-semibold" data-col="cliente">' . htmlspecialchars($c['receptor_nombre']) . '</div>';
+    if (!empty($c['programa_nombre'])) $h .= '<div><span class="badge rounded-pill text-bg-light border fw-normal" title="Programa"><i class="bi bi-diagram-3 me-1"></i>' . htmlspecialchars($c['programa_nombre']) . '</span></div>';
     if ($conDetalle && $c['receptor_rtn']) $h .= '<small class="text-muted">RTN: ' . htmlspecialchars($c['receptor_rtn']) . '</small>';
     elseif (!$conDetalle && $c['receptor_tel']) $h .= '<small class="text-muted">' . htmlspecialchars($c['receptor_tel']) . '</small>';
     return $h;
@@ -1296,7 +1297,7 @@ $mesesTitulo = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Jul
                         $nFact      = (int)($c['total_facturas_contrato'] ?? 0);
                         $stateCls   = ['activo' => 'st-activo', 'vencido' => 'st-vencido', 'cancelado' => 'st-cancelado', 'pausado' => 'st-pausado'];
                         $diasPago   = isset($c['dias_para_pago']) ? (int)$c['dias_para_pago'] : null;
-                        $searchStr  = mb_strtolower('#' . $c['id'] . ' ' . $c['receptor_nombre'] . ' ' . implode(' ', $rotEmpresas[(int)$c['id']] ?? []) . ' ' . $c['nombre_contrato'] . ' ' . $c['producto_nombre'] . ' ' . $c['estado'] . ' ' . $semBusca);
+                        $searchStr  = mb_strtolower('#' . $c['id'] . ' ' . $c['receptor_nombre'] . ' ' . ($c['programa_nombre'] ?? '') . ' ' . implode(' ', $rotEmpresas[(int)$c['id']] ?? []) . ' ' . $c['nombre_contrato'] . ' ' . $c['producto_nombre'] . ' ' . $c['estado'] . ' ' . $semBusca);
                     ?>
                         <tr class="<?= $rowCls ?>" data-search="<?= htmlspecialchars($searchStr) ?>">
                             <?php if ($ctEsAdmin): ?><td class="ct-col-sel"><input type="checkbox" class="form-check-input ct-sel" value="<?= (int)$c['id'] ?>" aria-label="Seleccionar contrato #<?= (int)$c['id'] ?>"></td><?php endif; ?>

@@ -7,6 +7,7 @@
  */
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
+require_once '../../../includes/programas.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -170,6 +171,9 @@ try {
         $notas,
     ]);
     $contrato_id = (int)$pdo->lastInsertId();
+    // Programa del cliente (p. ej. PROGRESE) o directo
+    if (programasDisponible($pdo) && array_key_exists('programa_id', $_POST))
+        $pdo->prepare("UPDATE contratos SET programa_id = ? WHERE id = ?")->execute([programaValido($pdo, (int)$cliente_id, (int)$receptor_id, $_POST['programa_id']), $contrato_id]);
 
     // Insertar servicios en pivote
     if (!empty($serviciosValidos)) {

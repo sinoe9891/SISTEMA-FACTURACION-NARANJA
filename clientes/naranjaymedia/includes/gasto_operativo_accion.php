@@ -83,7 +83,7 @@ try {
             break;
         case 'asignar':
             if (!gastosOpEsAdmin($rol)) throw new Exception("Solo un administrador asigna clientes.");
-            gastosOpAsignar($pdo, $cid, $uid, (int)($_POST['usuario_id'] ?? 0), (array)($_POST['clientes'] ?? []));
+            gastosOpAsignar($pdo, $cid, $uid, (int)($_POST['usuario_id'] ?? 0), (array)($_POST['cuentas'] ?? $_POST['clientes'] ?? []));
             $msg = 'Clientes asignados.';
             break;
         default:

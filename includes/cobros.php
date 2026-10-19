@@ -70,6 +70,7 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
     $in = implode(',', array_fill(0, max(1, count($ids)), '?'));
     $total = 0.0;
     $lineas = [];
+    $saludoA = $cliente;   // en recordatorios de contratos de un mismo programa (p. ej. PROGRESE), al equipo del programa
     if ($tipo === 'envio_recibo') {
         $filas = [];
         if ($ids) {
@@ -102,6 +103,13 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
         $porContrato = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $porContrato[(int)$r['contrato_id']][] = (int)$r['id'];
         if (array_sum(array_map('count', $porContrato)) !== count($ids)) throw new Exception("Algún pago del plan no es de un contrato de este cliente.");
+        require_once __DIR__ . '/programas.php';
+        if (programasDisponible($pdo) && $porContrato) {
+            $st = $pdo->prepare("SELECT DISTINCT COALESCE(pg.nombre, '') FROM contratos c LEFT JOIN programas pg ON pg.id = c.programa_id WHERE c.id IN (" . implode(',', array_map('intval', array_keys($porContrato))) . ")");
+            $st->execute();
+            $pgs = $st->fetchAll(PDO::FETCH_COLUMN);
+            if (count($pgs) === 1 && $pgs[0] !== '') $saludoA = $pgs[0];
+        }
         $vencidos = $proximos = [];
         foreach ($porContrato as $ctId => $sel) {
             foreach (planLineas($pdo, $cid, $ctId) as $l) {
@@ -129,7 +137,8 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
     } catch (Throwable $e) {
     }
     $MESU = array_map('ucfirst', $MES);
-    $rep = ['{{saludo}}' => $b('Buen día, equipo de ' . $cliente . ':'), '{{cliente_nombre}}' => $h($cliente), '{{detalle_facturas}}' => $detalle,
+    if ($saludoA !== $cliente) $cliente = $saludoA . ' · ' . $cliente;
+    $rep = ['{{saludo}}' => $b('Buen día, equipo de ' . $saludoA . ':'), '{{cliente_nombre}}' => $h($cliente), '{{detalle_facturas}}' => $detalle,
             '{{total}}' => $b(number_format($total, 2)), '{{cuentas_pago}}' => $cuentasTxt, '{{mes_actual}}' => $MESU[(int)date('n')], '{{anio_actual}}' => date('Y')];
     $html = nl2br(strtr(htmlspecialchars(cobroPlantillaEquipo((string)$pl['contenido']), ENT_QUOTES, 'UTF-8'), $rep), false);
     $asunto = strtr((string)$pl['asunto'], ['{{cliente_nombre}}' => $cliente, '{{mes_actual}}' => $MESU[(int)date('n')], '{{anio_actual}}' => date('Y'), '{{total}}' => number_format($total, 2)]);

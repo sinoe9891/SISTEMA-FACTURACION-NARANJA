@@ -25,9 +25,9 @@ suite('Gastos operativos: rol con clientes asignados, comprobantes, aprobación 
 
     $p = $adm->get('gastos_operativos');
     check('el administrador ve la página con Tipos y Responsables (y el operativo en la lista)', sinErroresPhp($p['body']) && str_contains($p['body'], 'id="mTipos"') && str_contains($p['body'], 'qa.operativo@local.test'), errorPhp($p['body']));
-    $r = $op->post('includes/gasto_operativo_accion.php', ['accion' => 'asignar', 'usuario_id' => $oid, 'clientes[0]' => 1]);
+    $r = $op->post('includes/gasto_operativo_accion.php', ['accion' => 'asignar', 'usuario_id' => $oid, 'cuentas[0]' => 'c:1']);
     check('el operativo no puede asignarse clientes', !($r['json']['success'] ?? true));
-    $r = $adm->post('includes/gasto_operativo_accion.php', ['accion' => 'asignar', 'usuario_id' => $oid, 'clientes[0]' => 1]);
+    $r = $adm->post('includes/gasto_operativo_accion.php', ['accion' => 'asignar', 'usuario_id' => $oid, 'cuentas[0]' => 'c:1']);
     check('el administrador le asigna un cliente', ($r['json']['success'] ?? false) && (int)$pdo->query("SELECT COUNT(*) FROM usuarios_clientes WHERE usuario_id = $oid AND receptor_id = 1")->fetchColumn() === 1, $r['body']);
     $otro = (int)$pdo->query("SELECT id FROM clientes_factura WHERE cliente_id = 2 AND id <> 1 ORDER BY id LIMIT 1")->fetchColumn();
 

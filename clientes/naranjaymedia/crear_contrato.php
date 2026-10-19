@@ -672,6 +672,7 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                             <input type="text" name="nombre_contrato" id="nombre_contrato" class="mf-input"
                                 placeholder="Ej: Gestión Digital 2026" maxlength="200" required>
                         </div>
+                        <?php $pgCid = (int)cliente_actual(); $pgActual = null; $pgLabel = 'mf-label'; $pgSelect = 'mf-select'; require '../../includes/templates/programa_campo.php'; ?>
                     </div>
                 </div>
             </div>

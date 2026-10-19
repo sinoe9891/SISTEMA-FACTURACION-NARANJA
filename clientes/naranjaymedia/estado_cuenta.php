@@ -21,7 +21,7 @@ if (!$receptorEc) {
 $st = $pdo->prepare("
     SELECT f.id, f.correlativo, f.fecha_emision, f.condicion_pago, f.estado, f.total, f.pagada,
            COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) AS periodo_mes, COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) AS periodo_anio,
-           f.contrato_id, ct.nombre_contrato,
+           f.contrato_id, ct.nombre_contrato, " . (cxcConPrograma($pdo) ? "(SELECT pg.nombre FROM programas pg WHERE pg.id = f.programa_id)" : "NULL") . " AS programa,
            COALESCE(ab.abonado, 0) AS abonado, ab.ultimo_abono
     FROM facturas f
     LEFT JOIN contratos ct ON ct.id = f.contrato_id
@@ -136,7 +136,7 @@ require_once '../../includes/templates/header.php';
                 ?>
                     <tr data-fila data-saldo="<?= $conSaldo ? 1 : 0 ?>" class="<?= $anulada ? 'text-muted' : '' ?>">
                         <td class="app-n"></td>
-                        <td class="font-monospace small text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a></td>
+                        <td class="font-monospace small text-nowrap"><a href="ver_factura?id=<?= (int)$f['id'] ?>" target="_blank"><?= htmlspecialchars($f['correlativo']) ?></a><?= $f['programa'] ? '<div class="font-sans text-muted"><i class="bi bi-diagram-3 me-1"></i>' . htmlspecialchars($f['programa']) . '</div>' : '' ?></td>
                         <td class="text-nowrap small"><?= $mesCorto[(int)$f['periodo_mes']] . ' ' . (int)$f['periodo_anio'] ?></td>
                         <td class="text-nowrap"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
                         <td class="small"><?= $condicion[strtolower((string)$f['condicion_pago'])] ?? htmlspecialchars((string)$f['condicion_pago']) ?></td>

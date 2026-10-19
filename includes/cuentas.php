@@ -47,11 +47,18 @@ function cxcSqlDesde(): string
 }
 
 /** Facturas emitidas con saldo pendiente (y su antigüedad en días, desde que se debe: ver cxcSqlDesde). */
+function cxcConPrograma(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) { try { $ok = (bool)$pdo->query("SHOW TABLES LIKE 'programas'")->fetchColumn(); } catch (Throwable $e) { $ok = false; } }
+    return $ok;
+}
+
 function cxcFacturasPendientes(PDO $pdo, int $cid, ?int $receptor = null): array
 {
     $sql = "
         SELECT f.id, f.correlativo, f.fecha_emision, f.total, f.pagada, f.receptor_id, f.condicion_pago,
-               cf.nombre AS receptor, cf.rtn AS receptor_rtn,
+               cf.nombre AS receptor, cf.rtn AS receptor_rtn, " . (cxcConPrograma($pdo) ? "(SELECT pg.nombre FROM programas pg WHERE pg.id = f.programa_id)" : "NULL") . " AS programa,
                COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) AS periodo_mes,
                COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) AS periodo_anio,
                COALESCE(ab.abonado, 0) AS abonado,

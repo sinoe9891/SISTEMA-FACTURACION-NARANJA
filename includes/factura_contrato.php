@@ -2,7 +2,8 @@
 /** Contratos facturables de la empresa; incluye históricos y receptores de turnos rotativos. */
 function facturaContratosDisponibles(PDO $pdo, int $cid): array
 {
-    $st = $pdo->prepare("SELECT c.id, c.nombre_contrato, c.receptor_id, c.tipo_contrato, c.estado, c.monto, c.frecuencia_meses,
+    $conProg = function_exists('programasDisponible') ? programasDisponible($pdo) : (bool)$pdo->query("SHOW COLUMNS FROM contratos LIKE 'programa_id'")->fetchColumn();
+    $st = $pdo->prepare("SELECT c.id, c.nombre_contrato, " . ($conProg ? "c.programa_id," : "NULL AS programa_id,") . " c.receptor_id, c.tipo_contrato, c.estado, c.monto, c.frecuencia_meses,
         r.receptor_id AS receptor_rotativo, r.monto AS monto_rotativo
         FROM contratos c LEFT JOIN contratos_clientes_rotativos r ON r.contrato_id=c.id AND r.activo=1
         WHERE c.cliente_id=? AND c.tipo_contrato<>'sin_factura' ORDER BY c.nombre_contrato, c.id");
@@ -10,7 +11,7 @@ function facturaContratosDisponibles(PDO $pdo, int $cid): array
     $out = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $id = (int)$r['id'];
-        if (!isset($out[$id])) $out[$id] = ['id'=>$id,'nombre'=>$r['nombre_contrato'] ?: 'Contrato #'.$id,'estado'=>$r['estado'],'receptores'=>[(int)$r['receptor_id']], 'etiquetas'=>[], 'montos'=>[]];
+        if (!isset($out[$id])) $out[$id] = ['id'=>$id,'nombre'=>$r['nombre_contrato'] ?: 'Contrato #'.$id,'estado'=>$r['estado'],'receptores'=>[(int)$r['receptor_id']], 'etiquetas'=>[], 'montos'=>[], 'programa_id'=>(int)$r['programa_id'] ?: null];
         $periodo = match ($r['tipo_contrato']) {
             'proyecto' => 'total del proyecto',
             'periodico' => 'cada ' . max(1, (int)$r['frecuencia_meses']) . ' mes(es)',

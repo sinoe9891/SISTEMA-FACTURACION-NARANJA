@@ -101,61 +101,159 @@ function gastosOpTipoGuardar(PDO $pdo, int $cid, array $d): int
     return (int)$pdo->lastInsertId();
 }
 
-/** Clientes que puede ver el usuario: null = todos (administrador); si no, los ids asignados. */
+/**
+ * Lo que puede ver el usuario: null = todo (administrador); si no, ['c' => clientes completos, 'p' => programas, 'k' => contratos].
+ * Un cliente completo incluye sus programas; un programa o un contrato (p. ej. el rotativo de Texaco) solo eso.
+ */
 function gastosOpPermitidos(PDO $pdo, int $uid, string $rol): ?array
 {
     if (gastosOpEsAdmin($rol)) return null;
-    $st = $pdo->prepare("SELECT receptor_id FROM usuarios_clientes WHERE usuario_id = ?");
+    $conAmbito = gastosOpConProgramas($pdo);
+    $st = $pdo->prepare("SELECT receptor_id, " . ($conAmbito ? "programa_id, contrato_id" : "NULL AS programa_id, NULL AS contrato_id") . " FROM usuarios_clientes WHERE usuario_id = ?");
     $st->execute([$uid]);
-    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+    $perm = ['c' => [], 'p' => [], 'k' => []];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        if ($r['contrato_id']) $perm['k'][] = (int)$r['contrato_id'];
+        elseif ($r['programa_id']) $perm['p'][] = (int)$r['programa_id'];
+        else $perm['c'][] = (int)$r['receptor_id'];
+    }
+    return $perm;
 }
 
-/** Clientes para elegir (los asignados, o todos para el administrador). */
-function gastosOpClientes(PDO $pdo, int $cid, ?array $permitidos): array
+function gastosOpSinAcceso(?array $perm): bool
 {
-    if ($permitidos === []) return [];
-    $sql = "SELECT id, nombre FROM clientes_factura WHERE cliente_id = ?";
-    $p = [$cid];
-    if ($permitidos !== null) { $sql .= " AND id IN (" . implode(',', array_fill(0, count($permitidos), '?')) . ")"; $p = array_merge($p, $permitidos); }
-    $st = $pdo->prepare($sql . " ORDER BY nombre");
-    $st->execute($p);
-    return $st->fetchAll(PDO::FETCH_ASSOC);
+    return $perm !== null && !$perm['c'] && !$perm['p'] && !$perm['k'];
 }
 
-/** Usuarios con el rol Gastos operativos y sus clientes asignados. */
+/** ¿Puede ver un gasto (o registrar en esa cuenta)? */
+function gastosOpPuede(?array $perm, int $receptor, ?int $programa, ?int $contrato): bool
+{
+    if ($perm === null) return true;
+    return in_array($receptor, $perm['c'], true) || ($programa && in_array($programa, $perm['p'], true)) || ($contrato && in_array($contrato, $perm['k'], true));
+}
+
+function gastosOpConProgramas(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) { try { $ok = (bool)$pdo->query("SHOW COLUMNS FROM gastos_operativos LIKE 'programa_id'")->fetchColumn(); } catch (Throwable $e) { $ok = false; } }
+    return $ok;
+}
+
+/**
+ * Cuentas a las que se carga un gasto: el cliente (directo), uno de sus programas (p. ej. Aldea Global → PROGRESE) o un contrato
+ * rotativo (varias empresas, p. ej. Texaco Valeriano). Cada una: clave (c:id, p:id, k:id), nombre, grupo, receptor_id, programa_id, contrato_id.
+ * $perm null = todas (para asignar o para el administrador).
+ */
+function gastosOpCuentas(PDO $pdo, int $cid, ?array $perm): array
+{
+    if (gastosOpSinAcceso($perm)) return [];
+    $out = [];
+    $st = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cliente_id = ? ORDER BY nombre");
+    $st->execute([$cid]);
+    $nombres = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+    $progs = [];
+    if (gastosOpConProgramas($pdo)) {
+        $st = $pdo->prepare("SELECT id, receptor_id, nombre FROM programas WHERE cliente_id = ? AND activo = 1 ORDER BY nombre");
+        $st->execute([$cid]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $p) $progs[(int)$p['receptor_id']][] = $p;
+    }
+    foreach ($nombres as $rid => $nom) {
+        $rid = (int)$rid;
+        $todo = $perm === null || in_array($rid, $perm['c'], true);
+        if ($todo) $out[] = ['clave' => "c:$rid", 'nombre' => $nom . (isset($progs[$rid]) ? ' (directo)' : ''), 'grupo' => 'Clientes', 'receptor_id' => $rid, 'programa_id' => null, 'contrato_id' => null];
+        foreach ($progs[$rid] ?? [] as $p)
+            if ($todo || in_array((int)$p['id'], $perm['p'], true))
+                $out[] = ['clave' => 'p:' . $p['id'], 'nombre' => $nom . ' → ' . $p['nombre'], 'grupo' => 'Programas', 'receptor_id' => $rid, 'programa_id' => (int)$p['id'], 'contrato_id' => null];
+    }
+    if (gastosOpConProgramas($pdo)) {
+        $st = $pdo->prepare("SELECT c.id, c.receptor_id, c.nombre_contrato, (SELECT COUNT(*) FROM contratos_clientes_rotativos r WHERE r.contrato_id = c.id AND r.activo = 1) AS empresas
+                             FROM contratos c WHERE c.cliente_id = ? AND c.tipo_contrato = 'rotativo' AND c.estado = 'activo' ORDER BY c.nombre_contrato");
+        $st->execute([$cid]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $k)
+            if ($perm === null || in_array((int)$k['id'], $perm['k'], true))
+                $out[] = ['clave' => 'k:' . $k['id'], 'nombre' => ($k['nombre_contrato'] ?: 'Contrato #' . $k['id']) . ' (contrato de ' . (int)$k['empresas'] . ' empresas)', 'grupo' => 'Contratos con varias empresas',
+                    'receptor_id' => (int)$k['receptor_id'], 'programa_id' => null, 'contrato_id' => (int)$k['id']];
+    }
+    return $out;
+}
+
+/** Cuenta elegida (c:5, p:3, k:21; o receptor_id suelto) → [receptor_id, programa_id, contrato_id], validada contra la empresa. */
+function gastosOpCuentaResolver(PDO $pdo, int $cid, array $d): array
+{
+    $clave = (string)($d['cuenta'] ?? '');
+    if ($clave === '' && !empty($d['receptor_id'])) $clave = 'c:' . (int)$d['receptor_id'];
+    if (!preg_match('/^([cpk]):(\d+)$/', $clave, $m)) throw new Exception("Elige el cliente, programa o contrato.");
+    $id = (int)$m[2];
+    if ($m[1] === 'c') {
+        $st = $pdo->prepare("SELECT COUNT(*) FROM clientes_factura WHERE id = ? AND cliente_id = ?");
+        $st->execute([$id, $cid]);
+        if (!$st->fetchColumn()) throw new Exception("Cliente no válido.");
+        return [$id, null, null];
+    }
+    if (!gastosOpConProgramas($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-19_programas.sql.");
+    if ($m[1] === 'p') {
+        $st = $pdo->prepare("SELECT receptor_id FROM programas WHERE id = ? AND cliente_id = ?");
+        $st->execute([$id, $cid]);
+        $r = $st->fetchColumn();
+        if ($r === false) throw new Exception("Programa no válido.");
+        return [(int)$r, $id, null];
+    }
+    $st = $pdo->prepare("SELECT receptor_id, programa_id FROM contratos WHERE id = ? AND cliente_id = ?");
+    $st->execute([$id, $cid]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$r) throw new Exception("Contrato no válido.");
+    return [(int)$r['receptor_id'], (int)$r['programa_id'] ?: null, $id];
+}
+
+/** Usuarios con el rol Gastos operativos y sus cuentas asignadas (claves c:/p:/k:). */
 function gastosOpResponsables(PDO $pdo, int $cid): array
 {
     $st = $pdo->prepare("SELECT id, nombre, correo, estado FROM usuarios WHERE cliente_id = ? AND rol = 'operativo' ORDER BY nombre");
     $st->execute([$cid]);
     $us = $st->fetchAll(PDO::FETCH_ASSOC);
-    $a = $pdo->prepare("SELECT receptor_id FROM usuarios_clientes WHERE usuario_id = ?");
-    foreach ($us as &$u) { $a->execute([$u['id']]); $u['clientes'] = array_map('intval', $a->fetchAll(PDO::FETCH_COLUMN)); }
+    foreach ($us as &$u) {
+        $perm = gastosOpPermitidos($pdo, (int)$u['id'], 'operativo');
+        $u['claves'] = array_merge(array_map(fn($i) => "c:$i", $perm['c']), array_map(fn($i) => "p:$i", $perm['p']), array_map(fn($i) => "k:$i", $perm['k']));
+    }
     return $us;
 }
 
-function gastosOpAsignar(PDO $pdo, int $cid, int $adminId, int $usuarioId, array $receptores): void
+/** Reemplaza lo asignado al usuario por las claves dadas (c:id cliente completo, p:id programa, k:id contrato). */
+function gastosOpAsignar(PDO $pdo, int $cid, int $adminId, int $usuarioId, array $claves): void
 {
     $st = $pdo->prepare("SELECT COUNT(*) FROM usuarios WHERE id = ? AND cliente_id = ? AND rol = 'operativo'");
     $st->execute([$usuarioId, $cid]);
     if (!$st->fetchColumn()) throw new Exception("El usuario no tiene el rol Gastos operativos.");
-    $ids = array_values(array_unique(array_filter(array_map('intval', $receptores))));
-    if ($ids) {
-        $st = $pdo->prepare("SELECT COUNT(*) FROM clientes_factura WHERE cliente_id = ? AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")");
-        $st->execute(array_merge([$cid], $ids));
-        if ((int)$st->fetchColumn() !== count($ids)) throw new Exception("Hay clientes que no son de la empresa.");
+    $filas = [];
+    foreach (array_unique(array_map('strval', $claves)) as $k) {
+        if (ctype_digit($k)) $k = "c:$k";   // compatibilidad: id de cliente suelto
+        [$r, $p, $c] = gastosOpCuentaResolver($pdo, $cid, ['cuenta' => $k]);
+        $filas[] = $k[0] === 'c' ? [$r, null, null] : ($k[0] === 'p' ? [$r, $p, null] : [$r, null, $c]);
     }
-    $pdo->prepare("DELETE FROM usuarios_clientes WHERE usuario_id = ?" . ($ids ? " AND receptor_id NOT IN (" . implode(',', $ids) . ")" : ''))->execute([$usuarioId]);
-    $ins = $pdo->prepare("INSERT IGNORE INTO usuarios_clientes (usuario_id, receptor_id, asignado_por) VALUES (?, ?, ?)");
-    foreach ($ids as $r) $ins->execute([$usuarioId, $r, $adminId]);
+    $pdo->prepare("DELETE FROM usuarios_clientes WHERE usuario_id = ?")->execute([$usuarioId]);
+    $conAmbito = gastosOpConProgramas($pdo);
+    $ins = $pdo->prepare($conAmbito ? "INSERT INTO usuarios_clientes (usuario_id, receptor_id, programa_id, contrato_id, asignado_por) VALUES (?, ?, ?, ?, ?)"
+                                    : "INSERT IGNORE INTO usuarios_clientes (usuario_id, receptor_id, asignado_por) VALUES (?, ?, ?)");
+    foreach ($filas as [$r, $p, $c]) $ins->execute($conAmbito ? [$usuarioId, $r, $p, $c, $adminId] : [$usuarioId, $r, $adminId]);
 }
 
 /** Lista con filtros: desde, hasta, receptor, tipo, estado, moneda, usuario, sin_archivo. */
 function gastosOpLista(PDO $pdo, int $cid, ?array $permitidos, array $f = []): array
 {
-    if ($permitidos === []) return [];
+    if (gastosOpSinAcceso($permitidos)) return [];
     $w = ["g.cliente_id = ?"];
     $p = [$cid];
-    if ($permitidos !== null) { $w[] = "g.receptor_id IN (" . implode(',', array_fill(0, count($permitidos), '?')) . ")"; $p = array_merge($p, $permitidos); }
+    $conAmbito = gastosOpConProgramas($pdo);
+    if ($permitidos !== null) {
+        $o = [];
+        foreach (['c' => 'g.receptor_id', 'p' => 'g.programa_id', 'k' => 'g.contrato_id'] as $k => $col)
+            if ($permitidos[$k] && ($k === 'c' || $conAmbito)) { $o[] = "$col IN (" . implode(',', array_map('intval', $permitidos[$k])) . ")"; }
+        $w[] = '(' . ($o ? implode(' OR ', $o) : '0') . ')';
+    }
+    if (!empty($f['cuenta']) && preg_match('/^([cpk]):(\d+)$/', (string)$f['cuenta'], $m)) {
+        $w[] = ['c' => 'g.receptor_id', 'p' => 'g.programa_id', 'k' => 'g.contrato_id'][$m[1]] . ' = ?';
+        $p[] = (int)$m[2];
+    }
     if (!empty($f['desde'])) { $w[] = "g.fecha >= ?"; $p[] = $f['desde']; }
     if (!empty($f['hasta'])) { $w[] = "g.fecha <= ?"; $p[] = $f['hasta']; }
     foreach (['receptor' => 'g.receptor_id', 'tipo' => 'g.tipo_id', 'usuario' => 'g.usuario_id'] as $k => $col)
@@ -163,7 +261,7 @@ function gastosOpLista(PDO $pdo, int $cid, ?array $permitidos, array $f = []): a
     if (!empty($f['estado']) && isset(GASTO_OP_ESTADOS[$f['estado']])) { $w[] = "g.estado = ?"; $p[] = $f['estado']; }
     if (!empty($f['moneda']) && in_array($f['moneda'], ['HNL', 'USD'], true)) { $w[] = "g.moneda = ?"; $p[] = $f['moneda']; }
     $st = $pdo->prepare("SELECT g.*, cf.nombre AS cliente, t.nombre AS tipo, t.icono AS tipo_icono, t.es_pauta, u.nombre AS registrado_por, r.nombre AS revisado_por_nombre,
-                                CONCAT(tj.banco, ' •••• ', tj.ultimos_digitos) AS tarjeta,
+                                CONCAT(tj.banco, ' •••• ', tj.ultimos_digitos) AS tarjeta, " . gastosOpSqlCuenta($pdo) . ",
                                 (SELECT COUNT(*) FROM gastos_op_archivos a WHERE a.gasto_op_id = g.id) AS archivos
                          FROM gastos_operativos g
                          JOIN clientes_factura cf ON cf.id = g.receptor_id
@@ -181,14 +279,29 @@ function gastosOpLista(PDO $pdo, int $cid, ?array $permitidos, array $f = []): a
 function gastosOpObtener(PDO $pdo, int $cid, int $id, ?array $permitidos): array
 {
     $l = gastosOpListaPorId($pdo, $cid, $id);
-    if (!$l || ($permitidos !== null && !in_array((int)$l['receptor_id'], $permitidos, true))) throw new Exception("Gasto no encontrado.");
+    if (!$l || !gastosOpPuede($permitidos, (int)$l['receptor_id'], (int)($l['programa_id'] ?? 0) ?: null, (int)($l['contrato_id'] ?? 0) ?: null)) throw new Exception("Gasto no encontrado.");
     return $l;
+}
+
+/** Columnas con el programa y el contrato del gasto (para mostrar a qué se cargó). */
+function gastosOpSqlCuenta(PDO $pdo): string
+{
+    return gastosOpConProgramas($pdo)
+        ? "(SELECT pg.nombre FROM programas pg WHERE pg.id = g.programa_id) AS programa, (SELECT ck.nombre_contrato FROM contratos ck WHERE ck.id = g.contrato_id) AS contrato"
+        : "NULL AS programa, NULL AS contrato";
+}
+
+/** Texto de la cuenta: «Cliente → Programa» o «Contrato (rotativo)». */
+function gastosOpCuentaTexto(array $g): string
+{
+    if (!empty($g['contrato'])) return $g['contrato'];
+    return $g['cliente'] . (!empty($g['programa']) ? ' → ' . $g['programa'] : '');
 }
 
 function gastosOpListaPorId(PDO $pdo, int $cid, int $id): ?array
 {
     $st = $pdo->prepare("SELECT g.*, cf.nombre AS cliente, t.nombre AS tipo, t.es_pauta, t.categoria_id AS tipo_categoria_id, u.nombre AS registrado_por, r.nombre AS revisado_por_nombre,
-                                CONCAT(tj.banco, ' •••• ', tj.ultimos_digitos) AS tarjeta
+                                CONCAT(tj.banco, ' •••• ', tj.ultimos_digitos) AS tarjeta, " . gastosOpSqlCuenta($pdo) . "
                          FROM gastos_operativos g JOIN clientes_factura cf ON cf.id = g.receptor_id JOIN gastos_op_tipos t ON t.id = g.tipo_id
                          LEFT JOIN usuarios u ON u.id = g.usuario_id LEFT JOIN usuarios r ON r.id = g.revisado_por LEFT JOIN tarjetas tj ON tj.id = g.tarjeta_id
                          WHERE g.id = ? AND g.cliente_id = ?");
@@ -225,11 +338,8 @@ function gastosOpGuardar(PDO $pdo, int $cid, int $uid, string $rol, array $d, ?a
         if ($antes['estado'] === 'aprobado') throw new Exception("El gasto ya está aprobado: pídele al administrador que lo regrese a revisión para cambiarlo.");
         if (!$admin && (int)$antes['usuario_id'] !== $uid) throw new Exception("Solo puedes editar los gastos que registraste.");
     }
-    $receptor = (int)($d['receptor_id'] ?? 0);
-    if (!$receptor || ($permitidos !== null && !in_array($receptor, $permitidos, true))) throw new Exception("Elige uno de tus clientes asignados.");
-    $st = $pdo->prepare("SELECT COUNT(*) FROM clientes_factura WHERE id = ? AND cliente_id = ?");
-    $st->execute([$receptor, $cid]);
-    if (!$st->fetchColumn()) throw new Exception("Cliente no válido.");
+    [$receptor, $programa, $contrato] = gastosOpCuentaResolver($pdo, $cid, $d);
+    if (!gastosOpPuede($permitidos, $receptor, $programa, $contrato)) throw new Exception("Elige uno de tus clientes, programas o contratos asignados.");
     $st = $pdo->prepare("SELECT * FROM gastos_op_tipos WHERE id = ? AND cliente_id = ?");
     $st->execute([(int)($d['tipo_id'] ?? 0), $cid]);
     $tipo = $st->fetch(PDO::FETCH_ASSOC);
@@ -277,11 +387,13 @@ function gastosOpGuardar(PDO $pdo, int $cid, int $uid, string $rol, array $d, ?a
                        monto_lempiras = ?, metodo_pago = ?, tarjeta_id = ?, campana = ?, pauta_inicio = ?, pauta_fin = ?, cobrar_cliente = ?, notas = ?,
                        estado = 'pendiente', motivo_rechazo = NULL WHERE id = ? AND cliente_id = ?")->execute([...$vals, $id, $cid]);
         gastosOpLog($pdo, $id, $uid, 'editado', $antes['estado'] === 'rechazado' ? 'Corregido y enviado otra vez a revisión' : null);
+        if (gastosOpConProgramas($pdo)) $pdo->prepare("UPDATE gastos_operativos SET programa_id = ?, contrato_id = ? WHERE id = ?")->execute([$programa, $contrato, $id]);
         return $id;
     }
     $pdo->prepare("INSERT INTO gastos_operativos (receptor_id, tipo_id, fecha, descripcion, proveedor, factura_ref, moneda, monto, tasa_cambio, monto_lempiras, metodo_pago, tarjeta_id,
                    campana, pauta_inicio, pauta_fin, cobrar_cliente, notas, cliente_id, usuario_id) VALUES (" . implode(',', array_fill(0, 19, '?')) . ")")->execute([...$vals, $cid, $uid]);
     $id = (int)$pdo->lastInsertId();
+    if (gastosOpConProgramas($pdo)) $pdo->prepare("UPDATE gastos_operativos SET programa_id = ?, contrato_id = ? WHERE id = ?")->execute([$programa, $contrato, $id]);
     gastosOpLog($pdo, $id, $uid, 'creado');
     return $id;
 }
@@ -395,7 +507,7 @@ function gastosOpRevisar(PDO $pdo, int $cid, int $uid, string $rol, int $id, str
             if (!$st->fetchColumn()) throw new Exception("Categoría no válida.");
         }
         $propio = $g['metodo_pago'] === 'propio';
-        $desc = mb_substr('Gasto operativo · ' . $g['tipo'] . ' · ' . $g['cliente'] . ': ' . $g['descripcion']
+        $desc = mb_substr('Gasto operativo · ' . $g['tipo'] . ' · ' . gastosOpCuentaTexto($g) . ': ' . $g['descripcion']
             . ($g['moneda'] === 'USD' ? ' (USD ' . number_format((float)$g['monto'], 2) . ' × ' . rtrim(rtrim(number_format((float)$g['tasa_cambio'], 4), '0'), '.') . ')' : ''), 0, 300);
         $notas = trim('Registrado por ' . ($g['registrado_por'] ?: 'colaborador') . ' en Gastos operativos (#' . $id . ').'
             . ($g['pauta_inicio'] ? ' Pauta del ' . date('d/m/Y', strtotime($g['pauta_inicio'])) . ' al ' . date('d/m/Y', strtotime($g['pauta_fin'])) . ($g['campana'] ? ' · ' . $g['campana'] : '') . '.' : '')
