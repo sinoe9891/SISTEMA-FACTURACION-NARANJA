@@ -7,7 +7,7 @@
  * Fijos (sin interruptor): Inicio siempre; Empresas, Cambiar empresa, Permisos y Respaldos son del superadmin
  * (Respaldos, además, del admin de la empresa dueña). Dentro de cada página, eliminar y anular siguen siendo de administradores.
  */
-const PERMISOS_ROLES = ['admin' => 'Admin', 'facturador' => 'Facturador', 'lector' => 'Lector', 'nomina' => 'Nómina y gastos'];
+const PERMISOS_ROLES = ['admin' => 'Admin', 'facturador' => 'Facturador', 'lector' => 'Lector', 'nomina' => 'Nómina y gastos', 'operativo' => 'Gastos operativos'];
 
 /** Opciones que no se pueden encender para otros roles. */
 const PERMISOS_FIJAS = ['configuracion_permisos', 'empresas', 'seleccionar_cliente', 'respaldos'];
@@ -50,6 +50,7 @@ const PERMISOS_ACCIONES = [
     'boucher_lote' => ['bouchers', 'pagos_nomina', 'colaboradores'], 'boucher_pdf' => ['bouchers', 'pagos_nomina', 'colaboradores', 'gastos'],
     'licencia_accion' => ['licencias'], 'licencias_exportar' => ['licencias'],
     'proveedor_accion' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar'], 'proveedor_logo' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar'],
+    'gasto_operativo_accion' => ['gastos_operativos'], 'gasto_operativo_archivo' => ['gastos_operativos'], 'gastos_operativos_exportar' => ['gastos_operativos'],
     'categoria_gasto_guardar' => ['categorias_gastos'], 'categoria_gasto_actualizar' => ['categorias_gastos'], 'categoria_gasto_eliminar' => ['categorias_gastos'],
     // Bancos
     'banco_cuenta' => ['bancos'], 'movimiento_archivo' => ['bancos'], 'banco_accion' => ['bancos', 'cheques', 'configuracion_tasa'],
@@ -74,22 +75,23 @@ const PERMISOS_ACCIONES = [
     'pos_accion' => ['pos', 'pos_turnos'], 'inventario_kardex' => ['inventario'], 'inventario_reportes' => ['inventario'], 'inventario_accion' => ['inventario', 'inventario_traslados'],
     // Usuarios
     'usuario_guardar' => ['usuarios'], 'usuario_actualizar' => ['usuarios'], 'usuario_eliminar' => ['usuarios'], 'usuario_cambiar_clave' => ['usuarios'],
-    'usuario_establecimientos_get' => ['usuarios'], 'usuario_establecimientos_guardar' => ['usuarios'],
+    'usuario_establecimientos_get' => ['usuarios'], 'usuario_invitacion' => ['usuarios'], 'usuario_establecimientos_guardar' => ['usuarios'],
 ];
 
 /** Páginas que se abren en el navegador (al bloquearlas se redirige); lo demás son acciones (responden 403). */
 const PERMISOS_VISTAS = ['ver_factura', 'cotizacion_editar', 'cotizacion_pdf', 'editar_factura', 'editar_contrato', 'facturas_contrato', 'generar_recibo', 'estado_cuenta', 'gasto_ver', 'banco_cuenta',
-    'colaborador_ver', 'colaborador_reporte', 'crear_cliente', 'editar_cliente', 'inventario_kardex', 'inventario_reportes', 'crear_cai', 'editar_cai', 'nuevo_cobro'];
+    'colaborador_ver', 'colaborador_reporte', 'gasto_operativo_archivo', 'gastos_operativos_exportar', 'crear_cliente', 'editar_cliente', 'inventario_kardex', 'inventario_reportes', 'crear_cai', 'editar_cai', 'nuevo_cobro'];
 
 /** Páginas del menú lateral (cada una es su propia opción). */
 const PERMISOS_PAGINAS = ['generar_factura', 'lista_facturas', 'cotizaciones', 'contratos', 'crear_contrato', 'cuentas_cobrar', 'pagos_recibidos', 'cobros_programados', 'cuentas_pagar', 'gastos',
-    'licencias', 'bouchers', 'proveedores', 'categorias_gastos', 'bancos', 'cheques', 'tarjetas', 'activos', 'socios', 'financiero', 'estados_financieros', 'balance_general',
+    'gastos_operativos', 'licencias', 'bouchers', 'proveedores', 'categorias_gastos', 'bancos', 'cheques', 'tarjetas', 'activos', 'socios', 'financiero', 'estados_financieros', 'balance_general',
     'proyeccion', 'colaboradores', 'pagos_nomina', 'clientes', 'productos', 'productos_clientes', 'pos', 'pos_turnos', 'inventario', 'inventario_traslados', 'usuarios'];
 
 /** Lo de siempre (antes de los interruptores). */
 function permisoDefecto(string $rol, string $pagina): bool
 {
-    $soloAdmin = ['configuracion_firmas', 'configuracion_documentos', 'configuracion_cai', 'configuracion_mensajes', 'configuracion_correo', 'usuarios', 'cobros_programados', 'bouchers', 'pagos_nomina', 'socios', 'licencias', 'configuracion', 'configuracion_tasa'];
+    $soloAdmin = ['configuracion_firmas', 'configuracion_documentos', 'configuracion_cai', 'configuracion_mensajes', 'configuracion_correo', 'usuarios', 'cobros_programados', 'bouchers', 'pagos_nomina', 'socios', 'licencias', 'configuracion', 'configuracion_tasa', 'gastos_operativos'];
+    if ($rol === 'operativo') return $pagina === 'gastos_operativos';
     if ($rol === 'nomina') return defined('ROL_NOMINA_ARCHIVOS') && in_array($pagina, ROL_NOMINA_ARCHIVOS, true);
     if ($rol !== 'admin' && in_array($pagina, $soloAdmin, true)) return false;
     return true;

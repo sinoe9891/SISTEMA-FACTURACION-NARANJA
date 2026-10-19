@@ -123,3 +123,33 @@ function claveResetPlantilla(string $nombre, string $enlace, string $empresa, ar
     $texto = "Hola, $nombre:\n\nPara crear una contraseña nueva abre este enlace (vence en " . CLAVE_RESET_MINUTOS . " minutos y sirve una sola vez):\n$enlace\n\nSi no lo pediste, ignora este correo: tu contraseña no cambia.";
     return [$html, $texto];
 }
+
+/**
+ * Invitación: enlace para que un usuario nuevo ponga su propia contraseña (lo genera el administrador desde Usuarios).
+ * Usa el mismo mecanismo que «¿Olvidaste tu contraseña?» (token de un solo uso, solo su hash en la BD), pero dura $horas.
+ * Invalida los enlaces anteriores del usuario. Devuelve el enlace.
+ */
+function claveInvitacionCrear(PDO $pdo, int $usuarioId, string $base, int $horas = 72): string
+{
+    if (!claveResetDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-05_clave_reset.sql.");
+    $horas = max(1, min(168, $horas));
+    $token = bin2hex(random_bytes(32));
+    $pdo->prepare("UPDATE clave_resets SET usado_en = NOW() WHERE usuario_id = ? AND usado_en IS NULL")->execute([$usuarioId]);
+    $pdo->prepare("INSERT INTO clave_resets (usuario_id, token_hash, expira, ip) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL $horas HOUR), ?)")
+        ->execute([$usuarioId, hash('sha256', $token), intentosIp()]);
+    return rtrim($base, '/') . '/restablecer_clave?token=' . $token;
+}
+
+/** Correo de bienvenida con el enlace de la invitación. */
+function claveInvitacionPlantilla(string $nombre, string $enlace, string $empresa, string $login, int $horas, array $cfg): array
+{
+    [$html, $texto] = claveResetPlantilla($nombre, $enlace, $empresa, $cfg);
+    $html = str_replace(
+        ['Recibimos una solicitud para restablecer la contraseña de tu cuenta en el sistema de facturación. Para crear una nueva, usa este botón:', 'Crear contraseña nueva',
+            'El enlace vence en ' . CLAVE_RESET_MINUTOS . ' minutos y sirve una sola vez.', 'Si no lo pediste, ignora este correo: tu contraseña no cambia.'],
+        ['Te crearon una cuenta en el sistema de ' . htmlspecialchars($empresa) . '. Para entrar, primero crea tu contraseña con este botón:', 'Crear mi contraseña',
+            'El enlace vence en ' . $horas . ' horas y sirve una sola vez. Después entra en <a href="' . htmlspecialchars($login) . '">' . htmlspecialchars(preg_replace('#^https?://#', '', $login)) . '</a> con tu correo y tu contraseña.',
+            'Si no esperabas este correo, avísale al administrador.'], $html);
+    $texto = "Hola, $nombre:\n\nTe crearon una cuenta en el sistema de $empresa. Crea tu contraseña con este enlace (vence en $horas horas y sirve una sola vez):\n$enlace\n\nDespués entra en $login con tu correo y tu contraseña.";
+    return [$html, $texto];
+}

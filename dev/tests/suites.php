@@ -3140,3 +3140,5 @@ suite('Cuentas por cobrar: selección múltiple y «Cobrar por correo» como en 
 });
 
 require __DIR__ . "/moneda_facturas.php";
+
+require __DIR__ . "/gastos_operativos.php";

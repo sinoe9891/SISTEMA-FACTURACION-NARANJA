@@ -37,7 +37,7 @@
 					<a class="app-nav-link<?= $__sbActivo ? ' active' : '' ?>" href="<?= $__sbHref ?>"
 						<?= $__sbActivo ? 'aria-current="page"' : '' ?>>
 						<i class="bi <?= $__sbIcono ?>"></i><span><?= htmlspecialchars($__sbTexto) ?></span>
-						<?php if (!empty($__sbItem[4])): ?><span class="badge rounded-pill bg-warning text-dark ms-auto" title="Productos por reponer"><?= (int)$__sbItem[4] ?></span><?php endif; ?>
+						<?php if (!empty($__sbItem[4])): ?><span class="badge rounded-pill bg-warning text-dark ms-auto" title="<?= htmlspecialchars($__sbItem[5] ?? 'Productos por reponer') ?>"><?= (int)$__sbItem[4] ?></span><?php endif; ?>
 					</a>
 				<?php endforeach; ?>
 			<?php endforeach; ?>

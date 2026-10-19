@@ -26,7 +26,7 @@ if (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
     echo json_encode(['success' => false, 'error' => 'Correo no válido.']);
     exit;
 }
-if (!in_array($rol, ['superadmin', 'admin', 'facturador', 'lector', 'nomina'], true)) {
+if (!in_array($rol, ['superadmin', 'admin', 'facturador', 'lector', 'nomina', 'operativo'], true)) {
     echo json_encode(['success' => false, 'error' => 'Rol no válido.']);
     exit;
 }

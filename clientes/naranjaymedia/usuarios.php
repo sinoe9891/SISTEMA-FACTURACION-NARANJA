@@ -931,6 +931,7 @@ require_once '../../includes/templates/header.php';
                                     'lector'     => ['label' => 'Lector',    'class' => 'role-lector',     'icon' => 'bi-eye-fill'],
                                     'asesor'     => ['label' => 'Asesor',    'class' => 'role-asesor',     'icon' => 'bi-person-badge-fill'],
                                     'nomina'     => ['label' => 'Nómina y gastos', 'class' => 'role-asesor',     'icon' => 'bi-people-fill'],
+                                    'operativo'  => ['label' => 'Gastos operativos', 'class' => 'role-asesor',   'icon' => 'bi-clipboard2-data'],
                                 ];
                                 $rm = $roleMap[$u['rol']] ?? ['label' => ucfirst($u['rol']), 'class' => 'role-lector', 'icon' => 'bi-person']; ?>
                                 <span class="role-badge <?= $rm['class'] ?>"><i class="bi <?= $rm['icon'] ?>"></i>
@@ -961,6 +962,9 @@ require_once '../../includes/templates/header.php';
                                     <button class="btn-act btn-act-pw btn-reset-pw" data-id="<?= $u['id'] ?>"
                                         data-nombre="<?= htmlspecialchars($u['nombre']) ?>" title="Cambiar contraseña"><i
                                             class="bi bi-key-fill"></i></button>
+                                    <button class="btn-act btn-act-pw btn-invitar" data-id="<?= $u['id'] ?>"
+                                        data-nombre="<?= htmlspecialchars($u['nombre']) ?>" title="Enlace para que ponga su contraseña"><i
+                                            class="bi bi-link-45deg"></i></button>
                                     <?php if ($canDelete): ?>
                                         <button class="btn-act btn-act-del btn-eliminar-user" data-id="<?= $u['id'] ?>"
                                             data-nombre="<?= htmlspecialchars($u['nombre']) ?>"
@@ -1022,6 +1026,7 @@ require_once '../../includes/templates/header.php';
                                 <option value="facturador">Facturador</option>
                                 <option value="lector">Lector</option>
                                 <option value="nomina">Nómina y gastos (Personal, Gastos, Cuentas por pagar y Bancos)</option>
+                                <option value="operativo">Gastos operativos (solo registra gastos de sus clientes asignados)</option>
                                 <!-- superadmin solo lo puede crear el superadmin -->
                             </select>
                         </div>
@@ -1478,6 +1483,22 @@ require_once '../../includes/templates/header.php';
             btn.innerHTML = '<i class="bi bi-key-fill me-1"></i> Cambiar';
         });
     });
+
+    /* ── Enlace para que el usuario ponga su contraseña (nadie más la conoce) ── */
+    document.querySelectorAll('.btn-invitar').forEach(btn => btn.addEventListener('click', async () => {
+        const r = await Swal.fire({ icon: 'question', title: 'Enlace de acceso para ' + btn.dataset.nombre,
+            html: 'Se genera un enlace (vence en 72 horas, un solo uso) para que ponga <strong>su propia contraseña</strong>. Los enlaces anteriores dejan de servir.',
+            showDenyButton: true, showCancelButton: true, confirmButtonText: 'Generar y enviar por correo', denyButtonText: 'Solo generar (lo comparto yo)', cancelButtonText: 'Cancelar' });
+        if (r.isDismissed) return;
+        const fd = new FormData(); fd.append('user_id', btn.dataset.id); if (r.isConfirmed) fd.append('enviar', '1');
+        const d = await fetch('includes/usuario_invitacion.php', { method: 'POST', body: fd }).then(x => x.json()).catch(() => ({ success: false, error: 'Error de conexión.' }));
+        if (!d.success) return Swal.fire('No se pudo', d.error, 'error');
+        Swal.fire({ icon: 'success', title: d.enviado ? 'Enviado a ' + d.correo : 'Enlace generado',
+            html: `<p class="small mb-2">Vence el ${d.vence}. Después entra en <strong>${d.login}</strong> con su correo y su contraseña.</p>
+                   <input class="form-control form-control-sm" readonly value="${d.enlace}" id="invEnlace" onclick="this.select()">`,
+            confirmButtonText: '<i class="bi bi-clipboard"></i> Copiar enlace', showCancelButton: true, cancelButtonText: 'Cerrar' })
+            .then(x => { if (x.isConfirmed) navigator.clipboard?.writeText(d.enlace); });
+    }));
 
     /* ── Eliminar usuario ── */
     document.querySelectorAll('.btn-eliminar-user').forEach(btn => {

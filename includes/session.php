@@ -132,12 +132,17 @@ const ROL_NOMINA_ARCHIVOS = [
     'tarjeta_guardar', 'tarjeta_actualizar', 'tarjeta_eliminar', 'banco_accion',
     'colaborador_salario',
 ];
+/*
+ * Rol «operativo» (Gastos operativos): solo registra y justifica gastos de sus clientes asignados. Lista blanca igual que Nómina.
+ */
+const ROL_OPERATIVO_ARCHIVOS = ['gastos_operativos', 'gasto_operativo_accion', 'gasto_operativo_archivo', 'gastos_operativos_exportar', 'logout', 'seleccionar_establecimiento'];
 // Permisos por rol (Configuración → Permisos): cada página y acción pertenece a una opción del menú; si el rol la
 // tiene apagada, no se abre. El rol Nómina, además, solo entra a lo suyo (ROL_NOMINA_ARCHIVOS) o a lo que se le encienda.
 require_once __DIR__ . '/permisos.php';
 $__script = basename($_SERVER['SCRIPT_NAME'] ?? '', '.php');
 $__falta = permisoScriptBloqueado($pdo, $__script);
-$__nominaFuera = USUARIO_ROL === 'nomina' && !in_array($__script, ROL_NOMINA_ARCHIVOS, true) && !permisoScriptConocido($__script);
+$__nominaFuera = (USUARIO_ROL === 'nomina' && !in_array($__script, ROL_NOMINA_ARCHIVOS, true) && !permisoScriptConocido($__script))
+    || (USUARIO_ROL === 'operativo' && !in_array($__script, ROL_OPERATIVO_ARCHIVOS, true) && !permisoScriptConocido($__script));
 if ($__falta !== null || $__nominaFuera) {
     $__esAccion = str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/includes/') || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET'
         || ($__falta !== null && !in_array($__script, PERMISOS_PAGINAS, true) && !in_array($__script, PERMISOS_VISTAS, true) && !isset(PERMISOS_CONFIG[$__script]));
@@ -149,9 +154,9 @@ if ($__falta !== null || $__nominaFuera) {
     // A la primera opción que sí puede ver
     // (Nómina no tiene Inicio: va a Colaboradores o a la primera opción encendida)
     $__destino = 'dashboard';
-    if (USUARIO_ROL === 'nomina') {
+    if (in_array(USUARIO_ROL, ['nomina', 'operativo'], true)) {
         $__destino = 'logout';
-        foreach (array_merge(['colaboradores'], PERMISOS_PAGINAS) as $__p) if ($__p !== $__script && permisoMenu($pdo, 'nomina', $__p)) { $__destino = $__p; break; }
+        foreach (array_merge([USUARIO_ROL === 'nomina' ? 'colaboradores' : 'gastos_operativos'], PERMISOS_PAGINAS) as $__p) if ($__p !== $__script && permisoMenu($pdo, USUARIO_ROL, $__p)) { $__destino = $__p; break; }
     }
     header('Location: ' . $__destino);
     exit;

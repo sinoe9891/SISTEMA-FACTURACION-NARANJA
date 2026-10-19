@@ -29,6 +29,13 @@ if (function_exists('cliente_actual') && cliente_actual() && invDisponible($pdo)
 	$__menuPorReponer = $__c['n'];
 }
 
+// Aviso de gastos operativos por revisar (solo administradores)
+$__menuGastosOp = 0;
+if ($__menuEsAdmin && function_exists('cliente_actual') && cliente_actual()) {
+	require_once __DIR__ . '/../gastos_operativos.php';
+	$__menuGastosOp = gastosOpPorRevisar($pdo, (int)cliente_actual());
+}
+
 $menuLateral = [
 	'' => [
 		['dashboard', 'bi-house-door', 'Inicio', []],
@@ -52,6 +59,7 @@ $menuLateral = [
 	'Pagos y gastos' => array_values(array_filter([
 		['cuentas_pagar', 'bi-calendar-check', 'Cuentas por pagar', []],
 		['gastos', 'bi-wallet2', 'Gastos', ['gasto_ver']],
+		['gastos_operativos', 'bi-clipboard2-data', 'Gastos operativos', [], $__menuGastosOp, 'Gastos operativos por revisar'],
 		['licencias', 'bi-key', 'Licencias', []],
 		['bouchers', 'bi-receipt-cutoff', 'Bouchers', []],
 		['proveedores', 'bi-truck', 'Proveedores', []],
@@ -102,7 +110,7 @@ $menuLateral = [
 ];
 
 // Rol Nómina y gastos: no tiene Inicio (session.php lo manda a Colaboradores)
-if (USUARIO_ROL === 'nomina') $menuLateral[''] = [];
+if (USUARIO_ROL === 'nomina' || USUARIO_ROL === 'operativo') $menuLateral[''] = [];
 
 // Permisos por rol (Configuración → Permisos por rol): se ocultan las opciones desactivadas para este rol
 // y, si se abre una de sus páginas directamente, se redirige a la primera opción permitida. «Inicio» siempre se ve.
