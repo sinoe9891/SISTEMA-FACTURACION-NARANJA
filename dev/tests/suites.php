@@ -3138,3 +3138,5 @@ suite('Cuentas por cobrar: selección múltiple y «Cobrar por correo» como en 
     $f = login('qa.facturador@local.test')->get('cuentas_cobrar');
     check('sin permiso de Cobros por correo no salen las casillas', !str_contains($f['body'], 'id="cxCorreo"') || permisoMenu(db(), 'facturador', 'cobros_programados'));
 });
+
+require __DIR__ . "/moneda_facturas.php";

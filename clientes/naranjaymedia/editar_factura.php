@@ -3,6 +3,7 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/factura_contrato.php';
+require_once '../../includes/moneda_factura.php';
 
 if (!isset($_GET['id']) || !ctype_digit($_GET['id'])) die("ID inválido");
 $factura_id = (int)$_GET['id'];
@@ -55,6 +56,10 @@ $stmtProductos = $pdo->prepare("SELECT p.id, p.nombre, p.precio AS precio_base, 
 $stmtProductos->execute([$cliente_id, $cliente_id]);
 $productos = $stmtProductos->fetchAll();
 
+// Precios en dólares: se editan en USD (los de la factura) con su tasa; si no, en lempiras
+$mfMoneda = ($factura['moneda'] ?? 'HNL') === 'USD' && (float)($factura['tasa_cambio'] ?? 0) > 0 ? 'USD' : 'HNL';
+$mfTasa = $mfMoneda === 'USD' ? (float)$factura['tasa_cambio'] : facturaTasaSugerida($pdo, (int)$factura['cliente_id']);
+$mfLabel = 'fe-form-label';
 $stmt = $pdo->prepare("SELECT * FROM factura_items_receptor WHERE factura_id=?");
 $stmt->execute([$factura_id]);
 $items = $stmt->fetchAll();
@@ -343,6 +348,7 @@ require_once '../../includes/templates/header.php';
 										Crédito</option>
 								</select>
 							</div>
+							<?php if (facturaMonedaDisponible($pdo)) require '../../includes/templates/moneda_factura.php'; ?>
 						</div>
 					</div>
 				</div>
@@ -404,7 +410,7 @@ require_once '../../includes/templates/header.php';
 									<div class="col-md-2"><label class="fe-form-label">Cantidad</label><input
 											type="number" name="productos[0][cantidad]" class="form-control" min="1"
 											value="1"></div>
-									<div class="col-md-2"><label class="fe-form-label">Precio Unit.</label><input
+									<div class="col-md-2"><label class="fe-form-label">Precio Unit. (<span class="mf-sim"><?= $mfMoneda === 'USD' ? 'USD' : 'L' ?></span>)</label><input
 											type="number" step="0.01" name="productos[0][precio_unitario]"
 											class="form-control precio-unitario" value="0.00"></div>
 									<div class="col-md-2"><label class="fe-form-label">Subtotal</label><input
@@ -445,14 +451,14 @@ require_once '../../includes/templates/header.php';
 										<div class="col-md-2"><label class="fe-form-label">Cantidad</label><input
 												type="number" name="productos[<?= $index ?>][cantidad]" class="form-control"
 												min="1" value="<?= $item['cantidad'] ?>" required></div>
-										<div class="col-md-2"><label class="fe-form-label">Precio Unit.</label><input
+										<div class="col-md-2"><label class="fe-form-label">Precio Unit. (<span class="mf-sim"><?= $mfMoneda === 'USD' ? 'USD' : 'L' ?></span>)</label><input
 												type="number" step="0.01" name="productos[<?= $index ?>][precio_unitario]"
 												class="form-control precio-unitario"
-												value="<?= $item['precio_unitario'] ?>"></div>
+												value="<?= $puVer = ($mfMoneda === 'USD' && $item['precio_usd'] !== null ? (float)$item['precio_usd'] : (float)$item['precio_unitario']) ?>"></div>
 										<div class="col-md-2"><label class="fe-form-label">Subtotal</label><input
 												type="number" step="0.01" name="productos[<?= $index ?>][precio]"
 												class="form-control subtotal-producto"
-												value="<?= $item['cantidad'] * $item['precio_unitario'] ?>"></div>
+												value="<?= round($item['cantidad'] * $puVer, 2) ?>"></div>
 										<div class="col-md-1 d-flex align-items-end"><button type="button"
 												class="btn btn-outline-danger btn-sm w-100 remove-producto"><i
 													class="bi bi-trash3"></i></button></div>
@@ -532,6 +538,7 @@ require_once '../../includes/templates/header.php';
 						<div class="mt-3 p-2 rounded-2"
 							style="background:#eff6ff;border:1px solid #bfdbfe;font-size:.78rem;color:#1e40af;font-style:italic;"
 							id="disp_letras"><?= htmlspecialchars($factura['monto_letras']) ?></div>
+						<div class="totales-row mt-2 mf-usd" <?= $mfMoneda !== 'USD' ? 'hidden' : '' ?>><span class="totales-label">Total en dólares</span><span class="totales-val" id="mfTotalUsd">$ <?= number_format((float)($factura['total_usd'] ?? 0), 2) ?></span></div>
 
 						<!-- Hidden para POST -->
 						<input type="hidden" name="subtotal" id="h_subtotal" value="<?= $factura['subtotal'] ?>">
@@ -571,7 +578,10 @@ require_once '../../includes/templates/header.php';
 </form>
 </div>
 
+<script src="../../clientes/js/moneda-factura.js?v=<?= @filemtime(__DIR__ . '/../js/moneda-factura.js') ?>"></script>
 <script>
+	// Moneda de los precios (en dólares se convierten el precio unitario y el subtotal de cada línea)
+	const MF = MonedaFactura({ precios: () => [...document.querySelectorAll('#productos-container input.precio-unitario, #productos-container input.subtotal-producto')], recalcular: () => calcularTotalYLetra() });
 	/* ── Exoneración ─────────────────────────────────────────────────────────── */
 	document.getElementById('exonerado').addEventListener('change', function() {
 		document.getElementById('campos-exoneracion').style.display = this.checked ? 'block' : 'none';
@@ -616,7 +626,7 @@ require_once '../../includes/templates/header.php';
 		if (e.target.tagName === 'SELECT' && e.target.name.includes('[id]')) {
 			const sel = e.target.selectedOptions[0];
 			const item = e.target.closest('.producto-item');
-			const precio = parseFloat(sel.getAttribute('data-precio')) || 0;
+			const precio = MF.desdeLempiras(parseFloat(sel.getAttribute('data-precio')) || 0);
 			const precioBase = parseFloat(sel.getAttribute('data-precio-base')) || 0;
 			const cantidad = parseFloat(item.querySelector('input[name$="[cantidad]"]').value) || 1;
 			const puInput = item.querySelector('input[name$="[precio_unitario]"]');
@@ -658,7 +668,8 @@ require_once '../../includes/templates/header.php';
 			g15 = 0,
 			g18 = 0,
 			i15 = 0,
-			i18 = 0;
+			i18 = 0,
+			usd = 0;
 		const exo = document.getElementById('exonerado').checked;
 		// Redondeo a centavos por línea, igual que el servidor (17,391.30 × 15 % = 2,608.70, no 2,608.69)
 		const r2 = n => Math.round(Number(Number(n).toPrecision(15) + "e2")) / 100;   // como round() de PHP
@@ -669,8 +680,12 @@ require_once '../../includes/templates/header.php';
 			// Usar precio_unitario si está disponible, si no usar precio/cantidad
 			let pu = puInput ? (parseFloat(puInput.value) || 0) : 0;
 			if (!pu && stInput && cantidad) pu = (parseFloat(stInput.value) || 0) / cantidad;
+			const tu = r2(cantidad * pu);
+			pu = MF.lempiras(pu);   // en dólares: a lempiras con la tasa, como el servidor
 			const t = r2(cantidad * pu);
 			sub += t;
+			const vIsv = parseInt(item.querySelector('select[name$="[id]"]')?.selectedOptions[0]?.getAttribute('data-isv')) || 0;
+			usd += tu + (exo ? 0 : vIsv === 15 ? r2(tu * .15) : vIsv === 18 ? r2(tu * .18) : 0);
 			if (!exo) {
 				const sel = item.querySelector('select[name$="[id]"]');
 				const v = parseInt(sel?.selectedOptions[0]?.getAttribute('data-isv')) || 0;
@@ -685,6 +700,7 @@ require_once '../../includes/templates/header.php';
 		});
 		sub = r2(sub); i15 = r2(i15); i18 = r2(i18); g15 = r2(g15); g18 = r2(g18);
 		const total = r2(sub + i15 + i18);
+		MF.pintarUsd(r2(usd));
 		const fmt = n => 'L ' + n.toLocaleString('es-HN', {
 			minimumFractionDigits: 2,
 			maximumFractionDigits: 2

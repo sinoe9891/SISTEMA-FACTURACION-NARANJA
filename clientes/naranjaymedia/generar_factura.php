@@ -3,6 +3,7 @@ $titulo = 'Nueva Factura';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/moneda_factura.php';
 
 $usuario_id = $_SESSION['usuario_id'];
 // Cliente activo: el del usuario, o el seleccionado si es superadmin
@@ -48,6 +49,11 @@ if ((int)($_GET['cotizacion_id'] ?? 0)) {
         $cotizacion = null;
     }
 }
+
+// Moneda de los precios: la de la cotización (en dólares, con la tasa del día)
+$mfMoneda = ($cotizacion['moneda'] ?? 'HNL') === 'USD' ? 'USD' : 'HNL';
+$mfTasa = facturaTasaSugerida($pdo, (int)$cliente_id);
+$mfLabel = 'fv-form-label';
 
 /* ── Clientes factura ───────────────────────────────────────────────────── */
 $stmtClientes = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cliente_id = ? ORDER BY nombre ASC");
@@ -295,7 +301,7 @@ require_once '../../includes/templates/header.php';
             value="<?= htmlspecialchars($_SESSION['establecimiento_activo'] ?? '') ?>">
         <input type="hidden" name="estado" value="emitida">
         <?php if ($cotizacion): ?><input type="hidden" name="cotizacion_id" value="<?= (int)$cotizacion['id'] ?>">
-            <div class="alert alert-info"><i class="bi bi-file-earmark-text me-1"></i> Factura de la cotización <strong><?= htmlspecialchars($cotizacion['numero']) ?></strong> (L <?= number_format((float)$cotizacion['total'], 2) ?>): ya trae el cliente y las líneas. Revisa y elige el CAI. Al guardar, la cotización queda como facturada.</div>
+            <div class="alert alert-info"><i class="bi bi-file-earmark-text me-1"></i> Factura de la cotización <strong><?= htmlspecialchars($cotizacion['numero']) ?></strong> (<?= monedaFmt($cotizacion['total'], $mfMoneda) ?>): ya trae el cliente y las líneas. Revisa y elige el CAI. Al guardar, la cotización queda como facturada.</div>
         <?php endif; ?>
         <input type="hidden" name="fecha_emision" value="<?= date('Y-m-d H:i:s') ?>">
 
@@ -399,7 +405,7 @@ require_once '../../includes/templates/header.php';
                                             value="1" required>
                                     </div>
                                     <div class="col-md-3">
-                                        <label class="fv-form-label">Precio unitario (L)</label>
+                                        <label class="fv-form-label">Precio unitario (<span class="mf-sim"><?= $mfMoneda === 'USD' ? 'USD' : 'L' ?></span>)</label>
                                         <input type="number" step="0.01" name="productos[0][precio]"
                                             class="form-control precio-unitario"
                                             value="<?= $get_monto > 0 ? number_format($get_monto, 2, '.', '') : '' ?>"
@@ -441,6 +447,7 @@ require_once '../../includes/templates/header.php';
                                         exonerada</label>
                                 </div>
                             </div>
+                            <?php if (facturaMonedaDisponible($pdo)) require '../../includes/templates/moneda_factura.php'; ?>
                         </div>
                         <div id="campos-exoneracion" class="exo-panel mt-3" style="display:none">
                             <div class="row g-3">
@@ -479,6 +486,7 @@ require_once '../../includes/templates/header.php';
                         <div class="mt-3 p-2 rounded-2"
                             style="background:#eff6ff;border:1px solid #bfdbfe;font-size:.78rem;color:#1e40af;font-style:italic;"
                             id="total_letras">—</div>
+                        <div class="totales-row mt-2 mf-usd" <?= $mfMoneda !== 'USD' ? 'hidden' : '' ?>><span class="totales-label">Total en dólares</span><span class="totales-val" id="mfTotalUsd">$ 0.00</span></div>
 
                         <!-- Campos ocultos para el POST -->
                         <input type="hidden" name="subtotal" id="h_subtotal">
@@ -506,10 +514,13 @@ require_once '../../includes/templates/header.php';
 </form>
 </div>
 
+<script src="../../clientes/js/moneda-factura.js?v=<?= @filemtime(__DIR__ . '/../js/moneda-factura.js') ?>"></script>
 <script>
     const CLIENTE_ID = <?= json_encode($cliente_id) ?>;
     const CONTRATOS_FACTURA = <?= json_encode($contratosFactura, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
     let productoIndex = 1;
+    // Moneda de los precios (calcularTotales es una función declarada: ya existe aquí)
+    const MF = MonedaFactura({ precios: () => [...document.querySelectorAll('input[name$="[precio]"]')], recalcular: () => calcularTotales() });
 
     /* ── Gastos que se le cobran al cliente ─────────────────────────────────── */
     const GASTOS_COBRAR = <?= json_encode($gastosCobrar, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
@@ -566,11 +577,12 @@ require_once '../../includes/templates/header.php';
     /* ── Seleccionar producto → prellenar precio ─────────────────────────────── */
     document.getElementById('productos-container').addEventListener('change', function(e) {
         if (e.target.tagName === 'SELECT' && e.target.name.includes('[id]')) {
-            const precio = parseFloat(e.target.selectedOptions[0]?.dataset.precio) || 0;
+            const precioL = parseFloat(e.target.selectedOptions[0]?.dataset.precio) || 0;
+            const precio = MF.desdeLempiras(precioL);
             const item = e.target.closest('.producto-item');
             if (precio > 0) item.querySelector('input[name$="[precio]"]').value = precio.toFixed(2);
             const sp = item.querySelector('.precio-sugerido');
-            if (sp) sp.textContent = precio > 0 ? `Precio sugerido: L${precio.toFixed(2)}` : '';
+            if (sp) sp.textContent = precioL > 0 ? `Precio sugerido: L${precioL.toFixed(2)}` + (MF.usd() ? ` ($${precio.toFixed(2)})` : '') : '';
             calcularTotales();
         }
     });
@@ -578,7 +590,7 @@ require_once '../../includes/templates/header.php';
 
     /* ── Contrato → sugerir monto ────────────────────────────────────────────── */
     document.getElementById('contrato_id').addEventListener('change', function() {
-        const m = parseFloat(this.selectedOptions[0]?.dataset.monto) || 0;
+        const m = MF.desdeLempiras(parseFloat(this.selectedOptions[0]?.dataset.monto) || 0);
         if (m > 0) {
             const inp = document.querySelector('input[name="productos[0][precio]"]');
             if (inp && !parseFloat(inp.value)) {
@@ -627,15 +639,18 @@ require_once '../../includes/templates/header.php';
             g15 = 0,
             g18 = 0,
             i15 = 0,
-            i18 = 0;
+            i18 = 0,
+            usd = 0;
         const exo = document.getElementById('exonerado').checked;
         // Redondeo a centavos por línea, igual que el servidor (17,391.30 × 15 % = 2,608.70, no 2,608.69)
         const r2 = n => Math.round(Number(Number(n).toPrecision(15) + "e2")) / 100;   // como round() de PHP
         document.querySelectorAll('.producto-item').forEach(item => {
             const c = parseFloat(item.querySelector('input[name$="[cantidad]"]')?.value) || 0;
-            const p = parseFloat(item.querySelector('input[name$="[precio]"]')?.value) || 0;
+            const pm = parseFloat(item.querySelector('input[name$="[precio]"]')?.value) || 0;
+            const p = MF.lempiras(pm);   // en dólares: a lempiras con la tasa, como el servidor
             const v = parseInt(item.querySelector('select[name$="[id]"]')?.selectedOptions[0]?.dataset.isv) || 0;
-            const t = r2(c * p);
+            const t = r2(c * p), tu = r2(c * pm);
+            usd += tu + (exo ? 0 : v === 15 ? r2(tu * .15) : v === 18 ? r2(tu * .18) : 0);
             sub += t;
             if (!exo) {
                 if (v === 15) {
@@ -649,6 +664,7 @@ require_once '../../includes/templates/header.php';
         });
         sub = r2(sub); i15 = r2(i15); i18 = r2(i18); g15 = r2(g15); g18 = r2(g18);
         const total = r2(sub + i15 + i18);
+        MF.pintarUsd(r2(usd));
         const fmt = n => 'L ' + n.toLocaleString('es-HN', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2

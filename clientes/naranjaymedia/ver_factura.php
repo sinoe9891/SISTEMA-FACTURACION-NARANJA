@@ -742,6 +742,9 @@ if (!function_exists('formatFecha')) {
 								} else {
 									echo mb_strtoupper(htmlspecialchars($item['nombre_producto'] ?? 'SIN DESCRIPCIÓN'), 'UTF-8');
 								}
+								// Factura con precios en dólares: el precio en USD de referencia
+								if (($factura['moneda'] ?? 'HNL') === 'USD' && ($item['precio_usd'] ?? null) !== null)
+									echo '<div class="small text-muted">USD ' . number_format((float)$item['precio_usd'], 2) . ' c/u</div>';
 								?>
 							</td>
 							<td class="text-end"><?= htmlspecialchars($item['cantidad']) ?></td>
@@ -818,6 +821,10 @@ if (!function_exists('formatFecha')) {
 		<h5>
 			<span class="cantidadletras">Cantidad en letras: </span><?= htmlspecialchars($factura['monto_letras']) ?>
 		</h5>
+		<?php if (($factura['moneda'] ?? 'HNL') === 'USD' && (float)($factura['tasa_cambio'] ?? 0) > 0): ?>
+			<p class="mb-2" style="font-size:.9rem"><strong>Valores en dólares:</strong> total USD <?= number_format((float)$factura['total_usd'], 2) ?>
+				· Tasa de cambio: L <?= number_format((float)$factura['tasa_cambio'], 4) ?> por US$ 1.00</p>
+		<?php endif; ?>
 		<?php // Sello de la empresa (Configuración → Firmas), si se eligió ponerlo en las facturas
 		$selloFactura = '';
 		try {

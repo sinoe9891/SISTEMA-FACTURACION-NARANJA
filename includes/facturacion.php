@@ -9,6 +9,7 @@
  */
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/inventario.php';
+require_once __DIR__ . '/moneda_factura.php';
 
 /**
  * @param array $d receptor_id, cai_rango_id, establecimiento_id, condicion_pago, productos[] (id, cantidad,
@@ -51,6 +52,11 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
         if (isset($item['precio']) && $item['precio'] !== '' && (!is_numeric($item['precio']) || (float)$item['precio'] < 0)) throw new Exception("Línea $n: el precio no puede ser negativo.");
     }
 
+    // Precios en dólares: la factura queda en lempiras con la tasa elegida (el precio en USD queda de referencia)
+    [$moneda, $tasa] = facturaMonedaDisponible($pdo) ? facturaMonedaDePost($d) : ['HNL', null];
+    if ($moneda === 'USD') foreach ($productos as $i => $item)
+        if (!isset($item['precio']) || $item['precio'] === '') throw new Exception("Línea " . ($i + 1) . ": escribe el precio en dólares.");
+
     // ── Pertenencia a la empresa ──────────────────────────────────────────────
     $stmt = $pdo->prepare("SELECT punto_emision_id FROM cai_rangos WHERE id = ? AND cliente_id = ? AND fecha_limite >= CURDATE()");
     $stmt->execute([$cai_id, $cliente_id]);
@@ -89,13 +95,20 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
 
     $subtotal = $isv_15 = $isv_18 = $gravado_total = $exento_total = 0.0;
     $importe_exonerado = $importe_gravado_15 = $importe_gravado_18 = 0.0;
-    $lineas = [];
+    $lineas = $lineasUsd = $preciosUsd = [];
     foreach ($productos as $item) {
         $prod_id = (int)$item['id'];
         if (!isset($productos_db[$prod_id])) throw new Exception("Producto inválido: $prod_id");
         $cantidad = (float)$item['cantidad'];
         $precio_unitario = isset($item['precio']) && $item['precio'] !== '' ? (float)$item['precio'] : (float)$productos_db[$prod_id]['precio_unitario'];
         $tipo_isv = (int)$productos_db[$prod_id]['tipo_isv'];
+        $precio_usd = null;
+        if ($moneda === 'USD') {
+            $precio_usd = $precio_unitario;
+            $precio_unitario = facturaPrecioLempiras($precio_usd, $tasa);
+            $lineasUsd[] = [$cantidad, $precio_usd, $tipo_isv];
+        }
+        $preciosUsd[] = $precio_usd;
         $subtotal_item = round($cantidad * $precio_unitario, 2);
         $subtotal += $subtotal_item;
         if ($exonerado) {
@@ -146,6 +159,7 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
 
     $stmtItem = $pdo->prepare("INSERT INTO factura_items_receptor (factura_id, producto_id, descripcion_html, cantidad, precio_unitario, subtotal, isv_aplicado) VALUES (?, ?, ?, ?, ?, ?, ?)");
     foreach ($lineas as $l) $stmtItem->execute([$factura_id, ...$l]);
+    if ($moneda === 'USD') facturaGuardarMoneda($pdo, $factura_id, $tasa, facturaTotalUsd($lineasUsd, (bool)$exonerado), $preciosUsd);
 
     // Inventario: descontar los bienes (sin existencia suficiente, falla toda la factura)
     invDescontarFactura($pdo, $cliente_id, $factura_id, (int)$establecimiento_id, $usuario_id);

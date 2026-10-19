@@ -28,10 +28,11 @@ const COT_ICONOS = ['bi-printer' => 'Impresión', 'bi-palette' => 'Diseño', 'bi
     'bi-camera-reels' => 'Audiovisual', 'bi-camera' => 'Fotografía', 'bi-calendar-event' => 'Eventos', 'bi-lightbulb' => 'Consultoría', 'bi-tag' => 'Otro'];
 $cuenta = array_fill_keys(array_keys(COTIZACION_ESTADOS), 0);
 $montos = array_fill_keys(array_keys(COTIZACION_ESTADOS), 0.0);
+$tasaCot = $lista ? facturaTasaSugerida($pdo, $cid) : 0.0;   // las de dólares se suman en lempiras a la tasa del día
 foreach ($lista as &$c) {
     $c['vista'] = cotizacionEstadoVista($c);
     $cuenta[$c['vista']]++;
-    $montos[$c['vista']] += (float)$c['total'];
+    $montos[$c['vista']] += (float)$c['total'] * (($c['moneda'] ?? 'HNL') === 'USD' ? $tasaCot : 1);
 }
 unset($c);
 require_once '../../includes/templates/header.php';
@@ -87,7 +88,7 @@ require_once '../../includes/templates/header.php';
                                 <?php if ($c['categoria']): ?><div><span class="badge border text-secondary bg-light fw-normal"><i class="bi <?= htmlspecialchars($c['categoria_icono'] ?: 'bi-tag') ?> me-1"></i><?= htmlspecialchars($c['categoria']) ?></span></div><?php endif; ?></td>
                             <td class="text-nowrap" data-sort="<?= $c['valida_hasta'] ?>"><?= date('d/m/Y', strtotime($c['valida_hasta'])) ?>
                                 <?php if (in_array($c['vista'], ['borrador', 'enviada'], true)): ?><div class="small <?= $dRest <= 3 ? 'text-danger' : 'text-muted' ?>"><?= $dRest === 0 ? 'vence hoy' : 'faltan ' . $dRest . ' día' . ($dRest === 1 ? '' : 's') ?></div><?php endif; ?></td>
-                            <td class="app-num fw-semibold">L <?= number_format((float)$c['total'], 2) ?></td>
+                            <td class="app-num fw-semibold" data-sort="<?= round((float)$c['total'] * (($c['moneda'] ?? 'HNL') === 'USD' ? $tasaCot : 1), 2) ?>"><?= cotizacionMonto($c, $c['total']) ?></td>
                             <td><span class="badge" style="background:<?= $bg ?>;color:<?= $fg ?>"><i class="bi <?= $ico ?> me-1"></i><?= $txt ?></span>
                                 <?php if ($c['factura_id']): ?><div class="small"><a href="ver_factura?id=<?= (int)$c['factura_id'] ?>" target="_blank" class="font-monospace"><?= htmlspecialchars((string)$c['factura_correlativo']) ?></a></div><?php endif; ?></td>
                             <td class="text-end text-nowrap">

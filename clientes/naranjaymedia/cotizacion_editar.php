@@ -31,7 +31,9 @@ $cotForm = [
     'incluye' => $cot ? (string)$cot['incluye'] : $cfg['incluye'],
     'condiciones' => $cot ? (string)$cot['condiciones'] : $cfg['condiciones'],
     'notas' => $cot['notas'] ?? '',
+    'moneda' => ($cot['moneda'] ?? 'HNL') === 'USD' ? 'USD' : 'HNL',
 ];
+$tasaDia = facturaTasaSugerida($pdo, $cid);
 $categorias = cotizacionCategorias($pdo, $cid);
 $cotForm['categoria_id'] = (int)($cot['categoria_id'] ?? 0);
 $st = $pdo->prepare("SELECT id, nombre, email FROM clientes_factura WHERE cliente_id = ? ORDER BY nombre");
@@ -87,7 +89,14 @@ require_once '../../includes/templates/header.php';
                         <div class="form-text" id="cDias"></div></div>
                     <div class="col-md-4"><label class="form-label">Vigencia rápida</label>
                         <select class="form-select" id="cVigencia"><option value="">— Elegir —</option><?php foreach ([7, 15, 30, 45, 60] as $d): ?><option value="<?= $d ?>"><?= $d ?> días</option><?php endforeach; ?></select></div>
-                    <div class="col-12"><label class="form-label">Servicio <span class="text-muted small">(resumen que sale en el cuadro del cliente)</span></label>
+                    <?php if (cotizacionMonedaDisponible($pdo)): ?>
+                    <div class="col-md-4"><label class="form-label">Moneda</label>
+                        <select name="moneda" id="cMoneda" class="form-select">
+                            <option value="HNL" <?= $cotForm['moneda'] === 'HNL' ? 'selected' : '' ?>>Lempiras (L)</option>
+                            <option value="USD" <?= $cotForm['moneda'] === 'USD' ? 'selected' : '' ?>>Dólares (USD)</option>
+                        </select></div>
+                    <?php endif; ?>
+                    <div class="<?= cotizacionMonedaDisponible($pdo) ? 'col-md-8' : 'col-12' ?>"><label class="form-label">Servicio <span class="text-muted small">(resumen que sale en el cuadro del cliente)</span></label>
                         <input name="servicio" class="form-control" maxlength="255" value="<?= htmlspecialchars($cotForm['servicio']) ?>" placeholder="Ej.: Impresión de tarjetas de presentación"></div>
                 </div>
             </div>
@@ -246,7 +255,11 @@ ListaVinetas(document.getElementById('cCondiciones'), { placeholderTitulo: 'Ej.:
     const ACC = 'includes/cotizacion_accion.php';
     const f = document.getElementById('fCot'), cont = document.getElementById('cLineas'), rec = document.getElementById('cReceptor');
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const L = n => 'L ' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Moneda: en dólares los precios se escriben en USD (los de los productos, en L, se pasan a la tasa del día)
+    const selMon = document.getElementById('cMoneda'), TASA = <?= json_encode($tasaDia) ?>;
+    const usd = () => selMon?.value === 'USD';
+    const deL = p => usd() && TASA > 0 ? Math.round(p / TASA * 100) / 100 : p;
+    const L = n => (usd() ? '$ ' : 'L ') + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     let productos = [], n = 0, lineaProducto = null;
 
     const opciones = sel => {
@@ -267,7 +280,7 @@ ListaVinetas(document.getElementById('cCondiciones'), { placeholderTitulo: 'Ej.:
         div.innerHTML = `<div class="row g-2 align-items-end">
             <div class="col-md-5"><label class="form-label small mb-1">Producto o servicio *</label><select class="form-select form-select-sm c-prod" name="items[${i}][producto_id]" data-buscar></select></div>
             <div class="col-md-2"><label class="form-label small mb-1">Cantidad</label><input type="number" class="form-control form-control-sm c-cant" name="items[${i}][cantidad]" step="0.01" min="0.01" value="${d.cantidad ?? 1}"></div>
-            <div class="col-md-3"><label class="form-label small mb-1">Precio unitario (L)</label><input type="number" class="form-control form-control-sm c-precio" name="items[${i}][precio]" step="0.01" min="0" value="${d.precio ?? ''}"></div>
+            <div class="col-md-3"><label class="form-label small mb-1">Precio unitario (<span class="c-sim">${usd() ? 'USD' : 'L'}</span>)</label><input type="number" class="form-control form-control-sm c-precio" name="items[${i}][precio]" step="0.01" min="0" value="${d.precio ?? ''}"></div>
             <div class="col-md-2 text-end"><div class="small text-muted">Total</div><strong class="c-tot">L 0.00</strong>
                 <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-2 c-quitar" title="Quitar línea"><i class="bi bi-trash3"></i></button></div>
             <div class="col-md-6"><input class="form-control form-control-sm c-desc" name="items[${i}][descripcion]" maxlength="400" placeholder="Descripción en la cotización (por defecto, el nombre del producto)" value="${esc(d.descripcion ?? '')}"></div>
@@ -301,7 +314,7 @@ ListaVinetas(document.getElementById('cCondiciones'), { placeholderTitulo: 'Ej.:
         if (!e.target.classList.contains('c-prod')) return;
         const o = e.target.selectedOptions[0], l = e.target.closest('.c-linea');
         if (o?.value) {
-            if (+o.dataset.precio > 0) l.querySelector('.c-precio').value = (+o.dataset.precio).toFixed(2);
+            if (+o.dataset.precio > 0) l.querySelector('.c-precio').value = deL(+o.dataset.precio).toFixed(2);
             const desc = l.querySelector('.c-desc');
             if (!desc.value.trim() || desc.dataset.auto === '1') { desc.value = o.dataset.nombre || o.text; desc.dataset.auto = '1'; }
         }
@@ -313,6 +326,15 @@ ListaVinetas(document.getElementById('cCondiciones'), { placeholderTitulo: 'Ej.:
         calcular();
     });
     document.getElementById('cAgregar').addEventListener('click', () => linea());
+    // Al cambiar de moneda se convierten los precios escritos a la tasa del día
+    let monPrevia = selMon?.value;
+    selMon?.addEventListener('change', () => {
+        if (TASA > 0 && monPrevia !== selMon.value)
+            cont.querySelectorAll('.c-precio').forEach(i => { const v = +i.value; if (v) i.value = (usd() ? v / TASA : v * TASA).toFixed(2); });
+        monPrevia = selMon.value;
+        cont.querySelectorAll('.c-sim').forEach(e => e.textContent = usd() ? 'USD' : 'L');
+        calcular();
+    });
     rec.addEventListener('change', cargarProductos);
 
     // Vigencia

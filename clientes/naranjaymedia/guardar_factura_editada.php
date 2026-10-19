@@ -5,6 +5,7 @@ require_once '../../includes/functions.php';
 require_once '../../includes/intentos.php';
 require_once '../../includes/inventario.php';
 require_once '../../includes/factura_contrato.php';
+require_once '../../includes/moneda_factura.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 	die("Método no permitido.");
@@ -158,6 +159,11 @@ try {
 	$stmt = $pdo->prepare("DELETE FROM factura_items_receptor WHERE factura_id = ?");
 	$stmt->execute([$factura_id]);
 
+	// Precios en dólares: se convierten a lempiras con la tasa (sin el campo, la factura conserva su moneda)
+	$conMoneda = facturaMonedaDisponible($pdo) && array_key_exists('moneda', $_POST);
+	[$moneda, $tasa] = $conMoneda ? facturaMonedaDePost($_POST) : ['HNL', null];
+	$lineasUsd = $preciosUsd = [];
+
 	// Recalcular totales
 	$subtotal = 0;
 	$importe_gravado_15 = 0;
@@ -171,6 +177,12 @@ try {
 		$precio_unitario = (float)$item['precio_unitario'];
 		$producto_id = (int)$item['id'];
 		$descripcion = trim($item['descripcion_html'] ?? '');
+		$precio_usd = null;
+		if ($moneda === 'USD') {
+			$precio_usd = $precio_unitario;
+			$precio_unitario = facturaPrecioLempiras($precio_usd, $tasa);
+		}
+		$preciosUsd[] = $precio_usd;
 		$subtotal_item = $cantidad * $precio_unitario;
 		$subtotal += $subtotal_item;
 
@@ -196,6 +208,7 @@ try {
 
 
 		$isv_aplicado_item = $tipo_isv;
+		if ($moneda === 'USD') $lineasUsd[] = [$cantidad, $precio_usd, $tipo_isv];
 
 		$stmtInsert = $pdo->prepare("
 		INSERT INTO factura_items_receptor 
@@ -274,6 +287,7 @@ try {
 		$factura_id
 	);
 	$stmt->execute($valoresUpdate);
+	if ($conMoneda) facturaGuardarMoneda($pdo, (int)$factura_id, $tasa, $moneda === 'USD' ? facturaTotalUsd($lineasUsd, (bool)$exonerado) : null, $preciosUsd);
 
 	if ($cambiar_receptor) {
 		$motivoReceptor = 'Receptor cambiado de #' . $factura['receptor_id'] . ' a #' . $nuevoReceptor['id'] . ' (' . $nuevoReceptor['nombre'] . '). Motivo: ' . $motivo;

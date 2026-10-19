@@ -10,6 +10,7 @@
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/firmantes.php';
 require_once __DIR__ . '/correo.php';
+require_once __DIR__ . '/moneda_factura.php';
 
 const COTIZACION_ESTADOS = [
     'borrador' => ['Borrador', '#f1f5f9', '#475569', 'bi-pencil'],
@@ -192,8 +193,10 @@ function cotizacionGuardar(PDO $pdo, int $cid, int $uid, array $d, int $id = 0):
     $txt = fn($k, $max = 5000) => ($v = trim((string)($d[$k] ?? ''))) === '' ? null : mb_substr($v, 0, $max);
     $datos = [$receptor, $fecha, $valida, $txt('servicio', 255), $txt('incluye'), $txt('condiciones'), $txt('notas'), round($sub, 2), $i15, $i18, round($sub + $i15 + $i18, 2)];
 
-    $guardarCategoria = function (int $id) use ($pdo, $cid, $categoria) {
+    $moneda = ($d['moneda'] ?? 'HNL') === 'USD' ? 'USD' : 'HNL';
+    $guardarCategoria = function (int $id) use ($pdo, $cid, $categoria, $moneda) {
         if (cotizacionCategoriasDisponible($pdo)) $pdo->prepare("UPDATE cotizaciones SET categoria_id = ? WHERE id = ? AND cliente_id = ?")->execute([$categoria, $id, $cid]);
+        if (cotizacionMonedaDisponible($pdo)) $pdo->prepare("UPDATE cotizaciones SET moneda = ? WHERE id = ? AND cliente_id = ?")->execute([$moneda, $id, $cid]);
     };
     if ($id) {
         $c = cotizacionObtener($pdo, $cid, $id);
@@ -210,6 +213,21 @@ function cotizacionGuardar(PDO $pdo, int $cid, int $uid, array $d, int $id = 0):
     $ins = $pdo->prepare("INSERT INTO cotizacion_items (cotizacion_id, producto_id, descripcion, detalle, cantidad, precio, tipo_isv, subtotal, orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
     foreach ($items as $it) $ins->execute([$id, ...$it]);
     return $id;
+}
+
+function cotizacionMonedaDisponible(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) {
+        try { $ok = (bool)$pdo->query("SHOW COLUMNS FROM cotizaciones LIKE 'moneda'")->fetchColumn(); } catch (Throwable $e) { $ok = false; }
+    }
+    return $ok;
+}
+
+/** Monto con el símbolo de la moneda de la cotización (L o $). */
+function cotizacionMonto(array $c, $v): string
+{
+    return monedaFmt($v, ($c['moneda'] ?? 'HNL') === 'USD' ? 'USD' : 'HNL');
 }
 
 function cotizacionArchivo(array $c): string
@@ -273,7 +291,7 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
     $st->execute([$cid]);
     $emp = $st->fetch(PDO::FETCH_ASSOC) ?: [];
     $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
-    $L = fn($v) => 'L ' . number_format((float)$v, 2);
+    $L = fn($v) => cotizacionMonto($c, $v);
     $cant = fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ','), '0'), '.');
     $logo = cotizacionLogoB64($emp);
     $sello = !empty($emp['sello_cotizaciones']) ? selloB64($pdo, $cid) : '';
@@ -293,7 +311,8 @@ function cotizacionHtml(PDO $pdo, int $cid, int $id): string
         . ((float)$c['isv_15'] > 0 ? '<tr class="tot"><td></td><td></td><td class="r"><strong>ISV (15 %)</strong></td><td class="r n">' . $L($c['isv_15']) . '</td></tr>' : '')
         . ((float)$c['isv_18'] > 0 ? '<tr class="tot"><td></td><td></td><td class="r"><strong>ISV (18 %)</strong></td><td class="r n">' . $L($c['isv_18']) . '</td></tr>' : '')
         . (!$isv ? '<tr class="tot"><td></td><td></td><td class="r"><strong>ISV</strong></td><td class="r n">Exento</td></tr>' : '')
-        . '<tr class="tot"><td></td><td></td><td class="r"><strong>Total a pagar</strong></td><td class="r n">' . $L($c['total']) . '</td></tr>';
+        . '<tr class="tot"><td></td><td></td><td class="r"><strong>Total a pagar' . (($c['moneda'] ?? 'HNL') === 'USD' ? ' (USD)' : '') . '</strong></td><td class="r n">' . $L($c['total']) . '</td></tr>'
+        . (($c['moneda'] ?? 'HNL') === 'USD' ? '<tr class="tot"><td></td><td colspan="3" class="r" style="font-size:8.5pt;color:#64748b">Precios en dólares estadounidenses (USD). Se facturan en lempiras a la tasa de cambio del día de la factura.</td></tr>' : '');
     $incluye = cotizacionVinetas((string)$c['incluye'], $dias, $e);
     $condic = cotizacionVinetas((string)$c['condiciones'], $dias, $e);
 
@@ -384,7 +403,7 @@ function cotizacionCorreoDefecto(PDO $pdo, int $cid, array $c): array
     $firm = firmantesLista($pdo, $cid)[$cfg['firmante']] ?? ['nombre' => '', 'cargo' => ''];
     $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
     $vars = ['{numero}' => $c['numero'], '{empresa}' => $alias, '{cliente}' => $c['cliente'], '{contacto}' => $c['contacto_nombre'] ?: $c['cliente'],
-             '{total}' => 'L ' . number_format((float)$c['total'], 2), '{valida_hasta}' => cotizacionFechaLarga($c['valida_hasta']), '{servicio}' => $c['servicio'] ?: 'los servicios solicitados'];
+             '{total}' => cotizacionMonto($c, $c['total']), '{valida_hasta}' => cotizacionFechaLarga($c['valida_hasta']), '{servicio}' => $c['servicio'] ?: 'los servicios solicitados'];
     $asunto = strtr($cfg['asunto_correo'], $vars);
     if (trim($cfg['mensaje_correo']) !== '') {
         $mensaje = nl2br($e(strtr($cfg['mensaje_correo'], $vars)));
@@ -417,7 +436,7 @@ function cotizacionCorreoPlantilla(PDO $pdo, int $cid, array $c, string $mensaje
     $resumen = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 4px;background:#fff7f2;border:1px solid #fde1d0;border-radius:10px"><tr><td style="padding:14px 18px">'
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
         . $fila('Cotización', $e($c['numero'])) . $fila('Fecha', $e(cotizacionFechaLarga($c['fecha']))) . $fila('Válida hasta', $e(cotizacionFechaLarga($c['valida_hasta'])))
-        . $fila('Total', 'L ' . number_format((float)$c['total'], 2), true)
+        . $fila('Total', cotizacionMonto($c, $c['total']), true)
         . '</table></td></tr></table><p style="margin:10px 0 0;font-size:12.5px;color:#64748b">📎 Adjunto: ' . $e(cotizacionArchivo($c)) . '</p>';
     $html = '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>'
         . '<body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Helvetica,Arial,sans-serif">'
@@ -430,7 +449,7 @@ function cotizacionCorreoPlantilla(PDO $pdo, int $cid, array $c, string $mensaje
         . ($enlace ? '<br><a href="' . $e($enlace) . '" target="_blank" style="color:#64748b">' . $e(preg_replace('#^https?://|/$#', '', $enlace)) . '</a>' : '')
         . '</td></tr></table></td></tr></table></body></html>';
     $texto = trim(html_entity_decode(strip_tags(str_replace(['<br>', '</p>'], ["\n", "\n\n"], $mensaje)), ENT_QUOTES, 'UTF-8'))
-        . "\n\nCotización " . $c['numero'] . ' · Total L ' . number_format((float)$c['total'], 2) . ' · Válida hasta ' . cotizacionFechaLarga($c['valida_hasta']);
+        . "\n\nCotización " . $c['numero'] . ' · Total ' . cotizacionMonto($c, $c['total']) . ' · Válida hasta ' . cotizacionFechaLarga($c['valida_hasta']);
     return [$html, $texto];
 }
 
