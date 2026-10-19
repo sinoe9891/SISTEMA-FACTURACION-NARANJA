@@ -45,6 +45,7 @@ $menuLateral = [
 	// Ciclo del ingreso: facturar (arriba) → contratos → cobrar
 	'Cobros' => array_values(array_filter([
 		['cuentas_cobrar', 'bi-cash-coin', 'Cuentas por cobrar', ['estado_cuenta']],
+		['pagos_recibidos', 'bi-wallet2', 'Pagos recibidos', []],
 		['cobros_programados', 'bi-send-check', 'Cobros por correo', ['nuevo_cobro']],
 	])),
 	// Ciclo del egreso: pagar → boucher → banco

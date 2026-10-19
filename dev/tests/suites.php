@@ -3090,3 +3090,44 @@ suite('Préstamos a colaboradores: el pago de una cuota puede entrar a una cuent
     $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id=$cta");
     $pdo->exec("DELETE FROM cuentas_bancarias WHERE id=$cta");
 });
+
+suite('Pagos recibidos: lista de abonos, recibos y anticipos; editar la cuenta y adjuntar comprobante', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $r = $c->get('pagos_recibidos', ['desde' => '2000-01-01', 'hasta' => date('Y-m-d')]);
+    check('la página carga con filtros y tabla', sinErroresPhp($r['body']) && str_contains($r['body'], 'id="prFiltros"') && str_contains($r['body'], 'id="tPagos" data-ordenar'), errorPhp($r['body']));
+    $f = $pdo->query("SELECT f.* FROM facturas f WHERE f.cliente_id=2 AND f.estado='emitida' AND f.pagada=0 AND NOT EXISTS (SELECT 1 FROM cobros_factura c WHERE c.factura_id=f.id AND c.anulado=0) AND f.total > 100 ORDER BY f.id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    check('hay una factura pendiente para probar', (bool)$f);
+    if (!$f) return;
+    $cuenta = function ($n) use ($c, $pdo) {
+        $c->post('includes/banco_accion.php', ['accion' => 'cuenta_guardar', 'banco' => $n, 'numero' => '1', 'tipo' => 'ahorro', 'moneda' => 'HNL', 'saldo_inicial' => 0, 'fecha_saldo_inicial' => '2000-01-01']);
+        return (int)$pdo->query("SELECT id FROM cuentas_bancarias WHERE banco=" . $pdo->quote($n) . " ORDER BY id DESC LIMIT 1")->fetchColumn();
+    };
+    $a = $cuenta('QA PR uno'); $b = $cuenta('QA PR dos');
+    $fecha = substr($f['fecha_emision'], 0, 10);
+    $c->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => $f['id'], 'fecha' => $fecha, 'metodo' => 'efectivo', 'monto' => 50]);
+    $cob = (int)$pdo->query("SELECT id FROM cobros_factura WHERE factura_id={$f['id']} AND anulado=0 ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $l = $c->get('pagos_recibidos', ['desde' => $fecha, 'hasta' => date('Y-m-d'), 'comprobante' => 'sin']);
+    check('el abono aparece en la lista (filtro «sin comprobante»)', str_contains($l['body'], 'data-tipo="factura" data-id="' . $cob . '"'));
+    $ed = fn(array $d) => $c->post('includes/pago_recibido_accion.php', $d + ['accion' => 'editar', 'tipo' => 'factura', 'id' => $cob, 'fecha' => $fecha, 'metodo' => 'transferencia', 'referencia' => 'QA-REF']);
+    $r = $ed(['cuenta_id' => $a, 'comprobante' => new CURLFile(archivoTemporal('png'), 'image/png', 'captura.png')]);
+    $row = $pdo->query("SELECT * FROM cobros_factura WHERE id=$cob")->fetch(PDO::FETCH_ASSOC);
+    $mov = $pdo->query("SELECT * FROM movimientos_bancarios WHERE id=" . (int)$row['movimiento_id'])->fetch(PDO::FETCH_ASSOC);
+    check('al elegir la cuenta se crea el depósito con el comprobante', ($r['json']['success'] ?? false) && $mov && (int)$mov['cuenta_id'] === $a && $mov['sentido'] === 'entrada' && $mov['archivo_adjunto'] === $row['archivo_adjunto'] && $row['referencia'] === 'QA-REF', $r['body']);
+    $v = $c->get('pago_recibido_archivo', ['tipo' => 'factura', 'id' => $cob]);
+    check('el comprobante se puede ver', $v['code'] === 200 && str_starts_with($v['body'], "\x89PNG"));
+    $ed(['cuenta_id' => $b]);
+    $mov2 = $pdo->query("SELECT cuenta_id, anulado FROM movimientos_bancarios WHERE id={$mov['id']}")->fetch(PDO::FETCH_ASSOC);
+    check('al cambiar la cuenta, el mismo depósito se mueve a la otra cuenta', (int)$mov2['cuenta_id'] === $b && !(int)$mov2['anulado'] && (int)$pdo->query("SELECT movimiento_id FROM cobros_factura WHERE id=$cob")->fetchColumn() === (int)$mov['id']);
+    $ed(['cuenta_id' => '', 'quitar_comprobante' => 1]);
+    check('«No registrar en banco» anula el depósito y se puede quitar el comprobante', (int)$pdo->query("SELECT anulado FROM movimientos_bancarios WHERE id={$mov['id']}")->fetchColumn() === 1 && $pdo->query("SELECT archivo_adjunto FROM cobros_factura WHERE id=$cob")->fetchColumn() === null);
+    $mal = $ed(['cuenta_id' => '', 'fecha' => '2000-01-01']);
+    check('no acepta una fecha anterior a la factura', !($mal['json']['success'] ?? true));
+    $nom = login('qa.nomina@local.test');
+    $x = $nom->post('includes/pago_recibido_accion.php', ['accion' => 'editar', 'tipo' => 'factura', 'id' => $cob, 'fecha' => $fecha, 'metodo' => 'efectivo']);
+    check('un rol sin acceso no lo edita', !($x['json']['success'] ?? true));
+    $c->post('includes/cxc_accion.php', ['accion' => 'anular_cobro', 'id' => $cob, 'motivo' => 'QA']);
+    foreach (glob(__DIR__ . '/../../clientes/naranjaymedia/includes/uploads/gastos/' . basename((string)$row['archivo_adjunto'])) as $x) @unlink($x);
+    $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id IN ($a, $b)");
+    $pdo->exec("DELETE FROM cuentas_bancarias WHERE id IN ($a, $b)");
+});

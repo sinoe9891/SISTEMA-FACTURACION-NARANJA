@@ -127,6 +127,7 @@ function AppTabla(tabla, opciones) {
         });
         if (!t.__appTabla) numerar(t);
     });
+    window.AppOrdenarIniciar = iniciar;   // para tablas que se reemplazan por AJAX
     // Después de data-paginar (que se inicia en DOMContentLoaded), para que la numeración siga a la paginación
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(iniciar)); else setTimeout(iniciar);
 })();

@@ -41,6 +41,7 @@ const PERMISOS_ACCIONES = [
     'anticipo_accion' => ['contratos', 'cuentas_cobrar'],
     // Cobros
     'estado_cuenta' => ['cuentas_cobrar'], 'cxc_accion' => ['cuentas_cobrar', 'contratos', 'lista_facturas'], 'cobro_archivo' => ['cuentas_cobrar', 'contratos', 'lista_facturas'],
+    'pago_recibido_accion' => ['pagos_recibidos'], 'pago_recibido_archivo' => ['pagos_recibidos', 'cuentas_cobrar'],
     'cobro_accion' => ['cobros_programados'], 'nuevo_cobro' => ['cobros_programados'], 'cobros_filas' => ['cobros_programados'],
     // Pagos y gastos
     'gasto_ver' => ['gastos', 'cuentas_pagar'], 'gasto_guardar' => ['gastos'], 'gasto_actualizar' => ['gastos', 'cuentas_pagar'],
@@ -81,7 +82,7 @@ const PERMISOS_VISTAS = ['ver_factura', 'cotizacion_editar', 'cotizacion_pdf', '
     'colaborador_ver', 'colaborador_reporte', 'crear_cliente', 'editar_cliente', 'inventario_kardex', 'inventario_reportes', 'crear_cai', 'editar_cai', 'nuevo_cobro'];
 
 /** Páginas del menú lateral (cada una es su propia opción). */
-const PERMISOS_PAGINAS = ['generar_factura', 'lista_facturas', 'cotizaciones', 'contratos', 'crear_contrato', 'cuentas_cobrar', 'cobros_programados', 'cuentas_pagar', 'gastos',
+const PERMISOS_PAGINAS = ['generar_factura', 'lista_facturas', 'cotizaciones', 'contratos', 'crear_contrato', 'cuentas_cobrar', 'pagos_recibidos', 'cobros_programados', 'cuentas_pagar', 'gastos',
     'licencias', 'bouchers', 'proveedores', 'categorias_gastos', 'bancos', 'cheques', 'tarjetas', 'activos', 'socios', 'financiero', 'estados_financieros', 'balance_general',
     'proyeccion', 'colaboradores', 'pagos_nomina', 'clientes', 'productos', 'productos_clientes', 'pos', 'pos_turnos', 'inventario', 'inventario_traslados', 'usuarios'];
 
