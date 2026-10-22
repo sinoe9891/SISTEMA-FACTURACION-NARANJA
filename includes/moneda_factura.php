@@ -69,3 +69,30 @@ function monedaFmt($v, string $moneda = 'HNL'): string
 {
     return ($moneda === 'USD' ? '$ ' : 'L ') . number_format((float)$v, 2);
 }
+
+/** Vista en USD sobre copias de los datos; nunca modifica la factura almacenada. */
+function facturaVistaUsd(array $factura, array $items): array
+{
+    $tasa = (float)($factura['tasa_cambio'] ?? 0);
+    if (($factura['moneda'] ?? 'HNL') !== 'USD' || $tasa <= 0) return [$factura, $items];
+    foreach (['subtotal','gravado_total','exento_total','importe_exonerado','importe_gravado_15','importe_gravado_18','isv_15','isv_18'] as $campo) $factura[$campo] = 0.0;
+    foreach ($items as &$item) {
+        $item['precio_unitario'] = (float)($item['precio_usd'] ?? round((float)$item['precio_unitario'] / $tasa, 2));
+        $item['subtotal'] = round((float)$item['cantidad'] * $item['precio_unitario'], 2);
+        $sub = $item['subtotal'];
+        $factura['subtotal'] += $sub;
+        $tipo = (int)($item['isv_aplicado'] ?? 0);
+        if (!empty($factura['exonerado'])) {
+            $factura['importe_exonerado'] += $sub;
+            $factura['exento_total'] += $sub;
+        } elseif (in_array($tipo, [15,18], true)) {
+            $factura['gravado_total'] += $sub;
+            $factura['importe_gravado_'.$tipo] += $sub;
+            $factura['isv_'.$tipo] += round($sub * $tipo / 100, 2);
+        } else $factura['exento_total'] += $sub;
+    }
+    unset($item);
+    $factura['descuentos'] = round((float)($factura['descuentos'] ?? 0) / $tasa, 2);
+    $factura['total'] = round($factura['subtotal'] + $factura['isv_15'] + $factura['isv_18'], 2);
+    return [$factura, $items];
+}

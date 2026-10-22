@@ -14,5 +14,5 @@
     <input type="number" step="0.0001" min="1" name="tasa_cambio" id="fTasa" class="form-control" value="<?= $mfTasa > 0 ? rtrim(rtrim(number_format($mfTasa, 4, '.', ''), '0'), '.') : '' ?>">
 </div>
 <div class="col-12" id="mfNota" <?= $mfMoneda !== 'USD' ? 'hidden' : '' ?>>
-    <div class="small text-muted"><i class="bi bi-info-circle me-1"></i>Escribe los precios en dólares: la factura se emite en lempiras (como pide la SAR) con esta tasa y muestra el total en USD de referencia.</div>
+    <div class="small text-muted"><i class="bi bi-info-circle me-1"></i>Escribe los precios en dólares: la factura se emite en lempiras (como pide la SAR) con esta tasa y, al guardarla, puedes ver e imprimir dos versiones completas: lempiras y dólares, con el mismo número de factura.</div>
 </div>

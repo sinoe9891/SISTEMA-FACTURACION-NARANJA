@@ -2,6 +2,7 @@
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/moneda_factura.php';
 
 $modo_pdf = !empty($_GET['modo_pdf']);
 $modo_pdf_bytes = !empty($_GET['pdf_bytes']);
@@ -131,6 +132,15 @@ $stmtItems = $pdo->prepare("
 ");
 $stmtItems->execute([$factura_id]);
 $items = $stmtItems->fetchAll();
+$tieneVistaUsd = ($factura['moneda'] ?? 'HNL') === 'USD' && (float)($factura['tasa_cambio'] ?? 0) > 0;
+$vistaUsd = $tieneVistaUsd && ($_GET['vista_moneda'] ?? '') === 'USD';
+$totalOriginalHnl = (float)$factura['total'];
+if ($vistaUsd) {
+    [$factura, $items] = facturaVistaUsd($factura, $items);
+    $factura['monto_letras'] = str_ireplace('lempiras', 'dólares estadounidenses', numeroALetras($factura['total']));
+}
+$formatoVista = fn($monto) => ($vistaUsd ? 'USD ' : 'L ') . number_format((float)$monto, 2);
+
 
 $stmtConfig = $pdo->prepare("SELECT * FROM configuracion_sistema WHERE id = 1");
 $stmtConfig->execute();
@@ -233,6 +243,8 @@ if (!function_exists('formatFecha')) {
 			white-space: nowrap;
 			font-family: Arial, sans-serif;
 		}
+
+		.btn-ab[aria-current="page"] { background:#1d4ed8; color:#fff; border-color:#1d4ed8; }
 
 		.btn-ab-back {
 			background: rgba(255, 255, 255, .1);
@@ -650,7 +662,12 @@ if (!function_exists('formatFecha')) {
 				&nbsp;·&nbsp; <strong><?= $estado_pago_label ?></strong>
 			</div>
 			<div class="action-bar-btns">
-				<a href="lista_facturas" class="btn-ab btn-ab-back">← Volver</a>
+				<?php if ($tieneVistaUsd): ?>
+<a href="ver_factura?id=<?= $factura_id ?>&vista_moneda=HNL" class="btn-ab btn-ab-back" <?= !$vistaUsd ? 'aria-current="page"' : '' ?>>Lempiras (HNL)</a>
+<a href="ver_factura?id=<?= $factura_id ?>&vista_moneda=USD" class="btn-ab btn-ab-back" <?= $vistaUsd ? 'aria-current="page"' : '' ?>>Dólares (USD)</a>
+<a href="ver_factura?id=<?= $factura_id ?>&modo_pdf=1&vista_moneda=<?= $vistaUsd ? 'USD' : 'HNL' ?>" class="btn-ab btn-ab-print">Descargar PDF <?= $vistaUsd ? 'USD' : 'HNL' ?></a>
+<?php endif; ?>
+<a href="lista_facturas" class="btn-ab btn-ab-back">← Volver</a>
 				<?php if ($esAdmin): ?>
 					<a href="editar_factura?id=<?= $factura_id ?>" class="btn-ab btn-ab-edit">
 						✏️ Editar Factura
@@ -688,6 +705,7 @@ if (!function_exists('formatFecha')) {
 
 			<div class="text-end text-end-factura-titulo">
 				<h2>FACTURA</h2>
+<?php if ($tieneVistaUsd): ?><div><strong><?= $vistaUsd ? 'Versión en dólares (USD)' : 'Versión en lempiras (HNL)' ?></strong></div><?php endif; ?>
 				<div><strong><?= htmlspecialchars($factura['cliente_nombre']) ?></strong></div>
 				<div>Dirección: <?= htmlspecialchars($factura['direccion']) ?></div>
 				<div>Teléfono: <?= htmlspecialchars($factura['telefono']) ?></div>
@@ -744,13 +762,13 @@ if (!function_exists('formatFecha')) {
 									echo mb_strtoupper(htmlspecialchars($item['nombre_producto'] ?? 'SIN DESCRIPCIÓN'), 'UTF-8');
 								}
 								// Factura con precios en dólares: el precio en USD de referencia
-								if (($factura['moneda'] ?? 'HNL') === 'USD' && ($item['precio_usd'] ?? null) !== null)
+								if (!$vistaUsd && ($factura['moneda'] ?? 'HNL') === 'USD' && ($item['precio_usd'] ?? null) !== null)
 									echo '<div class="small text-muted">USD ' . number_format((float)$item['precio_usd'], 2) . ' c/u</div>';
 								?>
 							</td>
 							<td class="text-end"><?= htmlspecialchars($item['cantidad']) ?></td>
-							<td class="text-end"><?= formatMoneda($item['precio_unitario']) ?></td>
-							<td class="text-end"><?= formatMoneda($item['subtotal']) ?></td>
+							<td class="text-end"><?= $formatoVista($item['precio_unitario']) ?></td>
+							<td class="text-end"><?= $formatoVista($item['subtotal']) ?></td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
@@ -776,43 +794,43 @@ if (!function_exists('formatFecha')) {
 				<tbody>
 					<tr>
 						<td>Gravado:</td>
-						<td id="gravado"><?= formatMoneda($factura['gravado_total']) ?></td>
+						<td id="gravado"><?= $formatoVista($factura['gravado_total']) ?></td>
 					</tr>
 					<tr>
 						<td>Desc. / rebajas otorgadas:</td>
-						<td id="descrebajas"><?= formatMoneda($factura['descuentos'] ?? 0) ?></td>
+						<td id="descrebajas"><?= $formatoVista($factura['descuentos'] ?? 0) ?></td>
 					</tr>
 					<tr>
 						<td>Importe exonerado:</td>
-						<td id="importe_exonerado"><?= formatMoneda($factura['importe_exonerado']) ?></td>
+						<td id="importe_exonerado"><?= $formatoVista($factura['importe_exonerado']) ?></td>
 					</tr>
 					<tr>
 						<td>Importe Exento:</td>
-						<td id="importe_exento"><?= formatMoneda($factura['exento_total']) ?></td>
+						<td id="importe_exento"><?= $formatoVista($factura['exento_total']) ?></td>
 					</tr>
 					<tr>
 						<td>Importe Gravado 15%:</td>
-						<td id="importe_gravado_15"><?= formatMoneda($factura['importe_gravado_15']) ?></td>
+						<td id="importe_gravado_15"><?= $formatoVista($factura['importe_gravado_15']) ?></td>
 					</tr>
 					<tr>
 						<td>Importe Gravado 18%:</td>
-						<td id="importe_gravado_18"><?= formatMoneda($factura['importe_gravado_18']) ?></td>
+						<td id="importe_gravado_18"><?= $formatoVista($factura['importe_gravado_18']) ?></td>
 					</tr>
 					<tr>
 						<td>Subtotal:</td>
-						<td id="subtotal"><?= formatMoneda($factura['subtotal']) ?></td>
+						<td id="subtotal"><?= $formatoVista($factura['subtotal']) ?></td>
 					</tr>
 					<tr>
 						<td>ISV (18%):</td>
-						<td id="isv_18"><?= formatMoneda($factura['isv_18']) ?></td>
+						<td id="isv_18"><?= $formatoVista($factura['isv_18']) ?></td>
 					</tr>
 					<tr>
 						<td>ISV (15%):</td>
-						<td id="isv_15"><?= formatMoneda($factura['isv_15']) ?></td>
+						<td id="isv_15"><?= $formatoVista($factura['isv_15']) ?></td>
 					</tr>
 					<tr class="totalapagar">
 						<td><strong>Total a pagar:</strong></td>
-						<td id="total"><strong><?= formatMoneda($factura['total']) ?></strong></td>
+						<td id="total"><strong><?= $formatoVista($factura['total']) ?></strong></td>
 					</tr>
 				</tbody>
 			</table>
@@ -824,7 +842,8 @@ if (!function_exists('formatFecha')) {
 		</h5>
 		<?php if (($factura['moneda'] ?? 'HNL') === 'USD' && (float)($factura['tasa_cambio'] ?? 0) > 0): ?>
 			<p class="mb-2" style="font-size:.9rem"><strong>Valores en dólares:</strong> total USD <?= number_format((float)$factura['total_usd'], 2) ?>
-				· Tasa de cambio: L <?= number_format((float)$factura['tasa_cambio'], 4) ?> por US$ 1.00</p>
+				<?= $vistaUsd ? ' · Equivalente registrado: L ' . number_format($totalOriginalHnl, 2) : '' ?>
+                · Tasa de cambio: L <?= number_format((float)$factura['tasa_cambio'], 4) ?> por US$ 1.00</p>
 		<?php endif; ?>
 		<?php // Sello de la empresa (Configuración → Firmas), si se eligió ponerlo en las facturas
 		$selloFactura = '';
@@ -910,7 +929,7 @@ if ($modo_exportar) {
 		$dompdf->setPaper('letter', 'portrait');
 		$dompdf->render();
 
-		$filename = 'factura_' . preg_replace('/[^A-Za-z0-9._-]/', '_', $factura['correlativo'] ?? $factura_id) . '.pdf';
+		$filename = 'factura_' . preg_replace('/[^A-Za-z0-9._-]/', '_', $factura['correlativo'] ?? $factura_id) . ($vistaUsd ? '_USD' : '_HNL') . '.pdf';
 		if ($modo_pdf_bytes) {
 			echo $dompdf->output();
 			return;

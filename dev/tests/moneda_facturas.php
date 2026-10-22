@@ -23,6 +23,13 @@ suite('Moneda: facturas con precios en dólares y cotizaciones en USD', function
     check('guarda la moneda, la tasa, el total en USD (230.00) y el precio USD de la línea', $f['moneda'] === 'USD' && (float)$f['tasa_cambio'] === 26.5 && (float)$f['total_usd'] === 230.0 && (float)$it['precio_usd'] === 100.0, json_encode([$f['moneda'], $f['tasa_cambio'], $f['total_usd'], $it['precio_usd']]));
     $v = $c->get('ver_factura', ['id' => $fid]);
     check('la factura muestra el total en dólares y la tasa', sinErroresPhp($v['body']) && str_contains($v['body'], 'Valores en dólares') && str_contains($v['body'], 'USD 230.00') && str_contains($v['body'], '26.5000'), errorPhp($v['body']));
+    $usd = $c->get('ver_factura', ['id'=>$fid, 'vista_moneda'=>'USD', 'render_only'=>1]);
+    check('vista USD completa con precio, subtotal, ISV, total y letras', sinErroresPhp($usd['body']) && str_contains($usd['body'], 'USD 100.00') && str_contains($usd['body'], 'USD 200.00') && str_contains($usd['body'], 'USD 30.00') && str_contains($usd['body'], 'USD 230.00') && str_contains($usd['body'], 'dólares estadounidenses'));
+    $hnl = $c->get('ver_factura', ['id'=>$fid, 'vista_moneda'=>'HNL', 'render_only'=>1]);
+    check('vista HNL conserva valores completos', sinErroresPhp($hnl['body']) && str_contains($hnl['body'], 'L 2,650.00') && str_contains($hnl['body'], 'L 6,095.00'));
+    $pdf = $c->get('ver_factura', ['id'=>$fid, 'vista_moneda'=>'USD', 'pdf_bytes'=>1]);
+    check('PDF USD válido', $pdf['code'] === 200 && str_starts_with($pdf['body'], '%PDF-'));
+    check('ver ambas monedas no modifica el total almacenado', (float)$pdo->query("SELECT total FROM facturas WHERE id=$fid")->fetchColumn() === 6095.0);
     $e = $c->get('editar_factura', ['id' => $fid]);
     check('al editarla viene en dólares con su tasa y el precio en USD', sinErroresPhp($e['body']) && str_contains($e['body'], '<option value="USD" selected') && str_contains($e['body'], 'value="26.5"') && str_contains($e['body'], 'value="100"'), errorPhp($e['body']));
 
