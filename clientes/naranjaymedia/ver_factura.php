@@ -226,6 +226,15 @@ if (!function_exists('formatFecha')) {
 			display: flex;
 			gap: .5rem;
 			align-items: center;
+			justify-content: flex-end;
+			flex-wrap: wrap;
+			margin-left: auto;
+			max-width: 100%;
+		}
+
+		@media (max-width: 768px) {
+			.action-bar-info { width: 100%; text-align: center; }
+			.action-bar-btns { width: 100%; margin-left: 0; justify-content: center; }
 		}
 
 		.btn-ab {
