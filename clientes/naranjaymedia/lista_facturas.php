@@ -2320,6 +2320,20 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 					document.getElementById('swal_declarada').value = String(presetEstados.declarada);
 					document.getElementById('swal_enviada').value = String(presetEstados.enviada);
 				}
+                const motivo = document.getElementById('motivo');
+                let ultimoAutomatico = '';
+                const actualizarMotivo = () => {
+                    const cambios = [];
+                    for (const [campo, etiqueta] of [['pagada','Pagada'], ['declarada','Declarada'], ['enviada','Enviada']]) {
+                        const valor = document.getElementById('swal_' + campo).value;
+                        if (valor !== '' && (!presetEstados || valor !== String(presetEstados[campo]))) cambios.push(etiqueta + ': ' + (valor === '1' ? 'Sí' : 'No'));
+                    }
+                    const sugerido = cambios.length ? 'Cambio de estado: ' + cambios.join('; ') + '.' : '';
+                    if (!motivo.value.trim() || motivo.value === ultimoAutomatico) motivo.value = sugerido;
+                    ultimoAutomatico = sugerido;
+                };
+                ['pagada','declarada','enviada'].forEach(campo => document.getElementById('swal_' + campo).addEventListener('change', actualizarMotivo));
+
 			},
 			preConfirm: () => {
 				const motivo = document.getElementById('motivo').value.trim(),

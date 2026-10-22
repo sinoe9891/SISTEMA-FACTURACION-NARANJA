@@ -732,6 +732,12 @@ require_once '../../includes/templates/header.php';
 	}
 
 	/* ── Submit con confirmación (motivo + credenciales) ─────────────────────── */
+    const camposEstadoMotivo = ['estado', 'pagada', 'estado_declarada', 'enviada_receptor', 'requiereSubsanacion'];
+    const leerEstadoMotivo = id => {
+        const campo = document.getElementById(id);
+        return !campo ? null : (campo.type === 'checkbox' ? (campo.checked ? 'Sí' : 'No') : campo.selectedOptions[0].textContent.trim());
+    };
+    const estadosInicialesMotivo = Object.fromEntries(camposEstadoMotivo.map(id => [id, leerEstadoMotivo(id)]));
 	document.getElementById('formEditar').addEventListener('submit', function(e) {
 		e.preventDefault();
 		Swal.fire({
@@ -743,6 +749,11 @@ require_once '../../includes/templates/header.php';
 			showCancelButton: true,
 			confirmButtonText: 'Confirmar',
 			confirmButtonColor: '#1e40af',
+            didOpen: () => {
+                const etiquetas = {estado:'Estado', pagada:'Pagada', estado_declarada:'Declarada', enviada_receptor:'Enviada', requiereSubsanacion:'Subsanación'};
+                const cambios = camposEstadoMotivo.filter(id => leerEstadoMotivo(id) !== estadosInicialesMotivo[id]).map(id => etiquetas[id] + ': ' + estadosInicialesMotivo[id] + ' → ' + leerEstadoMotivo(id));
+                document.getElementById('motivo').value = cambios.length ? 'Cambio de estado: ' + cambios.join('; ') + '.' : '';
+            },
 			preConfirm: () => {
 				const m = document.getElementById('motivo').value.trim();
 				const u = document.getElementById('usuario').value.trim();
