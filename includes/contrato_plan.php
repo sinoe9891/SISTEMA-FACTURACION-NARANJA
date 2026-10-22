@@ -64,12 +64,12 @@ function planLineas(PDO $pdo, int $cid, int $contratoId): array
         LEFT JOIN facturas f ON f.id = p.factura_id AND f.cliente_id = p.cliente_id
         LEFT JOIN contratos_anticipos a ON a.id = p.anticipo_id AND a.cliente_id = p.cliente_id
         WHERE p.cliente_id = ? AND p.contrato_id = ?
-        ORDER BY p.fecha, p.orden, p.id");
+        ORDER BY p.fecha IS NULL, p.fecha, p.orden, p.id");
     $st->execute([$cid, $contratoId]);
     $hoy = date('Y-m-d');
     $lineas = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $l) {
-        $l['estado'] = $l['fecha'] < $hoy ? 'vencido' : 'pendiente';
+        $l['estado'] = $l['fecha'] && $l['fecha'] < $hoy ? 'vencido' : 'pendiente';
         $l['cobro'] = '';
         $l['fecha_pago'] = null;
         $l['vinculado'] = false;
@@ -91,7 +91,7 @@ function planLineas(PDO $pdo, int $cid, int $contratoId): array
             $l['fecha_pago'] = $l['factura_fecha'];
             $l['vinculado'] = true;
         }
-        $l['dias'] = (int)((strtotime($hoy) - strtotime($l['fecha'])) / 86400);   // > 0 = días de atraso
+        $l['dias'] = $l['fecha'] ? (int)((strtotime($hoy) - strtotime($l['fecha'])) / 86400) : null;   // > 0 = días de atraso
         $lineas[] = $l;
     }
     return $lineas;
@@ -110,7 +110,7 @@ function planResumen(array $lineas): array
         else {
             $r['pendiente'] += (float)$l['total'];
             if ($l['estado'] === 'vencido') $r['vencido'] += (float)$l['total'];
-            elseif (!$r['proximo']) $r['proximo'] = $l;
+            elseif ($l['fecha'] && !$r['proximo']) $r['proximo'] = $l;
         }
     }
     foreach (['total', 'monto', 'isv', 'cobrado', 'facturado', 'pendiente', 'vencido'] as $k) $r[$k] = round($r[$k], 2);
@@ -136,7 +136,7 @@ function planGuardar(PDO $pdo, int $cid, int $contratoId, array $lineas, bool $c
         $monto = round((float)str_replace(',', '', (string)($l['monto'] ?? 0)), 2);
         $tipo = (string)($l['tipo'] ?? 'cuota');
         if ($concepto === '') throw new Exception("Línea $n: falta el concepto.");
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha) || !strtotime($fecha)) throw new Exception("Línea $n: fecha inválida.");
+        if ($fecha !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha) || !strtotime($fecha))) throw new Exception("Línea $n: fecha inválida.");
         if ($monto <= 0) throw new Exception("Línea $n: el monto debe ser mayor a 0.");
         if (!isset(PLAN_TIPOS[$tipo])) $tipo = 'otro';
         $id = (int)($l['id'] ?? 0);
@@ -144,6 +144,7 @@ function planGuardar(PDO $pdo, int $cid, int $contratoId, array $lineas, bool $c
         if ($id && $actuales[$id]['vinculado'] && abs((float)$actuales[$id]['monto'] - $monto) > 0.004)
             throw new Exception("Línea $n («{$actuales[$id]['concepto']}») ya está cobrada: no se puede cambiar su monto. Desvincula el cobro primero.");
         $isv = $id && $actuales[$id]['vinculado'] ? (float)$actuales[$id]['isv'] : ($conIsv ? round($monto * PLAN_ISV, 2) : 0.0);
+        $fecha = $fecha !== '' ? $fecha : null;
         $limpias[] = compact('id', 'tipo', 'concepto', 'fecha', 'monto', 'isv') + ['orden' => $n];
     }
     if (count($limpias) > 240) throw new Exception("El plan admite hasta 240 líneas.");
@@ -183,7 +184,7 @@ function planCobrarRecibo(PDO $pdo, int $cid, int $usuario, int $lineaId, array 
     [$recId] = reciboRegistrar($pdo, $cid, $usuario, (int)$l['contrato_id'], [
         'monto' => $l['total'], 'fecha_emision' => $fecha, 'descripcion' => $l['concepto'],
         'metodo_pago' => $d['metodo'] ?? 'transferencia', 'notas' => $d['notas'] ?? null,
-        'periodo_mes' => (int)substr($l['fecha'], 5, 2), 'periodo_anio' => (int)substr($l['fecha'], 0, 4),
+        'periodo_mes' => (int)substr($l['fecha'] ?: $fecha, 5, 2), 'periodo_anio' => (int)substr($l['fecha'] ?: $fecha, 0, 4),
         'cuenta_id' => $d['cuenta_id'] ?? 0,
     ]);
     $pdo->prepare("UPDATE contratos_plan SET recibo_id = ?, factura_id = NULL, anticipo_id = NULL WHERE id = ? AND cliente_id = ?")->execute([$recId, $lineaId, $cid]);
@@ -220,6 +221,9 @@ function planVincular(PDO $pdo, int $cid, int $lineaId, string $tipo, int $refId
     $st->execute([$cid, $refId, $lineaId]);
     if ($otra = $st->fetchColumn()) throw new Exception("Ese cobro ya está ligado a «{$otra}».");
     $pdo->prepare("UPDATE contratos_plan SET factura_id = NULL, recibo_id = NULL, anticipo_id = NULL, $col = ? WHERE id = ? AND cliente_id = ?")->execute([$refId, $lineaId, $cid]);
+    if ($tipo === 'factura' && !$l['fecha']) {
+        $pdo->prepare('UPDATE contratos_plan p JOIN facturas f ON f.id=p.factura_id AND f.cliente_id=p.cliente_id SET p.fecha=DATE(f.fecha_emision) WHERE p.id=? AND p.cliente_id=? AND p.fecha IS NULL')->execute([$lineaId,$cid]);
+    }
 }
 
 /** Quita el vínculo de cobro de una línea (el recibo, factura o anticipo no se borran). */
@@ -257,7 +261,7 @@ function planPendientesPorMes(PDO $pdo, int $cid): array
     $st->execute([$cid]);
     foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $contratoId) {
         foreach (planLineas($pdo, $cid, (int)$contratoId) as $l) {
-            if ($l['estado'] === 'pagado' || $l['estado'] === 'facturado') continue;
+            if (!$l['fecha'] || $l['estado'] === 'pagado' || $l['estado'] === 'facturado') continue;
             $k = (int)substr($l['fecha'], 0, 4) . '-' . (int)substr($l['fecha'], 5, 2);
             $out[$k][(int)$contratoId] = ($out[$k][(int)$contratoId] ?? 0) + (float)$l['monto'];
         }

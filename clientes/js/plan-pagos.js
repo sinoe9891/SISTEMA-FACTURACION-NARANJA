@@ -90,9 +90,9 @@ function PlanPagos(contenedor, opciones) {
             return `<tr data-i="${i}" class="${bloq ? 'table-success' : ''}">
               <td class="text-muted small">${i + 1}</td>
               <td><select class="form-select form-select-sm" data-c="tipo" ${bloq ? 'disabled' : ''}>${Object.entries(TIPOS).map(([k, v]) => `<option value="${k}" ${k === f.tipo ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
-              <td><input type="text" class="form-control form-control-sm" data-c="concepto" maxlength="300" value="${esc(f.concepto)}">${bloq ? `<div class="small text-success mt-1"><i class="bi bi-check-circle-fill"></i> Cobrada · ${esc(f.cobro)}</div>` : ''}</td>
-              <td><input type="date" class="form-control form-control-sm" data-c="fecha" value="${esc(f.fecha)}"></td>
-              <td><input type="text" inputmode="decimal" class="form-control form-control-sm text-end" data-c="monto" value="${f.monto ? f.monto.toFixed(2) : ''}" ${bloq ? 'readonly title="Ya cobrada: no se cambia el monto"' : ''}></td>
+              <td><input type="text" class="form-control form-control-sm" data-c="concepto" maxlength="300" value="${esc(f.concepto)}">${bloq ? `<div class="small text-success mt-1"><i class="bi bi-check-circle-fill"></i> Vinculada · ${esc(f.cobro)}</div>` : ''}</td>
+              <td><input type="date" class="form-control form-control-sm" data-c="fecha" value="${esc(f.fecha)}"><small class="text-muted">Vacía: fecha por definir</small></td>
+              <td><input type="text" inputmode="decimal" class="form-control form-control-sm text-end" data-c="monto" value="${f.monto ? f.monto.toFixed(2) : ''}" ${bloq ? 'readonly title="Documento vinculado: no se cambia el monto"' : ''}></td>
               <td class="text-end small text-muted">${isv ? isv.toLocaleString('es-HN', { minimumFractionDigits: 2 }) : '—'}</td>
               <td class="text-end fw-semibold">${r2(f.monto + isv).toLocaleString('es-HN', { minimumFractionDigits: 2 })}</td>
               <td>${bloq ? '' : '<button type="button" class="btn btn-link btn-sm text-danger p-0" data-c="quitar" title="Quitar"><i class="bi bi-x-lg"></i></button>'}</td></tr>`;
@@ -118,7 +118,7 @@ function PlanPagos(contenedor, opciones) {
     });
     $('agregar').addEventListener('click', () => {
         const ult = filas[filas.length - 1];
-        filas.push({ id: 0, tipo: 'cuota', concepto: $('concepto').value || '', fecha: ult ? sumarMeses(ult.fecha, +$('frec').value || 1) : $('fecha').value, monto: ult ? ult.monto : num($('cuota').value), vinculado: false, cobro: '' });
+        filas.push({ id: 0, tipo: 'cuota', concepto: $('concepto').value || '', fecha: ult && ult.fecha ? sumarMeses(ult.fecha, +$('frec').value || 1) : $('fecha').value, monto: ult ? ult.monto : num($('cuota').value), vinculado: false, cobro: '' });
         pintar();
     });
     $('isv').addEventListener('change', () => { conIsv = $('isv').checked; pintar(); });

@@ -115,7 +115,7 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
             foreach (planLineas($pdo, $cid, $ctId) as $l) {
                 if (!in_array((int)$l['id'], $sel, true)) continue;
                 $total += (float)$l['total'];
-                $txt = $b($fecha($l['fecha'])) . ' — ' . $h($l['concepto']) . ': ' . $b('L ' . number_format((float)$l['total'], 2));
+                $txt = $b($l['fecha'] ? $fecha($l['fecha']) : 'Fecha por definir') . ' — ' . $h($l['concepto']) . ': ' . $b('L ' . number_format((float)$l['total'], 2));
                 if ($l['estado'] === 'vencido') $vencidos[] = '- ' . $txt . ' (vencido)';
                 else $proximos[] = '- ' . $txt . ($l['estado'] === 'pagado' ? ' (pagado, gracias)' : '');
             }

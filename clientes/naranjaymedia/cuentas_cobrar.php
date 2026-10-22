@@ -42,7 +42,7 @@ if ($cid && planDisponible($pdo)) {
     $stPc->execute([$cid, $cid]);
     foreach ($stPc->fetchAll(PDO::FETCH_ASSOC) as $ct) {
         foreach (planLineas($pdo, (int)$cid, (int)$ct['id']) as $l) {
-            if (!in_array($l['estado'], ['vencido', 'pendiente'], true) || $l['dias'] < -30) continue;
+            if (!$l['fecha'] || !in_array($l['estado'], ['vencido', 'pendiente'], true) || $l['dias'] < -30) continue;
             $planCobrar[] = $l + ['receptor' => $ct['receptor'], 'receptor_id' => (int)$ct['receptor_id'], 'contrato' => $ct['nombre_contrato'], 'con_recibo' => $ct['tipo_contrato'] === 'sin_factura'];
         }
     }

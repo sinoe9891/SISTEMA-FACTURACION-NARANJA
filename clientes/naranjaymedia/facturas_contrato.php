@@ -937,11 +937,12 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
     <?php if ($hayPlan): ?>
         <?php
         $MESC = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-        $fCorta = fn($f) => (int)substr($f, 8, 2) . ' ' . $MESC[(int)substr($f, 5, 2)] . ' ' . substr($f, 0, 4);
+        $fCorta = fn($f) => !$f ? 'Fecha por definir' : (int)substr($f, 8, 2) . ' ' . $MESC[(int)substr($f, 5, 2)] . ' ' . substr($f, 0, 4);
         // Semáforo: verde pagado, azul facturado por cobrar, rojo vencido, naranja ≤ 3 días, amarillo ≤ 10 días, gris más adelante
         $semaforo = function (array $l) use ($fCorta) {
             if ($l['estado'] === 'pagado') return ['#dcfce7', '#166534', 'bi-check-circle-fill', 'Pagado' . ($l['fecha_pago'] ? ' ' . $fCorta($l['fecha_pago']) : '')];
             if ($l['estado'] === 'facturado') return ['#dbeafe', '#1e40af', 'bi-receipt', 'Facturado, por cobrar'];
+            if (!$l['fecha']) return ['#f1f5f9', '#475569', 'bi-calendar', 'Fecha por definir'];
             $d = (int)$l['dias'];
             if ($d > 0) return ['#fee2e2', '#991b1b', 'bi-exclamation-octagon-fill', 'Vencido hace ' . $d . ' día' . ($d > 1 ? 's' : '')];
             if ($d === 0) return ['#ffedd5', '#9a3412', 'bi-alarm-fill', 'Vence hoy'];
@@ -981,7 +982,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                             <?php foreach ($plan as $i => $l): [$bg, $fg, $ico, $txt] = $semaforo($l); ?>
                                 <tr>
                                     <td class="app-n"><?= $i + 1 ?></td>
-                                    <td class="text-nowrap fw-semibold" data-sort="<?= htmlspecialchars($l['fecha']) ?>"><?= $fCorta($l['fecha']) ?></td>
+                                    <td class="text-nowrap fw-semibold" data-sort="<?= htmlspecialchars($l['fecha'] ?? '') ?>"><?= $fCorta($l['fecha']) ?></td>
                                     <td><?= htmlspecialchars($l['concepto']) ?><?= $l['tipo'] !== 'cuota' && stripos($l['concepto'], PLAN_TIPOS[$l['tipo']]) !== 0 ? ' <span class="badge" style="background:#f1f5f9;color:#475569">' . PLAN_TIPOS[$l['tipo']] . '</span>' : '' ?>
                                         <?php if ($l['cobro']): ?><div class="small text-muted"><?= htmlspecialchars($l['cobro']) ?></div><?php endif; ?></td>
                                     <td class="text-end text-nowrap">L <?= number_format((float)$l['monto'], 2) ?></td>

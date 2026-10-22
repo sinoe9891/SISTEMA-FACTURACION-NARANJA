@@ -773,7 +773,7 @@ try {
 			$stCp->execute([$cliente_id]);
 			foreach ($stCp->fetchAll(PDO::FETCH_ASSOC) as $ct) {
 				foreach (planLineas($pdo, (int)$cliente_id, (int)$ct['id']) as $l) {
-					if (!in_array($l['estado'], ['pendiente', 'vencido', 'facturado'], true) || -$l['dias'] > 45) continue;
+					if (!$l['fecha'] || !in_array($l['estado'], ['pendiente', 'vencido', 'facturado'], true) || -$l['dias'] > 45) continue;
 					$planFilas[] = $ct + [
 						'servicio_nombre' => $l['concepto'], 'monto' => $l['total'], 'proxima_fecha_pago' => $l['fecha'],
 						'dias_para_pago' => -(int)$l['dias'], 'dias_restantes' => $ct['fecha_fin'] ? (int)((strtotime($ct['fecha_fin']) - strtotime(date('Y-m-d'))) / 86400) : null,

@@ -82,7 +82,7 @@ foreach ($contratos as &$c) {
         if ($l['estado'] === 'pagado') { $pl['pagados']++; continue; }
         if ($l['estado'] === 'facturado') continue;   // ya es factura: la cuenta la columna de cobro
         if ($l['estado'] === 'vencido') { $pl['venc_n']++; $pl['venc_total'] += (float)$l['total']; $pl['venc_dias'] = max($pl['venc_dias'], (int)$l['dias']); }
-        if (!$pl['prox']) $pl['prox'] = $l;   // el primero sin cobrar (puede estar vencido)
+        if ($l['fecha'] && !$pl['prox']) $pl['prox'] = $l;   // el primero sin cobrar (puede estar vencido)
     }
     $c['plan'] = $pl;
     if ($pl['prox']) {
