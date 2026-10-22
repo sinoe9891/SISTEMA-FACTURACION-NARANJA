@@ -40,7 +40,7 @@ function PlanPagos(contenedor, opciones) {
     let conIsv = o.conFactura ? (o.lineas.length ? o.lineas.some(l => num(l.isv) > 0) : true) : false;
 
     raiz.innerHTML = `
-      <div class="pp-calc border rounded p-3 mb-3" style="background:#f8fafc">
+      <div class="pp-calc border rounded p-3 mb-3" style="background:#f8fafc" ${o.lineas.length ? 'hidden' : ''}>
         <div class="fw-semibold mb-2"><i class="bi bi-calculator me-1"></i>Calcular el plan</div>
         <div class="row g-2 align-items-end">
           <div class="col-6 col-md-3"><label class="form-label small mb-1">Total del contrato <span class="text-muted">(sin ISV)</span></label>
