@@ -23,11 +23,18 @@ $filtros = ['tarjeta_cliente'=>mb_substr(trim((string)($_GET['tarjeta_cliente'] 
 
 $permitidos = $tipos = $clientes = $cuentasTodas = $lista = $tarjetas = $categorias = $responsables = [];
 $porRevisar = 0;
+$tarjetasCliente = [];
 if ($instalado) {
     $permitidos = gastosOpPermitidos($pdo, $uid, USUARIO_ROL);
     $tipos = gastosOpTipos($pdo, $cid);
     if ($pautaCliente) $tipos = array_values(array_filter($tipos, fn($t) => (int)$t['es_pauta']));
     $clientes = gastosOpCuentas($pdo, $cid, $permitidos);   // cuentas: cliente directo, programa o contrato rotativo
+    if ($pautaCliente) {
+        $st = $pdo->prepare('SELECT receptor_id, nombre, ultimos FROM tarjetas_pauta_clientes WHERE cliente_id = ? ORDER BY nombre');
+        $st->execute([$cid]);
+        $receptoresPermitidos = array_column($clientes, 'receptor_id');
+        $tarjetasCliente = array_values(array_filter($st->fetchAll(PDO::FETCH_ASSOC), fn($t) => in_array((int)$t['receptor_id'], array_map('intval', $receptoresPermitidos), true)));
+    }
     $lista = gastosOpLista($pdo, $cid, $permitidos, $filtros);
     $st = $pdo->prepare("SELECT id, banco, tipo, ultimos_digitos FROM tarjetas WHERE cliente_id = ? AND activa = 1 ORDER BY banco, ultimos_digitos");
     $st->execute([$cid]);
@@ -196,7 +203,7 @@ require_once '../../includes/templates/header.php';
             <fieldset id="gCampos"><div class="row g-2">
                 <div class="col-md-6"><label class="form-label">Cliente, programa o contrato *</label><select name="cuenta" class="form-select" required><option value="">— Elegir —</option>
                     <?php foreach (array_intersect(['Programas', 'Contratos con varias empresas', 'Clientes'], array_column($clientes, 'grupo')) as $gr): ?><optgroup label="<?= $e($gr) ?>">
-                        <?php foreach ($clientes as $c): if ($c['grupo'] !== $gr) continue; ?><option value="<?= $c['clave'] ?>" data-empresas="<?= $e($c['empresas'] ?? '') ?>"><?= $e($c['nombre']) ?></option><?php endforeach; ?></optgroup><?php endforeach; ?></select></div>
+                        <?php foreach ($clientes as $c): if ($c['grupo'] !== $gr) continue; ?><option value="<?= $c['clave'] ?>" data-receptor="<?= (int)$c['receptor_id'] ?>" data-empresas="<?= $e($c['empresas'] ?? '') ?>"><?= $e($c['nombre']) ?></option><?php endforeach; ?></optgroup><?php endforeach; ?></select></div>
                 <div class="col-md-6"><label class="form-label"><?= $pautaCliente ? 'Plataforma *' : 'Tipo de gasto *' ?></label><select name="tipo_id" class="form-select" required data-buscar><option value="">— Buscar o elegir —</option>
                     <?php foreach ($tipos as $t): if (!(int)$t['activo']) continue; ?><option value="<?= (int)$t['id'] ?>" data-pauta="<?= (int)$t['es_pauta'] ?>"><?= $e($t['nombre']) ?></option><?php endforeach; ?>
                     <option value="__nuevo__">➕ Agregar tipo nuevo…</option></select></div>
@@ -224,6 +231,7 @@ require_once '../../includes/templates/header.php';
 </div></div></div>
 <?php endif; ?>
 <?php if ($pautaCliente): ?>
+<div class="col-12"><label class="form-label" for="gTarjetaGuardada">Tarjeta guardada del cliente</label><select class="form-select" id="gTarjetaGuardada"><option value="">— Escribir otra tarjeta —</option></select><div class="form-text">Selecciona una referencia guardada para completar el nombre y los últimos cuatro dígitos de esta campaña.</div></div>
 <input type="hidden" name="metodo_pago" value="tarjeta"><input type="hidden" name="tarjeta_id" value="">
 <div class="col-md-8"><label class="form-label">Tarjeta del cliente · nombre de referencia *</label><input class="form-control" name="tarjeta_cliente_alias" maxlength="80" placeholder="Ej.: BAC · tarjeta de publicidad" required></div>
 <div class="col-md-4"><label class="form-label">Últimos 4 dígitos *</label><input class="form-control" name="tarjeta_cliente_ultimos" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required></div>
@@ -375,6 +383,27 @@ require_once '../../includes/templates/header.php';
     // ── Registrar / ver / editar ──
     const m = new bootstrap.Modal(document.getElementById('mGasto')), fg = document.getElementById('fGasto');
     const campos = document.getElementById('gCampos'), arch = document.getElementById('gArchivos');
+    const tarjetasCliente = <?= json_encode($tarjetasCliente, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    const tarjetaGuardada = document.getElementById('gTarjetaGuardada');
+    const actualizarTarjetas = () => {
+        if (!tarjetaGuardada) return;
+        tarjetaGuardada.replaceChildren(new Option('— Escribir otra tarjeta —', ''));
+        const receptor = fg.cuenta.selectedOptions[0]?.dataset.receptor;
+        tarjetasCliente.forEach((t, i) => {
+            if (String(t.receptor_id) !== receptor) return;
+            const o = new Option(t.nombre + ' •••• ' + t.ultimos, String(i));
+            o.selected = fg.tarjeta_cliente_alias.value === t.nombre && fg.tarjeta_cliente_ultimos.value === t.ultimos;
+            tarjetaGuardada.add(o);
+        });
+    };
+    tarjetaGuardada?.addEventListener('change', () => {
+        const t = tarjetaGuardada.value === '' ? null : tarjetasCliente[+tarjetaGuardada.value];
+        fg.tarjeta_cliente_alias.value = t?.nombre || '';
+        fg.tarjeta_cliente_ultimos.value = t?.ultimos || '';
+    });
+    fg.cuenta.addEventListener('change', () => {
+        if (tarjetaGuardada) { fg.tarjeta_cliente_alias.value = ''; fg.tarjeta_cliente_ultimos.value = ''; actualizarTarjetas(); }
+    });
     const pintar = () => {
         const oc = fg.cuenta.selectedOptions[0], emp = oc?.dataset.empresas || '';
         fg.querySelector('.g-empresas').hidden = !emp;
@@ -455,7 +484,7 @@ require_once '../../includes/templates/header.php';
         }
         campos.disabled = !editable;
         document.getElementById('gGuardar').innerHTML = editable ? '<i class="bi bi-floppy me-1"></i> Guardar' : '<i class="bi bi-upload me-1"></i> Subir archivos';
-        pintar(); m.show();
+        actualizarTarjetas(); pintar(); m.show();
     };
     document.getElementById('goNuevo')?.addEventListener('click', () => abrir(0));
     document.addEventListener('click', e => { const b = e.target.closest('.go-ver'); if (b) { e.preventDefault(); abrir(+b.dataset.id); } });
