@@ -119,3 +119,28 @@ suite('Gastos operativos: tipo y proveedor con búsqueda y alta rápida; aviso a
     $pdo->exec("DELETE FROM proveedores WHERE id = $prov");
     $pdo->exec("DELETE FROM usuarios_clientes WHERE usuario_id = $oid");
 });
+
+suite('Contactos: una persona, varios programas o contratos', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $rid = 1;
+    $pdo->exec("DELETE FROM clientes_factura_contactos WHERE receptor_id = $rid AND email LIKE '%@alcance.test'");
+    $r = $c->post('includes/programa_accion.php', ['accion' => 'guardar', 'receptor_id' => $rid, 'nombre' => 'QA Prog contacto ' . time()]);
+    $pid = (int)($r['json']['id'] ?? 0);
+    $ks = array_map('intval', $pdo->query("SELECT id FROM contratos WHERE cliente_id = 2 AND receptor_id = $rid ORDER BY id LIMIT 2")->fetchAll(PDO::FETCH_COLUMN));
+    $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'Mavi QA', 'email' => 'mavi@alcance.test', 'copiar_cobros' => 1,
+        'alcance[0]' => "p:$pid", 'alcance[1]' => 'k:' . ($ks[0] ?? 0)]);
+    $m = array_values(array_filter($r['json']['contactos'] ?? [], fn($x) => $x['email'] === 'mavi@alcance.test'));
+    check('una sola persona con un programa y un contrato', count($m) === 1 && count($m[0]['alcance']) === 2 && in_array("p:$pid", array_column($m[0]['alcance'], 'clave'), true), $r['body']);
+    check('la ficha ofrece los programas para marcar', count($r['json']['programas'] ?? []) >= 1);
+    $x = $c->get('cobro_accion.php', ['facturas' => $rid]);
+    $m2 = array_values(array_filter($x['json']['contactos'] ?? [], fn($y) => $y['email'] === 'mavi@alcance.test'));
+    check('el cobro sabe sus programas y contratos', in_array($pid, $m2[0]['programas'] ?? [], true) && in_array($ks[0] ?? -1, $m2[0]['contratos'] ?? [], true) && isset($x['json']['contrato_programa']), substr($x['body'], 0, 200));
+    $id = (int)$m[0]['id'];
+    $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'id' => $id, 'nombre' => 'Mavi QA', 'email' => 'mavi@alcance.test', 'copiar_cobros' => 1]);
+    $m = array_values(array_filter($r['json']['contactos'] ?? [], fn($x) => $x['email'] === 'mavi@alcance.test'));
+    check('sin marcar nada vuelve a «todos los cobros»', $m && !$m[0]['alcance'], $r['body']);
+    $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'eliminar', 'id' => $id]);
+    check('al eliminarlo se borra su alcance', !(int)$pdo->query("SELECT COUNT(*) FROM clientes_factura_contactos_alcance WHERE contacto_id = $id")->fetchColumn());
+    $pdo->exec("DELETE FROM programas WHERE id = $pid");
+});

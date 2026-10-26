@@ -486,13 +486,19 @@ require_once '../../includes/templates/header.php';
     // Si el usuario escribe en el campo, ya no se reemplaza automáticamente.
     // Los correos de Configuración (Responder a / Copia oculta) ya reciben copia oculta automática en días hábiles: no van en CC
     const ccBase = [];
-    let contactos = [], ccManual = false;
+    let contactos = [], ctProg = {}, ccManual = false;
     const $cc = document.getElementById('cCc');
     $cc?.addEventListener('input', () => ccManual = true);
     function llenarCc() {
         if (ccManual) return;
-        const ks = new Set([...$tb.querySelectorAll('input[type=checkbox]:checked')].map(i => i.dataset.contrato).filter(Boolean));
-        const correos = [...ccBase, ...contactos.filter(c => !c.contrato_id || ks.has(String(c.contrato_id))).map(c => c.email)];
+        const marcadas = [...$tb.querySelectorAll('input[type=checkbox]:checked')];
+        const ks = new Set(marcadas.map(i => i.dataset.contrato).filter(Boolean));
+        // Programas de lo marcado: el de la factura o el de su contrato
+        const ps = new Set([...marcadas.map(i => i.dataset.programa), ...[...ks].map(k => ctProg[k])].filter(Boolean).map(String));
+        const va = c => (!(c.programas || []).length && !(c.contratos || []).length && !c.contrato_id)
+            || (c.contratos || []).some(k => ks.has(String(k))) || (c.programas || []).some(p => ps.has(String(p)))
+            || (!c.contratos && c.contrato_id && ks.has(String(c.contrato_id)));
+        const correos = [...ccBase, ...contactos.filter(va).map(c => c.email)];
         $cc.value = [...new Set(correos.map(c => c.trim().toLowerCase()).filter(Boolean))].join(', ');
     }
     if (form) llenarCc();
@@ -508,9 +514,10 @@ require_once '../../includes/templates/header.php';
             const d = await fetch('cobro_accion.php?facturas=' + $cli.value).then(leer);
             if (d.cliente.email && !document.getElementById('cPara').value) document.getElementById('cPara').value = d.cliente.email;
             contactos = d.contactos || [];
+            ctProg = d.contrato_programa || {};
             ccManual = false;
             $tb.innerHTML = d.facturas.length ? d.facturas.map(f => `<tr>
-                <td><input class="form-check-input" type="checkbox" name="factura_ids[]" value="${f.id}" data-saldo="${f.saldo}" data-contrato="${f.contrato_id || ''}" ${marcarInicial(f) ? 'checked' : ''}></td>
+                <td><input class="form-check-input" type="checkbox" name="factura_ids[]" value="${f.id}" data-saldo="${f.saldo}" data-contrato="${f.contrato_id || ''}" data-programa="${f.programa_id || ''}" ${marcarInicial(f) ? 'checked' : ''}></td>
                 <td class="font-monospace small text-nowrap"><a href="ver_factura?id=${f.id}" target="_blank">${esc(f.correlativo)}</a>
                     <div style="font-size:.68rem">${+f.enviada ? '<span class="text-muted">Ya enviada</span>' : '<span class="badge rounded-pill" style="background:#dbeafe;color:#1e40af">Nueva</span>'}</div></td>
                 <td class="small">${meses[f.pm]} ${f.pa}</td><td class="small text-nowrap">${f.fecha.split('-').reverse().join('/')}</td>

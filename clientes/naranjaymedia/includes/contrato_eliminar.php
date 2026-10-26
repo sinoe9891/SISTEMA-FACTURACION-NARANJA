@@ -77,6 +77,8 @@ try {
     } else {
         $pdo->prepare("UPDATE facturas SET contrato_id = NULL WHERE contrato_id IN ($in) AND cliente_id = ?")->execute([...$ids, $cid]);
         $pdo->prepare("UPDATE clientes_factura_contactos SET contrato_id = NULL WHERE contrato_id IN ($in)")->execute($ids);
+        if ($pdo->query("SHOW TABLES LIKE 'clientes_factura_contactos_alcance'")->fetchColumn())
+            $pdo->prepare("DELETE FROM clientes_factura_contactos_alcance WHERE contrato_id IN ($in)")->execute($ids);
     }
     foreach (['contratos_plan', 'contratos_servicios', 'contratos_clientes_rotativos'] as $t)
         $pdo->prepare("DELETE FROM $t WHERE contrato_id IN ($in)")->execute($ids);

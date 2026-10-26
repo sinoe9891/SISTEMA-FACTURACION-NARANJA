@@ -693,10 +693,10 @@ if ($establecimiento_activo) {
 			<button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="ccNuevo"><i class="bi bi-plus-lg"></i> Agregar contacto</button>
 		</div>
 		<div class="cf-form-body">
-			<p class="text-muted small mb-3">Personas del cliente que reciben los cobros. Las marcadas con <i class="bi bi-envelope-check text-success"></i> se agregan automáticamente en copia (CC) al enviar un cobro por correo; el destinatario principal sigue siendo el correo del cliente. Si el cliente factura varios proyectos con el mismo nombre (p. ej. Aldea Global), asigna cada contacto a su proyecto: solo irá en copia de las facturas de ese contrato. Sin proyecto = va en copia de todos los cobros.</p>
+			<p class="text-muted small mb-3">Personas del cliente que reciben los cobros. Las marcadas con <i class="bi bi-envelope-check text-success"></i> se agregan automáticamente en copia (CC) al enviar un cobro por correo; el destinatario principal sigue siendo el correo del cliente. Registra a cada persona una sola vez y marca en qué cobros va en copia: todos, o solo los de uno o varios programas (p. ej. PROGRESE) o contratos.</p>
 			<div class="table-responsive">
 				<table class="table table-sm align-middle mb-0">
-					<thead><tr><th>Nombre</th><th>Proyecto / contrato</th><th>Cargo</th><th>Correo</th><th>Teléfono</th><th class="text-center">Copiar en cobros</th><th></th></tr></thead>
+					<thead><tr><th>Nombre</th><th>Va en copia de</th><th>Cargo</th><th>Correo</th><th>Teléfono</th><th class="text-center">Copiar en cobros</th><th></th></tr></thead>
 					<tbody id="ccFilas"><tr><td colspan="7" class="text-muted text-center py-3">Cargando…</td></tr></tbody>
 				</table>
 			</div>
@@ -799,7 +799,7 @@ if ($establecimiento_activo) {
 		const URL_CC = 'includes/cliente_contactos.php', RID = <?= (int)$cliente['id'] ?>;
 		const $filas = document.getElementById('ccFilas');
 		const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-		let lista = [], contratos = [];
+		let lista = [], contratos = [], programas = [];
 
 		async function pedir(datos) {
 			const r = await fetch(datos ? URL_CC : `${URL_CC}?receptor_id=${RID}`, datos ? {method: 'POST', body: datos} : {});
@@ -808,13 +808,14 @@ if ($establecimiento_activo) {
 			if (!j.success) throw new Error(j.error || 'No se pudo completar.');
 			lista = j.contactos;
 			contratos = j.contratos || [];
+			programas = j.programas || [];
 			pintar();
 		}
 
 		function pintar() {
 			$filas.innerHTML = lista.length ? lista.map(c => `<tr>
 				<td class="fw-semibold">${esc(c.nombre)}</td>
-				<td>${c.proyecto ? `<span class="badge text-bg-light border"><i class="bi bi-folder2 me-1"></i>${esc(c.proyecto)}</span>` : '<span class="text-muted small">Todos los cobros</span>'}</td><td>${esc(c.cargo) || '<span class="text-muted">—</span>'}</td>
+				<td>${c.alcance.length ? c.alcance.map(a => `<span class="badge text-bg-light border fw-normal me-1 mb-1"><i class="bi bi-${a.tipo === 'programa' ? 'diagram-3' : 'folder2'} me-1"></i>${esc(a.nombre)}</span>`).join('') : '<span class="text-muted small">Todos los cobros</span>'}</td><td>${esc(c.cargo) || '<span class="text-muted">—</span>'}</td>
 				<td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '<span class="text-muted">—</span>'}</td>
 				<td>${esc(c.telefono) || '<span class="text-muted">—</span>'}</td>
 				<td class="text-center">${+c.copiar_cobros && c.email ? '<i class="bi bi-envelope-check text-success" title="Va en copia de los cobros"></i>' : '<span class="text-muted">—</span>'}</td>
@@ -830,26 +831,40 @@ if ($establecimiento_activo) {
 				title: c.id ? 'Editar contacto' : 'Nuevo contacto',
 				html: `<div class="text-start">
 					<label class="form-label small mb-1">Nombre *</label><input id="ccN" class="form-control mb-2" maxlength="120" value="${esc(c.nombre)}">
-					<label class="form-label small mb-1">Proyecto / contrato</label>
-					<select id="ccP" class="form-select mb-2"><option value="">— Todos los cobros del cliente —</option>${contratos.map(k => `<option value="${k.id}" ${k.id == c.contrato_id ? 'selected' : ''}>${esc(k.nombre_contrato)}${k.estado !== 'activo' ? ' (' + esc(k.estado) + ')' : ''}</option>`).join('')}</select>
+					<label class="form-label small mb-1">¿En copia de qué cobros?</label>
+					<div class="border rounded-2 p-2 mb-2" style="max-height:220px;overflow:auto">
+						<div class="form-check"><input class="form-check-input" type="checkbox" id="ccTodos" ${(c.alcance || []).length ? '' : 'checked'}><label class="form-check-label fw-semibold" for="ccTodos">Todos los cobros del cliente</label></div>
+						<div id="ccAlc">
+						${programas.length ? '<div class="small text-muted mt-2">Programas <span class="fw-normal">(todas sus facturas y contratos)</span></div>' : ''}
+						${programas.filter(p => p.activo || (c.alcance || []).some(a => a.clave === 'p:' + p.id)).map(p => `<div class="form-check"><input class="form-check-input cc-alc" type="checkbox" value="p:${p.id}" id="ccA_p${p.id}" ${(c.alcance || []).some(a => a.clave === 'p:' + p.id) ? 'checked' : ''}><label class="form-check-label" for="ccA_p${p.id}"><i class="bi bi-diagram-3 me-1"></i>${esc(p.nombre)}</label></div>`).join('')}
+						${contratos.length ? '<div class="small text-muted mt-2">Contratos</div>' : ''}
+						${contratos.map(k => `<div class="form-check"><input class="form-check-input cc-alc" type="checkbox" value="k:${k.id}" id="ccA_k${k.id}" ${(c.alcance || []).some(a => a.clave === 'k:' + k.id) ? 'checked' : ''}><label class="form-check-label" for="ccA_k${k.id}">${esc(k.nombre_contrato)}${k.estado !== 'activo' ? ' <span class="text-muted">(' + esc(k.estado) + ')</span>' : ''}${k.programa_id && programas.some(p => p.id == k.programa_id) ? ' <span class="text-muted small">· ' + esc(programas.find(p => p.id == k.programa_id).nombre) + '</span>' : ''}</label></div>`).join('')}
+						</div>
+					</div>
 					<label class="form-label small mb-1">Cargo</label><input id="ccC" class="form-control mb-2" maxlength="100" placeholder="Ej: Contabilidad" value="${esc(c.cargo)}">
 					<label class="form-label small mb-1">Correo</label><input id="ccE" type="email" class="form-control mb-2" maxlength="150" value="${esc(c.email)}">
 					<label class="form-label small mb-1">Teléfono</label><input id="ccT" class="form-control mb-2" maxlength="40" value="${esc(c.telefono)}">
 					<div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="ccK" ${c.id && !+c.copiar_cobros ? '' : 'checked'}>
 					<label class="form-check-label" for="ccK">Copiar en los cobros por correo</label></div></div>`,
 				showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', focusConfirm: false,
+				didOpen: () => {
+					// «Todos» y los programas/contratos se excluyen: marcar uno quita el otro
+					const todos = document.getElementById('ccTodos'), alc = [...document.querySelectorAll('.cc-alc')];
+					todos.addEventListener('change', () => { if (todos.checked) alc.forEach(x => x.checked = false); });
+					alc.forEach(x => x.addEventListener('change', () => { todos.checked = !alc.some(y => y.checked); }));
+				},
 				preConfirm: () => {
 					const n = document.getElementById('ccN').value.trim(), e = document.getElementById('ccE').value.trim();
 					if (!n) return Swal.showValidationMessage('Escribe el nombre.');
 					if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return Swal.showValidationMessage('Correo inválido.');
-					return {nombre: n, contrato_id: document.getElementById('ccP').value, cargo: document.getElementById('ccC').value.trim(), email: e,
+					return {nombre: n, alcance: [...document.querySelectorAll('.cc-alc:checked')].map(x => x.value), cargo: document.getElementById('ccC').value.trim(), email: e,
 						telefono: document.getElementById('ccT').value.trim(), copiar_cobros: document.getElementById('ccK').checked ? '1' : ''};
 				}
 			});
 			if (!v) return;
 			const fd = new FormData();
 			fd.append('receptor_id', RID); fd.append('accion', 'guardar'); if (c.id) fd.append('id', c.id);
-			Object.entries(v).forEach(([k, x]) => fd.append(k, x));
+			Object.entries(v).forEach(([k, x]) => Array.isArray(x) ? x.forEach(y => fd.append(k + '[]', y)) : fd.append(k, x));
 			try { await pedir(fd); Swal.fire({icon: 'success', title: 'Contacto guardado', timer: 1200, showConfirmButton: false}); }
 			catch (e) { Swal.fire('Error', e.message, 'error'); }
 		}

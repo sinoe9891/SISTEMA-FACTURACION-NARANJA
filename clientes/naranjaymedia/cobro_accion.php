@@ -81,7 +81,7 @@ try {
         if (!$cli) throw new Exception("Cliente no encontrado.");
         $hayCxc = cxcDisponible($pdo);
         $st = $pdo->prepare("
-            SELECT f.id, f.correlativo, f.contrato_id, DATE(f.fecha_emision) AS fecha, f.total, f.pagada, f.enviada_receptor AS enviada,
+            SELECT f.id, f.correlativo, f.contrato_id, " . ($pdo->query("SHOW COLUMNS FROM facturas LIKE 'programa_id'")->fetchColumn() ? "f.programa_id" : "NULL AS programa_id") . ", DATE(f.fecha_emision) AS fecha, f.total, f.pagada, f.enviada_receptor AS enviada,
                    COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) AS pm, COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) AS pa,
                    " . ($hayCxc ? "COALESCE((SELECT SUM(c.monto) FROM cobros_factura c WHERE c.factura_id = f.id AND c.anulado = 0), 0)" : "0") . " AS abonado
             FROM facturas f
@@ -100,6 +100,24 @@ try {
             $st = $pdo->prepare("SELECT nombre, email, contrato_id FROM clientes_factura_contactos WHERE cliente_id = ? AND receptor_id = ? AND copiar_cobros = 1 AND email IS NOT NULL AND email <> '' ORDER BY nombre");
             $st->execute([$cid, $rid]);
             $contactos = array_values(array_filter($st->fetchAll(PDO::FETCH_ASSOC), fn($c) => strcasecmp($c['email'], (string)$cli['email']) !== 0));
+            // Alcance: programas y contratos marcados en el contacto (sin ninguno = todos los cobros)
+            $conAlc = (bool)$pdo->query("SHOW TABLES LIKE 'clientes_factura_contactos_alcance'")->fetchColumn();
+            $stA = $conAlc ? $pdo->prepare("SELECT a.programa_id, a.contrato_id FROM clientes_factura_contactos_alcance a JOIN clientes_factura_contactos k ON k.id = a.contacto_id WHERE k.email = ? AND k.cliente_id = ? AND k.receptor_id = ?") : null;
+            foreach ($contactos as &$k) {
+                $k['programas'] = $k['contratos'] = [];
+                if ($stA) {
+                    $stA->execute([$k['email'], $cid, $rid]);
+                    foreach ($stA->fetchAll(PDO::FETCH_ASSOC) as $a) { if ($a['programa_id']) $k['programas'][] = (int)$a['programa_id']; if ($a['contrato_id']) $k['contratos'][] = (int)$a['contrato_id']; }
+                } elseif ($k['contrato_id']) $k['contratos'][] = (int)$k['contrato_id'];
+            }
+            unset($k);
+        }
+        // Programa de cada contrato del cliente (un contacto de PROGRESE va en copia de los recibos y pagos de sus contratos)
+        $contratoPrograma = [];
+        if ($pdo->query("SHOW COLUMNS FROM contratos LIKE 'programa_id'")->fetchColumn()) {
+            $st = $pdo->prepare("SELECT id, programa_id FROM contratos WHERE cliente_id = ? AND receptor_id = ? AND programa_id IS NOT NULL");
+            $st->execute([$cid, $rid]);
+            $contratoPrograma = array_map('intval', $st->fetchAll(PDO::FETCH_KEY_PAIR));
         }
         // Recibos (contratos sin factura) y pagos del plan aún no cobrados, de los contratos de este cliente
         $recibos = $plan = [];
@@ -132,7 +150,7 @@ try {
             [$bg, $fg, $txt] = docSemaforo($d);
             return ['id' => (int)$d['id'], 'nombre' => $d['nombre'], 'vence' => $d['fecha_vencimiento'], 'estado' => $d['estado'], 'defecto' => (int)$d['adjuntar_por_defecto'], 'bg' => $bg, 'fg' => $fg, 'txt' => $txt];
         }, docsLista($pdo, $cid));
-        echo json_encode(['success' => true, 'cliente' => $cli, 'facturas' => $facturas, 'recibos' => $recibos, 'plan' => $plan, 'contactos' => $contactos, 'documentos' => $documentos], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['success' => true, 'cliente' => $cli, 'facturas' => $facturas, 'recibos' => $recibos, 'plan' => $plan, 'contactos' => $contactos, 'contrato_programa' => (object)$contratoPrograma, 'documentos' => $documentos], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

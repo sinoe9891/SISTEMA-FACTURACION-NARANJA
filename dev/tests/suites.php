@@ -1410,15 +1410,17 @@ suite('Contactos del cliente', function () {
     check('el cobro trae en copia solo los contactos marcados', in_array('ana@contacto.test', $cc, true) && !in_array('luis@contacto.test', $cc, true), json_encode($cc));
     $k = (int)$pdo->query("SELECT id FROM contratos WHERE cliente_id = 2 AND receptor_id = $rid LIMIT 1")->fetchColumn();
     if ($k) {
-        $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'Proyecto QA', 'email' => 'proy@contacto.test', 'copiar_cobros' => 1, 'contrato_id' => $k]);
+        $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'Proyecto QA', 'email' => 'proy@contacto.test', 'copiar_cobros' => 1, 'alcance[0]' => "k:$k"]);
         $p = array_values(array_filter($r['json']['contactos'] ?? [], fn($x) => $x['email'] === 'proy@contacto.test'));
-        check('asigna un contacto a un proyecto/contrato', ($p[0]['contrato_id'] ?? 0) == $k && ($p[0]['proyecto'] ?? '') !== '' && count($r['json']['contratos'] ?? []) > 0, $r['body']);
+        check('asigna un contacto a un proyecto/contrato', ($p[0]['alcance'][0]['clave'] ?? '') === "k:$k" && ($p[0]['alcance'][0]['nombre'] ?? '') !== '' && count($r['json']['contratos'] ?? []) > 0, $r['body']);
         $r = $c->get('cobro_accion.php', ['facturas' => $rid]);
         $p = array_values(array_filter($r['json']['contactos'] ?? [], fn($x) => $x['email'] === 'proy@contacto.test'));
-        check('el cobro indica el contrato del contacto y de cada factura', ($p[0]['contrato_id'] ?? 0) == $k && array_key_exists('contrato_id', $r['json']['facturas'][0] ?? []));
+        check('el cobro indica el contrato del contacto y de cada factura', in_array($k, $p[0]['contratos'] ?? [], true) && array_key_exists('contrato_id', $r['json']['facturas'][0] ?? []));
+        $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'Otra vez', 'email' => 'PROY@contacto.test']);
+        check('no duplica a una persona con el mismo correo (pide editarla)', ($r['json']['success'] ?? true) === false && str_contains($r['json']['error'] ?? '', 'ya está registrado'), $r['body']);
     }
     $otro = (int)$pdo->query("SELECT id FROM contratos WHERE cliente_id = 2 AND receptor_id <> $rid LIMIT 1")->fetchColumn();
-    $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'X', 'contrato_id' => $otro]);
+    $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid, 'accion' => 'guardar', 'nombre' => 'X', 'alcance[0]' => "k:$otro"]);
     check('rechaza un contrato de otro cliente', ($r['json']['success'] ?? true) === false, $r['body']);
     $id = (int)$pdo->query("SELECT id FROM clientes_factura_contactos WHERE email = 'ana@contacto.test'")->fetchColumn();
     $r = $c->post('includes/cliente_contactos.php', ['receptor_id' => $rid + 100000, 'accion' => 'eliminar', 'id' => $id]);
