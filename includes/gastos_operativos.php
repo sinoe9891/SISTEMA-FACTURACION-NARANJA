@@ -242,7 +242,7 @@ function gastosOpAsignar(PDO $pdo, int $cid, int $adminId, int $usuarioId, array
 function gastosOpLista(PDO $pdo, int $cid, ?array $permitidos, array $f = []): array
 {
     if (gastosOpSinAcceso($permitidos)) return [];
-    $w = ["g.cliente_id = ?"];
+    $w = ["g.cliente_id = ?", "g.pagador = " . $pdo->quote(($f['pagador'] ?? 'empresa') === 'cliente' ? 'cliente' : 'empresa')];
     $p = [$cid];
     $conAmbito = gastosOpConProgramas($pdo);
     if ($permitidos !== null) {
@@ -255,6 +255,7 @@ function gastosOpLista(PDO $pdo, int $cid, ?array $permitidos, array $f = []): a
         $w[] = ['c' => 'g.receptor_id', 'p' => 'g.programa_id', 'k' => 'g.contrato_id'][$m[1]] . ' = ?';
         $p[] = (int)$m[2];
     }
+    if (!empty($f['tarjeta_cliente'])) { $w[] = "(g.tarjeta_cliente_alias LIKE ? OR g.tarjeta_cliente_ultimos = ?)"; $p[] = '%' . $f['tarjeta_cliente'] . '%'; $p[] = $f['tarjeta_cliente']; }
     if (!empty($f['desde'])) { $w[] = "g.fecha >= ?"; $p[] = $f['desde']; }
     if (!empty($f['hasta'])) { $w[] = "g.fecha <= ?"; $p[] = $f['hasta']; }
     foreach (['receptor' => 'g.receptor_id', 'tipo' => 'g.tipo_id', 'usuario' => 'g.usuario_id'] as $k => $col)
@@ -262,7 +263,7 @@ function gastosOpLista(PDO $pdo, int $cid, ?array $permitidos, array $f = []): a
     if (!empty($f['estado']) && isset(GASTO_OP_ESTADOS[$f['estado']])) { $w[] = "g.estado = ?"; $p[] = $f['estado']; }
     if (!empty($f['moneda']) && in_array($f['moneda'], ['HNL', 'USD'], true)) { $w[] = "g.moneda = ?"; $p[] = $f['moneda']; }
     $st = $pdo->prepare("SELECT g.*, cf.nombre AS cliente, t.nombre AS tipo, t.icono AS tipo_icono, t.es_pauta, u.nombre AS registrado_por, r.nombre AS revisado_por_nombre,
-                                CONCAT(tj.banco, ' •••• ', tj.ultimos_digitos) AS tarjeta, " . gastosOpSqlCuenta($pdo) . ",
+                                CASE WHEN g.pagador='cliente' THEN CONCAT(g.tarjeta_cliente_alias, ' •••• ', g.tarjeta_cliente_ultimos) ELSE CONCAT(tj.banco, ' •••• ', tj.ultimos_digitos) END AS tarjeta, " . gastosOpSqlCuenta($pdo) . ",
                                 (SELECT COUNT(*) FROM gastos_op_archivos a WHERE a.gasto_op_id = g.id) AS archivos
                          FROM gastos_operativos g
                          JOIN clientes_factura cf ON cf.id = g.receptor_id
@@ -302,7 +303,7 @@ function gastosOpCuentaTexto(array $g): string
 function gastosOpListaPorId(PDO $pdo, int $cid, int $id): ?array
 {
     $st = $pdo->prepare("SELECT g.*, cf.nombre AS cliente, t.nombre AS tipo, t.es_pauta, t.categoria_id AS tipo_categoria_id, u.nombre AS registrado_por, r.nombre AS revisado_por_nombre,
-                                CONCAT(tj.banco, ' •••• ', tj.ultimos_digitos) AS tarjeta, " . gastosOpSqlCuenta($pdo) . "
+                                CASE WHEN g.pagador='cliente' THEN CONCAT(g.tarjeta_cliente_alias, ' •••• ', g.tarjeta_cliente_ultimos) ELSE CONCAT(tj.banco, ' •••• ', tj.ultimos_digitos) END AS tarjeta, " . gastosOpSqlCuenta($pdo) . "
                          FROM gastos_operativos g JOIN clientes_factura cf ON cf.id = g.receptor_id JOIN gastos_op_tipos t ON t.id = g.tipo_id
                          LEFT JOIN usuarios u ON u.id = g.usuario_id LEFT JOIN usuarios r ON r.id = g.revisado_por LEFT JOIN tarjetas tj ON tj.id = g.tarjeta_id
                          WHERE g.id = ? AND g.cliente_id = ?");
@@ -346,13 +347,38 @@ function gastosOpGuardar(PDO $pdo, int $cid, int $uid, string $rol, array $d, ?a
     $tipo = $st->fetch(PDO::FETCH_ASSOC);
     if (!$tipo || (!(int)$tipo['activo'] && (int)($antes['tipo_id'] ?? 0) !== (int)$tipo['id'])) throw new Exception("Elige el tipo de gasto.");
 
+    $pagador = ($d['pagador'] ?? ($antes['pagador'] ?? 'empresa')) === 'cliente' ? 'cliente' : 'empresa';
+    if ($id && $pagador !== ($antes['pagador'] ?? 'empresa')) throw new Exception('No se puede cambiar quién pagó un registro existente.');
+    $aliasTarjeta = $ultimosTarjeta = null;
+    if ($pagador === 'cliente') {
+        if (!(int)$tipo['es_pauta']) throw new Exception('Selecciona una plataforma de pauta.');
+        $aliasTarjeta = mb_substr(trim((string)($d['tarjeta_cliente_alias'] ?? '')), 0, 80);
+        $ultimosTarjeta = trim((string)($d['tarjeta_cliente_ultimos'] ?? ''));
+        if ($aliasTarjeta === '' || !preg_match('/^\d{4}$/', $ultimosTarjeta)) throw new Exception('Indica el nombre de referencia de la tarjeta y sus últimos cuatro dígitos.');
+        if (preg_match('/(?:\d[ -]*){8,}/', $aliasTarjeta)) throw new Exception('Usa solo un nombre de referencia; no escribas el número completo de tarjeta.');
+        $d['metodo_pago'] = 'tarjeta'; $d['tarjeta_id'] = null; $d['cobrar_cliente'] = 0;
+    }
+    $metricas = [];
+    if ($pagador === 'cliente') {
+        foreach (['pauta_presupuesto', 'pauta_resultados', 'pauta_alcance', 'pauta_impresiones', 'pauta_clics'] as $k) {
+            $v = trim((string)($d[$k] ?? ''));
+            if ($v === '') { $metricas[$k] = null; continue; }
+            $patron = $k === 'pauta_presupuesto' ? '/^\d{1,12}(?:\.\d{1,2})?$/' : '/^\d{1,12}$/';
+            if (!preg_match($patron, $v)) throw new Exception('Presupuesto y métricas deben ser números positivos o cero, sin separadores de miles.');
+            $metricas[$k] = $v;
+        }
+        if ($metricas['pauta_presupuesto'] === null || (float)$metricas['pauta_presupuesto'] <= 0) throw new Exception('Indica el presupuesto asignado a este período.');
+        foreach (['pauta_objetivo'=>120, 'pauta_resultado_tipo'=>100] as $k=>$max) $metricas[$k] = mb_substr(trim((string)($d[$k] ?? '')),0,$max);
+        if (!$metricas['pauta_objetivo'] || !trim((string)($d['campana'] ?? ''))) throw new Exception('Indica la campaña y su objetivo.');
+        if ($metricas['pauta_resultados'] !== null && !$metricas['pauta_resultado_tipo']) throw new Exception('Indica qué resultado estás midiendo, por ejemplo conversaciones o clientes potenciales.');
+    }
     $fecha = (string)($d['fecha'] ?? '');
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha) || !strtotime($fecha)) throw new Exception("Revisa la fecha del gasto.");
     if ($fecha > date('Y-m-d', strtotime('+1 day'))) throw new Exception("La fecha del gasto no puede ser futura.");
     $desc = mb_substr(trim((string)($d['descripcion'] ?? '')), 0, 300);
     if ($desc === '') throw new Exception("Escribe qué se pagó (descripción).");
     $monto = round((float)str_replace(',', '', (string)($d['monto'] ?? 0)), 2);
-    if ($monto <= 0) throw new Exception("El monto debe ser mayor que 0.");
+    if ($monto < 0 || ($pagador !== 'cliente' && $monto == 0)) throw new Exception("El monto debe ser mayor que 0.");
     $moneda = ($d['moneda'] ?? 'HNL') === 'USD' ? 'USD' : 'HNL';
     $tasa = null;
     if ($moneda === 'USD') {
@@ -401,6 +427,8 @@ function gastosOpGuardar(PDO $pdo, int $cid, int $uid, string $rol, array $d, ?a
         gastosOpLog($pdo, $id, $uid, 'editado', $antes['estado'] === 'rechazado' ? 'Corregido y enviado otra vez a revisión' : null);
         if (gastosOpConProgramas($pdo)) $pdo->prepare("UPDATE gastos_operativos SET programa_id = ?, contrato_id = ? WHERE id = ?")->execute([$programa, $contrato, $id]);
         gastosOpProveedorId($pdo, $id, $provId);
+        $pdo->prepare('UPDATE gastos_operativos SET pagador=?, tarjeta_cliente_alias=?, tarjeta_cliente_ultimos=? WHERE id=? AND cliente_id=?')->execute([$pagador,$aliasTarjeta,$ultimosTarjeta,$id,$cid]);
+        gastosOpGuardarMetricas($pdo, $cid, $id, $metricas);
         return $id;
     }
     $pdo->prepare("INSERT INTO gastos_operativos (receptor_id, tipo_id, fecha, descripcion, proveedor, factura_ref, moneda, monto, tasa_cambio, monto_lempiras, metodo_pago, tarjeta_id,
@@ -408,6 +436,8 @@ function gastosOpGuardar(PDO $pdo, int $cid, int $uid, string $rol, array $d, ?a
     $id = (int)$pdo->lastInsertId();
     if (gastosOpConProgramas($pdo)) $pdo->prepare("UPDATE gastos_operativos SET programa_id = ?, contrato_id = ? WHERE id = ?")->execute([$programa, $contrato, $id]);
     gastosOpProveedorId($pdo, $id, $provId);
+    $pdo->prepare('UPDATE gastos_operativos SET pagador=?, tarjeta_cliente_alias=?, tarjeta_cliente_ultimos=? WHERE id=? AND cliente_id=?')->execute([$pagador,$aliasTarjeta,$ultimosTarjeta,$id,$cid]);
+    gastosOpGuardarMetricas($pdo, $cid, $id, $metricas);
     gastosOpLog($pdo, $id, $uid, 'creado');
     return $id;
 }
@@ -502,7 +532,7 @@ function gastosOpRevisar(PDO $pdo, int $cid, int $uid, string $rol, int $id, str
     }
     if ($decision !== 'aprobado') throw new Exception("Decisión no válida.");
     $gastoId = null;
-    $registro = (string)($d['registro'] ?? 'nuevo');
+    $registro = ($g['pagador'] ?? 'empresa') === 'cliente' ? 'ninguno' : (string)($d['registro'] ?? 'nuevo');
     if ($registro === 'existente') {
         $gastoId = (int)($d['gasto_id'] ?? 0);
         $st = $pdo->prepare("SELECT estado FROM gastos WHERE id = ? AND cliente_id = ?");
@@ -612,11 +642,11 @@ function gastosOpPendientesPorCliente(PDO $pdo, int $cid, array $grupos): array
 }
 
 /** Cuántos esperan revisión (aviso del menú para el administrador). */
-function gastosOpPorRevisar(PDO $pdo, int $cid): int
+function gastosOpPorRevisar(PDO $pdo, int $cid, string $pagador = 'empresa'): int
 {
     if (!gastosOpDisponible($pdo)) return 0;
-    $st = $pdo->prepare("SELECT COUNT(*) FROM gastos_operativos WHERE cliente_id = ? AND estado = 'pendiente'");
-    $st->execute([$cid]);
+    $st = $pdo->prepare("SELECT COUNT(*) FROM gastos_operativos WHERE cliente_id = ? AND estado = 'pendiente' AND pagador = ?");
+    $st->execute([$cid, $pagador]);
     return (int)$st->fetchColumn();
 }
 
@@ -630,4 +660,31 @@ function gastosOpTotales(array $lista): array
         $t['lempiras'] += (float)$g['monto_lempiras'];
     }
     return $t;
+}
+
+/** Campos de rendimiento: solo columnas conocidas, nunca SQL procedente del formulario. */
+function gastosOpGuardarMetricas(PDO $pdo, int $cid, int $id, array $metricas): void
+{
+    if (!$metricas) return;
+    $columnas = ['pauta_presupuesto','pauta_resultados','pauta_alcance','pauta_impresiones','pauta_clics','pauta_objetivo','pauta_resultado_tipo'];
+    $pdo->prepare('UPDATE gastos_operativos SET ' . implode(', ', array_map(fn($k)=>"$k = ?", $columnas)) . ' WHERE id = ? AND cliente_id = ?')->execute([...array_map(fn($k)=>$metricas[$k], $columnas), $id, $cid]);
+}
+
+/** Valores derivados por registro/período; no sumar alcance entre campañas. */
+function gastosOpMetricas(array $g): array
+{
+    $pres = (float)($g['pauta_presupuesto'] ?? 0);
+    $monto = (float)$g['monto'];
+    return [
+        'Presupuesto' => $g['pauta_presupuesto'] === null ? 'Sin registrar' : monedaFmt($pres, $g['moneda']),
+        'Ejecutado' => monedaFmt($monto, $g['moneda']),
+        'Saldo disponible' => $pres > 0 ? monedaFmt($pres - $monto, $g['moneda']) : '—',
+        'Ejecución' => $pres > 0 ? number_format($monto / $pres * 100, 1) . '%' : '—',
+        'Objetivo' => $g['pauta_objetivo'] ?: 'Sin registrar',
+        'Resultados' => $g['pauta_resultados'] !== null ? number_format((float)$g['pauta_resultados']) . ' ' . $g['pauta_resultado_tipo'] : 'Sin registrar',
+        'Costo por resultado' => (float)$g['pauta_resultados'] > 0 ? monedaFmt($monto / $g['pauta_resultados'], $g['moneda']) : '—',
+        'Alcance' => $g['pauta_alcance'] !== null ? number_format((float)$g['pauta_alcance']) : 'Sin registrar',
+        'Impresiones' => $g['pauta_impresiones'] !== null ? number_format((float)$g['pauta_impresiones']) : 'Sin registrar',
+        'Clics en el enlace' => $g['pauta_clics'] !== null ? number_format((float)$g['pauta_clics']) : 'Sin registrar',
+    ];
 }

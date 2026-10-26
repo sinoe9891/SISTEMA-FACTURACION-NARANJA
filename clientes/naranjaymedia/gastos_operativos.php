@@ -2,7 +2,8 @@
 // Pagos y gastos → Gastos operativos: lo que se gasta por cada cliente (pauta, combustible, alimentación en visitas…),
 // con sus comprobantes y reportes. El rol Gastos operativos solo ve sus clientes asignados; el administrador revisa y aprueba.
 // Los filtros se aplican sin recargar (se piden los datos y se reemplaza la zona #goZona).
-$titulo = 'Gastos operativos';
+$pautaCliente = ($_GET['pagador'] ?? '') === 'cliente';
+$titulo = $pautaCliente ? 'Pauta pagada por el cliente' : 'Gastos operativos';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/gastos_operativos.php';
@@ -16,7 +17,7 @@ $fechaOk = fn($v, $d) => (is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $
 $desde = $fechaOk($_GET['desde'] ?? null, date('Y-m-01', strtotime('-2 months')));
 $hasta = $fechaOk($_GET['hasta'] ?? null, date('Y-m-d'));
 if ($desde > $hasta) [$desde, $hasta] = [$hasta, $desde];
-$filtros = ['desde' => $desde, 'hasta' => $hasta, 'cuenta' => preg_match('/^[cpk]:\d+$/', (string)($_GET['cuenta'] ?? '')) ? $_GET['cuenta'] : '', 'tipo' => (int)($_GET['tipo'] ?? 0),
+$filtros = ['tarjeta_cliente'=>mb_substr(trim((string)($_GET['tarjeta_cliente'] ?? '')),0,80), 'pagador' => $pautaCliente ? 'cliente' : 'empresa', 'desde' => $desde, 'hasta' => $hasta, 'cuenta' => preg_match('/^[cpk]:\d+$/', (string)($_GET['cuenta'] ?? '')) ? $_GET['cuenta'] : '', 'tipo' => (int)($_GET['tipo'] ?? 0),
     'estado' => isset(GASTO_OP_ESTADOS[$_GET['estado'] ?? '']) ? $_GET['estado'] : '', 'moneda' => in_array($_GET['moneda'] ?? '', ['HNL', 'USD'], true) ? $_GET['moneda'] : '',
     'usuario' => $esAdmin ? (int)($_GET['usuario'] ?? 0) : 0, 'sin_archivo' => !empty($_GET['sin_archivo'])];
 
@@ -25,6 +26,7 @@ $porRevisar = 0;
 if ($instalado) {
     $permitidos = gastosOpPermitidos($pdo, $uid, USUARIO_ROL);
     $tipos = gastosOpTipos($pdo, $cid);
+    if ($pautaCliente) $tipos = array_values(array_filter($tipos, fn($t) => (int)$t['es_pauta']));
     $clientes = gastosOpCuentas($pdo, $cid, $permitidos);   // cuentas: cliente directo, programa o contrato rotativo
     $lista = gastosOpLista($pdo, $cid, $permitidos, $filtros);
     $st = $pdo->prepare("SELECT id, banco, tipo, ultimos_digitos FROM tarjetas WHERE cliente_id = ? AND activa = 1 ORDER BY banco, ultimos_digitos");
@@ -36,7 +38,7 @@ if ($instalado) {
         $categorias = $st->fetchAll(PDO::FETCH_ASSOC);
         $responsables = gastosOpResponsables($pdo, $cid);
         $cuentasTodas = gastosOpCuentas($pdo, $cid, null);
-        $porRevisar = gastosOpPorRevisar($pdo, $cid);
+        $porRevisar = gastosOpPorRevisar($pdo, $cid, $pautaCliente ? 'cliente' : 'empresa');
     }
 }
 $tot = gastosOpTotales($lista);
@@ -59,17 +61,21 @@ $rangos = [
     'Últimos 3 meses' => [date('Y-m-01', strtotime('-2 months')), $hoy->format('Y-m-d')],
     'Este año' => [$hoy->format('Y-01-01'), $hoy->format('Y-m-d')],
 ];
-$qsExport = http_build_query(array_filter(['desde' => $desde, 'hasta' => $hasta, 'cuenta' => $filtros['cuenta'] ?: null, 'tipo' => $filtros['tipo'] ?: null,
+$qsExport = http_build_query(array_filter(['tarjeta_cliente'=>$filtros['tarjeta_cliente'], 'pagador' => $pautaCliente ? 'cliente' : 'empresa', 'desde' => $desde, 'hasta' => $hasta, 'cuenta' => $filtros['cuenta'] ?: null, 'tipo' => $filtros['tipo'] ?: null,
     'estado' => $filtros['estado'] ?: null, 'moneda' => $filtros['moneda'] ?: null, 'usuario' => $filtros['usuario'] ?: null]));
 $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
 require_once '../../includes/templates/header.php';
 ?>
 
+<nav class="d-flex flex-wrap gap-2 mb-3" aria-label="Tipo de registro">
+<a class="btn <?= !$pautaCliente ? 'btn-primary' : 'btn-outline-primary' ?>" href="gastos_operativos">Gastos operativos</a>
+<a class="btn <?= $pautaCliente ? 'btn-primary' : 'btn-outline-primary' ?>" href="gastos_operativos?pagador=cliente">Pauta pagada por el cliente</a>
+</nav>
 <div class="app-page-header">
     <div>
-        <h1 class="app-page-title"><i class="bi bi-clipboard2-data me-2"></i>Gastos operativos</h1>
-        <p class="app-page-sub"><?= $esAdmin ? 'Lo que se gasta por cada cliente (pauta, combustible, alimentación en visitas…) con sus comprobantes. Revisa y aprueba lo registrado; al aprobar puede pasar a Gastos para cobrárselo al cliente.'
-            : 'Registra lo que gastas por cada uno de tus clientes (pauta, combustible, alimentación en visitas…) y adjunta el comprobante o el reporte. El administrador lo revisa.' ?></p>
+        <h1 class="app-page-title"><i class="bi bi-clipboard2-data me-2"></i><?= $e($titulo) ?></h1>
+        <p class="app-page-sub"><?= $pautaCliente ? 'Campañas pagadas directamente con la tarjeta del cliente. Registro manual de presupuesto, inversión y resultados de campañas; no genera gastos ni cobros de la empresa.' : ($esAdmin ? 'Lo que se gasta por cada cliente (pauta, combustible, alimentación en visitas…) con sus comprobantes. Revisa y aprueba lo registrado; al aprobar puede pasar a Gastos para cobrárselo al cliente.'
+            : 'Registra lo que gastas por cada uno de tus clientes (pauta, combustible, alimentación en visitas…) y adjunta el comprobante o el reporte. El administrador lo revisa.') ?></p>
     </div>
     <?php if ($instalado): ?>
     <div class="d-flex gap-2 flex-wrap">
@@ -82,7 +88,7 @@ require_once '../../includes/templates/header.php';
                 <a class="dropdown-item go-export" data-formato="pdf" href="gastos_operativos_exportar?formato=pdf&<?= $qsExport ?>" target="_blank"><i class="bi bi-file-earmark-pdf me-2 text-danger"></i>PDF (con el filtro actual)</a>
                 <a class="dropdown-item go-export" data-formato="xlsx" href="gastos_operativos_exportar?formato=xlsx&<?= $qsExport ?>"><i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel (con el filtro actual)</a>
             </div></div>
-        <?php if ($puedeRegistrar && $clientes): ?><button class="btn btn-primary" id="goNuevo"><i class="bi bi-plus-lg me-1"></i> Registrar gasto</button><?php endif; ?>
+        <?php if ($puedeRegistrar && $clientes): ?><button class="btn btn-primary" id="goNuevo"><i class="bi bi-plus-lg me-1"></i> <?= $pautaCliente ? 'Registrar campaña' : 'Registrar gasto' ?></button><?php endif; ?>
     </div>
     <?php endif; ?>
 </div>
@@ -94,9 +100,9 @@ require_once '../../includes/templates/header.php';
 <?php else: ?>
 <?php if ($esAdmin && $porRevisar && $filtros['estado'] !== 'pendiente'): ?>
     <div class="alert alert-warning d-flex align-items-center gap-2 py-2"><i class="bi bi-hourglass-split"></i><div class="flex-grow-1"><strong><?= $porRevisar ?></strong> gasto<?= $porRevisar === 1 ? '' : 's' ?> por revisar (en cualquier fecha).</div>
-        <a href="?estado=pendiente&desde=2000-01-01&hasta=<?= date('Y-m-d') ?>" class="btn btn-sm btn-warning go-ver-pend">Revisarlos</a></div>
+        <a href="?pagador=<?= $pautaCliente ? 'cliente' : 'empresa' ?>&estado=pendiente&desde=2000-01-01&hasta=<?= date('Y-m-d') ?>" class="btn btn-sm btn-warning go-ver-pend">Revisarlos</a></div>
 <?php endif; ?>
-<form id="goFiltros" class="app-card app-card-body mb-3" method="get">
+<form id="goFiltros" class="app-card app-card-body mb-3" method="get"><input type="hidden" name="pagador" value="<?= $pautaCliente ? 'cliente' : 'empresa' ?>">
     <div class="row g-2 align-items-end">
         <div class="col-6 col-md-2"><label class="form-label small">Desde</label><input type="date" class="form-control form-control-sm" name="desde" value="<?= $desde ?>"></div>
         <div class="col-6 col-md-2"><label class="form-label small">Hasta</label><input type="date" class="form-control form-control-sm" name="hasta" value="<?= $hasta ?>"></div>
@@ -113,7 +119,8 @@ require_once '../../includes/templates/header.php';
             <?php $st = $pdo->prepare("SELECT DISTINCT u.id, u.nombre FROM gastos_operativos g JOIN usuarios u ON u.id = g.usuario_id WHERE g.cliente_id = ? ORDER BY u.nombre"); $st->execute([$cid]);
             foreach ($st as $u): ?><option value="<?= (int)$u['id'] ?>" <?= $filtros['usuario'] === (int)$u['id'] ? 'selected' : '' ?>><?= $e($u['nombre']) ?></option><?php endforeach; ?></select></div>
         <?php endif; ?>
-        <div class="col-12 d-flex flex-wrap gap-1 align-items-center">
+        <?php if ($pautaCliente): ?><div class="col-12 col-md-4"><label class="form-label small">Tarjeta del cliente</label><input class="form-control form-control-sm" name="tarjeta_cliente" value="<?= $e($filtros['tarjeta_cliente']) ?>" placeholder="Nombre o últimos 4 dígitos"></div><?php endif; ?>
+<div class="col-12 d-flex flex-wrap gap-1 align-items-center">
             <?php foreach ($rangos as $txt => [$d, $h]): ?><a class="btn btn-sm <?= $d === $desde && $h === $hasta ? 'btn-secondary' : 'btn-outline-secondary' ?> go-rango" href="?desde=<?= $d ?>&hasta=<?= $h ?>" data-desde="<?= $d ?>" data-hasta="<?= $h ?>"><?= $txt ?></a><?php endforeach; ?>
             <div class="form-check form-switch ms-md-3"><input class="form-check-input" type="checkbox" role="switch" name="sin_archivo" value="1" id="goSinArch" <?= $filtros['sin_archivo'] ? 'checked' : '' ?> style="cursor:pointer"><label class="form-check-label small" for="goSinArch">Solo sin comprobante</label></div>
         </div>
@@ -137,7 +144,7 @@ require_once '../../includes/templates/header.php';
 
     <div class="app-card">
         <div class="app-card-header flex-wrap gap-2">
-            <span><i class="bi bi-list-ul me-1"></i> Gastos del <?= date('d/m/Y', strtotime($desde)) ?> al <?= date('d/m/Y', strtotime($hasta)) ?></span>
+            <span><i class="bi bi-list-ul me-1"></i> <?= $pautaCliente ? 'Campañas del' : 'Gastos del' ?> <?= date('d/m/Y', strtotime($desde)) ?> al <?= date('d/m/Y', strtotime($hasta)) ?></span>
             <div class="app-toolbar flex-grow-1 justify-content-end">
                 <div class="app-search" style="max-width:320px"><i class="bi bi-search"></i><input type="search" class="form-control form-control-sm" id="goBuscar" placeholder="Buscar cliente, descripción, campaña…"></div>
                 <select class="form-select form-select-sm" id="goPorPagina" style="width:auto"><option value="25">25/pág</option><option value="50">50/pág</option><option value="100">100/pág</option><option value="100000">Todas</option></select>
@@ -155,6 +162,7 @@ require_once '../../includes/templates/header.php';
                         <td class="small text-nowrap"><i class="bi <?= $e($g['tipo_icono']) ?> me-1 text-muted"></i><?= $e($g['tipo']) ?>
                             <?php if ($g['pauta_inicio']): ?><div class="text-muted"><i class="bi bi-calendar-range me-1"></i><?= date('d/m', strtotime($g['pauta_inicio'])) ?> – <?= date('d/m/Y', strtotime($g['pauta_fin'])) ?></div><?php endif; ?></td>
                         <td><?= $e($g['descripcion']) ?>
+                            <?php if ($pautaCliente): ?><details class="small mt-1"><summary class="text-primary">Presupuesto y resultados</summary><dl class="mb-1 mt-2"><?php foreach (gastosOpMetricas($g) as $label=>$valor): ?><dt><?= $e($label) ?></dt><dd><?= $e($valor) ?></dd><?php endforeach; ?></dl></details><?php endif; ?>
                             <div class="small text-muted"><?= $e(implode(' · ', array_filter([$g['campana'] ? 'Campaña: ' . $g['campana'] : '', $g['proveedor'], $g['factura_ref'] ? 'Fact. ' . $g['factura_ref'] : '', $esAdmin ? $g['registrado_por'] : '']))) ?></div>
                             <?php if ($rech && $g['motivo_rechazo']): ?><div class="small text-danger"><i class="bi bi-x-circle me-1"></i><?= $e($g['motivo_rechazo']) ?></div><?php endif; ?></td>
                         <td class="small"><?= $g['metodo_pago'] === 'tarjeta' ? ($g['tarjeta'] ? '<i class="bi bi-credit-card me-1"></i>' . $e($g['tarjeta']) : 'Tarjeta') : $e(GASTO_OP_METODOS[$g['metodo_pago']]) ?></td>
@@ -169,7 +177,7 @@ require_once '../../includes/templates/header.php';
                         </td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$lista): ?><tr><td colspan="11" class="text-center text-muted py-4">No hay gastos con estos filtros.</td></tr><?php endif; ?>
+                <?php if (!$lista): ?><tr><td colspan="11" class="text-center text-muted py-4"><?= $pautaCliente ? 'No hay campañas con estos filtros.' : 'No hay gastos con estos filtros.' ?></td></tr><?php endif; ?>
                 </tbody>
                 <?php if ($lista): ?><tfoot><tr class="fw-bold"><td colspan="7" class="text-end">Total (sin rechazados)</td><td class="app-num">L <?= number_format($tot['lempiras'], 2) ?></td><td colspan="3"></td></tr></tfoot><?php endif; ?>
             </table>
@@ -180,8 +188,8 @@ require_once '../../includes/templates/header.php';
 
 <!-- Registrar / ver / editar -->
 <div class="modal fade" id="mGasto" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-md-down"><form class="modal-content" id="fGasto" novalidate>
-        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-clipboard2-plus me-1"></i> <span id="gTitulo">Registrar gasto</span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-md-down"><form class="modal-content" id="fGasto" novalidate><input type="hidden" name="pagador" value="<?= $pautaCliente ? 'cliente' : 'empresa' ?>">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-clipboard2-plus me-1"></i> <span id="gTitulo"><?= $pautaCliente ? 'Registrar campaña' : 'Registrar gasto' ?></span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <div id="gAviso"></div>
             <input type="hidden" name="accion" value="guardar"><input type="hidden" name="id">
@@ -189,7 +197,7 @@ require_once '../../includes/templates/header.php';
                 <div class="col-md-6"><label class="form-label">Cliente, programa o contrato *</label><select name="cuenta" class="form-select" required><option value="">— Elegir —</option>
                     <?php foreach (array_intersect(['Programas', 'Contratos con varias empresas', 'Clientes'], array_column($clientes, 'grupo')) as $gr): ?><optgroup label="<?= $e($gr) ?>">
                         <?php foreach ($clientes as $c): if ($c['grupo'] !== $gr) continue; ?><option value="<?= $c['clave'] ?>" data-empresas="<?= $e($c['empresas'] ?? '') ?>"><?= $e($c['nombre']) ?></option><?php endforeach; ?></optgroup><?php endforeach; ?></select></div>
-                <div class="col-md-6"><label class="form-label">Tipo de gasto *</label><select name="tipo_id" class="form-select" required data-buscar><option value="">— Buscar o elegir —</option>
+                <div class="col-md-6"><label class="form-label"><?= $pautaCliente ? 'Plataforma *' : 'Tipo de gasto *' ?></label><select name="tipo_id" class="form-select" required data-buscar><option value="">— Buscar o elegir —</option>
                     <?php foreach ($tipos as $t): if (!(int)$t['activo']) continue; ?><option value="<?= (int)$t['id'] ?>" data-pauta="<?= (int)$t['es_pauta'] ?>"><?= $e($t['nombre']) ?></option><?php endforeach; ?>
                     <option value="__nuevo__">➕ Agregar tipo nuevo…</option></select></div>
                 <div class="col-12 g-empresas" hidden><div class="small text-muted"><i class="bi bi-arrow-repeat me-1"></i>Empresas de este contrato: <span></span>. A cuál se le cobra se decide al facturar.</div></div>
@@ -198,17 +206,36 @@ require_once '../../includes/templates/header.php';
                     <div class="col-6 col-md-3"><label class="form-label small mb-1">Inicio de la pauta *</label><input type="date" name="pauta_inicio" class="form-control form-control-sm"></div>
                     <div class="col-6 col-md-3"><label class="form-label small mb-1">Fin de la pauta *</label><input type="date" name="pauta_fin" class="form-control form-control-sm"><div class="form-text" id="gDiasPauta"></div></div>
                 </div></div>
-                <div class="col-12"><label class="form-label">Descripción *</label><input name="descripcion" class="form-control" maxlength="300" required placeholder="Ej.: Pauta Meta del 1 al 15 · combustible visita a sucursal de San Pedro"></div>
-                <div class="col-6 col-md-3"><label class="form-label">Fecha del gasto *</label><input type="date" name="fecha" class="form-control" required max="<?= date('Y-m-d') ?>"></div>
+                <div class="col-12"><label class="form-label">Descripción *</label><input name="descripcion" class="form-control" maxlength="300" required placeholder="<?= $pautaCliente ? 'Ej.: Resultados de la campaña de octubre' : 'Ej.: Pauta Meta del 1 al 15 · combustible visita' ?>"></div>
+                <div class="col-6 col-md-3"><label class="form-label"><?= $pautaCliente ? 'Fecha del reporte *' : 'Fecha del gasto *' ?></label><input type="date" name="fecha" class="form-control" required max="<?= date('Y-m-d') ?>"></div>
                 <div class="col-6 col-md-3"><label class="form-label">Moneda</label><select name="moneda" class="form-select"><option value="HNL">Lempiras (L)</option><option value="USD">Dólares (USD)</option></select></div>
-                <div class="col-6 col-md-3"><label class="form-label">Monto *</label><input type="number" name="monto" class="form-control" step="0.01" min="0.01" required></div>
+                <div class="col-6 col-md-3"><label class="form-label"><?= $pautaCliente ? 'Gasto ejecutado *' : 'Monto *' ?></label><input type="number" name="monto" class="form-control" step="0.01" min="<?= $pautaCliente ? 0 : 0.01 ?>" required></div>
                 <div class="col-6 col-md-3 g-usd" hidden><label class="form-label">Tasa (L por USD)</label><input type="number" name="tasa_cambio" class="form-control" step="0.0001" min="1"><div class="form-text" id="gEnL"></div></div>
+<?php if ($pautaCliente): ?>
+<div class="col-12"><div class="border rounded-3 p-3 bg-light"><h6>Resultados de la campaña · registro manual</h6>
+<p class="small text-muted">Un registro por campaña y período. Para actualizar sus cifras, edita el registro existente. Usa el mismo período y moneda para el presupuesto y lo ejecutado. Las métricas vacías quedan como «Sin registrar».</p>
+<div class="row g-2">
+<div class="col-12 col-md-6"><label class="form-label">Objetivo *</label><input name="pauta_objetivo" class="form-control" maxlength="120" placeholder="Ej.: Clientes potenciales" required></div>
+<div class="col-12 col-md-6"><label class="form-label">Presupuesto del período *</label><input name="pauta_presupuesto" type="number" min="0.01" step="0.01" class="form-control" required><div class="form-text">En la moneda seleccionada, no presupuesto diario.</div></div>
+<div class="col-12 col-md-6"><label class="form-label">Tipo de resultado</label><input name="pauta_resultado_tipo" class="form-control" maxlength="100" placeholder="Ej.: Conversaciones iniciadas"></div>
+<?php foreach (['pauta_resultados'=>'Resultados','pauta_alcance'=>'Alcance','pauta_impresiones'=>'Impresiones','pauta_clics'=>'Clics en el enlace'] as $campo=>$etiqueta): ?>
+<div class="col-6 col-md-3"><label class="form-label"><?= $etiqueta ?></label><input name="<?= $campo ?>" type="number" min="0" step="1" class="form-control" placeholder="Sin registrar"></div>
+<?php endforeach; ?>
+</div></div></div>
+<?php endif; ?>
+<?php if ($pautaCliente): ?>
+<input type="hidden" name="metodo_pago" value="tarjeta"><input type="hidden" name="tarjeta_id" value="">
+<div class="col-md-8"><label class="form-label">Tarjeta del cliente · nombre de referencia *</label><input class="form-control" name="tarjeta_cliente_alias" maxlength="80" placeholder="Ej.: BAC · tarjeta de publicidad" required></div>
+<div class="col-md-4"><label class="form-label">Últimos 4 dígitos *</label><input class="form-control" name="tarjeta_cliente_ultimos" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required></div>
+<div class="col-12 small text-muted">Solo se guarda la referencia y los últimos cuatro dígitos, nunca el número completo ni el código de seguridad.</div>
+<?php else: ?>
                 <div class="col-md-6"><label class="form-label">Cómo se pagó</label><select name="metodo_pago" class="form-select"><?php foreach (GASTO_OP_METODOS as $k => $t): ?><option value="<?= $k ?>"><?= $t ?></option><?php endforeach; ?></select></div>
                 <div class="col-md-6 g-tarjeta"><label class="form-label">Tarjeta</label><select name="tarjeta_id" class="form-select"><option value="">— Sin especificar —</option>
                     <?php foreach ($tarjetas as $t): ?><option value="<?= (int)$t['id'] ?>"><?= $e($t['banco'] . ' ' . strtoupper($t['tipo']) . ' •••• ' . $t['ultimos_digitos']) ?></option><?php endforeach; ?></select></div>
+<?php endif; ?>
                 <div class="col-md-6"><label class="form-label">Proveedor <span class="text-muted small">(opcional · búscalo o agrégalo)</span></label><?php $psId = 'gProveedor'; $psValor = ''; $psClase = 'form-select'; require '../../includes/templates/proveedor_select.php'; ?></div>
                 <div class="col-md-6"><label class="form-label">N.º de factura o recibo <span class="text-muted small">(opcional)</span></label><input name="factura_ref" class="form-control" maxlength="100"></div>
-                <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="cobrar_cliente" value="1" id="gCobrar" checked><label class="form-check-label" for="gCobrar">Se le cobra al cliente (al aprobarlo aparece al facturarle)</label></div></div>
+                <div class="col-12" <?= $pautaCliente ? 'hidden' : '' ?>><div class="form-check"><input class="form-check-input" type="checkbox" name="cobrar_cliente" value="1" id="gCobrar" <?= !$pautaCliente ? 'checked' : '' ?>><label class="form-check-label" for="gCobrar">Se le cobra al cliente (al aprobarlo aparece al facturarle)</label></div></div>
                 <div class="col-12"><label class="form-label">Notas <span class="text-muted small">(opcional)</span></label><textarea name="notas" class="form-control" rows="2" maxlength="3000"></textarea></div>
             </div></fieldset>
             <div class="border-top mt-3 pt-3">
@@ -361,7 +388,7 @@ require_once '../../includes/templates/header.php';
         fg.tasa_cambio.required = usd;
         if (usd && !fg.tasa_cambio.value && TASA) fg.tasa_cambio.value = TASA;
         document.getElementById('gEnL').textContent = usd && +fg.monto.value && +fg.tasa_cambio.value ? '= L ' + (+fg.monto.value * +fg.tasa_cambio.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
-        fg.querySelector('.g-tarjeta').hidden = fg.metodo_pago.value !== 'tarjeta';
+        if (fg.querySelector('.g-tarjeta')) fg.querySelector('.g-tarjeta').hidden = fg.metodo_pago.value !== 'tarjeta';
         const a = new Date(fg.pauta_inicio.value), b = new Date(fg.pauta_fin.value), d = Math.round((b - a) / 864e5) + 1;
         document.getElementById('gDiasPauta').textContent = d > 0 ? d + ' día' + (d === 1 ? '' : 's') + ' de pauta' : '';
     };
@@ -400,14 +427,14 @@ require_once '../../includes/templates/header.php';
             if (!d.success) return Swal.fire('No se pudo', d.error, 'error');
             const g = d.gasto;
             fg.cuenta.value = g.contrato_id ? 'k:' + g.contrato_id : (g.programa_id ? 'p:' + g.programa_id : 'c:' + g.receptor_id);
-            for (const k of ['tipo_id', 'fecha', 'descripcion', 'moneda', 'monto', 'tasa_cambio', 'metodo_pago', 'tarjeta_id', 'campana', 'pauta_inicio', 'pauta_fin', 'factura_ref', 'notas'])
+            for (const k of ['tipo_id', 'fecha', 'descripcion', 'moneda', 'monto', 'tasa_cambio', 'metodo_pago', 'tarjeta_id', 'campana', 'pauta_inicio', 'pauta_fin', 'factura_ref', 'notas', 'tarjeta_cliente_alias', 'tarjeta_cliente_ultimos', 'pauta_objetivo', 'pauta_presupuesto', 'pauta_resultado_tipo', 'pauta_resultados', 'pauta_alcance', 'pauta_impresiones', 'pauta_clics'])
                 if (fg[k]) fg[k].value = g[k] ?? '';
             [...fg.tipo_id.options].forEach(o => { if (o.value == g.tipo_id) o.hidden = false; });
             fg.cobrar_cliente.checked = +g.cobrar_cliente === 1;
             if (window.proveedorSelectValor) proveedorSelectValor(document.getElementById('gProveedor'), g.proveedor || '');
             if (g.tipo_id && ![...fg.tipo_id.options].some(o => o.value == g.tipo_id)) { const o = new Option(g.tipo, g.tipo_id); o.dataset.pauta = g.es_pauta; fg.tipo_id.add(o, fg.tipo_id.options[1]); fg.tipo_id.value = String(g.tipo_id); }
             editable = g.puede_editar;
-            document.getElementById('gTitulo').textContent = 'Gasto #' + g.id + ' · ' + (g.contrato || (g.cliente + (g.programa ? ' → ' + g.programa : '')));
+            document.getElementById('gTitulo').textContent = (<?= $pautaCliente ? "'Campaña #'" : "'Gasto #'" ?>) + g.id + ' · ' + (g.contrato || (g.cliente + (g.programa ? ' → ' + g.programa : '')));
             const est = { pendiente: ['warning', 'Por revisar'], aprobado: ['success', 'Aprobado' + (g.revisado_por_nombre ? ' por ' + g.revisado_por_nombre : '') + (g.gasto_id ? ' · Gastos N.º ' + g.gasto_id : '')], rechazado: ['danger', 'Rechazado: ' + (g.motivo_rechazo || '') + ' — corrígelo y guárdalo para enviarlo otra vez'] }[g.estado];
             document.getElementById('gAviso').innerHTML = `<div class="alert alert-${est[0]} py-2 small">${esc(est[1])}${g.registrado_por ? ' · Registrado por ' + esc(g.registrado_por) : ''}</div>`;
             pintarArchivos(d.archivos, true);
@@ -416,7 +443,7 @@ require_once '../../includes/templates/header.php';
             document.getElementById('gEliminar').hidden = !editable;
             const re = document.getElementById('gReabrir'); if (re) re.hidden = g.estado !== 'aprobado';
         } else {
-            document.getElementById('gTitulo').textContent = 'Registrar gasto';
+            document.getElementById('gTitulo').textContent = <?= json_encode($pautaCliente ? 'Registrar pauta del cliente' : 'Registrar gasto') ?>;
             fg.fecha.value = new Date().toLocaleDateString('en-CA');
             if (window.proveedorSelectValor) proveedorSelectValor(document.getElementById('gProveedor'), '');
             const opc = fg.cuenta.querySelectorAll('option[value]:not([value=""])');
@@ -437,7 +464,7 @@ require_once '../../includes/templates/header.php';
         const fd = new FormData(fg);
         if (campos.disabled) fd.set('accion', 'archivos');
         else {
-            if (!fg.cuenta.value || !fg.tipo_id.value || !fg.descripcion.value.trim() || !(+fg.monto.value > 0) || !fg.fecha.value) return Swal.fire('Faltan datos', 'Cliente o programa, tipo, descripción, fecha y monto son obligatorios.', 'warning');
+            if (!fg.cuenta.value || !fg.tipo_id.value || !fg.descripcion.value.trim() || (fg.monto.value === '' || +fg.monto.value < <?= $pautaCliente ? 0 : 0.01 ?>) || !fg.fecha.value) return Swal.fire('Faltan datos', 'Cliente o programa, tipo, descripción, fecha y monto son obligatorios.', 'warning');
             if (!fg.querySelector('.g-pauta').hidden && (!fg.pauta_inicio.value || !fg.pauta_fin.value)) return Swal.fire('Fechas de la pauta', 'Escribe cuándo empieza y cuándo termina la pauta.', 'warning');
             if (!fg.id.value && !fg['archivos[]'].files.length) {
                 const r = await Swal.fire({ icon: 'question', title: '¿Sin comprobante?', text: 'Puedes adjuntarlo después, pero el gasto queda marcado «Sin comprobante».', showCancelButton: true, confirmButtonText: 'Guardar así', cancelButtonText: 'Adjuntar' });
@@ -475,6 +502,7 @@ require_once '../../includes/templates/header.php';
     const mr = new bootstrap.Modal(document.getElementById('mRevisar')), fr = document.getElementById('fRevisar');
     const pintarR = () => {
         const ap = fr.decision.value === 'aprobar';
+        if (<?= $pautaCliente ? 'true' : 'false' ?>) { fr.registro.value='ninguno'; document.getElementById('rAprobarGrp').hidden=true; document.getElementById('rRechazarGrp').hidden=ap; return; }
         document.getElementById('rAprobarGrp').hidden = !ap; document.getElementById('rRechazarGrp').hidden = ap;
         document.getElementById('rCatGrp').hidden = fr.registro.value !== 'nuevo';
         document.getElementById('rExisteGrp').hidden = fr.registro.value !== 'existente';

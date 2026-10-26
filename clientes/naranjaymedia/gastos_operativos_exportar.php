@@ -17,7 +17,8 @@ $fechaOk = fn($v, $d) => (is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $
 $desde = $fechaOk($_GET['desde'] ?? null, date('Y-m-01'));
 $hasta = $fechaOk($_GET['hasta'] ?? null, date('Y-m-d'));
 if ($desde > $hasta) [$desde, $hasta] = [$hasta, $desde];
-$f = ['desde' => $desde, 'hasta' => $hasta, 'cuenta' => preg_match('/^[cpk]:\d+$/', (string)($_GET['cuenta'] ?? '')) ? $_GET['cuenta'] : '', 'tipo' => (int)($_GET['tipo'] ?? 0),
+$pautaCliente = ($_GET['pagador'] ?? '') === 'cliente';
+$f = ['tarjeta_cliente'=>mb_substr(trim((string)($_GET['tarjeta_cliente'] ?? '')),0,80), 'pagador'=>$pautaCliente ? 'cliente' : 'empresa', 'desde' => $desde, 'hasta' => $hasta, 'cuenta' => preg_match('/^[cpk]:\d+$/', (string)($_GET['cuenta'] ?? '')) ? $_GET['cuenta'] : '', 'tipo' => (int)($_GET['tipo'] ?? 0),
     'estado' => isset(GASTO_OP_ESTADOS[$_GET['estado'] ?? '']) ? $_GET['estado'] : '', 'moneda' => in_array($_GET['moneda'] ?? '', ['HNL', 'USD'], true) ? $_GET['moneda'] : '',
     'usuario' => $esAdmin ? (int)($_GET['usuario'] ?? 0) : 0];
 $lista = array_reverse(gastosOpLista($pdo, $cid, gastosOpPermitidos($pdo, (int)USUARIO_ID, USUARIO_ROL), $f));   // del más viejo al más nuevo
@@ -31,18 +32,27 @@ if ($f['cuenta']) foreach (gastosOpCuentas($pdo, $cid, null) as $cu) if ($cu['cl
 $archivosDe = function (int $id) use ($pdo): string {
     return implode(', ', array_map(fn($a) => $a['nombre'], gastosOpArchivos($pdo, $id)));
 };
-$nombreBase = 'gastos_operativos_' . ($clienteNom ? preg_replace('/[^a-z0-9]+/', '_', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT', $clienteNom))) . '_' : '') . $desde . '_' . $hasta;
+$tituloReporte = $pautaCliente ? 'Reporte de pauta pagada por el cliente' : 'Reporte de gastos operativos';
+$nombreBase = ($pautaCliente ? 'pauta_cliente_' : 'gastos_operativos_') . ($clienteNom ? preg_replace('/[^a-z0-9]+/', '_', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT', $clienteNom))) . '_' : '') . $desde . '_' . $hasta;
 
 if (($_GET['formato'] ?? 'pdf') === 'xlsx') {
-    $x = new XlsxSimple('Gastos operativos');
-    $x->columnas([['N.º', 7, 'entero'], ['Fecha', 12, 'fecha'], ['Cliente / programa / contrato', 34], ['Tipo', 22], ['Descripción', 40], ['Campaña', 24], ['Inicio pauta', 12, 'fecha'], ['Fin pauta', 12, 'fecha'],
+    $x = new XlsxSimple($pautaCliente ? 'Pauta del cliente' : 'Gastos operativos');
+    $columnas = [['N.º', 7, 'entero'], ['Fecha', 12, 'fecha'], ['Cliente / programa / contrato', 34], ['Tipo', 22], ['Descripción', 40], ['Campaña', 24], ['Inicio pauta', 12, 'fecha'], ['Fin pauta', 12, 'fecha'],
         ['Proveedor', 20], ['Factura / recibo', 16], ['Moneda', 8], ['Monto', 13, 'dinero'], ['Tasa', 9], ['En lempiras', 14, 'dinero'], ['Pago', 22], ['Tarjeta', 22],
-        ['Se cobra al cliente', 10], ['Estado', 12], ['Registrado por', 20], ['Gastos N.º', 10], ['Archivos', 40], ['Notas', 30]]);
-    foreach ($lista as $g)
-        $x->fila([(int)$g['id'], $g['fecha'], gastosOpCuentaTexto($g), $g['tipo'], $g['descripcion'], (string)$g['campana'], (string)$g['pauta_inicio'], (string)$g['pauta_fin'],
+        ['Se cobra al cliente', 10], ['Estado', 12], ['Registrado por', 20], ['Gastos N.º', 10], ['Archivos', 40], ['Notas', 30]];
+    if ($pautaCliente) $columnas = [...$columnas, ['Presupuesto',16,'dinero'], ['Saldo disponible',16,'dinero'], ['Ejecución %',14], ['Objetivo',25], ['Tipo de resultado',25], ['Resultados',14,'entero'], ['Costo por resultado',18,'dinero'], ['Alcance',14,'entero'], ['Impresiones',14,'entero'], ['Clics en el enlace',18,'entero']];
+    $x->columnas($columnas);
+    foreach ($lista as $g) {
+        $fila = [(int)$g['id'], $g['fecha'], gastosOpCuentaTexto($g), $g['tipo'], $g['descripcion'], (string)$g['campana'], (string)$g['pauta_inicio'], (string)$g['pauta_fin'],
             (string)$g['proveedor'], (string)$g['factura_ref'], $g['moneda'], (float)$g['monto'], $g['tasa_cambio'] ? (float)$g['tasa_cambio'] : '', (float)$g['monto_lempiras'],
             GASTO_OP_METODOS[$g['metodo_pago']], (string)$g['tarjeta'], (int)$g['cobrar_cliente'] ? 'Sí' : 'No', GASTO_OP_ESTADOS[$g['estado']][0], (string)$g['registrado_por'],
-            $g['gasto_id'] ? (int)$g['gasto_id'] : '', $archivosDe((int)$g['id']), (string)$g['notas']], false, $g['estado'] === 'rechazado');
+            $g['gasto_id'] ? (int)$g['gasto_id'] : '', $archivosDe((int)$g['id']), (string)$g['notas']];
+        if ($pautaCliente) {
+            $pres = (float)$g['pauta_presupuesto']; $monto = (float)$g['monto'];
+            $fila = [...$fila, $g['pauta_presupuesto'] === null ? '' : $pres, $pres > 0 ? $pres-$monto : '', $pres > 0 ? round(100*$monto/$pres,2) : '', (string)$g['pauta_objetivo'], (string)$g['pauta_resultado_tipo'], $g['pauta_resultados'] ?? '', (float)$g['pauta_resultados'] > 0 ? round($monto/$g['pauta_resultados'],2) : '', $g['pauta_alcance'] ?? '', $g['pauta_impresiones'] ?? '', $g['pauta_clics'] ?? ''];
+        }
+        $x->fila($fila, false, $g['estado'] === 'rechazado');
+    }
     $x->fila(['', '', '', '', 'TOTAL EN DÓLARES (sin rechazados)', '', '', '', '', '', 'USD', $tot['USD']], true);
     $x->fila(['', '', '', '', 'TOTAL EN LEMPIRAS (sin rechazados)', '', '', '', '', '', 'L', $tot['HNL']], true);
     $x->fila(['', '', '', '', 'TODO EN LEMPIRAS', '', '', '', '', '', '', '', '', $tot['lempiras']], true);
@@ -74,6 +84,14 @@ foreach ($lista as $i => $g) {
 $resumen = '';
 foreach ($porTipo as $k => $t)
     $resumen .= '<tr><td>' . $e($k) . ' <span class="sub">(' . $t['n'] . ')</span></td><td class="r">' . ($t['USD'] ? '$ ' . number_format($t['USD'], 2) : '—') . '</td><td class="r">' . ($t['HNL'] ? 'L ' . number_format($t['HNL'], 2) : '—') . '</td><td class="r"><strong>L ' . number_format($t['L'], 2) . '</strong></td></tr>';
+$rendimiento = '';
+if ($pautaCliente) {
+    foreach ($lista as $g) {
+        $rendimiento .= '<div style="page-break-inside:avoid;margin-top:16px"><h2 style="font-size:12pt">' . $e($g['campana'] ?: $g['descripcion']) . '</h2><p>' . $e(gastosOpCuentaTexto($g)) . ' · ' . $e($g['pauta_inicio']) . ' — ' . $e($g['pauta_fin']) . ' · ' . $e(GASTO_OP_ESTADOS[$g['estado']][0]) . '</p><table class="d">';
+        foreach (gastosOpMetricas($g) as $label=>$valor) $rendimiento .= '<tr><td>' . $e($label) . '</td><td>' . $e($valor) . '</td></tr>';
+        $rendimiento .= '</table>' . ($g['notas'] ? '<p>' . nl2br($e($g['notas'])) . '</p>' : '') . '</div>';
+    }
+}
 $logo = cotizacionLogoB64($emp);
 $alias = ($emp['alias'] ?? '') ?: ($emp['nombre'] ?? '');
 $html = '<!doctype html><html><head><meta charset="utf-8"><style>
@@ -96,10 +114,11 @@ tr.rech td { color: #94a3b8; text-decoration: line-through; }
 .cajas .v { font-size: 12pt; font-weight: bold; color: #0f172a; }
 .pie { position: fixed; bottom: -24px; left: 0; right: 0; font-size: 7pt; color: #94a3b8; text-align: center; }
 </style></head><body>
-<div class="pie">' . $e($alias) . ' · Reporte de gastos operativos · generado el ' . date('d/m/Y H:i') . ' por ' . $e(USUARIO_NOMBRE) . '</div>
+<div class="pie">' . $e($alias) . ' · ' . $e($tituloReporte) . ' · generado el ' . date('d/m/Y H:i') . ' por ' . $e(USUARIO_NOMBRE) . '</div>
 <table class="top"><tr><td>' . ($logo ? '<img src="' . $logo . '" style="height:46px">' : '<strong style="font-size:14pt;color:#e8590c">' . $e($alias) . '</strong>') . '</td>
-<td style="text-align:right"><h1>Reporte de gastos operativos</h1><div class="muted">' . ($clienteNom ? 'Cliente: <strong>' . $e($clienteNom) . '</strong> · ' : '')
+<td style="text-align:right"><h1>' . $e($tituloReporte) . '</h1><div class="muted">' . ($clienteNom ? 'Cliente: <strong>' . $e($clienteNom) . '</strong> · ' : '')
     . 'Del ' . date('d/m/Y', strtotime($desde)) . ' al ' . date('d/m/Y', strtotime($hasta)) . ($f['estado'] ? ' · ' . GASTO_OP_ESTADOS[$f['estado']][0] : '') . '</div></td></tr></table>
+' . ($pautaCliente ? '<p>Inversión publicitaria pagada directamente por el cliente. Estos importes no constituyen un cobro adicional de la agencia. Datos registrados manualmente; cada registro corresponde a una campaña y período.</p>' : '') . '
 <table class="cajas"><tr>
 <td><div class="muted">En dólares</div><div class="v">$ ' . number_format($tot['USD'], 2) . '</div></td>
 <td><div class="muted">En lempiras</div><div class="v">L ' . number_format($tot['HNL'], 2) . '</div></td>
@@ -110,6 +129,7 @@ tr.rech td { color: #94a3b8; text-decoration: line-through; }
     . ($filas ?: '<tr><td colspan="7" style="text-align:center;padding:20px" class="muted">No hay gastos con estos filtros.</td></tr>')
     . '<tr class="tot"><td colspan="5" class="r">Total en lempiras (sin rechazados)</td><td class="r">' . number_format($tot['lempiras'], 2) . '</td><td></td></tr></tbody></table>
 <p class="muted" style="margin-top:10px">Los montos en dólares se convierten a la tasa registrada en cada gasto. Los rechazados aparecen tachados y no suman.</p>
+' . $rendimiento . '
 </body></html>';
 
 require_once '../../vendor/autoload.php';

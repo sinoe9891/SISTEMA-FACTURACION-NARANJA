@@ -1,0 +1,1 @@
+ALTER TABLE gastos_operativos ADD COLUMN pagador ENUM('empresa','cliente') NOT NULL DEFAULT 'empresa', ADD COLUMN tarjeta_cliente_alias VARCHAR(80) NULL, ADD COLUMN tarjeta_cliente_ultimos CHAR(4) NULL;

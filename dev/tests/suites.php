@@ -3144,3 +3144,5 @@ require __DIR__ . "/moneda_facturas.php";
 require __DIR__ . "/gastos_operativos.php";
 
 require __DIR__ . "/programas.php";
+
+require __DIR__ . "/pauta_cliente.php";
