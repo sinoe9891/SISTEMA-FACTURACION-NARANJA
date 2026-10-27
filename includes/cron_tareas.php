@@ -5,6 +5,7 @@
  *   2) Cobros por correo programados (cuenta «facturacion»).
  *   3) Aviso de documentos de la empresa por vencer (7 días) y vencidos (cuenta «facturacion»).
  *   4) Resumen diario a gerencia de lo pendiente: contratos sin facturar, facturas sin enviar y vencidas (cuenta «facturacion»).
+ *   5) Préstamos a socios: recordatorio antes de cada cuota y aviso de cuotas vencidas (includes/socios_prestamos.php).
  * La tasa del dólar va en su propio cron (cron/tasa_dolar.php).
  */
 require_once __DIR__ . '/correo_pagos.php';
@@ -12,6 +13,7 @@ require_once __DIR__ . '/cobros.php';
 require_once __DIR__ . '/tasa_cambio.php';
 require_once __DIR__ . '/documentos.php';
 require_once __DIR__ . '/aviso_pendientes.php';
+require_once __DIR__ . '/socios_prestamos.php';
 
 /**
  * Avisos de pago pendientes, desde la hora configurada, sin repetir los ya enviados.

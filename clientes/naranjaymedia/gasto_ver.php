@@ -741,6 +741,14 @@ $archivoNombre = $g['archivo_nombre'] ?? basename($archivoRaw);
                                         🔄 Quincenal</option>
                                 </select>
                             </div>
+                            <?php if (($g['naturaleza'] ?? '') === 'retiro'): require_once '../../includes/socios.php'; $__sl = sociosLista($pdo, (int)$g['cliente_id']); if ($__sl): ?>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Socio <span class="text-danger">*</span></label>
+                                <select name="socio_id" class="form-select" required>
+                                    <?php foreach ($__sl as $__s): ?><option value="<?= (int)$__s['id'] ?>" <?= (int)($g['socio_id'] ?? 0) === (int)$__s['id'] ? 'selected' : '' ?>><?= htmlspecialchars($__s['nombre']) ?></option><?php endforeach; ?>
+                                </select>
+                            </div>
+                            <?php endif; endif; ?>
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">Proveedor</label>
                                 <?php $psId = 'gv_prov'; $psValor = (string)($g['proveedor'] ?? ''); $psClase = 'form-select'; require '../../includes/templates/proveedor_select.php'; ?>
@@ -1011,6 +1019,8 @@ $archivoNombre = $g['archivo_nombre'] ?? basename($archivoRaw);
         document.getElementById('btnEditarGasto')?.addEventListener('click', () => {
             new bootstrap.Modal(document.getElementById('modalEditarGasto')).show();
         });
+        // Desde Socios → Retiros («Editar»): abre el formulario directamente
+        if (location.hash === '#editar' && document.getElementById('btnEditarGasto')) document.getElementById('btnEditarGasto').click();
         // Toggle tarjeta en modal editar
         document.getElementById('editMetodoPago')?.addEventListener('change', function() {
             document.getElementById('editGrpTarjeta').style.display = this.value === 'tarjeta' ? '' : 'none';

@@ -70,7 +70,7 @@ $menuLateral = [
 		['cheques', 'bi-journal-check', 'Cheques', []],
 		['tarjetas', 'bi-credit-card', 'Tarjetas', []],
 		['activos', 'bi-pc-display', 'Activos y préstamos', []],
-		['socios', 'bi-person-badge', 'Socios: aportes y retiros', []],
+		['socios', 'bi-person-badge', 'Socios: aportes, retiros y préstamos', ['socio_prestamo']],
 	])),
 	'Reportes' => [
 		['financiero', 'bi-graph-up', 'Estado de resultados', []],

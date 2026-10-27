@@ -3148,3 +3148,5 @@ require __DIR__ . "/gastos_operativos.php";
 require __DIR__ . "/programas.php";
 
 require __DIR__ . "/pauta_cliente.php";
+
+require __DIR__ . "/socios_prestamos.php";

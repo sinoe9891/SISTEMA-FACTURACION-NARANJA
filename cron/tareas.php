@@ -29,3 +29,4 @@ cobrosPendientesEnviar($pdo, $log);
 // La tasa del dólar va en su propio cron (cron/tasa_dolar.php): una consulta a la medianoche de Honduras
 cronDocumentosVencimiento($pdo, $log);
 cronAvisoPendientes($pdo, $log);
+spAvisosCron($pdo, $log);

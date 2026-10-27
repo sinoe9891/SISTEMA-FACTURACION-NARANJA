@@ -132,6 +132,11 @@ function efBalance(PDO $pdo, int $cid, string $corte, float $tasa): array
         if ($prest > 0) $activo['Cuentas por cobrar'][] = ['nombre' => 'Préstamos y adelantos a colaboradores', 'monto' => $prest];
     }
 
+    // Préstamos a socios: lo que aún deben devolver
+    require_once __DIR__ . '/socios_prestamos.php';
+    $spSaldo = spSaldoAlCorte($pdo, $cid, $corte);
+    if ($spSaldo > 0) $activo['Cuentas por cobrar'][] = ['nombre' => 'Préstamos a socios', 'monto' => $spSaldo];
+
     // Anticipos a proveedores (pagados, aún sin su factura): dinero a favor
     $antProv = anticiposProveedorSaldo($pdo, $cid, $corte);
     if ($antProv > 0) $activo['Cuentas por cobrar'][] = ['nombre' => 'Anticipos a proveedores', 'monto' => $antProv];

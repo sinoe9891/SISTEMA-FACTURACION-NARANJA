@@ -55,7 +55,7 @@ const PERMISOS_ACCIONES = [
     // Bancos
     'banco_cuenta' => ['bancos'], 'movimiento_archivo' => ['bancos'], 'banco_accion' => ['bancos', 'cheques', 'configuracion_tasa'],
     'tarjeta_guardar' => ['tarjetas'], 'tarjeta_actualizar' => ['tarjetas'], 'tarjeta_eliminar' => ['tarjetas'],
-    'activo_accion' => ['activos'], 'socio_accion' => ['socios'], 'socio_archivo' => ['socios'],
+    'activo_accion' => ['activos'], 'socio_accion' => ['socios'], 'socio_archivo' => ['socios'], 'socio_prestamo' => ['socios'], 'socio_prestamo_accion' => ['socios'], 'socio_prestamo_pdf' => ['socios'], 'socio_prestamo_archivo' => ['socios'],
     // Reportes
     'proyeccion_desglose_real' => ['proyeccion'],
     // Personal
@@ -80,7 +80,7 @@ const PERMISOS_ACCIONES = [
 
 /** Páginas que se abren en el navegador (al bloquearlas se redirige); lo demás son acciones (responden 403). */
 const PERMISOS_VISTAS = ['ver_factura', 'cotizacion_editar', 'cotizacion_pdf', 'editar_factura', 'editar_contrato', 'facturas_contrato', 'generar_recibo', 'estado_cuenta', 'gasto_ver', 'banco_cuenta',
-    'colaborador_ver', 'colaborador_reporte', 'gasto_operativo_archivo', 'gastos_operativos_exportar', 'crear_cliente', 'editar_cliente', 'inventario_kardex', 'inventario_reportes', 'crear_cai', 'editar_cai', 'nuevo_cobro'];
+    'colaborador_ver', 'colaborador_reporte', 'socio_prestamo', 'socio_prestamo_pdf', 'socio_prestamo_archivo', 'gasto_operativo_archivo', 'gastos_operativos_exportar', 'crear_cliente', 'editar_cliente', 'inventario_kardex', 'inventario_reportes', 'crear_cai', 'editar_cai', 'nuevo_cobro'];
 
 /** Páginas del menú lateral (cada una es su propia opción). */
 const PERMISOS_PAGINAS = ['generar_factura', 'lista_facturas', 'cotizaciones', 'contratos', 'crear_contrato', 'cuentas_cobrar', 'pagos_recibidos', 'cobros_programados', 'cuentas_pagar', 'gastos',
