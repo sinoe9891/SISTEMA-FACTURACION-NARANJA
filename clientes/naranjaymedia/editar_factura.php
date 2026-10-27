@@ -523,6 +523,7 @@ require_once '../../includes/templates/header.php';
 					</div>
 				</div>
 
+				<?php require_once '../../includes/comisiones.php'; $cmCid = (int)$factura['cliente_id']; $cmActual = comisionDeFactura($pdo, (int)$factura['cliente_id'], (int)$factura['id']); $cmCard = 'fe-card'; $cmLabel = 'fe-form-label'; require '../../includes/templates/comision_campo.php'; ?>
 			</div><!-- /col-lg-8 -->
 
 			<!-- Totales sidebar -->

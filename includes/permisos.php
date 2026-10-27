@@ -50,6 +50,7 @@ const PERMISOS_ACCIONES = [
     'boucher_lote' => ['bouchers', 'pagos_nomina', 'colaboradores'], 'boucher_pdf' => ['bouchers', 'pagos_nomina', 'colaboradores', 'gastos'],
     'licencia_accion' => ['licencias'], 'licencias_exportar' => ['licencias'],
     'proveedor_accion' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar', 'gastos_operativos'], 'proveedor_logo' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar'],
+    'comision_accion' => ['comisiones', 'generar_factura', 'lista_facturas'],
     'gasto_operativo_accion' => ['gastos_operativos'], 'gasto_operativo_archivo' => ['gastos_operativos'], 'gastos_operativos_exportar' => ['gastos_operativos'],
     'categoria_gasto_guardar' => ['categorias_gastos'], 'categoria_gasto_actualizar' => ['categorias_gastos'], 'categoria_gasto_eliminar' => ['categorias_gastos'],
     // Bancos
@@ -84,7 +85,7 @@ const PERMISOS_VISTAS = ['ver_factura', 'cotizacion_editar', 'cotizacion_pdf', '
 
 /** Páginas del menú lateral (cada una es su propia opción). */
 const PERMISOS_PAGINAS = ['generar_factura', 'lista_facturas', 'cotizaciones', 'contratos', 'crear_contrato', 'cuentas_cobrar', 'pagos_recibidos', 'cobros_programados', 'cuentas_pagar', 'gastos',
-    'gastos_operativos', 'licencias', 'bouchers', 'proveedores', 'categorias_gastos', 'bancos', 'cheques', 'tarjetas', 'activos', 'socios', 'financiero', 'estados_financieros', 'balance_general',
+    'gastos_operativos', 'comisiones', 'licencias', 'bouchers', 'proveedores', 'categorias_gastos', 'bancos', 'cheques', 'tarjetas', 'activos', 'socios', 'financiero', 'estados_financieros', 'balance_general',
     'proyeccion', 'colaboradores', 'pagos_nomina', 'clientes', 'productos', 'productos_clientes', 'pos', 'pos_turnos', 'inventario', 'inventario_traslados', 'usuarios'];
 
 /** Lo de siempre (antes de los interruptores). */

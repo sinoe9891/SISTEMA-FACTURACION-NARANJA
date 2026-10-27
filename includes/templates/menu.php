@@ -60,6 +60,7 @@ $menuLateral = [
 		['cuentas_pagar', 'bi-calendar-check', 'Cuentas por pagar', []],
 		['gastos', 'bi-wallet2', 'Gastos', ['gasto_ver']],
 		['gastos_operativos', 'bi-clipboard2-data', 'Gastos operativos', [], $__menuGastosOp, 'Gastos operativos por revisar'],
+		['comisiones', 'bi-person-badge', 'Comisiones por venta', []],
 		['licencias', 'bi-key', 'Licencias', []],
 		['bouchers', 'bi-receipt-cutoff', 'Bouchers', []],
 		['proveedores', 'bi-truck', 'Proveedores', []],

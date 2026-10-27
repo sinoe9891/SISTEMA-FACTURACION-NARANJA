@@ -475,6 +475,7 @@ require_once '../../includes/templates/header.php';
                     </div>
                 </div>
 
+                <?php $cmCid = (int)$cliente_id; $cmActual = null; $cmCard = 'fv-card'; $cmLabel = 'fv-form-label'; require '../../includes/templates/comision_campo.php'; ?>
             </div><!-- /col-lg-8 -->
 
             <!-- Totales sidebar -->

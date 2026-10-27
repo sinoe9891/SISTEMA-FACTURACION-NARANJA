@@ -466,6 +466,13 @@ try {
 
 				// Eliminar factura e items
 				$pdo->prepare("DELETE FROM factura_items_receptor WHERE factura_id = ?")->execute([$factura_id_iter]);
+				// Su comisión por venta: si ya se pagó no se borra la factura; si no, se quita con ella
+				if ($pdo->query("SHOW TABLES LIKE 'factura_comisiones'")->fetchColumn()) {
+					$stCom = $pdo->prepare("SELECT estado FROM factura_comisiones WHERE factura_id = ?");
+					$stCom->execute([$factura_id_iter]);
+					if ($stCom->fetchColumn() === 'pagada') throw new Exception('La factura tiene una comisión por venta ya pagada: anula ese pago en Comisiones antes de eliminarla.');
+					$pdo->prepare("DELETE FROM factura_comisiones WHERE factura_id = ?")->execute([$factura_id_iter]);
+				}
 				$pdo->prepare("DELETE FROM facturas WHERE id = ?")->execute([$factura_id_iter]);
 
 				// Obtener nuevo último correlativo (ya sin la factura eliminada)
@@ -502,6 +509,8 @@ try {
 				}
 
 				$pdo->prepare("UPDATE facturas SET estado = 'anulada' WHERE id = ?")->execute([$factura_id_iter]);
+				require_once '../../includes/comisiones.php';
+				comisionRecalcular($pdo, (int)$factura['cliente_id'], (int)$factura_id_iter);   // la comisión no pagada queda anulada
 				invRevertirFactura($pdo, (int)$factura['cliente_id'], (int)$factura_id_iter, (int)$facturador_id, 'Factura anulada: ' . $motivo);
 
 				$pdo->prepare("INSERT INTO bitacora_facturas (factura_id, usuario_id, autorizador_id, accion, motivo, fecha)
@@ -517,6 +526,8 @@ try {
 				}
 
 				$pdo->prepare("UPDATE facturas SET estado = 'emitida' WHERE id = ?")->execute([$factura_id_iter]);
+				require_once '../../includes/comisiones.php';
+				comisionRecalcular($pdo, (int)$factura['cliente_id'], (int)$factura_id_iter);   // vuelve su comisión
 				// Restaurada: vuelve a descontar del inventario (falla si ya no hay existencia)
 				invDescontarFactura($pdo, (int)$factura['cliente_id'], (int)$factura_id_iter, (int)$factura['establecimiento_id'], (int)$facturador_id);
 

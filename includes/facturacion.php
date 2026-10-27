@@ -11,6 +11,7 @@ require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/inventario.php';
 require_once __DIR__ . '/moneda_factura.php';
 require_once __DIR__ . '/programas.php';
+require_once __DIR__ . '/comisiones.php';
 
 /**
  * @param array $d receptor_id, cai_rango_id, establecimiento_id, condicion_pago, productos[] (id, cantidad,
@@ -163,6 +164,8 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
     // Programa (p. ej. PROGRESE): el del contrato o el elegido
     if ($prog = facturaProgramaResolver($pdo, $cliente_id, (int)$receptor_id, $contrato_id, $d['programa_id'] ?? null))
         $pdo->prepare("UPDATE facturas SET programa_id = ? WHERE id = ?")->execute([$prog, $factura_id]);
+    // Comisión por venta (opcional): vendedor y porcentaje del subtotal o cantidad fija
+    comisionDesdeFactura($pdo, $cliente_id, $usuario_id, $factura_id, $d);
     if ($moneda === 'USD') facturaGuardarMoneda($pdo, $factura_id, $tasa, facturaTotalUsd($lineasUsd, (bool)$exonerado), $preciosUsd);
 
     // Inventario: descontar los bienes (sin existencia suficiente, falla toda la factura)
