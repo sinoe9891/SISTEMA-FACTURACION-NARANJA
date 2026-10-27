@@ -23,7 +23,7 @@ try {
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $g = gastosOpObtener($pdo, $cid, (int)($_GET['ver'] ?? 0), $permitidos);
-        $g['puede_editar'] = $g['estado'] !== 'aprobado' && (gastosOpEsAdmin($rol) || (int)$g['usuario_id'] === $uid);
+        $g['puede_editar'] = gastosOpEsAdmin($rol) || ($g['estado'] !== 'aprobado' && (int)$g['usuario_id'] === $uid);   // el administrador también corrige uno aprobado
         echo json_encode(['success' => true, 'gasto' => $g, 'archivos' => array_map(fn($a) => [
             'id' => (int)$a['id'], 'tipo' => $a['tipo'], 'nombre' => $a['nombre'], 'subido_por' => $a['subido_por'], 'fecha' => date('d/m/Y H:i', strtotime($a['creado_en'])),
             'puede_quitar' => gastosOpEsAdmin($rol) || ($g['estado'] !== 'aprobado' && (int)$a['usuario_id'] === $uid),

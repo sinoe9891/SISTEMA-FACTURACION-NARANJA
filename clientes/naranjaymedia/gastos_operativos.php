@@ -179,7 +179,7 @@ require_once '../../includes/templates/header.php';
                         <td><span class="badge" style="background:<?= $eBg ?>;color:<?= $eFg ?>"><i class="bi <?= $eIco ?> me-1"></i><?= $eTxt ?></span>
                             <?php if ($g['gasto_id']): ?><div class="small text-muted">Gastos N.º <?= (int)$g['gasto_id'] ?></div><?php endif; ?></td>
                         <td class="text-end text-nowrap">
-                            <button class="btn btn-sm btn-outline-primary go-ver" data-id="<?= (int)$g['id'] ?>" title="Ver, editar y adjuntar"><i class="bi bi-<?= $g['estado'] !== 'aprobado' && ($esAdmin || (int)$g['usuario_id'] === $uid) ? 'pencil' : 'eye' ?>"></i></button>
+                            <button class="btn btn-sm btn-outline-primary go-ver" data-id="<?= (int)$g['id'] ?>" title="Ver, editar y adjuntar"><i class="bi bi-<?= $esAdmin || ($g['estado'] !== 'aprobado' && (int)$g['usuario_id'] === $uid) ? 'pencil' : 'eye' ?>"></i></button>
                             <?php if ($esAdmin && $g['estado'] === 'pendiente'): ?><button class="btn btn-sm btn-success go-revisar" data-id="<?= (int)$g['id'] ?>" data-tipo-cat="<?= (int)array_column($tipos, 'categoria_id', 'id')[$g['tipo_id']] ?>" data-desc="<?= $e(gastosOpCuentaTexto($g) . ' · ' . $g['descripcion'] . ' · ' . monedaFmt($g['monto'], $g['moneda'])) ?>" data-cobrar="<?= (int)$g['cobrar_cliente'] ?>" title="Aprobar o rechazar"><i class="bi bi-check2-square"></i></button><?php endif; ?>
                         </td>
                     </tr>
@@ -469,7 +469,8 @@ require_once '../../includes/templates/header.php';
             pintarArchivos(d.archivos, true);
             document.getElementById('gBitacora').innerHTML = d.bitacora.map(b => `<li>${esc(b.fecha)} · ${esc(b.usuario || '')}: ${esc(b.accion)}${b.detalle ? ' — ' + esc(b.detalle) : ''}</li>`).join('');
             document.getElementById('gBitWrap').hidden = !d.bitacora.length;
-            document.getElementById('gEliminar').hidden = !editable;
+            document.getElementById('gEliminar').hidden = !editable || g.estado === 'aprobado';   // un aprobado se regresa a revisión antes de eliminarlo
+            if (editable && g.estado === 'aprobado') document.getElementById('gAviso').insertAdjacentHTML('beforeend', `<div class="alert alert-info py-2 small"><i class="bi bi-pencil me-1"></i>Puedes corregirlo: sigue aprobado${g.gasto_id ? ' y el gasto N.º ' + g.gasto_id + ' de Gastos se actualiza solo' : ''}.</div>`);
             const re = document.getElementById('gReabrir'); if (re) re.hidden = g.estado !== 'aprobado';
         } else {
             document.getElementById('gTitulo').textContent = <?= json_encode($pautaCliente ? 'Registrar pauta del cliente' : 'Registrar gasto') ?>;

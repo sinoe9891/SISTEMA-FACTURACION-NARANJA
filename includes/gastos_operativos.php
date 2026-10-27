@@ -330,14 +330,17 @@ function gastosOpLog(PDO $pdo, int $id, int $uid, string $accion, ?string $detal
     $pdo->prepare("INSERT INTO gastos_op_bitacora (gasto_op_id, usuario_id, accion, detalle) VALUES (?, ?, ?, ?)")->execute([$id, $uid, $accion, $detalle ? mb_substr($detalle, 0, 500) : null]);
 }
 
-/** Crea o edita. El colaborador solo edita los suyos pendientes o rechazados (al editar un rechazado vuelve a «Por revisar»). */
+/**
+ * Crea o edita. El colaborador solo edita los suyos pendientes o rechazados (al editar un rechazado vuelve a «Por revisar»).
+ * El administrador también edita uno aprobado: sigue aprobado y el gasto que se creó en Gastos al aprobarlo se actualiza.
+ */
 function gastosOpGuardar(PDO $pdo, int $cid, int $uid, string $rol, array $d, ?array $permitidos, int $id = 0): int
 {
     $admin = gastosOpEsAdmin($rol);
     $antes = null;
     if ($id) {
         $antes = gastosOpObtener($pdo, $cid, $id, $permitidos);
-        if ($antes['estado'] === 'aprobado') throw new Exception("El gasto ya está aprobado: pídele al administrador que lo regrese a revisión para cambiarlo.");
+        if ($antes['estado'] === 'aprobado' && !$admin) throw new Exception("El gasto ya está aprobado: pídele al administrador que lo corrija.");
         if (!$admin && (int)$antes['usuario_id'] !== $uid) throw new Exception("Solo puedes editar los gastos que registraste.");
     }
     [$receptor, $programa, $contrato] = gastosOpCuentaResolver($pdo, $cid, $d);
@@ -423,8 +426,9 @@ function gastosOpGuardar(PDO $pdo, int $cid, int $uid, string $rol, array $d, ?a
     if ($id) {
         $pdo->prepare("UPDATE gastos_operativos SET receptor_id = ?, tipo_id = ?, fecha = ?, descripcion = ?, proveedor = ?, factura_ref = ?, moneda = ?, monto = ?, tasa_cambio = ?,
                        monto_lempiras = ?, metodo_pago = ?, tarjeta_id = ?, campana = ?, pauta_inicio = ?, pauta_fin = ?, cobrar_cliente = ?, notas = ?,
-                       estado = 'pendiente', motivo_rechazo = NULL WHERE id = ? AND cliente_id = ?")->execute([...$vals, $id, $cid]);
-        gastosOpLog($pdo, $id, $uid, 'editado', $antes['estado'] === 'rechazado' ? 'Corregido y enviado otra vez a revisión' : null);
+                       estado = ?, motivo_rechazo = NULL WHERE id = ? AND cliente_id = ?")->execute([...$vals, $antes['estado'] === 'aprobado' ? 'aprobado' : 'pendiente', $id, $cid]);
+        $sinc = $antes['estado'] === 'aprobado' ? gastosOpSincronizarGasto($pdo, $cid, $id, $antes) : null;
+        gastosOpLog($pdo, $id, $uid, 'editado', $antes['estado'] === 'rechazado' ? 'Corregido y enviado otra vez a revisión' : ($antes['estado'] === 'aprobado' ? 'Editado ya aprobado' . ($sinc ? ' · ' . $sinc : '') : null));
         if (gastosOpConProgramas($pdo)) $pdo->prepare("UPDATE gastos_operativos SET programa_id = ?, contrato_id = ? WHERE id = ?")->execute([$programa, $contrato, $id]);
         gastosOpProveedorId($pdo, $id, $provId);
         $pdo->prepare('UPDATE gastos_operativos SET pagador=?, tarjeta_cliente_alias=?, tarjeta_cliente_ultimos=? WHERE id=? AND cliente_id=?')->execute([$pagador,$aliasTarjeta,$ultimosTarjeta,$id,$cid]);
@@ -577,6 +581,33 @@ function gastosOpRevisar(PDO $pdo, int $cid, int $uid, string $rol, int $id, str
     $pdo->prepare("UPDATE gastos_operativos SET estado = 'aprobado', motivo_rechazo = NULL, revisado_por = ?, revisado_en = NOW(), gasto_id = ? WHERE id = ?")->execute([$uid, $gastoId, $id]);
     gastosOpLog($pdo, $id, $uid, 'aprobado', $gastoId ? ($registro === 'nuevo' ? 'Registrado en Gastos como N.º ' : 'Ligado al gasto N.º ') . $gastoId : 'Sin registrar en Gastos');
     return $gastoId;
+}
+
+/**
+ * Tras editar un gasto aprobado: el gasto que se creó en Gastos al aprobarlo toma los datos nuevos (monto, fecha, descripción,
+ * pago, proveedor y a quién se cobra). Si ya se le cobró al cliente en una factura, no se cambian el monto ni el cliente.
+ * Uno ligado a un gasto que ya existía (p. ej. del estado de cuenta de la tarjeta) no se toca. Devuelve un texto para la bitácora.
+ */
+function gastosOpSincronizarGasto(PDO $pdo, int $cid, int $id, array $antes): ?string
+{
+    if (empty($antes['gasto_id'])) return null;
+    $gid = (int)$antes['gasto_id'];
+    $st = $pdo->prepare("SELECT * FROM gastos WHERE id = ? AND cliente_id = ?");
+    $st->execute([$gid, $cid]);
+    $gs = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$gs || $gs['estado'] === 'anulado') return null;
+    if (!str_contains((string)$gs['notas'], 'Gastos operativos (#' . $id . ')')) return "el gasto N.º $gid ya existía: revísalo a mano";
+    $g = gastosOpObtener($pdo, $cid, $id, null);
+    $receptorCobro = (int)$g['cobrar_cliente'] ? (int)$g['receptor_id'] : null;
+    if ($gs['cobrado_factura_id'] && (abs((float)$gs['monto'] - (float)$g['monto_lempiras']) > 0.004 || (int)$gs['cobrar_receptor_id'] !== (int)$receptorCobro))
+        throw new Exception("El gasto N.º $gid ya se le cobró al cliente en una factura: el monto y el cliente ya no se pueden cambiar.");
+    $desc = mb_substr('Gasto operativo · ' . $g['tipo'] . ' · ' . gastosOpCuentaTexto($g) . ': ' . $g['descripcion']
+        . ($g['moneda'] === 'USD' ? ' (USD ' . number_format((float)$g['monto'], 2) . ' × ' . rtrim(rtrim(number_format((float)$g['tasa_cambio'], 4), '0'), '.') . ')' : ''), 0, 300);
+    $metodo = ['tarjeta' => 'tarjeta', 'transferencia' => 'transferencia', 'efectivo' => 'efectivo'][$g['metodo_pago']] ?? 'otro';
+    $pdo->prepare("UPDATE gastos SET descripcion = ?, monto = ?, fecha = ?, metodo_pago = ?, tarjeta_id = ?, proveedor = ?, factura_ref = ?, cobrar_receptor_id = ? WHERE id = ? AND cliente_id = ?")
+        ->execute([$desc, (float)$g['monto_lempiras'], $g['fecha'], $metodo, $metodo === 'tarjeta' ? ($g['tarjeta_id'] ?: null) : null, $g['proveedor'], $g['factura_ref'], $receptorCobro, $gid, $cid]);
+    if (!empty($g['proveedor_id'])) $pdo->prepare("UPDATE gastos SET proveedor_id = ? WHERE id = ?")->execute([(int)$g['proveedor_id'], $gid]);
+    return "se actualizó el gasto N.º $gid";
 }
 
 /** Regresa un aprobado a revisión (solo administrador). El gasto que se creó al aprobarlo se anula (uno ligado ya existente se deja). */

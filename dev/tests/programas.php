@@ -170,3 +170,34 @@ suite('Retiros de socio: en Gastos con su socio y comprobante; Socios los lista'
     if ($a) @unlink(__DIR__ . '/../../clientes/naranjaymedia/includes/uploads/gastos/' . $a);
     $pdo->exec("DELETE FROM gastos WHERE id = $gid");
 });
+
+suite('Gastos operativos: el administrador corrige uno aprobado y se actualiza su gasto', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $oid = (int)$pdo->query("SELECT id FROM usuarios WHERE correo = 'qa.operativo@local.test'")->fetchColumn();
+    if (!$oid) { check('existe el usuario operativo de QA', false); return; }
+    $c->post('includes/gasto_operativo_accion.php', ['accion' => 'asignar', 'usuario_id' => $oid, 'cuentas[0]' => 'c:1']);
+    $op = login('qa.operativo@local.test');
+    $tipo = (int)$pdo->query("SELECT id FROM gastos_op_tipos WHERE cliente_id = 2 AND nombre = 'Combustible'")->fetchColumn();
+    $base = ['accion' => 'guardar', 'cuenta' => 'c:1', 'tipo_id' => $tipo, 'fecha' => date('Y-m-d'), 'descripcion' => 'QA corregir aprobado', 'moneda' => 'HNL', 'monto' => 500, 'metodo_pago' => 'efectivo', 'cobrar_cliente' => 1];
+    $gid = (int)($op->post('includes/gasto_operativo_accion.php', $base)['json']['id'] ?? 0);
+    $gasto = (int)($c->post('includes/gasto_operativo_accion.php', ['accion' => 'aprobar', 'id' => $gid, 'registro' => 'nuevo'])['json']['gasto_id'] ?? 0);
+    check('aprobado y registrado en Gastos', $gid && $gasto);
+    $v = $c->get('includes/gasto_operativo_accion.php', ['ver' => $gid]);
+    check('el administrador puede editarlo (el colaborador no)', ($v['json']['gasto']['puede_editar'] ?? false) === true && ($op->get('includes/gasto_operativo_accion.php', ['ver' => $gid])['json']['gasto']['puede_editar'] ?? true) === false);
+    $r = $op->post('includes/gasto_operativo_accion.php', $base + ['id' => $gid, 'monto' => 600]);
+    check('el colaborador no cambia uno aprobado', !($r['json']['success'] ?? true));
+    $r = $c->post('includes/gasto_operativo_accion.php', array_merge($base, ['id' => $gid, 'monto' => 650, 'descripcion' => 'QA corregido']));
+    $g = $pdo->query("SELECT estado, monto_lempiras FROM gastos_operativos WHERE id = $gid")->fetch(PDO::FETCH_ASSOC);
+    $gs = $pdo->query("SELECT monto, descripcion FROM gastos WHERE id = $gasto")->fetch(PDO::FETCH_ASSOC);
+    check('sigue aprobado y el gasto de Gastos toma el monto y la descripción nuevos', ($r['json']['success'] ?? false) && $g['estado'] === 'aprobado' && (float)$g['monto_lempiras'] === 650.0
+        && (float)$gs['monto'] === 650.0 && str_contains($gs['descripcion'], 'QA corregido'), $r['body']);
+    $pdo->exec("UPDATE gastos SET cobrado_factura_id = 999999 WHERE id = $gasto");
+    $r = $c->post('includes/gasto_operativo_accion.php', array_merge($base, ['id' => $gid, 'monto' => 700, 'descripcion' => 'QA corregido']));
+    check('si ya se le cobró al cliente, no deja cambiar el monto', !($r['json']['success'] ?? true) && (float)$pdo->query("SELECT monto FROM gastos WHERE id = $gasto")->fetchColumn() === 650.0, $r['body']);
+    $r = $c->post('includes/gasto_operativo_accion.php', array_merge($base, ['id' => $gid, 'monto' => 650, 'descripcion' => 'QA corregido 2']));
+    check('pero sí la descripción', ($r['json']['success'] ?? false) && str_contains((string)$pdo->query("SELECT descripcion FROM gastos WHERE id = $gasto")->fetchColumn(), 'QA corregido 2'), $r['body']);
+    $pdo->exec("DELETE FROM gastos WHERE id = $gasto");
+    $pdo->exec("DELETE FROM gastos_operativos WHERE id = $gid");
+    $pdo->exec("DELETE FROM usuarios_clientes WHERE usuario_id = $oid");
+});
