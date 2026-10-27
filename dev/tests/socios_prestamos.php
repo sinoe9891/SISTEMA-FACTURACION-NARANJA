@@ -148,3 +148,28 @@ suite('Préstamos a socios: alertas en Inicio con botón de pago', function () {
     $pdo->exec("DELETE FROM socios_prestamo_cuotas WHERE prestamo_id = $id");
     $pdo->exec("DELETE FROM socios_prestamos WHERE id = $id");
 });
+
+suite('Cobrar varias facturas a la vez: entran al banco (cada una a su cuenta)', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $fs = $pdo->query("SELECT f.id, f.pagada, f.total FROM facturas f WHERE f.cliente_id = 2 AND f.estado = 'emitida' AND NOT EXISTS (SELECT 1 FROM cobros_factura c WHERE c.factura_id = f.id) ORDER BY f.id DESC LIMIT 2")->fetchAll(PDO::FETCH_ASSOC);
+    if (count($fs) < 2) { check('hay 2 facturas para probar', false); return; }
+    $antes = array_column($fs, 'pagada', 'id');
+    $pdo->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, titular, moneda, saldo_inicial, fecha_saldo_inicial, activa) VALUES (2,'QA','ahorro','QA-CV1','QA','HNL',0,'2020-01-01',1),(2,'QA','ahorro','QA-CV2','QA','HNL',0,'2020-01-01',1)");
+    $c1 = (int)$pdo->lastInsertId(); $c2 = $c1 + 1;   // con varias filas, lastInsertId es la primera
+    [$a, $b] = [(int)$fs[0]['id'], (int)$fs[1]['id']];
+    $pdo->exec("UPDATE facturas SET pagada = 1 WHERE id IN ($a, $b)");   // marcadas pagadas a mano, sin cobro (como pasó en producción)
+    $r = $c->post('includes/cxc_accion.php', ['accion' => 'cobrar_varias', 'factura_ids[0]' => $a, 'factura_ids[1]' => $b, "cuentas[$a]" => $c1, "cuentas[$b]" => $c2,
+        'fecha' => date('Y-m-d'), 'metodo' => 'transferencia', 'referencia' => 'QA-CV']);
+    $mov = fn($fid) => $pdo->query("SELECT m.cuenta_id, m.monto FROM cobros_factura x JOIN movimientos_bancarios m ON m.id = x.movimiento_id WHERE x.factura_id = $fid AND x.anulado = 0")->fetch(PDO::FETCH_ASSOC);
+    $ma = $mov($a); $mb = $mov($b);
+    check('cada factura pagada a mano se cobra por su total y entra a su cuenta', ($r['json']['success'] ?? false) && $ma && (int)$ma['cuenta_id'] === $c1 && (float)$ma['monto'] === (float)$fs[0]['total']
+        && $mb && (int)$mb['cuenta_id'] === $c2 && (int)$pdo->query("SELECT pagada FROM facturas WHERE id = $a")->fetchColumn() === 1, $r['body']);
+    $l = $c->get('lista_facturas');
+    check('el Historial ofrece registrar el cobro al marcar varias pagadas', str_contains($l['body'], "accion', 'cobrar_varias'"));
+    // Limpieza
+    foreach ($pdo->query("SELECT id, movimiento_id FROM cobros_factura WHERE factura_id IN ($a, $b)")->fetchAll(PDO::FETCH_ASSOC) as $x) { $pdo->exec("DELETE FROM cobros_factura WHERE id = " . (int)$x['id']); }
+    $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id IN ($c1, $c2)");
+    $pdo->exec("DELETE FROM cuentas_bancarias WHERE id IN ($c1, $c2)");
+    foreach ($antes as $fid => $pg) $pdo->exec("UPDATE facturas SET pagada = " . (int)$pg . " WHERE id = " . (int)$fid);
+});

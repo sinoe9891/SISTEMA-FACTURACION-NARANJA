@@ -129,6 +129,9 @@ $pendientes_monto  = array_sum(array_map(fn($f) => (float)$f['total'], $pendient
 $total_monto       = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
 $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
 $puedeCobrarLf     = in_array($datos['rol'], ['admin', 'superadmin', 'facturador'], true) && permisoPuede($pdo, 'cuentas_cobrar');   // «Registrar cobro» → Cuentas por cobrar
+// Cuentas en lempiras para registrar el cobro de varias facturas a la vez (entra al banco)
+$cuentasCobroLf = [];
+if ($puedeCobrarLf) { require_once '../../includes/bancos.php'; if (bancosDisponible($pdo)) foreach (bancoCuentas($pdo, (int)cliente_actual()) as $cb) if ($cb['moneda'] === 'HNL' && (int)$cb['activa']) $cuentasCobroLf[] = ['id' => (int)$cb['id'], 'txt' => $cb['banco'] . ' ' . $cb['numero'], 'pred' => (int)($cb['predeterminada'] ?? 0)]; }
 
 // Tarjeta "Totales": respeta el filtro de fecha/CAI activo; sin filtro, muestra el mes actual (igual que el dashboard).
 if ($fecha_desde || $fecha_hasta || $caix) {
@@ -2377,6 +2380,50 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 				if (q.isConfirmed) { irACobro = true; delete estados.pagada; }
 			}
 			if (irACobro && !Object.keys(estados).length) { location.href = 'cuentas_cobrar?cobrar=' + facturaIds[0]; return; }
+			// Marcar VARIAS como pagadas: se registra el cobro de cada una (su saldo) y entra al banco, para que cuadre con Bancos
+			if (facturaIds.length > 1 && estados.pagada === 1 && !(presetEstados && +presetEstados.pagada === 1) && <?= $puedeCobrarLf ? 'true' : 'false' ?>) {
+				const CTAS = <?= json_encode($cuentasCobroLf, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+				const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+				// Saldo de cada factura (una marcada «pagada» sin cobros se cobra por su total)
+				const facts = await Promise.all(facturaIds.map(id => fetch('includes/cxc_accion.php?factura_id=' + id, { credentials: 'same-origin' }).then(r => r.json()).then(d => d.factura).catch(() => null)));
+				const L = n => 'L ' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+				const optCtas = sel => '<option value="">— No registrar en banco —</option>' + CTAS.map(c => `<option value="${c.id}" ${String(c.id) === String(sel) ? 'selected' : ''}>${esc(c.txt)}</option>`).join('');
+				const pred = (CTAS.find(c => c.pred) || CTAS[0] || {}).id || '';
+				const filas = facts.map((f, i) => f ? `<tr><td><input type="checkbox" class="form-check-input cv-chk" data-id="${f.id}" checked></td><td class="font-monospace small">${esc(f.correlativo.slice(-8))}</td>
+					<td class="text-end small">${L(f.abonado > 0 ? f.saldo : f.total)}</td><td><select class="form-select form-select-sm cv-cta" data-id="${f.id}">${optCtas(pred)}</select></td></tr>` : '').join('');
+				const q = await Swal.fire({
+					icon: 'question', title: 'Registrar el cobro de las facturas', width: 640,
+					html: `<div class="text-start small mb-2">Marca las que se pagaron y a qué cuenta entró cada una. Se registra su saldo y <strong>entra al banco</strong> (un depósito por factura, con la misma referencia).</div>
+						<table class="table table-sm align-middle text-start mb-2"><thead><tr><th></th><th>Factura</th><th class="text-end">Saldo</th><th>Entró a la cuenta</th></tr></thead><tbody>${filas}</tbody></table>
+						<div class="row g-2 text-start">
+						<div class="col-6"><label class="form-label small mb-0">Fecha del pago</label><input type="date" id="cvFecha" class="form-control" value="${new Date().toLocaleDateString('en-CA')}"></div>
+						<div class="col-6"><label class="form-label small mb-0">Método</label><select id="cvMetodo" class="form-select"><option value="transferencia">Transferencia</option><option value="deposito">Depósito</option><option value="efectivo">Efectivo</option><option value="cheque">Cheque</option><option value="otro">Otro</option></select></div>
+						<div class="col-6"><label class="form-label small mb-0">Referencia</label><input id="cvRef" class="form-control" maxlength="100"></div>
+						<div class="col-6"><label class="form-label small mb-0">Comprobante (opcional)</label><input type="file" id="cvComp" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf"></div></div>`,
+					showCancelButton: true, showDenyButton: true, focusConfirm: false,
+					confirmButtonText: '<i class="bi bi-cash-coin"></i> Registrar cobros', denyButtonText: 'Solo marcarlas pagadas', cancelButtonText: 'Cancelar',
+					confirmButtonColor: '#15803d', denyButtonColor: '#64748b',
+					preConfirm: () => {
+						const ids = [...document.querySelectorAll('.cv-chk:checked')].map(c => c.dataset.id);
+						if (!ids.length) { Swal.showValidationMessage('Marca al menos una factura.'); return false; }
+						if (!document.getElementById('cvFecha').value) { Swal.showValidationMessage('Escribe la fecha del pago.'); return false; }
+						const cuentas = {}; document.querySelectorAll('.cv-cta').forEach(s => cuentas[s.dataset.id] = s.value);
+						return { ids, cuentas, fecha: document.getElementById('cvFecha').value, metodo: document.getElementById('cvMetodo').value, ref: document.getElementById('cvRef').value, comp: document.getElementById('cvComp').files[0] || null };
+					}
+				});
+				if (q.isDismissed) return;
+				if (q.isConfirmed) {
+					const fd = new FormData();
+					fd.append('accion', 'cobrar_varias'); q.value.ids.forEach(id => { fd.append('factura_ids[]', id); fd.append('cuentas[' + id + ']', q.value.cuentas[id]); });
+					fd.append('fecha', q.value.fecha); fd.append('metodo', q.value.metodo); fd.append('referencia', q.value.ref);
+					if (q.value.comp) fd.append('comprobante', q.value.comp);
+					Swal.fire({ title: 'Registrando cobros…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+					const d = await fetch('includes/cxc_accion.php', { method: 'POST', body: fd, credentials: 'same-origin' }).then(r => r.json()).catch(() => ({ success: false, error: 'Error de conexión.' }));
+					if (!d.success) return Swal.fire('No se pudo registrar', d.error, 'error');
+					delete estados.pagada;
+					if (!Object.keys(estados).length && result.value.declarada === '' && result.value.enviada === '') return Swal.fire('Cobros registrados', d.message, 'success').then(() => location.reload());
+				}
+			}
 			if (result.value.declarada !== '') estados.estado_declarada = parseInt(result.value.declarada, 10);
 			if (result.value.enviada !== '') estados.enviada_receptor = parseInt(result.value.enviada, 10);
 			fetch('procesar_accion_factura.php', {

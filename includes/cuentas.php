@@ -150,6 +150,33 @@ function cxcRegistrarCobro(PDO $pdo, int $cid, int $usuario, array $d, ?array $a
     return $id;
 }
 
+/**
+ * Cobra varias facturas de una vez (p. ej. una transferencia que paga dos facturas): a cada una se le registra su saldo,
+ * con la misma fecha, método, referencia, cuenta (cada factura entra al banco como su propio depósito) y comprobante.
+ * Una factura marcada «pagada» a mano sin abonos se cobra por su total (así su dinero entra al banco).
+ * $cuentas (opcional): [factura_id => cuenta_id] para que cada factura entre a su propia cuenta ('' = no registrar en banco).
+ * Devuelve [factura_id => cobro_id].
+ */
+function cxcCobrarVarias(PDO $pdo, int $cid, int $usuario, array $ids, array $d, ?array $adjunto = null, array $cuentas = []): array
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+    if (!$ids) throw new Exception("Elige al menos una factura.");
+    $out = [];
+    foreach ($ids as $fid) {
+        $f = cxcFactura($pdo, $cid, $fid, true);
+        if ($f['saldo'] <= 0 && (float)$f['abonado'] <= 0 && (int)$f['pagada']) {
+            // Pagada a mano sin cobro registrado: se cobra completa (vuelve a quedar pagada al registrar el abono)
+            $pdo->prepare("UPDATE facturas SET pagada = 0 WHERE id = ? AND cliente_id = ?")->execute([$fid, $cid]);
+            $f = cxcFactura($pdo, $cid, $fid, true);
+        }
+        if ($f['saldo'] <= 0) throw new Exception("La factura {$f['correlativo']} ya está cobrada.");
+        $dd = $d;
+        if (array_key_exists($fid, $cuentas)) $dd['cuenta_id'] = (int)$cuentas[$fid] ?: null;
+        $out[$fid] = cxcRegistrarCobro($pdo, $cid, $usuario, ['factura_id' => $fid, 'monto' => $f['saldo']] + $dd, $adjunto);
+    }
+    return $out;
+}
+
 /** Anula un abono (y su movimiento bancario, si lo tiene). */
 function cxcAnularCobro(PDO $pdo, int $cid, int $cobroId, string $motivo): void
 {

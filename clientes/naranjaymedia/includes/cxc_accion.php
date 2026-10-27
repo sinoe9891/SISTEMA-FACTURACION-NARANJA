@@ -4,6 +4,7 @@
 //   GET  ?factura_id=X          → abonos de la factura (JSON)
 //   POST accion=cobrar          → registra un abono (admin/superadmin/facturador)
 //   POST accion=anular_cobro    → anula un abono (admin/superadmin)
+//   POST accion=cobrar_varias   → factura_ids[], fecha, metodo, referencia, cuenta_id, notas, comprobante: cobra el saldo de cada una
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 require_once '../../../includes/cuentas.php';
@@ -48,6 +49,19 @@ try {
         $pdo->commit();
         echo json_encode(['success' => true, 'id' => $id, 'saldo' => $f['saldo'],
             'message' => $f['saldo'] > 0 ? 'Abono registrado. Saldo pendiente: L ' . number_format($f['saldo'], 2) : 'Factura cobrada por completo.'], JSON_UNESCAPED_UNICODE);
+    } elseif ($accion === 'cobrar_varias') {
+        if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true)) throw new Exception("No tienes permiso para registrar cobros.");
+        require_once __DIR__ . '/_gasto_adjuntos.php';
+        $adj = !empty($_FILES['comprobante']) && $pdo->query("SHOW COLUMNS FROM cobros_factura LIKE 'archivo_adjunto'")->fetchColumn()
+            ? guardarAdjuntoGasto($_FILES['comprobante'], $cid) : null;
+        try {
+            $hechos = cxcCobrarVarias($pdo, $cid, (int)USUARIO_ID, (array)($_POST['factura_ids'] ?? []), $_POST, $adj, array_map('strval', (array)($_POST['cuentas'] ?? [])));
+        } catch (Throwable $e) {
+            if ($adj) @unlink(gastoAdjuntoDir() . $adj[0]);
+            throw $e;
+        }
+        $pdo->commit();
+        echo json_encode(['success' => true, 'cobros' => $hechos, 'message' => count($hechos) === 1 ? 'Cobro registrado.' : count($hechos) . ' facturas cobradas' . (!empty($_POST['cuenta_id']) ? ' y depositadas en el banco.' : '.')], JSON_UNESCAPED_UNICODE);
     } elseif ($accion === 'anular_cobro') {
         if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) throw new Exception("Solo un administrador puede anular cobros.");
         cxcAnularCobro($pdo, $cid, (int)($_POST['id'] ?? 0), (string)($_POST['motivo'] ?? ''));
