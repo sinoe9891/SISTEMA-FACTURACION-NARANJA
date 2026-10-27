@@ -23,8 +23,10 @@ if ($puedeMover && $cid) {
 
 $totales = ['HNL' => 0.0, 'USD' => 0.0];
 $comprometido = ['HNL' => 0.0, 'USD' => 0.0];
+$porTipoHnl = ['ahorro' => 0.0, 'cheques' => 0.0];   // cuentas en lempiras: de ahorro y de cheques
 foreach ($activas as $c) {
     $totales[$c['moneda']] += (float)$c['saldo'];
+    if ($c['moneda'] === 'HNL') $porTipoHnl[$c['tipo'] === 'cheques' ? 'cheques' : 'ahorro'] += (float)$c['saldo'];
     $comprometido[$c['moneda']] += (float)$c['comprometido'];
 }
 
@@ -64,7 +66,9 @@ require_once '../../includes/templates/header.php';
 <?php else: ?>
 
     <div class="row g-3 mb-3">
-        <div class="col-6 col-lg-3"><div class="app-card app-kpi"><div class="app-kpi-label">Saldo en lempiras</div><div class="app-kpi-value"><?= bancoMoneda($totales['HNL'], 'HNL') ?></div></div></div>
+        <div class="col-6 col-lg-3"><div class="app-card app-kpi"><div class="app-kpi-label">Saldo en lempiras</div><div class="app-kpi-value"><?= bancoMoneda($totales['HNL'], 'HNL') ?></div>
+            <div class="small text-muted">Ahorro <?= bancoMoneda($porTipoHnl['ahorro'], 'HNL') ?> · Cheques <?= bancoMoneda($porTipoHnl['cheques'], 'HNL') ?></div>
+            <?php if ($tasa && $totales['USD'] > 0): ?><div class="small fw-semibold mt-1" title="Lempiras más los dólares a la tasa de compra">Todo junto ≈ <?= bancoMoneda($totales['HNL'] + $totales['USD'] * (float)($tasa['compra'] ?: $tasa['referencia']), 'HNL') ?></div><?php endif; ?></div></div>
         <div class="col-6 col-lg-3"><div class="app-card app-kpi"><div class="app-kpi-label">Saldo en dólares</div><div class="app-kpi-value"><?= bancoMoneda($totales['USD'], 'USD') ?></div>
             <?php if ($tasa && $totales['USD'] > 0): ?><div class="small text-muted">≈ <?= bancoMoneda($totales['USD'] * (float)($tasa['compra'] ?: $tasa['referencia']), 'HNL') ?></div><?php endif; ?></div></div>
         <div class="col-6 col-lg-3"><div class="app-card app-kpi"><div class="app-kpi-label">Cheques por cobrar (L)</div><div class="app-kpi-value text-warning"><?= bancoMoneda($comprometido['HNL'], 'HNL') ?></div></div></div>
