@@ -430,21 +430,22 @@ function spSaldoAlCorte(PDO $pdo, int $cid, string $corte): float
 }
 
 /**
- * Cuentas de la empresa para devolver el préstamo (cuentas en lempiras de Bancos): primero la cuenta de donde salió
- * el préstamo. No usa las cuentas de cobro a clientes (pueden ser personales de un socio).
+ * Cuenta de la empresa donde se devuelve el préstamo: la misma de donde salió. Si el préstamo no salió de una cuenta
+ * registrada, las cuentas en lempiras de Bancos. No usa las cuentas de cobro a clientes (pueden ser personales de un socio).
  */
 function spCuentasPagoHtml(PDO $pdo, int $cid, array $p, bool $paraCorreo = true): string
 {
     try {
-        $st = $pdo->prepare("SELECT id, banco, tipo, numero, titular FROM cuentas_bancarias WHERE cliente_id = ? AND activa = 1 AND moneda = 'HNL' ORDER BY id = ? DESC, tipo = 'ahorro' DESC, id");
+        $st = $pdo->prepare("SELECT id, banco, tipo, numero, titular FROM cuentas_bancarias WHERE cliente_id = ? AND moneda = 'HNL'"
+            . ((int)$p['cuenta_id'] ? " AND id = ?" : " AND activa = 1 AND ? = 0") . " ORDER BY tipo = 'ahorro' DESC, id");
         $st->execute([$cid, (int)$p['cuenta_id']]);
         $cs = $st->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $e) { return ''; }
     if (!$cs) return '';
     $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
     $li = implode('', array_map(fn($c) => '<li><strong>' . $e($c['banco']) . '</strong> · cuenta de ' . ($c['tipo'] === 'cheques' ? 'cheques' : 'ahorro') . ' <strong>' . $e($c['numero']) . '</strong>'
-        . ($c['titular'] ? ' a nombre de ' . $e($c['titular']) : '') . ((int)$c['id'] === (int)$p['cuenta_id'] ? ' <em>(de aquí salió el préstamo)</em>' : '') . '</li>', $cs));
-    return '<div style="margin-top:' . ($paraCorreo ? '16px' : '12px') . '"><strong>Cuentas de la empresa para hacer el pago:</strong><ul style="margin:6px 0 0;padding-left:18px">' . $li . '</ul></div>';
+        . ($c['titular'] ? ' a nombre de ' . $e($c['titular']) : '') . '' . '</li>', $cs));
+    return '<div style="margin-top:' . ($paraCorreo ? '16px' : '12px') . '"><strong>' . (count($cs) === 1 ? 'Cuenta para hacer el pago' : 'Cuentas para hacer el pago') . ':</strong><ul style="margin:6px 0 0;padding-left:18px">' . $li . '</ul></div>';
 }
 
 /**
@@ -454,7 +455,7 @@ function spCuentasPagoHtml(PDO $pdo, int $cid, array $p, bool $paraCorreo = true
 function spCuentaPrestamoTexto(array $p, callable $e, bool $conVerbo = true): string
 {
     $dest = trim((string)($p['cuenta_destino'] ?? ''));
-    $txt = $dest !== '' ? ($conVerbo ? 'Entró a la cuenta ' : '') . $e($dest) : ($p['cuenta'] ? ($conVerbo ? 'Salió de ' : '') . $e($p['cuenta']) : '—');
+    $txt = $dest !== '' ? ($conVerbo ? 'Entró a la cuenta ' : '') . $e($dest) : ($p['cuenta'] ? $e($p['cuenta']) : '—');
     return $txt . (!empty($p['referencia']) ? ' · ref. ' . $e($p['referencia']) : '');
 }
 
@@ -551,7 +552,7 @@ table.p { width:100%; border-collapse:collapse; } table.p th { background:#e2e8f
 <td style="text-align:right"><h1>Control de préstamo</h1><div class="muted">Préstamo #' . $id . ' · ' . $e($estTxt) . '</div></td></tr></table>
 <table class="datos">
 <tr><td class="k">' . (spEsTercero($p) ? 'A nombre de' : 'Socio') . '</td><td><strong>' . $e(spNombreVisible($p)) . '</strong></td><td class="k">Fecha del préstamo</td><td>' . date('d/m/Y', strtotime($p['fecha'])) . '</td></tr>
-<tr><td class="k">Concepto</td><td>' . $e($p['descripcion']) . '</td><td class="k">' . (trim((string)$p['cuenta_destino']) !== '' ? 'Entró a la cuenta' : 'Salió de') . '</td><td>' . spCuentaPrestamoTexto($p, $e, false) . '</td></tr>
+<tr><td class="k">Concepto</td><td>' . $e($p['descripcion']) . '</td><td class="k">' . (trim((string)$p['cuenta_destino']) !== '' ? 'Entró a la cuenta' : 'Cuenta') . '</td><td>' . spCuentaPrestamoTexto($p, $e, false) . '</td></tr>
 <tr><td class="k">Forma de pago</td><td>' . (int)$p['num_cuotas'] . ' cuotas ' . ($p['frecuencia'] === 'quincenal' ? 'quincenales (días 15 y fin de mes)' : 'mensuales') . '</td><td class="k">Primera cuota</td><td>' . date('d/m/Y', strtotime($p['primera_cuota'])) . '</td></tr>
 </table>
 <table class="cajas"><tr>

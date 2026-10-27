@@ -62,7 +62,7 @@ suite('Préstamos a socios: cuotas, pagos, banco, avisos y PDF', function () {
     $txt = '';
     if ($eml) foreach (preg_split('/\r?\n\r?\n/', (string)file_get_contents(end($eml))) as $parte) { $b = base64_decode(preg_replace('/\s+/', '', $parte), true); $txt .= ($b !== false ? $b : $parte) . "\n"; }
     $txt .= (string)file_get_contents(end($eml));
-    check('el correo trae la transferencia (de qué cuenta salió), los pagos y las cuentas de la empresa para pagar', str_contains($txt, 'Salió de QA Banco QA-SP-1') && str_contains($txt, 'Cuentas de la empresa para hacer el pago') && str_contains($txt, 'de aquí salió el préstamo') && str_contains($txt, 'conta@qa.test'));
+    check('el correo trae la transferencia (de qué cuenta salió), los pagos y las cuentas de la empresa para pagar', str_contains($txt, 'QA Banco QA-SP-1') && !str_contains($txt, 'de aquí salió') && !str_contains($txt, 'Salió de') && str_contains($txt, 'Cuenta para hacer el pago') && str_contains($txt, 'QA-SP-1') && str_contains($txt, 'conta@qa.test'));
     check('envía el recordatorio al socio (con la cuota que viene)', ($r['json']['success'] ?? false) && $env && $env['estado'] === 'enviado' && str_contains($env['para'], 'socio@qa.test') && str_contains($env['asunto'], 'cuota'), $r['body']);
     $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'anular_pago', 'pago_id' => $pago, 'motivo' => 'QA']);
     $d = spDetalle($pdo, 2, $id);

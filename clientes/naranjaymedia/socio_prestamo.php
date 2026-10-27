@@ -218,6 +218,7 @@ require_once '../../includes/templates/header.php';
         document.getElementById('spPagar')?.addEventListener('click', () => {
             fp.reset(); fp.accion.value = 'pagar'; fp.pago_id.value = ''; document.getElementById('mPagoTit').textContent = 'Registrar pago';
             fp.fecha.value = new Date().toLocaleDateString('en-CA'); fp.monto.value = <?= json_encode($px ? $px['pendiente'] : $det['saldo']) ?>;
+            if (fp.cuenta_id) fp.cuenta_id.value = <?= json_encode((int)$p['cuenta_id'] ?: '') ?>;   // se devuelve a la cuenta de donde salió
             document.getElementById('pArchivo').textContent = ''; mp.show();
         });
         document.querySelectorAll('.sp-editar-pago').forEach(b => b.addEventListener('click', () => {
