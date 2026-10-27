@@ -61,11 +61,11 @@ if (comisionesDisponible($pdo)):
         if (sel.value !== '__nuevo__') return;
         const r = await Swal.fire({ title: 'Nuevo vendedor', showCancelButton: true, confirmButtonText: 'Agregar', cancelButtonText: 'Cancelar', focusConfirm: false,
             html: '<input id="vnNom" class="swal2-input" placeholder="Nombre completo" maxlength="150"><input id="vnId" class="swal2-input" placeholder="N.º de identidad (ID)" maxlength="30">'
-                + '<input id="vnTel" class="swal2-input" placeholder="Teléfono (opcional)" maxlength="40"><input id="vnMail" class="swal2-input" placeholder="Correo (opcional)" maxlength="150">',
+                + '<input id="vnCta" class="swal2-input" placeholder="Cuenta para pagarle (ej.: BAC 729176511)" maxlength="150"><input id="vnTel" class="swal2-input" placeholder="Teléfono (opcional)" maxlength="40"><input id="vnMail" class="swal2-input" placeholder="Correo (opcional)" maxlength="150">',
             preConfirm: async () => {
                 const fd = new FormData(); fd.append('accion', 'vendedor_guardar');
                 fd.append('nombre', document.getElementById('vnNom').value); fd.append('identidad', document.getElementById('vnId').value);
-                fd.append('telefono', document.getElementById('vnTel').value); fd.append('email', document.getElementById('vnMail').value);
+                fd.append('telefono', document.getElementById('vnTel').value); fd.append('cuenta_banco', document.getElementById('vnCta').value); fd.append('email', document.getElementById('vnMail').value);
                 const d = await fetch('includes/comision_accion.php', { method: 'POST', body: fd, credentials: 'same-origin' }).then(x => x.json()).catch(() => ({ success: false, error: 'Error de conexión.' }));
                 if (!d.success) { Swal.showValidationMessage(d.error); return false; }
                 return d.vendedor;

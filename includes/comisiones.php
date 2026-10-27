@@ -56,6 +56,10 @@ function vendedorGuardar(PDO $pdo, int $cid, array $d): array
         $pdo->prepare("INSERT INTO vendedores (nombre, identidad, telefono, email, notas, activo, cliente_id, tipo) VALUES (?, ?, ?, ?, ?, ?, ?, 'externo')")->execute([...$vals, $cid]);
         $id = (int)$pdo->lastInsertId();
     }
+    // Cuenta para pagarle (banco y número), si la columna existe
+    if (array_key_exists('cuenta_banco', $d)) {
+        try { $pdo->prepare("UPDATE vendedores SET cuenta_banco = ? WHERE id = ? AND cliente_id = ?")->execute([mb_substr(trim((string)$d['cuenta_banco']), 0, 150) ?: null, $id, $cid]); } catch (PDOException $e) { }
+    }
     $st = $pdo->prepare("SELECT * FROM vendedores WHERE id = ? AND cliente_id = ?");
     $st->execute([$id, $cid]);
     $v = $st->fetch(PDO::FETCH_ASSOC);
@@ -147,7 +151,7 @@ function comisionesLista(PDO $pdo, int $cid, array $f = []): array
     if (!empty($f['vendedor'])) { $w[] = "c.vendedor_id = ?"; $p[] = (int)$f['vendedor']; }
     if (!empty($f['desde'])) { $w[] = "DATE(f.fecha_emision) >= ?"; $p[] = $f['desde']; }
     if (!empty($f['hasta'])) { $w[] = "DATE(f.fecha_emision) <= ?"; $p[] = $f['hasta']; }
-    $st = $pdo->prepare("SELECT c.*, v.nombre AS vendedor, v.identidad, v.tipo AS vendedor_tipo, f.correlativo, DATE(f.fecha_emision) AS fecha_factura, f.subtotal, f.total, f.pagada, f.estado AS factura_estado,
+    $st = $pdo->prepare("SELECT c.*, v.nombre AS vendedor, v.identidad, v.tipo AS vendedor_tipo, " . (comisionVendCuenta($pdo) ? "v.cuenta_banco" : "NULL AS cuenta_banco") . ", f.correlativo, DATE(f.fecha_emision) AS fecha_factura, f.subtotal, f.total, f.pagada, f.estado AS factura_estado,
                                 cf.nombre AS cliente, g.fecha AS fecha_pago, g.metodo_pago, g.archivo_adjunto AS gasto_archivo
                          FROM factura_comisiones c JOIN vendedores v ON v.id = c.vendedor_id JOIN facturas f ON f.id = c.factura_id
                          JOIN clientes_factura cf ON cf.id = f.receptor_id LEFT JOIN gastos g ON g.id = c.gasto_id
@@ -160,6 +164,13 @@ function comisionesLista(PDO $pdo, int $cid, array $f = []): array
         $out[] = $c;
     }
     return $out;
+}
+
+function comisionVendCuenta(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) { try { $ok = (bool)$pdo->query("SHOW COLUMNS FROM vendedores LIKE 'cuenta_banco'")->fetchColumn(); } catch (Throwable $e) { $ok = false; } }
+    return $ok;
 }
 
 const COMISION_VISTAS = [
@@ -185,7 +196,7 @@ function comisionCategoria(PDO $pdo, int $cid): int
  */
 function comisionPagar(PDO $pdo, int $cid, int $uid, int $id, array $d, ?array $adjunto = null): int
 {
-    $st = $pdo->prepare("SELECT c.*, v.nombre AS vendedor, v.identidad, f.correlativo, f.pagada, f.estado AS factura_estado FROM factura_comisiones c
+    $st = $pdo->prepare("SELECT c.*, v.*, c.id AS id, c.estado AS estado, c.notas AS notas, v.nombre AS vendedor, f.correlativo, f.pagada, f.estado AS factura_estado FROM factura_comisiones c
                          JOIN vendedores v ON v.id = c.vendedor_id JOIN facturas f ON f.id = c.factura_id WHERE c.id = ? AND c.cliente_id = ? FOR UPDATE");
     $st->execute([$id, $cid]);
     $c = $st->fetch(PDO::FETCH_ASSOC);
@@ -201,7 +212,7 @@ function comisionPagar(PDO $pdo, int $cid, int $uid, int $id, array $d, ?array $
     $pdo->prepare("INSERT INTO gastos (cliente_id, categoria_id, descripcion, monto, fecha, frecuencia, tipo, naturaleza, metodo_pago, proveedor, factura_ref, notas, archivo_adjunto, archivo_nombre, estado, usuario_id)
                    VALUES (?, ?, ?, ?, ?, 'unico', 'variable', 'gasto', ?, ?, ?, ?, ?, ?, 'pagado', ?)")
         ->execute([$cid, comisionCategoria($pdo, $cid), $desc, $monto, $fecha, $metodo, $c['vendedor'], $c['correlativo'],
-            trim('Comisión #' . $id . ($c['identidad'] ? ' · identidad ' . $c['identidad'] : '') . '. ' . (string)($d['notas'] ?? '')), $adjunto[0] ?? null, $adjunto[1] ?? null, $uid]);
+            trim('Comisión #' . $id . ($c['identidad'] ? ' · identidad ' . $c['identidad'] : '') . (!empty($c['cuenta_banco']) ? ' · cuenta ' . $c['cuenta_banco'] : '') . '. ' . (string)($d['notas'] ?? '')), $adjunto[0] ?? null, $adjunto[1] ?? null, $uid]);
     $gid = (int)$pdo->lastInsertId();
     $cuenta = (int)($d['cuenta_id'] ?? 0);
     if ($cuenta) bancoSalidaGasto($pdo, $cid, $gid, $cuenta, $uid);
@@ -230,4 +241,69 @@ function comisionAnularPago(PDO $pdo, int $cid, int $id): void
     }
     $pdo->prepare("UPDATE factura_comisiones SET estado = 'pendiente', gasto_id = NULL, pagada_en = NULL WHERE id = ?")->execute([$id]);
     comisionRecalcular($pdo, $cid, (int)$c['factura_id']);
+}
+
+/** Recibo de pago de una comisión (PDF) para que lo firme quien la recibe. Solo comisiones pagadas. */
+function comisionReciboPdf(PDO $pdo, int $cid, int $id): string
+{
+    require_once __DIR__ . '/functions.php';
+    require_once __DIR__ . '/cotizaciones.php';   // logo de la empresa
+    require_once __DIR__ . '/firmantes.php';
+    $st = $pdo->prepare("SELECT c.id, c.tipo, c.valor, c.base, c.monto, c.estado, c.pagada_en, c.gasto_id, c.notas,
+                                v.nombre AS vendedor, v.identidad, v.tipo AS vendedor_tipo, " . (comisionVendCuenta($pdo) ? "v.cuenta_banco" : "NULL AS cuenta_banco") . ",
+                                f.correlativo, DATE(f.fecha_emision) AS fecha_factura, cf.nombre AS cliente, g.metodo_pago
+                         FROM factura_comisiones c JOIN vendedores v ON v.id = c.vendedor_id JOIN facturas f ON f.id = c.factura_id
+                         JOIN clientes_factura cf ON cf.id = f.receptor_id LEFT JOIN gastos g ON g.id = c.gasto_id
+                         WHERE c.id = ? AND c.cliente_id = ?");
+    $st->execute([$id, $cid]);
+    $c = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$c) throw new Exception("Comisión no encontrada.");
+    if ($c['estado'] !== 'pagada') throw new Exception("La comisión aún no está pagada.");
+    $st = $pdo->prepare("SELECT * FROM clientes_saas WHERE id = ?");
+    $st->execute([$cid]);
+    $emp = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+    $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
+    $alias = ($emp['alias'] ?? '') ?: ($emp['nombre'] ?? '');
+    $logo = cotizacionLogoB64($emp);
+    $f = firmantesParaPdf($pdo, $cid, __DIR__ . '/../clientes/naranjaymedia/includes/uploads');
+    $metodos = ['transferencia' => 'Transferencia', 'efectivo' => 'Efectivo', 'cheque' => 'Cheque', 'tarjeta' => 'Tarjeta', 'otro' => 'Otro'];
+    $calculo = $c['tipo'] === 'fijo' ? 'Cantidad fija' : rtrim(rtrim(number_format((float)$c['valor'], 2), '0'), '.') . ' % del subtotal sin ISV (L ' . number_format((float)$c['base'], 2) . ')';
+    $num = 'C-' . str_pad((string)$c['id'], 5, '0', STR_PAD_LEFT);
+    $celda = fn(string $titulo, string $nombre, string $sub, string $img) => '<td style="width:33%;text-align:center;padding:0 10px;vertical-align:top">'
+        . '<div style="height:50px">' . ($img ? '<img src="' . $img . '" style="max-height:50px;max-width:150px">' : '') . '</div>'
+        . '<div style="border-top:1px solid #334155;padding-top:4px">' . ($nombre !== '' ? '<strong>' . $e($nombre) . '</strong>' : '&nbsp;') . '<br><span class="m">' . ($sub !== '' ? $e($sub) : '&nbsp;') . '</span>'
+        . '<br><span class="m">' . $titulo . '</span></div></td>';
+    $fila = fn($k, $v) => '<tr><td class="k">' . $k . '</td><td>' . $v . '</td></tr>';
+    $html = '<!doctype html><html><head><meta charset="utf-8"><style>
+@page { margin: 34px 40px 40px; } body { font-family: "DejaVu Sans", sans-serif; font-size: 9.6pt; color: #1e293b; }
+.top { width:100%; border-bottom:3px solid #e8590c; padding-bottom:8px; margin-bottom:16px; } h1 { font-size:14pt; margin:0; white-space:nowrap; } .m { color:#64748b; font-size:8.4pt; }
+.monto { background:#fff7f2; border:1px solid #fde1d0; border-radius:8px; padding:12px 16px; margin:12px 0 16px; }
+.monto .v { font-size:18pt; font-weight:bold; color:#0f172a; } table.d { width:100%; border-collapse:collapse; } table.d td { padding:6px 4px; border-bottom:1px solid #e2e8f0; vertical-align:top; } .k { color:#64748b; width:34%; }
+</style></head><body>
+<table class="top"><tr><td>' . ($logo ? '<img src="' . $logo . '" style="height:48px">' : '<strong style="color:#e8590c;font-size:14pt">' . $e($alias) . '</strong>') . '<div class="m">' . $e($emp['nombre'] ?? '') . ($emp['rtn'] ?? '' ? ' · RTN ' . $e($emp['rtn']) : '') . '</div></td>
+<td style="text-align:right"><h1>Recibo de pago de comisión</h1><div class="m">N.º ' . $num . ' · ' . date('d/m/Y', strtotime((string)$c['pagada_en'])) . '</div></td></tr></table>
+<p>Recibí de <strong>' . $e($emp['nombre'] ?? $alias) . '</strong> la cantidad de:</p>
+<div class="monto"><div class="v">L ' . number_format((float)$c['monto'], 2) . '</div><div class="m">' . $e(numeroALetras((float)$c['monto'])) . '</div></div>
+<p>en concepto de <strong>comisión por venta</strong> de la factura ' . $e($c['correlativo']) . ' del ' . date('d/m/Y', strtotime($c['fecha_factura'])) . ' al cliente ' . $e($c['cliente']) . '.</p>
+<table class="d">'
+        . $fila('Recibe', '<strong>' . $e($c['vendedor']) . '</strong>' . ($c['vendedor_tipo'] === 'colaborador' ? ' (colaborador)' : ''))
+        . $fila('Identidad', $e($c['identidad'] ?: '—'))
+        . $fila('Cálculo de la comisión', $e($calculo))
+        . $fila('Forma de pago', $e($metodos[$c['metodo_pago']] ?? 'Transferencia') . ($c['cuenta_banco'] ? ' a la cuenta ' . $e($c['cuenta_banco']) : ''))
+        . ($c['notas'] ? $fila('Notas', $e($c['notas'])) : '')
+        . '</table>
+<table style="width:100%;margin-top:70px"><tr>'
+        . $celda('Recibí conforme', $c['vendedor'], $c['identidad'] ? 'ID ' . $c['identidad'] : '', '')
+        . $celda('Autorizado por', (string)($f['autorizado']['nombre'] ?? ''), (string)($f['autorizado']['cargo'] ?? ''), (string)($f['autorizado']['firma_b64'] ?? ''))
+        . $celda('Vo.Bo.', (string)($f['vobo']['nombre'] ?? ''), (string)($f['vobo']['cargo'] ?? ''), (string)($f['vobo']['firma_b64'] ?? ''))
+        . '</tr></table></body></html>';
+    require_once __DIR__ . '/../vendor/autoload.php';
+    $opt = new \Dompdf\Options();
+    $opt->set('defaultFont', 'DejaVu Sans');
+    $opt->set('isRemoteEnabled', false);
+    $pdf = new \Dompdf\Dompdf($opt);
+    $pdf->loadHtml($html, 'UTF-8');
+    $pdf->setPaper('letter', 'portrait');
+    $pdf->render();
+    return (string)$pdf->output();
 }

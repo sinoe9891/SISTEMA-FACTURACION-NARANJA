@@ -55,9 +55,13 @@ suite('Comisiones por venta: en la factura, editables y pagadas como gasto', fun
         && $mov && $mov['sentido'] === 'salida', $r['body']);
     $p = $c->get('comisiones', ['desde' => '2000-01-01']);
     check('la página Comisiones la muestra pagada', sinErroresPhp($p['body']) && str_contains($p['body'], 'QA Referidor') && str_contains($p['body'], 'gasto #' . $gid), errorPhp($p['body']));
+    $p = $c->get('comision_recibo_pdf', ['id' => $cmid]);
+    check('genera el recibo de pago en PDF para firmar', str_starts_with($p['body'], '%PDF'), substr($p['body'], 0, 300));
     $r = $c->post('includes/comision_accion.php', ['accion' => 'anular_pago', 'id' => $cmid]);
     check('anular el pago anula el gasto y su salida, y vuelve a «Por pagar»', ($r['json']['success'] ?? false) && $pdo->query("SELECT estado FROM gastos WHERE id = $gid")->fetchColumn() === 'anulado'
         && !(int)$pdo->query("SELECT COUNT(*) FROM movimientos_bancarios WHERE gasto_id = $gid AND anulado = 0")->fetchColumn() && comisionDeFactura($pdo, 2, $fid)['estado'] === 'pendiente', $r['body']);
+    $p = $c->get('comision_recibo_pdf', ['id' => $cmid]);
+    check('sin pago no hay recibo', !str_starts_with($p['body'], '%PDF'));
     $r = $c->post('includes/comision_accion.php', ['accion' => 'quitar', 'id' => $cmid]);
     check('se puede quitar la comisión', ($r['json']['success'] ?? false) && !comisionDeFactura($pdo, 2, $fid));
 

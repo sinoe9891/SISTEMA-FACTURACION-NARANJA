@@ -74,14 +74,15 @@ require_once '../../includes/templates/header.php';
                     <td class="app-n"></td>
                     <td class="text-nowrap" data-sort="<?= $c['fecha_factura'] ?>"><a href="ver_factura?id=<?= (int)$c['factura_id'] ?>" target="_blank" class="font-monospace small"><?= $e($c['correlativo']) ?></a><div class="small text-muted"><?= date('d/m/Y', strtotime($c['fecha_factura'])) ?></div></td>
                     <td><?= $e($c['cliente']) ?></td>
-                    <td><?= $e($c['vendedor']) ?><div class="small text-muted"><?= $c['vendedor_tipo'] === 'colaborador' ? 'Colaborador' : 'Externo' ?><?= $c['identidad'] ? ' · ID ' . $e($c['identidad']) : '' ?></div></td>
+                    <td><?= $e($c['vendedor']) ?><div class="small text-muted"><?= $c['vendedor_tipo'] === 'colaborador' ? 'Colaborador' : 'Externo' ?><?= $c['identidad'] ? ' · ID ' . $e($c['identidad']) : '' ?><?= !empty($c['cuenta_banco']) ? '<br><i class="bi bi-bank me-1"></i>' . $e($c['cuenta_banco']) : '' ?></div></td>
                     <td class="small"><?= $c['tipo'] === 'fijo' ? 'Cantidad fija' : rtrim(rtrim(number_format((float)$c['valor'], 2), '0'), '.') . ' % de ' . $L($c['base']) ?><?= $c['notas'] ? '<div class="text-muted">' . $e($c['notas']) . '</div>' : '' ?></td>
                     <td class="app-num fw-semibold" data-sort="<?= (float)$c['monto'] ?>"><?= $L($c['monto']) ?></td>
                     <td><span class="badge" style="background:<?= $vBg ?>;color:<?= $vFg ?>"><i class="bi <?= $vIco ?> me-1"></i><?= $vTxt ?></span>
                         <?php if ($c['vista'] === 'pagada'): ?><div class="small text-muted"><?= date('d/m/Y', strtotime((string)$c['pagada_en'])) ?> · <a href="gasto_ver?id=<?= (int)$c['gasto_id'] ?>">gasto #<?= (int)$c['gasto_id'] ?></a></div><?php endif; ?></td>
                     <td class="text-end text-nowrap">
                         <?php if ($puedeEditar && $c['vista'] !== 'pagada' && $c['vista'] !== 'anulada'): ?><button class="btn btn-sm btn-outline-primary cm-editar" data-c='<?= $e(json_encode(['id' => (int)$c['id'], 'vendedor_id' => (int)$c['vendedor_id'], 'tipo' => $c['tipo'], 'valor' => (float)$c['valor'], 'notas' => (string)$c['notas'], 'correlativo' => $c['correlativo']])) ?>' title="Editar"><i class="bi bi-pencil"></i></button><?php endif; ?>
-                        <?php if ($esAdmin && in_array($c['vista'], ['por_pagar', 'esperando'], true)): ?><button class="btn btn-sm btn-success cm-pagar" data-id="<?= (int)$c['id'] ?>" data-monto="<?= (float)$c['monto'] ?>" data-cobrada="<?= (int)$c['pagada'] ?>" data-desc="<?= $e($c['vendedor'] . ' · factura ' . $c['correlativo']) ?>" title="Pagar"><i class="bi bi-cash"></i></button><?php endif; ?>
+                        <?php if ($esAdmin && in_array($c['vista'], ['por_pagar', 'esperando'], true)): ?><button class="btn btn-sm btn-success cm-pagar" data-id="<?= (int)$c['id'] ?>" data-monto="<?= (float)$c['monto'] ?>" data-cobrada="<?= (int)$c['pagada'] ?>" data-desc="<?= $e($c['vendedor'] . ' · factura ' . $c['correlativo'] . (!empty($c['cuenta_banco']) ? ' · pagar a ' . $c['cuenta_banco'] : '')) ?>" title="Pagar"><i class="bi bi-cash"></i></button><?php endif; ?>
+                        <?php if ($c['vista'] === 'pagada'): ?><a class="btn btn-sm btn-outline-secondary" href="comision_recibo_pdf?id=<?= (int)$c['id'] ?>" target="_blank" title="Recibo para que lo firme quien recibe la comisión"><i class="bi bi-file-earmark-pdf"></i> Recibo</a><?php endif; ?>
                         <?php if ($esAdmin && $c['vista'] === 'pagada'): ?><button class="btn btn-sm btn-outline-danger cm-anular" data-id="<?= (int)$c['id'] ?>" title="Anular el pago"><i class="bi bi-arrow-counterclockwise"></i></button><?php endif; ?>
                         <?php if ($esAdmin && $c['vista'] !== 'pagada'): ?><button class="btn btn-sm btn-outline-danger cm-quitar" data-id="<?= (int)$c['id'] ?>" title="Quitar la comisión"><i class="bi bi-trash3"></i></button><?php endif; ?>
                     </td></tr>
@@ -126,12 +127,13 @@ require_once '../../includes/templates/header.php';
     <div class="modal-header"><h5 class="modal-title"><i class="bi bi-people me-1"></i> Vendedores</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body"><p class="small text-muted">Los colaboradores activos aparecen solos (con su DPI). Agrega aquí a los externos (referidores) con su número de identidad.</p>
         <div class="table-responsive"><table class="table table-sm align-middle">
-            <thead><tr><th>Nombre</th><th>ID</th><th>Teléfono</th><th>Correo</th><th class="text-center">Activo</th><th></th></tr></thead>
+            <thead><tr><th>Nombre</th><th>ID</th><th>Cuenta para pagarle</th><th>Teléfono</th><th>Correo</th><th class="text-center">Activo</th><th></th></tr></thead>
             <tbody>
-            <?php foreach (array_merge($vendedores, [['id' => 0, 'tipo' => 'externo', 'nombre' => '', 'identidad' => '', 'telefono' => '', 'email' => '', 'activo' => 1]]) as $v): ?>
+            <?php foreach (array_merge($vendedores, [['id' => 0, 'tipo' => 'externo', 'nombre' => '', 'identidad' => '', 'cuenta_banco' => '', 'telefono' => '', 'email' => '', 'activo' => 1]]) as $v): ?>
                 <tr class="v-fila" data-id="<?= (int)$v['id'] ?>">
                     <td><input class="form-control form-control-sm" name="nombre" value="<?= $e($v['nombre']) ?>" placeholder="<?= $v['id'] ? '' : 'Nuevo vendedor…' ?>" maxlength="150"><?= $v['tipo'] === 'colaborador' ? '<div class="small text-muted">Colaborador</div>' : '' ?></td>
-                    <td><input class="form-control form-control-sm" name="identidad" value="<?= $e($v['identidad']) ?>" maxlength="30" style="width:150px"></td>
+                    <td><input class="form-control form-control-sm" name="identidad" value="<?= $e($v['identidad']) ?>" maxlength="30" style="width:140px"></td>
+                    <td><input class="form-control form-control-sm" name="cuenta_banco" value="<?= $e($v['cuenta_banco'] ?? '') ?>" maxlength="150" placeholder="Ej.: BAC 729176511" style="width:170px"></td>
                     <td><input class="form-control form-control-sm" name="telefono" value="<?= $e($v['telefono']) ?>" maxlength="40" style="width:120px"></td>
                     <td><input class="form-control form-control-sm" name="email" value="<?= $e($v['email']) ?>" maxlength="150"></td>
                     <td class="text-center"><input class="form-check-input" type="checkbox" name="activo" <?= (int)$v['activo'] ? 'checked' : '' ?>></td>
@@ -183,7 +185,14 @@ require_once '../../includes/templates/header.php';
     });
     for (const [fid, mid] of [['fEditar', 'mEditar'], ['fPagar', 'mPagar']]) document.getElementById(fid)?.addEventListener('submit', async e => {
         e.preventDefault();
-        try { const d = await post(new FormData(e.target)); bootstrap.Modal.getInstance(document.getElementById(mid))?.hide(); listo(d); } catch (x) { Swal.fire('No se pudo', x.message, 'error'); }
+        try { const d = await post(new FormData(e.target)); bootstrap.Modal.getInstance(document.getElementById(mid))?.hide();
+            if (fid === 'fPagar') {   // Pagada: ofrece el recibo para que lo firme quien recibe la comisión
+                const id = e.target.id.value;
+                const r = await Swal.fire({ icon: 'success', title: d.message, text: 'Imprime el recibo para que lo firme quien recibe la comisión.', showCancelButton: true, confirmButtonText: '<i class="bi bi-file-earmark-pdf"></i> Abrir recibo', cancelButtonText: 'Cerrar' });
+                if (r.isConfirmed) window.open('comision_recibo_pdf?id=' + encodeURIComponent(id), '_blank');
+                return cargar(location.pathname + location.search);
+            }
+            listo(d); } catch (x) { Swal.fire('No se pudo', x.message, 'error'); }
     });
     document.getElementById('mVendedores')?.addEventListener('click', async e => {
         const b = e.target.closest('.v-guardar'); if (!b) return;
