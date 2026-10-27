@@ -41,11 +41,12 @@ require_once '../../includes/templates/header.php';
 <div class="app-page-header">
     <div>
         <h1 class="app-page-title"><i class="bi bi-person-badge me-2"></i>Socios: aportes y retiros</h1>
-        <p class="app-page-sub">Aportes: dinero que un socio pone en la empresa (capital). Retiros: gastos personales de un socio que pagó la empresa; se registran en Gastos con naturaleza «Retiro de socio». Ninguno de los dos cuenta en el Estado de resultados.</p>
+        <p class="app-page-sub">Aportes: dinero que un socio pone en la empresa (capital). Retiros: gastos personales de un socio que pagó la empresa; se registran como un gasto con naturaleza «Retiro de socio» (botón «Registrar retiro»), con su socio y su comprobante. Ninguno de los dos cuenta en el Estado de resultados.</p>
     </div>
     <?php if ($instalado): ?>
     <div class="d-flex gap-2 flex-wrap">
         <button class="btn btn-outline-secondary" id="btnSocio"><i class="bi bi-person-plus me-1"></i> Agregar socio</button>
+        <a class="btn btn-outline-warning" href="gastos?nuevo=retiro"><i class="bi bi-box-arrow-up me-1"></i> Registrar retiro</a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalAporte"><i class="bi bi-plus-circle me-1"></i> Registrar aporte</button>
     </div>
     <?php endif; ?>
@@ -114,13 +115,14 @@ require_once '../../includes/templates/header.php';
     <div class="tab-pane fade" id="tRetiros">
         <div class="app-card"><div class="table-responsive">
             <table class="table app-table mb-0">
-                <thead><tr><th>Fecha</th><th>Socio</th><th>Concepto</th><th class="app-num">Monto</th><th class="text-end">Gasto</th></tr></thead>
+                <thead><tr><th>Fecha</th><th>Socio</th><th>Concepto</th><th class="app-num">Monto</th><th class="text-center">Comprobante</th><th class="text-end">Gasto</th></tr></thead>
                 <tbody>
-                    <?php if (!$retiros): ?><tr><td colspan="5" class="text-center text-muted py-4">Sin retiros<?= $anio ? " en $anio" : '' ?>. Se registran en Gastos con naturaleza «Retiro de socio».</td></tr><?php endif; ?>
+                    <?php if (!$retiros): ?><tr><td colspan="6" class="text-center text-muted py-4">Sin retiros<?= $anio ? " en $anio" : '' ?>. Regístralos con «Registrar retiro».</td></tr><?php endif; ?>
                     <?php foreach ($retiros as $r): ?>
                         <tr><td class="text-nowrap"><?= date('d/m/Y', strtotime($r['fecha'])) ?></td><td><?= htmlspecialchars($r['socio']) ?></td>
                             <td><?= htmlspecialchars($r['descripcion']) ?><?= $r['proveedor'] ? '<div class="small text-muted">' . htmlspecialchars($r['proveedor']) . '</div>' : '' ?></td>
                             <td class="app-num fw-semibold"><?= $L($r['monto']) ?></td>
+                            <td class="text-center"><?= $r['archivo_adjunto'] ? '<a href="gasto_archivo?id=' . (int)$r['id'] . '" target="_blank" title="' . htmlspecialchars((string)($r['archivo_nombre'] ?: 'Ver comprobante')) . '"><i class="bi bi-paperclip fs-5"></i></a>' : '<a href="gasto_ver?id=' . (int)$r['id'] . '" class="badge bg-light text-danger border text-decoration-none" title="Abrir el gasto para adjuntarlo">Sin</a>' ?></td>
                             <td class="text-end"><a class="btn btn-sm btn-outline-secondary py-0" href="gasto_ver?id=<?= (int)$r['id'] ?>" title="Ver gasto">#<?= (int)$r['id'] ?></a></td></tr>
                     <?php endforeach; ?>
                 </tbody>

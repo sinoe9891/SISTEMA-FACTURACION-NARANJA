@@ -43,6 +43,9 @@ try {
     if (!in_array($frecuencia, ['unico', 'mensual', 'quincenal', 'anual']))          throw new Exception("Frecuencia inválida.");
     if (!in_array($estado,     ['pagado', 'pendiente']))                            throw new Exception("Estado inválido.");
     if (!in_array($metodo_pago, GASTO_METODOS_PAGO))                                throw new Exception("Método de pago inválido.");
+    // Retiro de socio: de qué socio es (obligatorio si hay socios registrados)
+    require_once __DIR__ . '/../../../includes/socios.php';
+    $socioRetiro = socioRetiroValidar($pdo, (int)$cid, (string)($_POST['naturaleza'] ?? ''), $_POST['socio_id'] ?? 0);
 
     // Categoría y tarjeta deben pertenecer al cliente
     $categoria_id = categoriaGastoValida($pdo, $categoria_id, $cid);
@@ -165,6 +168,7 @@ try {
     $natPost = $_POST['naturaleza'] ?? '';
     if (in_array($natPost, ['anticipo', 'isv', 'retiro'], true) && $pdo->query("SHOW COLUMNS FROM gastos LIKE 'naturaleza'")->fetchColumn())
         $pdo->prepare("UPDATE gastos SET naturaleza = ? WHERE id IN (" . implode(',', array_map('intval', $ids_creados)) . ") AND cliente_id = ?")->execute([$natPost, $cid]);
+    if ($socioRetiro) $pdo->prepare("UPDATE gastos SET socio_id = ? WHERE id IN (" . implode(',', array_map('intval', $ids_creados)) . ") AND cliente_id = ?")->execute([$socioRetiro, $cid]);
 
     // Se le cobra a un cliente (reembolsable): aviso en su próxima factura
     $cobrarA = (int)($_POST['cobrar_receptor_id'] ?? 0);

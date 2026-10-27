@@ -144,3 +144,29 @@ suite('Contactos: una persona, varios programas o contratos', function () {
     check('al eliminarlo se borra su alcance', !(int)$pdo->query("SELECT COUNT(*) FROM clientes_factura_contactos_alcance WHERE contacto_id = $id")->fetchColumn());
     $pdo->exec("DELETE FROM programas WHERE id = $pid");
 });
+
+suite('Retiros de socio: en Gastos con su socio y comprobante; Socios los lista', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $soc = (int)$pdo->query("SELECT id FROM socios WHERE cliente_id = 2 AND activo = 1 ORDER BY id LIMIT 1")->fetchColumn();
+    if (!$soc) { check('hay socios registrados', false); return; }
+    $g = $c->get('gastos', ['nuevo' => 'retiro']);
+    check('Gastos tiene el campo Socio para «Retiro de socio»', sinErroresPhp($g['body']) && str_contains($g['body'], 'id="g_socio"') && str_contains($g['body'], "q.get('nuevo') !== 'retiro'"), errorPhp($g['body']));
+    $base = ['descripcion' => 'QA retiro socio', 'monto' => 321, 'fecha' => date('Y-m-d'), 'tipo' => 'variable', 'frecuencia' => 'unico', 'estado' => 'pagado', 'metodo_pago' => 'transferencia', 'naturaleza' => 'retiro'];
+    $r = $c->post('includes/gasto_guardar.php', $base);
+    check('un retiro pide el socio', !($r['json']['success'] ?? true) && str_contains($r['json']['error'] ?? '', 'socio') && !$pdo->query("SELECT COUNT(*) FROM gastos WHERE descripcion = 'QA retiro socio'")->fetchColumn(), $r['body']);
+    $r = $c->post('includes/gasto_guardar.php', $base + ['socio_id' => $soc, 'archivo_adjunto' => new CURLFile(archivoTemporal('png'), 'image/png', 'comprobante.png')]);
+    $gid = (int)$pdo->query("SELECT id FROM gastos WHERE descripcion = 'QA retiro socio' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $row = $pdo->query("SELECT naturaleza, socio_id, archivo_adjunto FROM gastos WHERE id = $gid")->fetch(PDO::FETCH_ASSOC);
+    check('se guarda como retiro, con su socio y su comprobante', $row && $row['naturaleza'] === 'retiro' && (int)$row['socio_id'] === $soc && $row['archivo_adjunto'], $r['body']);
+    $s = $c->get('socios', ['anio' => date('Y')]);
+    $nom = (string)$pdo->query("SELECT nombre FROM socios WHERE id = $soc")->fetchColumn();
+    check('Socios lo lista con su socio, el clip del comprobante y el botón «Registrar retiro»', sinErroresPhp($s['body']) && str_contains($s['body'], 'QA retiro socio') && str_contains($s['body'], 'gasto_archivo?id=' . $gid) && str_contains($s['body'], 'gastos?nuevo=retiro'), errorPhp($s['body']));
+    $v = $c->get('gasto_ver', ['id' => $gid]);
+    check('la ficha del gasto dice de qué socio es', sinErroresPhp($v['body']) && str_contains($v['body'], 'Retiro de socio') && str_contains($v['body'], htmlspecialchars($nom)), errorPhp($v['body']));
+    $r = $c->post('includes/gasto_actualizar.php', ['gasto_id' => $gid, 'descripcion' => 'QA retiro socio', 'monto' => 400, 'fecha' => date('Y-m-d'), 'tipo' => 'variable', 'frecuencia' => 'unico', 'estado' => 'pagado', 'metodo_pago' => 'transferencia', 'naturaleza' => 'gasto']);
+    check('si deja de ser retiro, ya no tiene socio', (int)$pdo->query("SELECT COUNT(*) FROM gastos WHERE id = $gid AND naturaleza = 'gasto' AND socio_id IS NULL")->fetchColumn() === 1, $r['body']);
+    $a = $pdo->query("SELECT archivo_adjunto FROM gastos WHERE id = $gid")->fetchColumn();
+    if ($a) @unlink(__DIR__ . '/../../clientes/naranjaymedia/includes/uploads/gastos/' . $a);
+    $pdo->exec("DELETE FROM gastos WHERE id = $gid");
+});

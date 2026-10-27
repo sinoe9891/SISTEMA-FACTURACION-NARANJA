@@ -99,6 +99,11 @@ try {
     if (!in_array($tipo, ['variable', 'fijo', 'extraordinario', 'viaticos'])) throw new Exception("Tipo inválido.");
     if (!in_array($estado, ['pendiente', 'pagado', 'anulado'])) throw new Exception("Estado inválido.");
     if (!in_array($metodo_pago, GASTO_METODOS_PAGO)) throw new Exception("Método de pago inválido.");
+    // Retiro de socio: de qué socio es (con la naturaleza que quedará)
+    require_once __DIR__ . '/../../../includes/socios.php';
+    $natFinal = in_array($_POST['naturaleza'] ?? '', ['gasto', 'anticipo', 'isv', 'retiro'], true) && in_array($gastoActual['naturaleza'] ?? 'gasto', ['gasto', 'anticipo', 'isv', 'retiro'], true)
+        ? $_POST['naturaleza'] : ($gastoActual['naturaleza'] ?? 'gasto');
+    $socioRetiro = socioRetiroValidar($pdo, (int)$cid, (string)$natFinal, $_POST['socio_id'] ?? ($gastoActual['socio_id'] ?? 0));
 
     /* ── FIX: 'anual' añadido a frecuencias válidas ──────────────────────── */
     if (!in_array($frecuencia, ['unico', 'mensual', 'quincenal', 'anual'])) {
@@ -204,6 +209,7 @@ try {
         $nat = $_POST['naturaleza'] ?? '';
         if (in_array($nat, ['gasto', 'anticipo', 'isv', 'retiro'], true) && in_array($gastoActual['naturaleza'] ?? 'gasto', ['gasto', 'anticipo', 'isv', 'retiro'], true))
             $pdo->prepare("UPDATE gastos SET naturaleza = ? WHERE id = ? AND cliente_id = ?")->execute([$nat, $gasto_id, $cid]);
+        if (socioRetiroDisponible($pdo)) $pdo->prepare("UPDATE gastos SET socio_id = ? WHERE id = ? AND cliente_id = ?")->execute([$socioRetiro, $gasto_id, $cid]);
         // Se le cobra a un cliente: si cambia el cliente, deja de contar la factura donde se incluyó
         if (array_key_exists('cobrar_receptor_id', $_POST) && $pdo->query("SHOW COLUMNS FROM gastos LIKE 'cobrar_receptor_id'")->fetchColumn()) {
             $cobrarA = (int)$_POST['cobrar_receptor_id'];

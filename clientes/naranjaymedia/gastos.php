@@ -92,6 +92,10 @@ $cuentas_pago = bancosDisponible($pdo)
     ? array_values(array_filter(bancoCuentas($pdo, cliente_actual(), true), fn($c) => $c['moneda'] === 'HNL'))
     : [];
 
+// Socios (para «Retiro de socio»: de quién es el retiro)
+require_once '../../includes/socios.php';
+$sociosRetiro = socioRetiroDisponible($pdo) ? sociosLista($pdo, (int)cliente_actual()) : [];
+
 // Clientes a los que se les puede cobrar un gasto (reembolsables, p. ej. su hosting)
 require_once '../../includes/gastos_cobrar.php';
 $gcDisponible = gastosCobrarDisponible($pdo);
@@ -1132,6 +1136,15 @@ $total  = count($gastos);
                             </select>
                             <small class="text-muted d-none" id="g_nat_info" style="font-size:.72rem"></small>
                         </div>
+                        <?php if ($sociosRetiro): ?>
+                        <div class="col-md-6" id="grpSocio" style="display:none"><label class="mf-label">Socio <span style="color:#ef4444">*</span></label>
+                            <select name="socio_id" id="g_socio" class="mf-select">
+                                <option value="">— ¿De qué socio es el retiro? —</option>
+                                <?php foreach ($sociosRetiro as $so): ?><option value="<?= (int)$so['id'] ?>"><?= htmlspecialchars($so['nombre']) ?></option><?php endforeach; ?>
+                            </select>
+                            <small class="text-muted" style="font-size:.72rem">Sale en Socios → Retiros. Adjunta el comprobante abajo, como en cualquier gasto.</small>
+                        </div>
+                        <?php endif; ?>
                         <div class="col-md-6" id="grpFrecuencia"><label class="mf-label">Frecuencia</label>
                             <select name="frecuencia" id="g_frec" class="mf-select">
                                 <option value="unico">📌 Único</option>
@@ -1642,6 +1655,13 @@ $total  = count($gastos);
 
     /* ══ MODAL GASTO ══════════════════════════════════════════════════════════ */
     function toggleCamposGasto() {
+        // Retiro de socio: pide el socio
+        const gSo = document.getElementById('grpSocio');
+        if (gSo) {
+            const esRetiro = document.getElementById('g_nat').value === 'retiro';
+            gSo.style.display = esRetiro ? '' : 'none';
+            document.getElementById('g_socio').required = esRetiro;
+        }
         const t = document.getElementById('g_tipo').value;
         const f = document.getElementById('g_frec').value;
         const m = document.getElementById('g_metodo').value;
@@ -1709,6 +1729,18 @@ $total  = count($gastos);
         limpiarModalGasto();
         new bootstrap.Modal(document.getElementById('modalGasto')).show();
     });
+    document.getElementById('g_nat').addEventListener('change', toggleCamposGasto);
+    // Desde Socios → «Registrar retiro»: el mismo formulario con «Retiro de socio» ya elegido (y el socio, si viene)
+    (() => {
+        const q = new URLSearchParams(location.search);
+        if (q.get('nuevo') !== 'retiro') return;
+        document.getElementById('btnNuevoGasto').click();
+        document.getElementById('modalGastoTitulo').innerHTML = '<i class="bi bi-box-arrow-up me-2"></i>Registrar retiro de socio';
+        document.getElementById('g_nat').value = 'retiro';
+        if (q.get('socio') && document.getElementById('g_socio')) document.getElementById('g_socio').value = q.get('socio');
+        toggleCamposGasto();
+        history.replaceState(null, '', location.pathname);
+    })();
 
     document.addEventListener('click', ev => {
         const btn = ev.target.closest('.btn-editar-gasto');
@@ -1725,6 +1757,7 @@ $total  = count($gastos);
             const nat = g.naturaleza || 'gasto', natSel = document.getElementById('g_nat'), natInfo = document.getElementById('g_nat_info');
             const fija = nat === 'capital' || nat === 'activo';
             natSel.value = fija ? 'gasto' : nat;
+            if (document.getElementById('g_socio')) document.getElementById('g_socio').value = g.socio_id || '';
             natSel.disabled = fija;
             natInfo.classList.toggle('d-none', !fija);
             natInfo.textContent = fija ? (nat === 'capital' ? 'Abono a capital de un préstamo: no resta en resultados.' : 'Compra de un activo fijo: se reconoce con la depreciación.') : '';

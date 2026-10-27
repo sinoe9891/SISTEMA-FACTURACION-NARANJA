@@ -26,11 +26,49 @@ function sociosAportes(PDO $pdo, int $cid, ?string $corte = null): array
 function sociosRetiros(PDO $pdo, int $cid, ?string $corte = null): array
 {
     try {
-        $st = $pdo->prepare("SELECT id, fecha, monto, descripcion, proveedor, notas, archivo_adjunto FROM gastos
-                             WHERE cliente_id = ? AND naturaleza = 'retiro' AND estado <> 'anulado'" . ($corte ? " AND fecha <= ?" : '') . " ORDER BY fecha DESC, id DESC");
+        $conSocio = socioRetiroDisponible($pdo);
+        $st = $pdo->prepare("SELECT g.id, g.fecha, g.monto, g.descripcion, g.proveedor, g.notas, g.archivo_adjunto, g.archivo_nombre, " . ($conSocio ? "g.socio_id, s.nombre AS socio_nombre" : "NULL AS socio_id, NULL AS socio_nombre") . "
+                             FROM gastos g " . ($conSocio ? "LEFT JOIN socios s ON s.id = g.socio_id" : "") . "
+                             WHERE g.cliente_id = ? AND g.naturaleza = 'retiro' AND g.estado <> 'anulado'" . ($corte ? " AND g.fecha <= ?" : '') . " ORDER BY g.fecha DESC, g.id DESC");
         $st->execute($corte ? [$cid, $corte] : [$cid]);
         return $st->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $e) { return []; }
+}
+
+/** ¿Los gastos guardan el socio del retiro? (migración 2026-10-26_retiro_socio) */
+function socioRetiroDisponible(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) { try { $ok = (bool)$pdo->query("SHOW COLUMNS FROM gastos LIKE 'socio_id'")->fetchColumn(); } catch (Throwable $e) { $ok = false; } }
+    return $ok;
+}
+
+/** Socios activos con su id (para elegir en un retiro). */
+function sociosLista(PDO $pdo, int $cid): array
+{
+    try {
+        $st = $pdo->prepare("SELECT id, nombre FROM socios WHERE cliente_id = ? AND activo = 1 ORDER BY id");
+        $st->execute([$cid]);
+        return $st->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) { return []; }
+}
+
+/**
+ * Socio de un gasto al guardarlo: obligatorio si es «Retiro de socio» (y de la empresa); en otra naturaleza, ninguno.
+ * Devuelve el id o null. Sin socios registrados no se exige (se puede agregar después en Socios).
+ */
+function socioRetiroValidar(PDO $pdo, int $cid, string $naturaleza, $socioId): ?int
+{
+    if ($naturaleza !== 'retiro' || !socioRetiroDisponible($pdo)) return null;
+    $id = (int)$socioId;
+    if (!$id) {
+        if (sociosLista($pdo, $cid)) throw new Exception("Elige de qué socio es el retiro.");
+        return null;
+    }
+    $st = $pdo->prepare("SELECT COUNT(*) FROM socios WHERE id = ? AND cliente_id = ?");
+    $st->execute([$id, $cid]);
+    if (!$st->fetchColumn()) throw new Exception("Socio no válido.");
+    return $id;
 }
 
 /** Totales acumulados al corte (para el Balance). */
@@ -47,6 +85,7 @@ function sociosTotales(PDO $pdo, int $cid, string $corte): array
  */
 function socioDeRetiro(array $retiro, array $socios): string
 {
+    if (!empty($retiro['socio_nombre'])) return $retiro['socio_nombre'];   // elegido al registrar el retiro
     $quitar = fn($t) => mb_strtolower(strtr($t, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'Á' => 'a', 'É' => 'e', 'Í' => 'i', 'Ó' => 'o', 'Ú' => 'u']));
     $texto = $quitar(($retiro['descripcion'] ?? '') . ' ' . ($retiro['proveedor'] ?? '') . ' ' . ($retiro['notas'] ?? ''));
     foreach ($socios as $s) {

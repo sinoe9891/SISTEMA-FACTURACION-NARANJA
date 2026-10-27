@@ -379,6 +379,13 @@ $archivoNombre = $g['archivo_nombre'] ?? basename($archivoRaw);
                                 <?php endif; ?>
                             </span>
                         </div>
+                        <?php if (($g['naturaleza'] ?? '') === 'retiro'): require_once '../../includes/socios.php';
+                            $__soc = array_column(sociosLista($pdo, (int)$g['cliente_id']), 'nombre', 'id')[(int)($g['socio_id'] ?? 0)] ?? null; ?>
+                            <div class="dato-row">
+                                <span class="dato-label">Retiro de socio</span>
+                                <span class="dato-value"><?= $__soc ? htmlspecialchars($__soc) : '<span class="text-danger">Sin socio</span>' ?> · <a href="socios">ver en Socios</a></span>
+                            </div>
+                        <?php endif; ?>
                         <?php if ($g['proveedor']): ?>
                             <div class="dato-row">
                                 <span class="dato-label">Proveedor</span>
