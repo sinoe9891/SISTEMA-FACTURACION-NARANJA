@@ -123,6 +123,7 @@ function spCrear(PDO $pdo, int $cid, int $uid, array $d, ?array $archivo = null)
             !empty($d['avisar']) ? 1 : 0, max(0, min(30, (int)($d['aviso_dias'] ?? 3))), $correo ?: null, $cc ?: null, trim((string)($d['notas'] ?? '')) ?: null, $uid]);
     $id = (int)$pdo->lastInsertId();
     if ($deudor) $pdo->prepare("UPDATE socios_prestamos SET deudor_nombre = ? WHERE id = ?")->execute([$deudor, $id]);
+    if ($dest = mb_substr(trim((string)($d['cuenta_destino'] ?? '')), 0, 150)) $pdo->prepare("UPDATE socios_prestamos SET cuenta_destino = ? WHERE id = ?")->execute([$dest, $id]);
     $ins = $pdo->prepare("INSERT INTO socios_prestamo_cuotas (prestamo_id, numero, fecha, monto) VALUES (?, ?, ?, ?)");
     foreach (spCalcularCuotas($monto, $n, $frec, $primera) as $c) $ins->execute([$id, $c['numero'], $c['fecha'], $c['monto']]);
     if ($cuenta) {
@@ -329,8 +330,9 @@ function spEditar(PDO $pdo, int $cid, int $uid, int $id, array $d, ?array $archi
     $ref = mb_substr(trim((string)($d['referencia'] ?? '')), 0, 80) ?: null;
     $cuenta = array_key_exists('cuenta_id', $d) ? ((int)$d['cuenta_id'] ?: null) : ((int)$p['cuenta_id'] ?: null);
     $mov = spMovimiento($pdo, $cid, $uid, (int)$p['movimiento_id'] ?: null, $cuenta, 'salida', $fecha, $monto, $ref, 'Préstamo a socio: ' . $p['socio'] . ' · ' . $desc);
-    $sets = "descripcion = ?, monto = ?, fecha = ?, num_cuotas = ?, frecuencia = ?, primera_cuota = ?, referencia = ?, cuenta_id = ?, movimiento_id = ?, notas = ?";
-    $vals = [$desc, $monto, $fecha, $n, $frec, $primera, $ref, $cuenta, $mov, trim((string)($d['notas'] ?? $p['notas'])) ?: null];
+    $sets = "descripcion = ?, monto = ?, fecha = ?, num_cuotas = ?, frecuencia = ?, primera_cuota = ?, referencia = ?, cuenta_id = ?, movimiento_id = ?, notas = ?, cuenta_destino = ?";
+    $vals = [$desc, $monto, $fecha, $n, $frec, $primera, $ref, $cuenta, $mov, trim((string)($d['notas'] ?? $p['notas'])) ?: null,
+        mb_substr(trim((string)($d['cuenta_destino'] ?? $p['cuenta_destino'] ?? '')), 0, 150) ?: null];
     if ($archivo) { $sets .= ", archivo_adjunto = ?, archivo_nombre = ?"; array_push($vals, $archivo[0], $archivo[1]); }
     $pdo->prepare("UPDATE socios_prestamos SET $sets WHERE id = ?")->execute([...$vals, $id]);
     $arch = $archivo ?: ($p['archivo_adjunto'] ? [$p['archivo_adjunto'], $p['archivo_nombre']] : null);
@@ -445,6 +447,17 @@ function spCuentasPagoHtml(PDO $pdo, int $cid, array $p, bool $paraCorreo = true
     return '<div style="margin-top:' . ($paraCorreo ? '16px' : '12px') . '"><strong>Cuentas de la empresa para hacer el pago:</strong><ul style="margin:6px 0 0;padding-left:18px">' . $li . '</ul></div>';
 }
 
+/**
+ * Cuenta del préstamo para el correo y el PDF: «Entró a la cuenta …» (la de quien lo recibe) si está; si no, de qué cuenta de
+ * la empresa salió. Con la referencia de la transferencia.
+ */
+function spCuentaPrestamoTexto(array $p, callable $e, bool $conVerbo = true): string
+{
+    $dest = trim((string)($p['cuenta_destino'] ?? ''));
+    $txt = $dest !== '' ? ($conVerbo ? 'Entró a la cuenta ' : '') . $e($dest) : ($p['cuenta'] ? ($conVerbo ? 'Salió de ' : '') . $e($p['cuenta']) : '—');
+    return $txt . (!empty($p['referencia']) ? ' · ref. ' . $e($p['referencia']) : '');
+}
+
 /** Movimientos del préstamo: la transferencia al socio (de qué cuenta salió) y cada pago del socio (a qué cuenta entró). */
 function spMovimientosHtml(array $det, bool $paraCorreo = true): string
 {
@@ -453,13 +466,13 @@ function spMovimientosHtml(array $det, bool $paraCorreo = true): string
     $td = 'style="padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:' . ($paraCorreo ? '13px' : '8.4pt') . '"';
     $tdr = 'style="padding:5px 8px;border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap;font-size:' . ($paraCorreo ? '13px' : '8.4pt') . '"';
     $th = 'style="background:#e2e8f0;padding:5px 8px;text-align:left;font-size:' . ($paraCorreo ? '12px' : '8pt') . '"';
-    $filas = '<tr><td ' . $td . '>' . date('d/m/Y', strtotime($p['fecha'])) . '</td><td ' . $td . '>Transferencia de la empresa (préstamo)</td><td ' . $td . '>' . ($p['cuenta'] ? 'Salió de ' . $e($p['cuenta']) : '—') . ($p['referencia'] ? ' · ref. ' . $e($p['referencia']) : '') . '</td><td ' . $tdr . ' >− ' . number_format((float)$p['monto'], 2) . '</td></tr>';
+    $filas = '<tr><td ' . $td . '>' . date('d/m/Y', strtotime($p['fecha'])) . '</td><td ' . $td . '>Préstamo (transferencia de la empresa)</td><td ' . $td . '>' . spCuentaPrestamoTexto($p, $e) . '</td><td ' . $tdr . ' >− ' . number_format((float)$p['monto'], 2) . '</td></tr>';
     foreach ($det['pagos'] as $g) {
         if ((int)$g['anulado']) continue;
         $filas .= '<tr><td ' . $td . '>' . date('d/m/Y', strtotime($g['fecha'])) . '</td><td ' . $td . '>Pago (' . $e(SP_METODOS[$g['metodo']] ?? $g['metodo']) . ')</td><td ' . $td . '>' . ($g['cuenta'] ? 'Entró a ' . $e($g['cuenta']) : '—')
             . ($g['referencia'] ? ' · ref. ' . $e($g['referencia']) : '') . '</td><td ' . $tdr . '>+ ' . number_format((float)$g['monto'], 2) . '</td></tr>';
     }
-    return '<div style="margin-top:16px"><strong>Transferencias</strong><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:6px"><thead><tr><th ' . $th . '>Fecha</th><th ' . $th . '>Movimiento</th><th ' . $th . '>Cuenta de la empresa</th><th ' . $th . ' style="text-align:right">L</th></tr></thead><tbody>' . $filas . '</tbody></table></div>';
+    return '<div style="margin-top:16px"><strong>Transferencias</strong><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:6px"><thead><tr><th ' . $th . '>Fecha</th><th ' . $th . '>Movimiento</th><th ' . $th . '>Cuenta</th><th ' . $th . ' style="text-align:right">L</th></tr></thead><tbody>' . $filas . '</tbody></table></div>';
 }
 
 /** HTML de la tabla de control (PDF y correo). */
@@ -538,7 +551,7 @@ table.p { width:100%; border-collapse:collapse; } table.p th { background:#e2e8f
 <td style="text-align:right"><h1>Control de préstamo</h1><div class="muted">Préstamo #' . $id . ' · ' . $e($estTxt) . '</div></td></tr></table>
 <table class="datos">
 <tr><td class="k">' . (spEsTercero($p) ? 'A nombre de' : 'Socio') . '</td><td><strong>' . $e(spNombreVisible($p)) . '</strong></td><td class="k">Fecha del préstamo</td><td>' . date('d/m/Y', strtotime($p['fecha'])) . '</td></tr>
-<tr><td class="k">Concepto</td><td>' . $e($p['descripcion']) . '</td><td class="k">Salió de</td><td>' . $e($p['cuenta'] ?: '—') . ($p['referencia'] ? ' · ref. ' . $e($p['referencia']) : '') . '</td></tr>
+<tr><td class="k">Concepto</td><td>' . $e($p['descripcion']) . '</td><td class="k">' . (trim((string)$p['cuenta_destino']) !== '' ? 'Entró a la cuenta' : 'Salió de') . '</td><td>' . spCuentaPrestamoTexto($p, $e, false) . '</td></tr>
 <tr><td class="k">Forma de pago</td><td>' . (int)$p['num_cuotas'] . ' cuotas ' . ($p['frecuencia'] === 'quincenal' ? 'quincenales (días 15 y fin de mes)' : 'mensuales') . '</td><td class="k">Primera cuota</td><td>' . date('d/m/Y', strtotime($p['primera_cuota'])) . '</td></tr>
 </table>
 <table class="cajas"><tr>

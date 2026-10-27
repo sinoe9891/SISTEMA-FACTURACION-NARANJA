@@ -192,6 +192,7 @@ require_once '../../includes/templates/header.php';
                         <?php foreach ($cuentasHnl as $cb): ?><option value="<?= (int)$cb['id'] ?>"><?= htmlspecialchars($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?></select></div>
                 <?php endif; ?>
                 <div class="col-md-6"><label class="form-label small">Referencia de la transferencia</label><input class="form-control" name="referencia" maxlength="80"></div>
+                <div class="col-12"><label class="form-label small">Depositado en <span class="text-muted">(cuenta de quien recibe el préstamo; sale en el correo y el PDF como «Entró a la cuenta …»)</span></label><input class="form-control" name="cuenta_destino" maxlength="150" placeholder="Ej.: BAC 742474391"></div>
                 <div class="col-12"><label class="form-label small">Comprobantes de la transferencia <span class="text-muted">(uno o varios · JPG, PNG, PDF · máx 5 MB c/u)</span></label><input type="file" class="form-control form-control-sm" name="comprobantes[]" multiple accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
                 <div class="col-12"><div class="border rounded-3 p-2">
                     <div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" name="avisar" value="1" id="spAvisar" checked><label class="form-check-label fw-semibold" for="spAvisar"><i class="bi bi-envelope me-1"></i>Avisar por correo antes de cada cuota y si se atrasa</label></div>
@@ -297,9 +298,9 @@ require_once '../../includes/templates/header.php';
     document.getElementById('btnGuardarAporte')?.addEventListener('click', async e => {
         const f = document.getElementById('formAporte');
         if (!f.reportValidity()) return;
-        e.currentTarget.disabled = true;
+        const b = e.currentTarget; b.disabled = true;
         try { const d = await enviar(new FormData(f)); await Swal.fire({ icon: 'success', title: 'Listo', text: d.message }); location.reload(); }
-        catch (err) { Swal.fire('No se pudo registrar', err.message, 'error'); e.currentTarget.disabled = false; }
+        catch (err) { Swal.fire('No se pudo registrar', err.message, 'error'); b.disabled = false; }
     });
     document.getElementById('btnSocio')?.addEventListener('click', async () => {
         const { value } = await Swal.fire({ title: 'Agregar socio', input: 'text', inputLabel: 'Nombre completo', showCancelButton: true, confirmButtonText: 'Agregar', cancelButtonText: 'Cancelar', inputValidator: v => !v.trim() && 'Escribe el nombre' });

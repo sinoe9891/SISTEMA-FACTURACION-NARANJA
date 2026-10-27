@@ -101,7 +101,7 @@ suite('Préstamos a socios: a nombre de otra persona en correos y PDF', function
     $soc = (int)$pdo->query("SELECT id FROM socios WHERE cliente_id = 2 AND activo = 1 ORDER BY id LIMIT 1")->fetchColumn();
     $socNom = (string)$pdo->query("SELECT nombre FROM socios WHERE id = $soc")->fetchColumn();
     $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'crear', 'socio_id' => $soc, 'descripcion' => 'QA tercero', 'monto' => 3000, 'fecha' => date('Y-m-d'), 'num_cuotas' => 2,
-        'frecuencia' => 'quincenal', 'primera_cuota' => date('Y-m-d', strtotime('+2 days')), 'deudor_nombre' => 'José QA Landa', 'avisar' => 1, 'aviso_correo' => 'jose@qa.test']);
+        'frecuencia' => 'quincenal', 'primera_cuota' => date('Y-m-d', strtotime('+2 days')), 'deudor_nombre' => 'José QA Landa', 'cuenta_destino' => 'BAC QA-742', 'avisar' => 1, 'aviso_correo' => 'jose@qa.test']);
     $id = (int)($r['json']['id'] ?? 0);
     check('se guarda «a nombre de» y sigue siendo del socio', $id && $pdo->query("SELECT CONCAT(socio_id, '|', deudor_nombre) FROM socios_prestamos WHERE id = $id")->fetchColumn() === "$soc|José QA Landa", $r['body']);
     $html = '';
@@ -125,6 +125,7 @@ suite('Préstamos a socios: a nombre de otra persona en correos y PDF', function
     $env = $pdo->query("SELECT asunto FROM correos_enviados WHERE tipo = 'prestamo_socio_bienvenida' ORDER BY id DESC LIMIT 1")->fetchColumn();
     check('«Enviar información»: datos, cuadro de pagos y PDF, con copia', ($r['json']['success'] ?? false) && str_contains((string)$env, 'Información de tu préstamo') && preg_match('/^Cc:.*gerencia@qa\.test/mi', $raw)
         && str_contains($txt, 'cuadro de pagos') && str_contains($raw, 'control_prestamo_' . $id . '.pdf'), $r['body']);
+    check('el correo dice a qué cuenta entró el préstamo', str_contains($txt, 'Entró a la cuenta BAC QA-742'));
     $c->post('includes/socio_prestamo_accion.php', ['accion' => 'avisos', 'id' => $id, 'avisar' => 1, 'aviso_correo' => 'jose@qa.test', 'deudor_nombre' => '']);
     check('dejarlo vacío vuelve a nombre del socio', $pdo->query("SELECT deudor_nombre FROM socios_prestamos WHERE id = $id")->fetchColumn() === null);
     $pdo->exec("DELETE FROM socios_prestamo_cuotas WHERE prestamo_id = $id");

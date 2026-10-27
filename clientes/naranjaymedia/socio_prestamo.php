@@ -125,7 +125,8 @@ require_once '../../includes/templates/header.php';
         <div class="app-card mb-3">
             <div class="app-card-header"><span><i class="bi bi-info-circle me-1"></i> Datos</span></div>
             <div class="app-card-body small">
-                <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Salió de</span><span><?= $p['cuenta'] ? $e($p['cuenta']) : 'No registrado en banco' ?><?= $p['referencia'] ? ' · ref. ' . $e($p['referencia']) : '' ?></span></div>
+                <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Salió de (empresa)</span><span><?= $p['cuenta'] ? $e($p['cuenta']) : 'No registrado en banco' ?><?= $p['referencia'] ? ' · ref. ' . $e($p['referencia']) : '' ?></span></div>
+                <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Entró a la cuenta</span><span><?= $p['cuenta_destino'] ? $e($p['cuenta_destino']) : '<span class="text-muted">— (agrégala en Editar)</span>' ?></span></div>
                 <div class="py-1 border-bottom"><div class="text-muted mb-1">Comprobantes de la transferencia</div><?= $listaArch($archivos['prestamo'], $esAdmin && $abierto) ?>
                     <?php if ($esAdmin && $abierto): ?><form class="sp-subir d-flex gap-2 mt-1" data-pago=""><input type="file" name="comprobantes[]" multiple class="form-control form-control-sm" accept=".jpg,.jpeg,.png,.webp,.pdf"><button class="btn btn-sm btn-outline-primary text-nowrap"><i class="bi bi-upload"></i> Agregar</button></form><?php endif; ?></div>
                 <?php if ($p['estado'] === 'condonado'): ?><div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Pasado a retiro</span><span><?= $L($p['condonado_monto']) ?> · <a href="gasto_ver?id=<?= (int)$p['condonado_gasto_id'] ?>">gasto N.º <?= (int)$p['condonado_gasto_id'] ?></a></span></div><?php endif; ?>
@@ -192,6 +193,7 @@ require_once '../../includes/templates/header.php';
         <?php if ($cuentasHnl): ?><div class="col-md-6"><label class="form-label small">Salió de la cuenta</label><select class="form-select" name="cuenta_id"><option value="">— No registrar en banco —</option>
             <?php foreach ($cuentasHnl as $cb): ?><option value="<?= (int)$cb['id'] ?>" <?= (int)$p['cuenta_id'] === (int)$cb['id'] ? 'selected' : '' ?>><?= $e($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?></select></div><?php endif; ?>
         <div class="col-md-6"><label class="form-label small">Referencia</label><input class="form-control" name="referencia" maxlength="80" value="<?= $e($p['referencia']) ?>"></div>
+        <div class="col-12"><label class="form-label small">Depositado en <span class="text-muted">(cuenta de quien recibe; en el correo y el PDF dice «Entró a la cuenta …»)</span></label><input class="form-control" name="cuenta_destino" maxlength="150" value="<?= $e($p['cuenta_destino']) ?>" placeholder="Ej.: BAC 742474391"></div>
         <div class="col-12"><label class="form-label small">Comprobantes de la transferencia</label><div class="small border rounded-2 px-2 mb-1"><?= $listaArch($archivos['prestamo'], true) ?></div>
             <input type="file" class="form-control form-control-sm" name="comprobantes[]" multiple accept=".jpg,.jpeg,.png,.webp,.pdf"><div class="form-text">Agrega uno o varios; los que ya están se conservan (quítalos con la ×).</div></div>
         <div class="col-12"><label class="form-label small">Notas</label><textarea class="form-control" name="notas" rows="2"><?= $e($p['notas']) ?></textarea></div>
@@ -261,17 +263,24 @@ require_once '../../includes/templates/header.php';
         const { value } = await Swal.fire({ title: 'Anular préstamo', text: 'Se anula también su salida del banco.', input: 'text', inputLabel: 'Motivo', icon: 'warning', showCancelButton: true, confirmButtonText: 'Anular', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc2626', inputValidator: v => !v.trim() && 'Escribe el motivo' });
         if (value) accion({ accion: 'anular', id: ID, motivo: value }, 'No se pudo anular');
     });
+    // Envío de correos: «Enviando…» mientras sale y luego el resultado (enviado o el error)
+    const enviarCorreo = async (accionCorreo, boton) => {
+        boton.disabled = true;
+        Swal.fire({ title: 'Enviando…', text: 'Preparando el PDF y enviando el correo.', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        try {
+            const fd = new FormData(); fd.append('accion', accionCorreo); fd.append('id', ID);
+            const d = await post(fd);
+            await Swal.fire({ icon: 'success', title: 'Correo enviado', text: d.message });
+            location.reload();
+        } catch (e2) { boton.disabled = false; Swal.fire({ icon: 'error', title: 'No se pudo enviar', text: e2.message }); }
+    };
     document.getElementById('spInfo')?.addEventListener('click', async e => {
+        const boton = e.currentTarget;
         const r = await Swal.fire({ icon: 'question', title: 'Enviar información del préstamo', html: 'Se envía a <strong>' + <?= json_encode($p['aviso_correo'] ?: (string)$p['socio_email']) ?>.replace(/[<>&]/g, '') + '</strong>' + <?= json_encode($p['aviso_cc'] ? ' con copia a ' . $p['aviso_cc'] : '') ?>.replace(/[<>&]/g, '') + ': datos del préstamo, cuadro de pagos, cuentas para pagar y el PDF.',
             showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' });
-        if (!r.isConfirmed) return;
-        const b = e.currentTarget; b.disabled = true;
-        try { const fd = new FormData(); fd.append('accion', 'enviar_info'); fd.append('id', ID); listo(await post(fd)); } catch (e2) { err('No se pudo enviar', e2); b.disabled = false; }
+        if (r.isConfirmed) enviarCorreo('enviar_info', boton);
     });
-    document.getElementById('spEnviar')?.addEventListener('click', async e => {
-        e.currentTarget.disabled = true;
-        try { const fd = new FormData(); fd.append('accion', 'enviar'); fd.append('id', ID); listo(await post(fd)); } catch (e2) { err('No se pudo enviar', e2); e.currentTarget.disabled = false; }
-    });
+    document.getElementById('spEnviar')?.addEventListener('click', e => enviarCorreo('enviar', e.currentTarget));
     // Comprobantes: agregar (al préstamo) y quitar (del préstamo o de un pago)
     document.querySelectorAll('.sp-subir').forEach(fs => fs.addEventListener('submit', async e => {
         e.preventDefault();
