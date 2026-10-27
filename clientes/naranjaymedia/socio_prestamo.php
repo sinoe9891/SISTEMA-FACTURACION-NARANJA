@@ -229,6 +229,8 @@ require_once '../../includes/templates/header.php';
             document.getElementById('pArchivo').innerHTML = g.archivos.length ? g.archivos.map(a => '<div class="d-flex gap-2"><a href="socio_prestamo_archivo?archivo=' + a.id + '" target="_blank" class="flex-grow-1">' + a.nombre.replace(/[<>&"]/g, '') + '</a><button type="button" class="btn btn-sm btn-link text-danger p-0 sp-quitar-arch" data-id="' + a.id + '" title="Quitar"><i class="bi bi-x-lg"></i></button></div>').join('') + '<div class="text-muted">Los que agregues se suman a estos.</div>' : '';
             mp.show();
         }));
+        // Desde Inicio («Pago»): abre el registro del pago directamente
+        if (new URLSearchParams(location.search).get('pagar') === '1') { history.replaceState(null, '', location.pathname + '?id=' + ID); document.getElementById('spPagar')?.click(); }
         fp.addEventListener('submit', async e => {
             e.preventDefault();
             if (!fp.fecha.value || !(+fp.monto.value > 0)) return Swal.fire('Faltan datos', 'Fecha y monto son obligatorios.', 'warning');

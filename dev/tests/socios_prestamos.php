@@ -131,3 +131,20 @@ suite('Préstamos a socios: a nombre de otra persona en correos y PDF', function
     $pdo->exec("DELETE FROM socios_prestamo_cuotas WHERE prestamo_id = $id");
     $pdo->exec("DELETE FROM socios_prestamos WHERE id = $id");
 });
+
+suite('Préstamos a socios: alertas en Inicio con botón de pago', function () {
+    $pdo = db();
+    require_once __DIR__ . '/../../includes/socios_prestamos.php';
+    $pdo->beginTransaction();
+    $id = spCrear($pdo, 2, 8, ['socio_id' => (int)$pdo->query("SELECT id FROM socios WHERE cliente_id = 2 ORDER BY id LIMIT 1")->fetchColumn(), 'descripcion' => 'QA alerta inicio', 'monto' => 2000, 'fecha' => date('Y-m-d', strtotime('-40 days')),
+        'num_cuotas' => 2, 'frecuencia' => 'mensual', 'primera_cuota' => date('Y-m-d', strtotime('-20 days'))]);
+    $pdo->commit();
+    $c = login('qa.admin@local.test');
+    $d = $c->get('dashboard');
+    check('Inicio muestra la cuota vencida con «Ver» y «Pago»', sinErroresPhp($d['body']) && str_contains($d['body'], 'Cuotas de préstamos a socios') && str_contains($d['body'], 'QA alerta inicio')
+        && str_contains($d['body'], 'socio_prestamo?id=' . $id . '&amp;pagar=1') || str_contains($d['body'], 'socio_prestamo?id=' . $id . '&pagar=1'), errorPhp($d['body']));
+    $f = login('qa.facturador@local.test');
+    check('otro rol sin acceso a Socios no la ve', !str_contains($f->get('dashboard')['body'], 'Cuotas de préstamos a socios'));
+    $pdo->exec("DELETE FROM socios_prestamo_cuotas WHERE prestamo_id = $id");
+    $pdo->exec("DELETE FROM socios_prestamos WHERE id = $id");
+});

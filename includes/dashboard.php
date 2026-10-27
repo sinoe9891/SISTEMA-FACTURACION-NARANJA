@@ -841,6 +841,25 @@ try {
 	$licencias_por_renovar = [];
 }   // el dashboard muestra 5 días y el resto con «Cargar más»
 
+// Préstamos a socios: cuotas vencidas y las que vienen en los próximos 15 días (solo quien ve Socios)
+$prestamos_socios_alertas = [];
+try {
+	require_once __DIR__ . '/socios_prestamos.php';
+	if (spDisponible($pdo) && function_exists('permisoPuede') && permisoPuede($pdo, 'socios')) {
+		foreach (spLista($pdo, (int)$cliente_id) as $x) {
+			if ($x['prestamo']['estado'] !== 'activo') continue;
+			foreach ($x['cuotas'] as $c) {
+				if ($c['estado'] === 'pagada' || $c['dias'] > 15) continue;
+				$prestamos_socios_alertas[] = ['prestamo' => $x['prestamo'], 'cuota' => $c, 'saldo' => $x['saldo']];
+				if ($c['estado'] !== 'vencida') break;   // de cada préstamo: todas las vencidas y la siguiente
+			}
+		}
+		usort($prestamos_socios_alertas, fn($a, $b) => $a['cuota']['fecha'] <=> $b['cuota']['fecha']);
+	}
+} catch (Throwable $e) {
+	$prestamos_socios_alertas = [];
+}
+
 // Cobros por correo programados (como en la lista de facturas): por factura y, si la fila aún no tiene factura, por cliente
 $cobros_prog_factura = $cobros_prog_receptor = [];
 try {

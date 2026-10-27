@@ -578,6 +578,32 @@ unset($__v);
                 </div>
             <?php endif; ?>
 
+            <!-- Préstamos a socios: cuotas vencidas y próximas (semáforo: vencida, ≤ días de aviso, más adelante) -->
+            <?php if (!empty($prestamos_socios_alertas)): ?>
+                <div class="db-card">
+                    <div class="db-card-header">
+                        <span class="db-card-title"><i class="bi bi-cash-coin me-2 text-primary"></i>Cuotas de préstamos a socios <small class="text-muted fw-normal">· vencidas y próximos 15 días</small></span>
+                        <a href="socios#prestamos" class="btn btn-sm btn-outline-secondary">Préstamos <i class="bi bi-arrow-right ms-1"></i></a>
+                    </div>
+                    <div class="card-body p-0 table-responsive">
+                        <table class="table table-sm align-middle mb-0" style="font-size:.855rem">
+                            <thead class="table-light"><tr><th>Préstamo</th><th class="text-center">Cuota</th><th class="text-end">Monto</th><th class="text-center">Fecha</th><th class="text-center">Acción</th></tr></thead>
+                            <tbody>
+                                <?php foreach ($prestamos_socios_alertas as $a): $pp = $a['prestamo']; $cc = $a['cuota']; $avisoP = max(3, (int)$pp['aviso_dias']); ?>
+                                    <tr><td><span class="fw-semibold"><?= htmlspecialchars($pp['socio']) ?></span><?php if (!empty($pp['deudor_nombre'])): ?> <span class="small text-muted">· a nombre de <?= htmlspecialchars($pp['deudor_nombre']) ?></span><?php endif; ?>
+                                            <div class="small text-muted"><?= htmlspecialchars($pp['descripcion']) ?> · saldo L <?= number_format($a['saldo'], 2) ?></div></td>
+                                        <td class="text-center"><?= (int)$cc['numero'] ?>/<?= (int)$pp['num_cuotas'] ?></td>
+                                        <td class="text-end fw-semibold">L <?= number_format($cc['pendiente'], 2) ?></td>
+                                        <td class="text-center small"><?= date('d/m/Y', strtotime($cc['fecha'])) ?><div><span class="badge <?= $cc['estado'] === 'vencida' ? 'bg-danger' : ($cc['dias'] <= $avisoP ? 'bg-warning text-dark' : 'bg-light text-secondary border') ?>"><?= $cc['estado'] === 'vencida' ? 'Vencida hace ' . abs($cc['dias']) . 'd' : ($cc['dias'] === 0 ? '¡Hoy!' : 'en ' . $cc['dias'] . 'd') ?></span></div></td>
+                                        <td class="text-center text-nowrap"><a href="socio_prestamo?id=<?= (int)$pp['id'] ?>" class="btn btn-sm btn-outline-primary" title="Ver el préstamo"><i class="bi bi-eye"></i></a>
+                                            <a href="socio_prestamo?id=<?= (int)$pp['id'] ?>&pagar=1" class="btn btn-sm btn-success" title="Registrar el pago de esta cuota"><i class="bi bi-cash me-1"></i>Pago</a></td></tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            <?php endif; ?>
+
             <!-- Renovaciones de licencias de la empresa (por pagar) -->
             <?php if (!empty($licencias_por_renovar)): ?>
                 <div class="db-card">
