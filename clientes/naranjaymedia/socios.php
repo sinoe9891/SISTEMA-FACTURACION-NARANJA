@@ -151,7 +151,7 @@ require_once '../../includes/templates/header.php';
                     <?php foreach ($prestamos as $x): $p = $x['prestamo']; [$eTxt, $eBg, $eFg] = SP_ESTADOS[$p['estado']]; $px = $x['proxima']; ?>
                         <tr data-fila><td class="app-n"></td>
                             <td class="text-nowrap" data-sort="<?= $p['fecha'] ?>"><?= date('d/m/Y', strtotime($p['fecha'])) ?></td>
-                            <td><?= htmlspecialchars($p['socio']) ?></td>
+                            <td><?= htmlspecialchars($p['socio']) ?><?php if (!empty($p['deudor_nombre'])): ?><div class="small text-muted"><i class="bi bi-envelope me-1"></i>a nombre de <?= htmlspecialchars($p['deudor_nombre']) ?></div><?php endif; ?></td>
                             <td><?= htmlspecialchars($p['descripcion']) ?><div class="small text-muted"><?= (int)$p['num_cuotas'] ?> cuotas <?= $p['frecuencia'] === 'quincenal' ? 'quincenales' : 'mensuales' ?> de <?= $L($x['cuotas'][0]['monto'] ?? 0) ?></div></td>
                             <td class="app-num"><?= number_format((float)$p['monto'], 2) ?></td>
                             <td class="app-num text-success"><?= number_format($x['pagado'], 2) ?></td>
@@ -196,10 +196,12 @@ require_once '../../includes/templates/header.php';
                 <div class="col-12"><div class="border rounded-3 p-2">
                     <div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" name="avisar" value="1" id="spAvisar" checked><label class="form-check-label fw-semibold" for="spAvisar"><i class="bi bi-envelope me-1"></i>Avisar por correo antes de cada cuota y si se atrasa</label></div>
                     <div class="row g-2 mt-1">
-                        <div class="col-md-5"><label class="form-label small mb-0">Para</label><input class="form-control form-control-sm" name="aviso_correo" id="spCorreo" placeholder="correo del socio"></div>
+                        <div class="col-12"><label class="form-label small mb-0">A nombre de <span class="text-muted">(opcional: si lo devuelve otra persona, los correos y el PDF salen solo con su nombre; en el sistema sigue siendo del socio)</span></label><input class="form-control form-control-sm" name="deudor_nombre" maxlength="150" placeholder="Ej.: José Landa"></div>
+                        <div class="col-md-5"><label class="form-label small mb-0">Para</label><input class="form-control form-control-sm" name="aviso_correo" id="spCorreo" placeholder="correo del socio o de esa persona"></div>
                         <div class="col-md-5"><label class="form-label small mb-0">Con copia a <span class="text-muted">(opcional, varios con coma)</span></label><input class="form-control form-control-sm" name="aviso_cc"></div>
                         <div class="col-md-2"><label class="form-label small mb-0">Días antes</label><input type="number" class="form-control form-control-sm" name="aviso_dias" min="0" max="30" value="3"></div>
                     </div>
+                    <div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="enviar_info" value="1" id="spInfo" checked><label class="form-check-label small" for="spInfo">Enviar ahora la información del préstamo con el cuadro de pagos y el PDF</label></div>
                     <div class="form-text">También va en copia a los correos de Configuración → Correo («Responder a»). Lleva la tabla del préstamo y el PDF.</div></div></div>
                 <div class="col-12"><label class="form-label small">Notas</label><textarea class="form-control" name="notas" rows="2"></textarea></div>
             </form>
@@ -285,6 +287,7 @@ require_once '../../includes/templates/header.php';
                 const r = await fetch('includes/socio_prestamo_accion.php', { method: 'POST', body: new FormData(fp) });
                 const d = await r.json().catch(() => ({ success: false, error: 'Respuesta inesperada (' + r.status + ').' }));
                 if (!d.success) throw new Error(d.error);
+                if (/No se pudo enviar/.test(d.message)) await Swal.fire('Préstamo registrado', d.message, 'warning');
                 location.href = 'socio_prestamo?id=' + d.id;
             } catch (err) { Swal.fire('No se pudo registrar', err.message, 'error'); b.disabled = false; }
         });

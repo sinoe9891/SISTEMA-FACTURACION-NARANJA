@@ -47,7 +47,19 @@ try {
             $extra['id'] = spCrear($pdo, $cid, $uid, $_POST, $archivo);
             spArchivosAgregar($pdo, $cid, $uid, $extra['id'], null, $subidos);
             $msg = 'Préstamo registrado con sus cuotas.';
+            if (!empty($_POST['enviar_info'])) {   // correo de bienvenida con el cuadro de pagos (si falla, el préstamo igual queda)
+                $pdo->commit();
+                try { $msg .= ' Información enviada a ' . spEnviarAviso($pdo, $cid, $extra['id'], 'bienvenida', null, $uid) . '.'; }
+                catch (Throwable $ex) { $msg .= ' No se pudo enviar el correo: ' . $ex->getMessage(); }
+                echo json_encode(['success' => true, 'message' => $msg] + $extra, JSON_UNESCAPED_UNICODE);
+                exit;
+            }
             break;
+        case 'enviar_info':
+            $pdo->commit();
+            $para = spEnviarAviso($pdo, $cid, $id, 'bienvenida', null, $uid);
+            echo json_encode(['success' => true, 'message' => "Información del préstamo enviada a $para."], JSON_UNESCAPED_UNICODE);
+            exit;
         case 'pagar':
             $pagoId = spPagar($pdo, $cid, $uid, $id, $_POST, $archivo);
             spArchivosAgregar($pdo, $cid, $uid, $id, $pagoId, $subidos);

@@ -116,11 +116,13 @@ function spCrear(PDO $pdo, int $cid, int $uid, array $d, ?array $archivo = null)
     $cc = spCorreos((string)($d['aviso_cc'] ?? ''));
     $cuenta = (int)($d['cuenta_id'] ?? 0) ?: null;
     $ref = mb_substr(trim((string)($d['referencia'] ?? '')), 0, 80) ?: null;
+    $deudor = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($d['deudor_nombre'] ?? ''))), 0, 150) ?: null;
     $pdo->prepare("INSERT INTO socios_prestamos (cliente_id, socio_id, descripcion, monto, fecha, num_cuotas, frecuencia, primera_cuota, referencia, archivo_adjunto, archivo_nombre,
                    avisar, aviso_dias, aviso_correo, aviso_cc, notas, usuario_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         ->execute([$cid, (int)$socio['id'], $desc, $monto, $fecha, $n, $frec, $primera, $ref, $archivo[0] ?? null, $archivo[1] ?? null,
             !empty($d['avisar']) ? 1 : 0, max(0, min(30, (int)($d['aviso_dias'] ?? 3))), $correo ?: null, $cc ?: null, trim((string)($d['notas'] ?? '')) ?: null, $uid]);
     $id = (int)$pdo->lastInsertId();
+    if ($deudor) $pdo->prepare("UPDATE socios_prestamos SET deudor_nombre = ? WHERE id = ?")->execute([$deudor, $id]);
     $ins = $pdo->prepare("INSERT INTO socios_prestamo_cuotas (prestamo_id, numero, fecha, monto) VALUES (?, ?, ?, ?)");
     foreach (spCalcularCuotas($monto, $n, $frec, $primera) as $c) $ins->execute([$id, $c['numero'], $c['fecha'], $c['monto']]);
     if ($cuenta) {
@@ -139,6 +141,18 @@ function spObtener(PDO $pdo, int $cid, int $id): array
     $p = $st->fetch(PDO::FETCH_ASSOC);
     if (!$p) throw new Exception("Préstamo no encontrado.");
     return $p;
+}
+
+/** Nombre que se muestra en correos y PDF: el de «a nombre de» (un tercero) o el del socio. */
+function spNombreVisible(array $p): string
+{
+    return trim((string)($p['deudor_nombre'] ?? '')) ?: (string)$p['socio'];
+}
+
+/** ¿El préstamo sale a nombre de otra persona (no del socio)? */
+function spEsTercero(array $p): bool
+{
+    return trim((string)($p['deudor_nombre'] ?? '')) !== '';
 }
 
 /**
@@ -378,6 +392,8 @@ function spAvisos(PDO $pdo, int $cid, int $id, array $d): void
     if (!empty($d['avisar']) && $correo === '') throw new Exception("Escribe el correo al que llegan los avisos.");
     $pdo->prepare("UPDATE socios_prestamos SET avisar = ?, aviso_dias = ?, aviso_correo = ?, aviso_cc = ? WHERE id = ? AND cliente_id = ?")
         ->execute([!empty($d['avisar']) ? 1 : 0, max(0, min(30, (int)($d['aviso_dias'] ?? 3))), $correo ?: null, $cc ?: null, $id, $cid]);
+    if (array_key_exists('deudor_nombre', $d))
+        $pdo->prepare("UPDATE socios_prestamos SET deudor_nombre = ? WHERE id = ? AND cliente_id = ?")->execute([mb_substr(trim(preg_replace('/\s+/u', ' ', (string)$d['deudor_nombre'])), 0, 150) ?: null, $id, $cid]);
     // El correo del socio queda guardado para sus próximos préstamos
     if (!empty($d['guardar_en_socio']) && $correo !== '') $pdo->prepare("UPDATE socios SET email = ? WHERE id = (SELECT socio_id FROM socios_prestamos WHERE id = ?) AND cliente_id = ?")->execute([explode(',', $correo)[0], $id, $cid]);
 }
@@ -437,10 +453,10 @@ function spMovimientosHtml(array $det, bool $paraCorreo = true): string
     $td = 'style="padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:' . ($paraCorreo ? '13px' : '8.4pt') . '"';
     $tdr = 'style="padding:5px 8px;border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap;font-size:' . ($paraCorreo ? '13px' : '8.4pt') . '"';
     $th = 'style="background:#e2e8f0;padding:5px 8px;text-align:left;font-size:' . ($paraCorreo ? '12px' : '8pt') . '"';
-    $filas = '<tr><td ' . $td . '>' . date('d/m/Y', strtotime($p['fecha'])) . '</td><td ' . $td . '>Transferencia de la empresa al socio (préstamo)</td><td ' . $td . '>' . ($p['cuenta'] ? 'Salió de ' . $e($p['cuenta']) : '—') . ($p['referencia'] ? ' · ref. ' . $e($p['referencia']) : '') . '</td><td ' . $tdr . ' >− ' . number_format((float)$p['monto'], 2) . '</td></tr>';
+    $filas = '<tr><td ' . $td . '>' . date('d/m/Y', strtotime($p['fecha'])) . '</td><td ' . $td . '>Transferencia de la empresa (préstamo)</td><td ' . $td . '>' . ($p['cuenta'] ? 'Salió de ' . $e($p['cuenta']) : '—') . ($p['referencia'] ? ' · ref. ' . $e($p['referencia']) : '') . '</td><td ' . $tdr . ' >− ' . number_format((float)$p['monto'], 2) . '</td></tr>';
     foreach ($det['pagos'] as $g) {
         if ((int)$g['anulado']) continue;
-        $filas .= '<tr><td ' . $td . '>' . date('d/m/Y', strtotime($g['fecha'])) . '</td><td ' . $td . '>Pago del socio (' . $e(SP_METODOS[$g['metodo']] ?? $g['metodo']) . ')</td><td ' . $td . '>' . ($g['cuenta'] ? 'Entró a ' . $e($g['cuenta']) : '—')
+        $filas .= '<tr><td ' . $td . '>' . date('d/m/Y', strtotime($g['fecha'])) . '</td><td ' . $td . '>Pago (' . $e(SP_METODOS[$g['metodo']] ?? $g['metodo']) . ')</td><td ' . $td . '>' . ($g['cuenta'] ? 'Entró a ' . $e($g['cuenta']) : '—')
             . ($g['referencia'] ? ' · ref. ' . $e($g['referencia']) : '') . '</td><td ' . $tdr . '>+ ' . number_format((float)$g['monto'], 2) . '</td></tr>';
     }
     return '<div style="margin-top:16px"><strong>Transferencias</strong><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:6px"><thead><tr><th ' . $th . '>Fecha</th><th ' . $th . '>Movimiento</th><th ' . $th . '>Cuenta de la empresa</th><th ' . $th . ' style="text-align:right">L</th></tr></thead><tbody>' . $filas . '</tbody></table></div>';
@@ -468,6 +484,25 @@ function spHtmlControl(PDO $pdo, int $cid, array $det, bool $paraCorreo = false)
         . '<tbody>' . $filas . '</tbody>'
         . '<tfoot><tr style="font-weight:bold;background:#fff7f2"><td></td><td style="padding:6px 8px">Totales</td><td style="padding:6px 8px;text-align:right">' . number_format((float)$p['monto'], 2) . '</td>'
         . '<td style="padding:6px 8px;text-align:right">' . number_format($det['pagado'], 2) . '</td><td style="padding:6px 8px;text-align:right">' . number_format($det['saldo'], 2) . '</td><td></td></tr></tfoot></table>';
+}
+
+/**
+ * Firmas del PDF: quien recibe el préstamo y los firmantes de Configuración → Firmas («Autorizado por» y «Vo.Bo.»),
+ * con su nombre, cargo e imagen de firma si la tienen.
+ */
+function spFirmasHtml(PDO $pdo, int $cid, array $p, callable $e): string
+{
+    require_once __DIR__ . '/firmantes.php';
+    $f = firmantesParaPdf($pdo, $cid, __DIR__ . '/../clientes/naranjaymedia/includes/uploads');
+    $celda = fn(string $titulo, string $nombre, string $cargo, string $img) => '<td style="width:33%;text-align:center;padding:0 10px;vertical-align:top">'
+        . '<div style="height:46px">' . ($img ? '<img src="' . $img . '" style="max-height:46px;max-width:150px">' : '') . '</div>'
+        . '<div style="border-top:1px solid #334155;padding-top:4px">' . ($nombre !== '' ? '<strong>' . $e($nombre) . '</strong>' : '&nbsp;') . '<br><span class="muted">' . ($cargo !== '' ? $e($cargo) : '&nbsp;') . '</span>'
+        . '<br><span class="muted">' . $titulo . '</span></div></td>';
+    return '<table style="width:100%;margin-top:40px"><tr>'
+        . $celda(spEsTercero($p) ? 'Recibe el préstamo' : 'Socio', spNombreVisible($p), '', '')
+        . $celda('Autorizado por', (string)($f['autorizado']['nombre'] ?? ''), (string)($f['autorizado']['cargo'] ?? ''), (string)($f['autorizado']['firma_b64'] ?? ''))
+        . $celda('Vo.Bo.', (string)($f['vobo']['nombre'] ?? ''), (string)($f['vobo']['cargo'] ?? ''), (string)($f['vobo']['firma_b64'] ?? ''))
+        . '</tr></table>';
 }
 
 /** PDF de control del préstamo: datos, tabla de cuotas, pagos recibidos y firmas. */
@@ -498,11 +533,11 @@ table.p { width:100%; border-collapse:collapse; } table.p th { background:#e2e8f
 .firmas { width:100%; margin-top:46px; } .firmas td { width:50%; text-align:center; padding:0 20px; } .linea { border-top:1px solid #334155; padding-top:4px; }
 .pie { position:fixed; bottom:-26px; left:0; right:0; text-align:center; font-size:7pt; color:#94a3b8; }
 </style></head><body>
-<div class="pie">' . $e($alias) . ' · Control de préstamo a socio #' . $id . ' · generado el ' . date('d/m/Y H:i') . '</div>
+<div class="pie">' . $e($alias) . ' · Control de préstamo #' . $id . ' · generado el ' . date('d/m/Y H:i') . '</div>
 <table class="top"><tr><td>' . ($logo ? '<img src="' . $logo . '" style="height:46px">' : '<strong style="color:#e8590c;font-size:14pt">' . $e($alias) . '</strong>') . '</td>
-<td style="text-align:right"><h1>Control de préstamo a socio</h1><div class="muted">Préstamo #' . $id . ' · ' . $e($estTxt) . '</div></td></tr></table>
+<td style="text-align:right"><h1>Control de préstamo</h1><div class="muted">Préstamo #' . $id . ' · ' . $e($estTxt) . '</div></td></tr></table>
 <table class="datos">
-<tr><td class="k">Socio</td><td><strong>' . $e($p['socio']) . '</strong></td><td class="k">Fecha del préstamo</td><td>' . date('d/m/Y', strtotime($p['fecha'])) . '</td></tr>
+<tr><td class="k">' . (spEsTercero($p) ? 'A nombre de' : 'Socio') . '</td><td><strong>' . $e(spNombreVisible($p)) . '</strong></td><td class="k">Fecha del préstamo</td><td>' . date('d/m/Y', strtotime($p['fecha'])) . '</td></tr>
 <tr><td class="k">Concepto</td><td>' . $e($p['descripcion']) . '</td><td class="k">Salió de</td><td>' . $e($p['cuenta'] ?: '—') . ($p['referencia'] ? ' · ref. ' . $e($p['referencia']) : '') . '</td></tr>
 <tr><td class="k">Forma de pago</td><td>' . (int)$p['num_cuotas'] . ' cuotas ' . ($p['frecuencia'] === 'quincenal' ? 'quincenales (días 15 y fin de mes)' : 'mensuales') . '</td><td class="k">Primera cuota</td><td>' . date('d/m/Y', strtotime($p['primera_cuota'])) . '</td></tr>
 </table>
@@ -517,8 +552,8 @@ table.p { width:100%; border-collapse:collapse; } table.p th { background:#e2e8f
         . ($p['estado'] === 'activo' ? spCuentasPagoHtml($pdo, $cid, $p, false) : '')
         . ($pagos ? '<h2>Pagos recibidos</h2><table class="p"><thead><tr><th>Fecha</th><th>Método</th><th>Cuenta</th><th style="text-align:right">Monto</th></tr></thead><tbody>' . $pagos . '</tbody></table>' : '')
         . ($p['estado'] === 'condonado' ? '<p style="margin-top:10px"><strong>Saldo pasado a retiro de socio:</strong> ' . $L($p['condonado_monto']) . ' (gasto N.º ' . (int)$p['condonado_gasto_id'] . ').</p>' : '')
-        . '<table class="firmas"><tr><td><div class="linea">' . $e($p['socio']) . '<br><span class="muted">Socio</span></div></td><td><div class="linea">' . $e($alias) . '<br><span class="muted">La empresa</span></div></td></tr></table>
-</body></html>';
+        . spFirmasHtml($pdo, $cid, $p, $e)
+        . '</body></html>';
     require_once __DIR__ . '/../vendor/autoload.php';
     $opt = new \Dompdf\Options();
     $opt->set('defaultFont', 'DejaVu Sans');
@@ -531,7 +566,8 @@ table.p { width:100%; border-collapse:collapse; } table.p th { background:#e2e8f
 }
 
 /**
- * Recordatorio por correo con la tabla de control y el PDF adjunto. $motivo: 'por_vencer' | 'vencida' | 'manual'.
+ * Correo con la tabla de control y el PDF adjunto. $motivo: 'bienvenida' (información del préstamo y su cuadro de pagos),
+ * 'por_vencer' | 'vencida' (recordatorios) | 'manual' (estado).
  * Va al correo de avisos del préstamo (o del socio) y, en copia, a los correos de Configuración (Responder a).
  */
 function spEnviarAviso(PDO $pdo, int $cid, int $id, string $motivo, ?array $cuota = null, ?int $uid = null): string
@@ -550,8 +586,17 @@ function spEnviarAviso(PDO $pdo, int $cid, int $id, string $motivo, ?array $cuot
     $cuota ??= $det['proxima'];
     $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
     $L = fn($v) => 'L ' . number_format((float)$v, 2);
-    $nombre = explode(' ', trim($p['socio']))[0];
-    if ($motivo === 'vencida' && $cuota) {
+    $nombre = explode(' ', trim(spNombreVisible($p)))[0];
+    if ($motivo === 'bienvenida') {
+        $c1 = $det['cuotas'][0] ?? null;
+        $ult = end($det['cuotas']) ?: null;
+        $asunto = 'Información de tu préstamo #' . $id . ' · ' . $L($p['monto']) . ' en ' . (int)$p['num_cuotas'] . ' cuotas';
+        $intro = 'te compartimos la información del préstamo «' . $e($p['descripcion']) . '» por <strong>' . $L($p['monto']) . '</strong> del ' . date('d/m/Y', strtotime($p['fecha'])) . '. '
+            . 'Se devuelve en <strong>' . (int)$p['num_cuotas'] . ' cuotas ' . ($p['frecuencia'] === 'quincenal' ? 'quincenales (los días 15 y fin de mes)' : 'mensuales') . ' de ' . $L($c1['monto'] ?? 0) . '</strong>'
+            . ($c1 ? ', la primera el <strong>' . date('d/m/Y', strtotime($c1['fecha'])) . '</strong> y la última el ' . date('d/m/Y', strtotime($ult['fecha'])) : '') . '. '
+            . 'Abajo está el cuadro de pagos; también lo adjuntamos en PDF. Te avisaremos por este medio antes de cada cuota.';
+        $cuota = null;
+    } elseif ($motivo === 'vencida' && $cuota) {
         $asunto = 'Cuota vencida del préstamo #' . $id . ' · ' . $L($det['vencido_monto']);
         $intro = 'tienes <strong>' . $det['vencidas'] . ' cuota' . ($det['vencidas'] === 1 ? '' : 's') . ' vencida' . ($det['vencidas'] === 1 ? '' : 's') . '</strong> del préstamo «' . $e($p['descripcion']) . '» por <strong>' . $L($det['vencido_monto']) . '</strong>. La más antigua venció el ' . date('d/m/Y', strtotime($cuota['fecha'])) . '.';
     } elseif ($cuota) {
@@ -561,13 +606,13 @@ function spEnviarAviso(PDO $pdo, int $cid, int $id, string $motivo, ?array $cuot
         $asunto = 'Estado del préstamo #' . $id . ' · saldo ' . $L($det['saldo']);
         $intro = 'te compartimos el estado del préstamo «' . $e($p['descripcion']) . '».';
     }
-    $html = '<div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:14.5px;line-height:1.6;color:#1e293b;max-width:640px">'
-        . '<p>Hola, ' . $e($nombre) . ':</p><p>' . $intro . '</p>'
+    $cuerpo = '<p style="margin:0 0 14px">Hola, ' . $e($nombre) . ':</p><p style="margin:0 0 14px">' . ucfirst($intro) . '</p>'
         . '<p style="margin:14px 0">Prestado: <strong>' . $L($p['monto']) . '</strong> · Pagado: <strong>' . $L($det['pagado']) . '</strong> · Saldo: <strong>' . $L($det['saldo']) . '</strong></p>'
         . spHtmlControl($pdo, $cid, $det, true)
         . spMovimientosHtml($det)
         . ($p['estado'] === 'activo' ? spCuentasPagoHtml($pdo, $cid, $p) : '')
-        . '<p style="margin-top:14px;font-size:13px;color:#64748b">Adjuntamos el control del préstamo en PDF. Cuando hagas el pago, envía el comprobante para registrarlo.</p></div>';
+        . '<p style="margin-top:14px;font-size:13px;color:#64748b">Adjuntamos el control del préstamo en PDF. Cuando hagas el pago, envía el comprobante para registrarlo.</p>';
+    $html = spCorreoMarco($pdo, $cid, $cfg, $asunto, $cuerpo);
     $tmp = tempnam(sys_get_temp_dir(), 'sp');
     file_put_contents($tmp, spPdf($pdo, $cid, $id));
     try {
@@ -577,6 +622,29 @@ function spEnviarAviso(PDO $pdo, int $cid, int $id, string $motivo, ?array $cuot
         @unlink($tmp);
     }
     return $para;
+}
+
+/** Formato de la empresa para los correos de préstamos: logo arriba, el contenido en una tarjeta y el pie automático. */
+function spCorreoMarco(PDO $pdo, int $cid, array $cfg, string $titulo, string $cuerpo): string
+{
+    $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
+    $st = $pdo->prepare("SELECT nombre, alias FROM clientes_saas WHERE id = ?");
+    $st->execute([$cid]);
+    $emp = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+    $alias = ($emp['alias'] ?? '') ?: ($emp['nombre'] ?? '');
+    $logo = !empty($cfg['logo_url']) ? '<img src="' . $e($cfg['logo_url']) . '" alt="' . $e($alias) . '" height="52" style="height:52px;width:auto;max-width:200px;border:0;display:block">'
+        : '<span style="font-size:20px;font-weight:700;color:#e8590c">' . $e($alias) . '</span>';
+    if (!empty($cfg['enlace_url'])) $logo = '<a href="' . $e($cfg['enlace_url']) . '" target="_blank" style="text-decoration:none">' . $logo . '</a>';
+    return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+        . '<body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Helvetica,Arial,sans-serif">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 12px"><tr><td align="center">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">'
+        . '<tr><td style="padding:22px 28px;border-bottom:4px solid #e8590c">' . $logo . '</td></tr>'
+        . '<tr><td style="padding:26px 28px 6px;font-size:18px;font-weight:700;color:#0f172a">' . $e($titulo) . '</td></tr>'
+        . '<tr><td style="padding:10px 28px 28px;font-size:14.5px;line-height:1.6;color:#1e293b">' . $cuerpo . '</td></tr>'
+        . '<tr><td style="padding:16px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11.5px;line-height:1.55;color:#94a3b8">'
+        . (function_exists('correoPieAutomatico') ? correoPieAutomatico($cfg, $e) : '') . ' La información de este mensaje es confidencial y está dirigida únicamente a su destinatario.</td></tr>'
+        . '</table></td></tr></table></body></html>';
 }
 
 /**

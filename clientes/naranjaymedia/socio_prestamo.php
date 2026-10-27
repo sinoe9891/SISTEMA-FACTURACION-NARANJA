@@ -46,13 +46,15 @@ require_once '../../includes/templates/header.php';
 <div class="app-page-header">
     <div>
         <h1 class="app-page-title"><i class="bi bi-cash-coin me-2"></i>Préstamo #<?= $id ?> · <?= $e($p['socio']) ?> <span class="badge align-middle fs-6" style="background:<?= $eBg ?>;color:<?= $eFg ?>"><?= $eTxt ?></span></h1>
-        <p class="app-page-sub"><?= $e($p['descripcion']) ?> · <?= (int)$p['num_cuotas'] ?> cuotas <?= $p['frecuencia'] === 'quincenal' ? 'quincenales (15 y fin de mes)' : 'mensuales' ?> desde el <?= date('d/m/Y', strtotime($p['primera_cuota'])) ?></p>
+        <p class="app-page-sub"><?php if (!empty($p['deudor_nombre'])): ?><span class="badge text-bg-light border fw-normal me-1"><i class="bi bi-envelope me-1"></i>Correos y PDF a nombre de <?= $e($p['deudor_nombre']) ?></span><?php endif; ?><?= $e($p['descripcion']) ?> · <?= (int)$p['num_cuotas'] ?> cuotas <?= $p['frecuencia'] === 'quincenal' ? 'quincenales (15 y fin de mes)' : 'mensuales' ?> desde el <?= date('d/m/Y', strtotime($p['primera_cuota'])) ?></p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
         <a href="socios#prestamos" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i> Préstamos</a>
         <a href="socio_prestamo_pdf?id=<?= $id ?>" target="_blank" class="btn btn-outline-danger"><i class="bi bi-file-earmark-pdf me-1"></i> PDF de control</a>
         <?php if ($esAdmin && $p['estado'] === 'activo'): ?>
-            <button class="btn btn-outline-primary" id="spEnviar"><i class="bi bi-envelope me-1"></i> Enviar recordatorio</button>
+            <div class="btn-group"><button class="btn btn-outline-primary" id="spInfo"><i class="bi bi-envelope-paper me-1"></i> Enviar información</button>
+                <button class="btn btn-outline-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-label="Más correos"></button>
+                <div class="dropdown-menu dropdown-menu-end"><button class="dropdown-item" id="spEnviar"><i class="bi bi-bell me-2"></i>Recordatorio de la próxima cuota</button></div></div>
             <button class="btn btn-success" id="spPagar"><i class="bi bi-plus-circle me-1"></i> Registrar pago</button>
         <?php endif; ?>
         <?php if ($esAdmin && $abierto): ?>
@@ -137,7 +139,9 @@ require_once '../../includes/templates/header.php';
                 <form id="fAvisos" class="row g-2">
                     <input type="hidden" name="accion" value="avisos"><input type="hidden" name="id" value="<?= $id ?>">
                     <div class="col-12"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" name="avisar" value="1" id="avAct" <?= (int)$p['avisar'] ? 'checked' : '' ?> <?= $esAdmin ? '' : 'disabled' ?>><label class="form-check-label" for="avAct">Avisar <input type="number" name="aviso_dias" min="0" max="30" value="<?= (int)$p['aviso_dias'] ?>" class="form-control form-control-sm d-inline-block mx-1" style="width:64px"> días antes de cada cuota y si se atrasa</label></div></div>
-                    <div class="col-12"><label class="form-label small mb-0">Para</label><input class="form-control form-control-sm" name="aviso_correo" value="<?= $e($p['aviso_correo'] ?: $p['socio_email']) ?>" placeholder="correo del socio"></div>
+                    <div class="col-12"><label class="form-label small mb-0">A nombre de <span class="text-muted">(opcional)</span></label><input class="form-control form-control-sm" name="deudor_nombre" maxlength="150" value="<?= $e($p['deudor_nombre']) ?>" placeholder="Vacío = a nombre del socio">
+                        <div class="form-text">Si lo devuelve otra persona: los correos y el PDF salen solo con su nombre. En el sistema el préstamo sigue siendo de <?= $e($p['socio']) ?>.</div></div>
+                    <div class="col-12"><label class="form-label small mb-0">Para</label><input class="form-control form-control-sm" name="aviso_correo" value="<?= $e($p['aviso_correo'] ?: $p['socio_email']) ?>" placeholder="correo del socio o de esa persona"></div>
                     <div class="col-12"><label class="form-label small mb-0">Con copia a <span class="text-muted">(varios con coma)</span></label><input class="form-control form-control-sm" name="aviso_cc" value="<?= $e($p['aviso_cc']) ?>"></div>
                     <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="guardar_en_socio" value="1" id="avSocio"><label class="form-check-label small" for="avSocio">Guardar este correo como el del socio (para sus próximos préstamos)</label></div></div>
                     <?php if ($esAdmin): ?><div class="col-12 text-end"><button class="btn btn-sm btn-primary">Guardar avisos</button></div><?php endif; ?>
@@ -256,6 +260,13 @@ require_once '../../includes/templates/header.php';
     document.getElementById('spAnular')?.addEventListener('click', async () => {
         const { value } = await Swal.fire({ title: 'Anular préstamo', text: 'Se anula también su salida del banco.', input: 'text', inputLabel: 'Motivo', icon: 'warning', showCancelButton: true, confirmButtonText: 'Anular', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc2626', inputValidator: v => !v.trim() && 'Escribe el motivo' });
         if (value) accion({ accion: 'anular', id: ID, motivo: value }, 'No se pudo anular');
+    });
+    document.getElementById('spInfo')?.addEventListener('click', async e => {
+        const r = await Swal.fire({ icon: 'question', title: 'Enviar información del préstamo', html: 'Se envía a <strong>' + <?= json_encode($p['aviso_correo'] ?: (string)$p['socio_email']) ?>.replace(/[<>&]/g, '') + '</strong>' + <?= json_encode($p['aviso_cc'] ? ' con copia a ' . $p['aviso_cc'] : '') ?>.replace(/[<>&]/g, '') + ': datos del préstamo, cuadro de pagos, cuentas para pagar y el PDF.',
+            showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' });
+        if (!r.isConfirmed) return;
+        const b = e.currentTarget; b.disabled = true;
+        try { const fd = new FormData(); fd.append('accion', 'enviar_info'); fd.append('id', ID); listo(await post(fd)); } catch (e2) { err('No se pudo enviar', e2); b.disabled = false; }
     });
     document.getElementById('spEnviar')?.addEventListener('click', async e => {
         e.currentTarget.disabled = true;

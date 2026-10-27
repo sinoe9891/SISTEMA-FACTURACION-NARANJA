@@ -93,3 +93,40 @@ suite('Préstamos a socios: cuotas, pagos, banco, avisos y PDF', function () {
     $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id = $cta");
     $pdo->exec("DELETE FROM cuentas_bancarias WHERE id = $cta");
 });
+
+suite('Préstamos a socios: a nombre de otra persona en correos y PDF', function () {
+    $pdo = db();
+    require_once __DIR__ . '/../../includes/socios_prestamos.php';
+    $c = login('qa.admin@local.test');
+    $soc = (int)$pdo->query("SELECT id FROM socios WHERE cliente_id = 2 AND activo = 1 ORDER BY id LIMIT 1")->fetchColumn();
+    $socNom = (string)$pdo->query("SELECT nombre FROM socios WHERE id = $soc")->fetchColumn();
+    $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'crear', 'socio_id' => $soc, 'descripcion' => 'QA tercero', 'monto' => 3000, 'fecha' => date('Y-m-d'), 'num_cuotas' => 2,
+        'frecuencia' => 'quincenal', 'primera_cuota' => date('Y-m-d', strtotime('+2 days')), 'deudor_nombre' => 'José QA Landa', 'avisar' => 1, 'aviso_correo' => 'jose@qa.test']);
+    $id = (int)($r['json']['id'] ?? 0);
+    check('se guarda «a nombre de» y sigue siendo del socio', $id && $pdo->query("SELECT CONCAT(socio_id, '|', deudor_nombre) FROM socios_prestamos WHERE id = $id")->fetchColumn() === "$soc|José QA Landa", $r['body']);
+    $html = '';
+    $det = spDetalle($pdo, 2, $id);
+    $pdfTxt = spPdf($pdo, 2, $id);
+    check('el PDF se genera', str_starts_with($pdfTxt, '%PDF'));
+    $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'enviar', 'id' => $id]);
+    $eml = glob(__DIR__ . '/../qa/correos/*.eml'); sort($eml);
+    $txt = '';
+    if ($eml) foreach (preg_split('/\r?\n\r?\n/', (string)file_get_contents(end($eml))) as $parte) { $b = base64_decode(preg_replace('/\s+/', '', $parte), true); $txt .= ($b !== false ? $b : $parte) . "\n"; }
+    $primerNombreSocio = explode(' ', $socNom)[0];
+    check('el correo saluda a esa persona y no menciona al socio', ($r['json']['success'] ?? false) && str_contains($txt, 'Hola, José') && !str_contains($txt, $socNom) && !str_contains($txt, 'Hola, ' . $primerNombreSocio), $r['body']);
+    $v = $c->get('socio_prestamo', ['id' => $id]);
+    check('en el sistema se ve el socio y «a nombre de»', sinErroresPhp($v['body']) && str_contains($v['body'], htmlspecialchars($socNom)) && str_contains($v['body'], 'a nombre de José QA Landa'), errorPhp($v['body']));
+    $c->post('includes/socio_prestamo_accion.php', ['accion' => 'avisos', 'id' => $id, 'avisar' => 1, 'aviso_correo' => 'jose@qa.test', 'aviso_cc' => 'gerencia@qa.test', 'deudor_nombre' => 'José QA Landa']);
+    $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'enviar_info', 'id' => $id]);
+    $eml = glob(__DIR__ . '/../qa/correos/*.eml'); sort($eml);
+    $raw = $eml ? (string)file_get_contents(end($eml)) : '';
+    $txt = '';
+    foreach (preg_split('/\r?\n\r?\n/', $raw) as $parte) { $b = base64_decode(preg_replace('/\s+/', '', $parte), true); $txt .= ($b !== false ? $b : $parte) . "\n"; }
+    $env = $pdo->query("SELECT asunto FROM correos_enviados WHERE tipo = 'prestamo_socio_bienvenida' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    check('«Enviar información»: datos, cuadro de pagos y PDF, con copia', ($r['json']['success'] ?? false) && str_contains((string)$env, 'Información de tu préstamo') && preg_match('/^Cc:.*gerencia@qa\.test/mi', $raw)
+        && str_contains($txt, 'cuadro de pagos') && str_contains($raw, 'control_prestamo_' . $id . '.pdf'), $r['body']);
+    $c->post('includes/socio_prestamo_accion.php', ['accion' => 'avisos', 'id' => $id, 'avisar' => 1, 'aviso_correo' => 'jose@qa.test', 'deudor_nombre' => '']);
+    check('dejarlo vacío vuelve a nombre del socio', $pdo->query("SELECT deudor_nombre FROM socios_prestamos WHERE id = $id")->fetchColumn() === null);
+    $pdo->exec("DELETE FROM socios_prestamo_cuotas WHERE prestamo_id = $id");
+    $pdo->exec("DELETE FROM socios_prestamos WHERE id = $id");
+});
