@@ -6,9 +6,15 @@ require_once '../../includes/session.php';
 require_once '../../includes/socios_prestamos.php';
 
 $cid = (int)cliente_actual();
-$tabla = ($_GET['tipo'] ?? '') === 'pago' ? 'socios_prestamo_pagos' : 'socios_prestamos';
-$st = $pdo->prepare("SELECT archivo_adjunto, archivo_nombre FROM $tabla WHERE id = ? AND cliente_id = ?");
-$st->execute([(int)($_GET['id'] ?? 0), $cid]);
+// ?archivo=<id> (uno de sus comprobantes) o, como antes, ?tipo=prestamo|pago&id=<id> (el principal)
+if (!empty($_GET['archivo'])) {
+    $st = $pdo->prepare("SELECT archivo AS archivo_adjunto, nombre AS archivo_nombre FROM socios_prestamo_archivos WHERE id = ? AND cliente_id = ?");
+    $st->execute([(int)$_GET['archivo'], $cid]);
+} else {
+    $tabla = ($_GET['tipo'] ?? '') === 'pago' ? 'socios_prestamo_pagos' : 'socios_prestamos';
+    $st = $pdo->prepare("SELECT archivo_adjunto, archivo_nombre FROM $tabla WHERE id = ? AND cliente_id = ?");
+    $st->execute([(int)($_GET['id'] ?? 0), $cid]);
+}
 $a = $st->fetch(PDO::FETCH_ASSOC);
 $base = realpath(spDir());
 $ruta = $a && $a['archivo_adjunto'] ? realpath(spDir() . basename($a['archivo_adjunto'])) : false;

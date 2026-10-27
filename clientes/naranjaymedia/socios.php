@@ -192,7 +192,7 @@ require_once '../../includes/templates/header.php';
                         <?php foreach ($cuentasHnl as $cb): ?><option value="<?= (int)$cb['id'] ?>"><?= htmlspecialchars($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?></select></div>
                 <?php endif; ?>
                 <div class="col-md-6"><label class="form-label small">Referencia de la transferencia</label><input class="form-control" name="referencia" maxlength="80"></div>
-                <div class="col-12"><label class="form-label small">Comprobante <span class="text-muted">(opcional · JPG, PNG, PDF · máx 5 MB)</span></label><input type="file" class="form-control form-control-sm" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
+                <div class="col-12"><label class="form-label small">Comprobantes de la transferencia <span class="text-muted">(uno o varios · JPG, PNG, PDF · máx 5 MB c/u)</span></label><input type="file" class="form-control form-control-sm" name="comprobantes[]" multiple accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
                 <div class="col-12"><div class="border rounded-3 p-2">
                     <div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" name="avisar" value="1" id="spAvisar" checked><label class="form-check-label fw-semibold" for="spAvisar"><i class="bi bi-envelope me-1"></i>Avisar por correo antes de cada cuota y si se atrasa</label></div>
                     <div class="row g-2 mt-1">

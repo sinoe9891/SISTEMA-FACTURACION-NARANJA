@@ -28,8 +28,15 @@ try {
 } catch (Throwable $e) {
     $avisos = [];
 }
+$archivos = spArchivos($pdo, $cid, $id);   // comprobantes del préstamo y de cada pago
 $L = fn($v) => 'L ' . number_format((float)$v, 2);
 $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
+$listaArch = function (array $lista, bool $quitar) use ($e): string {
+    if (!$lista) return '<span class="text-muted">Sin comprobantes.</span>';
+    return implode('', array_map(fn($a) => '<div class="d-flex align-items-center gap-2 py-1"><i class="bi bi-' . (preg_match('/\.pdf$/i', $a['archivo']) ? 'file-earmark-pdf text-danger' : 'image text-primary') . '"></i>'
+        . '<a href="socio_prestamo_archivo?archivo=' . (int)$a['id'] . '" target="_blank" class="text-truncate flex-grow-1">' . $e($a['nombre']) . '</a>'
+        . ($quitar ? '<button type="button" class="btn btn-sm btn-link text-danger p-0 sp-quitar-arch" data-id="' . (int)$a['id'] . '" title="Quitar"><i class="bi bi-x-lg"></i></button>' : '') . '</div>', $lista));
+};
 [$eTxt, $eBg, $eFg] = SP_ESTADOS[$p['estado']];
 $px = $det['proxima'];
 $titulo = 'Préstamo #' . $id . ' · ' . $p['socio'];
@@ -100,9 +107,10 @@ require_once '../../includes/templates/header.php';
                         <td class="app-num fw-semibold"><?= number_format((float)$g['monto'], 2) ?></td>
                         <td class="small"><?= $e(SP_METODOS[$g['metodo']] ?? $g['metodo']) ?><?= $g['referencia'] ? '<div class="text-muted">' . $e($g['referencia']) . '</div>' : '' ?><?= $g['notas'] ? '<div class="text-muted">' . $e($g['notas']) . '</div>' : '' ?></td>
                         <td class="small"><?= $g['cuenta'] ? $e($g['cuenta']) : '<span class="text-muted">—</span>' ?></td>
-                        <td class="text-center"><?= $g['archivo_adjunto'] ? '<a href="socio_prestamo_archivo?tipo=pago&id=' . (int)$g['id'] . '" target="_blank"><i class="bi bi-paperclip fs-5"></i></a>' : '<span class="badge bg-light text-secondary border">Sin</span>' ?></td>
+                        <?php $ap = $archivos[(int)$g['id']] ?? []; ?>
+                        <td class="text-center"><?= $ap ? implode(' ', array_map(fn($a) => '<a href="socio_prestamo_archivo?archivo=' . (int)$a['id'] . '" target="_blank" title="' . $e($a['nombre']) . '"><i class="bi bi-paperclip fs-5"></i></a>', $ap)) : '<span class="badge bg-light text-secondary border">Sin</span>' ?></td>
                         <td class="text-end text-nowrap"><?php if ($esAdmin && !$anul && $abierto): ?>
-                            <button class="btn btn-sm btn-outline-primary py-0 sp-editar-pago" data-pago='<?= $e(json_encode(['id' => (int)$g['id'], 'fecha' => $g['fecha'], 'monto' => (float)$g['monto'], 'metodo' => $g['metodo'], 'referencia' => (string)$g['referencia'], 'cuenta_id' => (int)$g['cuenta_id'] ?: '', 'notas' => (string)$g['notas'], 'archivo' => (string)$g['archivo_nombre']])) ?>' title="Editar"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-primary py-0 sp-editar-pago" data-pago='<?= $e(json_encode(['id' => (int)$g['id'], 'fecha' => $g['fecha'], 'monto' => (float)$g['monto'], 'metodo' => $g['metodo'], 'referencia' => (string)$g['referencia'], 'cuenta_id' => (int)$g['cuenta_id'] ?: '', 'notas' => (string)$g['notas'], 'archivos' => array_map(fn($a) => ['id' => (int)$a['id'], 'nombre' => $a['nombre']], $archivos[(int)$g['id']] ?? [])])) ?>' title="Editar"><i class="bi bi-pencil"></i></button>
                             <button class="btn btn-sm btn-outline-danger py-0 sp-anular-pago" data-id="<?= (int)$g['id'] ?>" title="Anular (quita el pago y su depósito)"><i class="bi bi-slash-circle"></i></button>
                         <?php endif; ?><?= $anul ? '<span class="small">Anulado</span>' : '' ?></td></tr>
                 <?php endforeach; ?>
@@ -116,7 +124,8 @@ require_once '../../includes/templates/header.php';
             <div class="app-card-header"><span><i class="bi bi-info-circle me-1"></i> Datos</span></div>
             <div class="app-card-body small">
                 <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Salió de</span><span><?= $p['cuenta'] ? $e($p['cuenta']) : 'No registrado en banco' ?><?= $p['referencia'] ? ' · ref. ' . $e($p['referencia']) : '' ?></span></div>
-                <div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Comprobante</span><span><?= $p['archivo_adjunto'] ? '<a href="socio_prestamo_archivo?tipo=prestamo&id=' . $id . '" target="_blank"><i class="bi bi-paperclip"></i> ' . $e($p['archivo_nombre'] ?: 'Ver') . '</a>' : '—' ?></span></div>
+                <div class="py-1 border-bottom"><div class="text-muted mb-1">Comprobantes de la transferencia</div><?= $listaArch($archivos['prestamo'], $esAdmin && $abierto) ?>
+                    <?php if ($esAdmin && $abierto): ?><form class="sp-subir d-flex gap-2 mt-1" data-pago=""><input type="file" name="comprobantes[]" multiple class="form-control form-control-sm" accept=".jpg,.jpeg,.png,.webp,.pdf"><button class="btn btn-sm btn-outline-primary text-nowrap"><i class="bi bi-upload"></i> Agregar</button></form><?php endif; ?></div>
                 <?php if ($p['estado'] === 'condonado'): ?><div class="d-flex justify-content-between py-1 border-bottom"><span class="text-muted">Pasado a retiro</span><span><?= $L($p['condonado_monto']) ?> · <a href="gasto_ver?id=<?= (int)$p['condonado_gasto_id'] ?>">gasto N.º <?= (int)$p['condonado_gasto_id'] ?></a></span></div><?php endif; ?>
                 <?php if ($p['notas']): ?><div class="pt-2 text-muted"><?= nl2br($e($p['notas'])) ?></div><?php endif; ?>
             </div>
@@ -159,7 +168,7 @@ require_once '../../includes/templates/header.php';
         <?php if ($cuentasHnl): ?><div class="col-12"><label class="form-label small">Entró a la cuenta</label><select class="form-select" name="cuenta_id"><option value="">— No registrar en banco —</option>
             <?php foreach ($cuentasHnl as $cb): ?><option value="<?= (int)$cb['id'] ?>"><?= $e($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?></select></div><?php endif; ?>
         <div class="col-12"><label class="form-label small">Notas</label><input class="form-control" name="notas" maxlength="255"></div>
-        <div class="col-12"><label class="form-label small">Comprobante <span class="text-muted">(opcional · JPG, PNG, PDF · máx 5 MB)</span></label><div class="small mb-1" id="pArchivo"></div><input type="file" class="form-control form-control-sm" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
+        <div class="col-12"><label class="form-label small">Comprobantes <span class="text-muted">(uno o varios · JPG, PNG, PDF · máx 5 MB c/u)</span></label><div class="small mb-1" id="pArchivo"></div><input type="file" class="form-control form-control-sm" name="comprobantes[]" multiple accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
     </div>
     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-success">Guardar</button></div>
 </form></div></div>
@@ -179,7 +188,8 @@ require_once '../../includes/templates/header.php';
         <?php if ($cuentasHnl): ?><div class="col-md-6"><label class="form-label small">Salió de la cuenta</label><select class="form-select" name="cuenta_id"><option value="">— No registrar en banco —</option>
             <?php foreach ($cuentasHnl as $cb): ?><option value="<?= (int)$cb['id'] ?>" <?= (int)$p['cuenta_id'] === (int)$cb['id'] ? 'selected' : '' ?>><?= $e($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?></select></div><?php endif; ?>
         <div class="col-md-6"><label class="form-label small">Referencia</label><input class="form-control" name="referencia" maxlength="80" value="<?= $e($p['referencia']) ?>"></div>
-        <div class="col-12"><label class="form-label small">Comprobante nuevo <span class="text-muted">(opcional)</span></label><input type="file" class="form-control form-control-sm" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
+        <div class="col-12"><label class="form-label small">Comprobantes de la transferencia</label><div class="small border rounded-2 px-2 mb-1"><?= $listaArch($archivos['prestamo'], true) ?></div>
+            <input type="file" class="form-control form-control-sm" name="comprobantes[]" multiple accept=".jpg,.jpeg,.png,.webp,.pdf"><div class="form-text">Agrega uno o varios; los que ya están se conservan (quítalos con la ×).</div></div>
         <div class="col-12"><label class="form-label small">Notas</label><textarea class="form-control" name="notas" rows="2"><?= $e($p['notas']) ?></textarea></div>
         <div class="col-12 form-text">Al guardar, las cuotas se vuelven a calcular y lo ya pagado (<?= $L($det['pagado']) ?>) se aplica de nuevo en orden. Si cambias el monto, la cuenta o la fecha, también se ajusta la salida del banco.</div>
     </div>
@@ -209,7 +219,7 @@ require_once '../../includes/templates/header.php';
             fp.reset(); fp.accion.value = 'editar_pago'; fp.pago_id.value = g.id; document.getElementById('mPagoTit').textContent = 'Editar pago';
             for (const k of ['fecha', 'monto', 'metodo', 'referencia', 'notas']) fp[k].value = g[k] ?? '';
             if (fp.cuenta_id) fp.cuenta_id.value = g.cuenta_id;
-            document.getElementById('pArchivo').innerHTML = g.archivo ? 'Actual: <a href="socio_prestamo_archivo?tipo=pago&id=' + g.id + '" target="_blank">' + g.archivo.replace(/[<>&"]/g, '') + '</a> (sube otro para cambiarlo)' : '';
+            document.getElementById('pArchivo').innerHTML = g.archivos.length ? g.archivos.map(a => '<div class="d-flex gap-2"><a href="socio_prestamo_archivo?archivo=' + a.id + '" target="_blank" class="flex-grow-1">' + a.nombre.replace(/[<>&"]/g, '') + '</a><button type="button" class="btn btn-sm btn-link text-danger p-0 sp-quitar-arch" data-id="' + a.id + '" title="Quitar"><i class="bi bi-x-lg"></i></button></div>').join('') + '<div class="text-muted">Los que agregues se suman a estos.</div>' : '';
             mp.show();
         }));
         fp.addEventListener('submit', async e => {
@@ -250,6 +260,18 @@ require_once '../../includes/templates/header.php';
     document.getElementById('spEnviar')?.addEventListener('click', async e => {
         e.currentTarget.disabled = true;
         try { const fd = new FormData(); fd.append('accion', 'enviar'); fd.append('id', ID); listo(await post(fd)); } catch (e2) { err('No se pudo enviar', e2); e.currentTarget.disabled = false; }
+    });
+    // Comprobantes: agregar (al préstamo) y quitar (del préstamo o de un pago)
+    document.querySelectorAll('.sp-subir').forEach(fs => fs.addEventListener('submit', async e => {
+        e.preventDefault();
+        const fd = new FormData(fs); fd.append('accion', 'archivos'); fd.append('id', ID); if (fs.dataset.pago) fd.append('pago_id', fs.dataset.pago);
+        if (!fs.querySelector('input[type=file]').files.length) return Swal.fire('Elige uno o varios archivos', '', 'info');
+        try { listo(await post(fd)); } catch (e2) { err('No se pudo subir', e2); }
+    }));
+    document.addEventListener('click', async e => {
+        const b = e.target.closest('.sp-quitar-arch'); if (!b) return;
+        if (!(await Swal.fire({ icon: 'warning', title: '¿Quitar este comprobante?', showCancelButton: true, confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar' })).isConfirmed) return;
+        accion({ accion: 'archivo_quitar', archivo_id: b.dataset.id }, 'No se pudo quitar');
     });
     document.getElementById('fAvisos')?.addEventListener('submit', async e => { e.preventDefault(); try { listo(await post(new FormData(e.target))); } catch (e2) { err('No se pudo guardar', e2); } });
 })();

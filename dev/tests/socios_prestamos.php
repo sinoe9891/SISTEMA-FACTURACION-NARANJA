@@ -19,12 +19,20 @@ suite('Préstamos a socios: cuotas, pagos, banco, avisos y PDF', function () {
     $primera = date('Y-m-d', strtotime('+2 days'));
     $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'crear', 'socio_id' => $soc, 'descripcion' => 'QA préstamo socio', 'monto' => 22500, 'fecha' => $hoy, 'num_cuotas' => 12,
         'frecuencia' => 'quincenal', 'primera_cuota' => $primera, 'cuenta_id' => $cta, 'referencia' => 'QA-REF', 'avisar' => 1, 'aviso_dias' => 3, 'aviso_correo' => 'socio@qa.test', 'aviso_cc' => 'conta@qa.test',
-        'comprobante' => new CURLFile(archivoTemporal('png'), 'image/png', 'transferencia.png')]);
+        'comprobantes[0]' => new CURLFile(archivoTemporal('png'), 'image/png', 'transferencia.png'), 'comprobantes[1]' => new CURLFile(archivoTemporal('pdf'), 'application/pdf', 'constancia.pdf')]);
     $id = (int)($r['json']['id'] ?? 0);
     $p = $pdo->query("SELECT * FROM socios_prestamos WHERE id = $id")->fetch(PDO::FETCH_ASSOC);
     $mov = $p ? $pdo->query("SELECT * FROM movimientos_bancarios WHERE id = " . (int)$p['movimiento_id'])->fetch(PDO::FETCH_ASSOC) : null;
     check('se crea con 12 cuotas y sale del banco (con su comprobante)', $id && (int)$pdo->query("SELECT COUNT(*) FROM socios_prestamo_cuotas WHERE prestamo_id = $id")->fetchColumn() === 12
         && $mov && $mov['tipo'] === 'prestamo_socio' && $mov['sentido'] === 'salida' && (float)$mov['monto'] === 22500.0 && $mov['archivo_adjunto'], $r['body']);
+    check('guarda los 2 comprobantes del préstamo', (int)$pdo->query("SELECT COUNT(*) FROM socios_prestamo_archivos WHERE prestamo_id = $id AND pago_id IS NULL")->fetchColumn() === 2);
+    $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'archivos', 'id' => $id, 'comprobantes[0]' => new CURLFile(archivoTemporal('png'), 'image/png', 'otro.png')]);
+    $arch = (int)$pdo->query("SELECT id FROM socios_prestamo_archivos WHERE prestamo_id = $id ORDER BY id LIMIT 1")->fetchColumn();
+    $ver = $c->get('socio_prestamo_archivo', ['archivo' => $arch]);
+    $c->post('includes/socio_prestamo_accion.php', ['accion' => 'archivo_quitar', 'archivo_id' => $arch]);
+    $mvArch = (string)$pdo->query("SELECT archivo_adjunto FROM movimientos_bancarios WHERE id = " . (int)$p['movimiento_id'])->fetchColumn();
+    check('agrega más comprobantes, se ven y al quitar el principal el banco toma el siguiente', ($r['json']['success'] ?? false) && str_starts_with($ver['body'], "\x89PNG")
+        && (int)$pdo->query("SELECT COUNT(*) FROM socios_prestamo_archivos WHERE prestamo_id = $id")->fetchColumn() === 2 && $mvArch !== '' && $mvArch === (string)$pdo->query("SELECT archivo_adjunto FROM socios_prestamos WHERE id = $id")->fetchColumn(), $r['body']);
     $s = $c->get('socios');
     check('Socios: pestaña Préstamos, «Nuevo préstamo» y el saldo por cobrar', sinErroresPhp($s['body']) && str_contains($s['body'], 'id="tPrestamos"') && str_contains($s['body'], 'QA préstamo socio') && str_contains($s['body'], 'Préstamos por cobrar'), errorPhp($s['body']));
     $v = $c->get('socio_prestamo', ['id' => $id]);
@@ -49,6 +57,12 @@ suite('Préstamos a socios: cuotas, pagos, banco, avisos y PDF', function () {
     check('el Balance lo cuenta como préstamo a socios por cobrar', spSaldoAlCorte($pdo, 2, $hoy) >= 20500);
     $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'enviar', 'id' => $id]);
     $env = $pdo->query("SELECT destinatario AS para, asunto, estado FROM correos_enviados WHERE tipo LIKE 'prestamo_socio_%' ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $eml = glob(__DIR__ . '/../qa/correos/*.eml'); sort($eml);
+    // Partes del correo en base64: se decodifican para buscar el texto
+    $txt = '';
+    if ($eml) foreach (preg_split('/\r?\n\r?\n/', (string)file_get_contents(end($eml))) as $parte) { $b = base64_decode(preg_replace('/\s+/', '', $parte), true); $txt .= ($b !== false ? $b : $parte) . "\n"; }
+    $txt .= (string)file_get_contents(end($eml));
+    check('el correo trae la transferencia (de qué cuenta salió), los pagos y las cuentas de la empresa para pagar', str_contains($txt, 'Salió de QA Banco QA-SP-1') && str_contains($txt, 'Cuentas de la empresa para hacer el pago') && str_contains($txt, 'de aquí salió el préstamo') && str_contains($txt, 'conta@qa.test'));
     check('envía el recordatorio al socio (con la cuota que viene)', ($r['json']['success'] ?? false) && $env && $env['estado'] === 'enviado' && str_contains($env['para'], 'socio@qa.test') && str_contains($env['asunto'], 'cuota'), $r['body']);
     $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'anular_pago', 'pago_id' => $pago, 'motivo' => 'QA']);
     $d = spDetalle($pdo, 2, $id);
@@ -74,6 +88,7 @@ suite('Préstamos a socios: cuotas, pagos, banco, avisos y PDF', function () {
         $pdo->exec("DELETE FROM socios_prestamo_cuotas WHERE prestamo_id = $x");
         $pdo->exec("DELETE FROM socios_prestamos WHERE id = $x");
     }
+    $pdo->exec("DELETE FROM socios_prestamo_archivos WHERE prestamo_id IN ($id, $id2)");
     $pdo->exec("DELETE FROM gastos WHERE id = $gid");
     $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id = $cta");
     $pdo->exec("DELETE FROM cuentas_bancarias WHERE id = $cta");

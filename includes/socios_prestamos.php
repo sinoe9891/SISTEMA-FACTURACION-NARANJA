@@ -411,6 +411,41 @@ function spSaldoAlCorte(PDO $pdo, int $cid, string $corte): float
     return round($t, 2);
 }
 
+/**
+ * Cuentas de la empresa para devolver el préstamo (cuentas en lempiras de Bancos): primero la cuenta de donde salió
+ * el préstamo. No usa las cuentas de cobro a clientes (pueden ser personales de un socio).
+ */
+function spCuentasPagoHtml(PDO $pdo, int $cid, array $p, bool $paraCorreo = true): string
+{
+    try {
+        $st = $pdo->prepare("SELECT id, banco, tipo, numero, titular FROM cuentas_bancarias WHERE cliente_id = ? AND activa = 1 AND moneda = 'HNL' ORDER BY id = ? DESC, tipo = 'ahorro' DESC, id");
+        $st->execute([$cid, (int)$p['cuenta_id']]);
+        $cs = $st->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) { return ''; }
+    if (!$cs) return '';
+    $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
+    $li = implode('', array_map(fn($c) => '<li><strong>' . $e($c['banco']) . '</strong> · cuenta de ' . ($c['tipo'] === 'cheques' ? 'cheques' : 'ahorro') . ' <strong>' . $e($c['numero']) . '</strong>'
+        . ($c['titular'] ? ' a nombre de ' . $e($c['titular']) : '') . ((int)$c['id'] === (int)$p['cuenta_id'] ? ' <em>(de aquí salió el préstamo)</em>' : '') . '</li>', $cs));
+    return '<div style="margin-top:' . ($paraCorreo ? '16px' : '12px') . '"><strong>Cuentas de la empresa para hacer el pago:</strong><ul style="margin:6px 0 0;padding-left:18px">' . $li . '</ul></div>';
+}
+
+/** Movimientos del préstamo: la transferencia al socio (de qué cuenta salió) y cada pago del socio (a qué cuenta entró). */
+function spMovimientosHtml(array $det, bool $paraCorreo = true): string
+{
+    $p = $det['prestamo'];
+    $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
+    $td = 'style="padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:' . ($paraCorreo ? '13px' : '8.4pt') . '"';
+    $tdr = 'style="padding:5px 8px;border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap;font-size:' . ($paraCorreo ? '13px' : '8.4pt') . '"';
+    $th = 'style="background:#e2e8f0;padding:5px 8px;text-align:left;font-size:' . ($paraCorreo ? '12px' : '8pt') . '"';
+    $filas = '<tr><td ' . $td . '>' . date('d/m/Y', strtotime($p['fecha'])) . '</td><td ' . $td . '>Transferencia de la empresa al socio (préstamo)</td><td ' . $td . '>' . ($p['cuenta'] ? 'Salió de ' . $e($p['cuenta']) : '—') . ($p['referencia'] ? ' · ref. ' . $e($p['referencia']) : '') . '</td><td ' . $tdr . ' >− ' . number_format((float)$p['monto'], 2) . '</td></tr>';
+    foreach ($det['pagos'] as $g) {
+        if ((int)$g['anulado']) continue;
+        $filas .= '<tr><td ' . $td . '>' . date('d/m/Y', strtotime($g['fecha'])) . '</td><td ' . $td . '>Pago del socio (' . $e(SP_METODOS[$g['metodo']] ?? $g['metodo']) . ')</td><td ' . $td . '>' . ($g['cuenta'] ? 'Entró a ' . $e($g['cuenta']) : '—')
+            . ($g['referencia'] ? ' · ref. ' . $e($g['referencia']) : '') . '</td><td ' . $tdr . '>+ ' . number_format((float)$g['monto'], 2) . '</td></tr>';
+    }
+    return '<div style="margin-top:16px"><strong>Transferencias</strong><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:6px"><thead><tr><th ' . $th . '>Fecha</th><th ' . $th . '>Movimiento</th><th ' . $th . '>Cuenta de la empresa</th><th ' . $th . ' style="text-align:right">L</th></tr></thead><tbody>' . $filas . '</tbody></table></div>';
+}
+
 /** HTML de la tabla de control (PDF y correo). */
 function spHtmlControl(PDO $pdo, int $cid, array $det, bool $paraCorreo = false): string
 {
@@ -479,6 +514,7 @@ table.p { width:100%; border-collapse:collapse; } table.p th { background:#e2e8f
 </tr></table>'
         . ($det['vencidas'] ? '<p style="color:#b91c1c;margin:0 0 8px"><strong>' . $det['vencidas'] . ' cuota' . ($det['vencidas'] === 1 ? '' : 's') . ' vencida' . ($det['vencidas'] === 1 ? '' : 's') . ' por ' . $L($det['vencido_monto']) . '.</strong></p>' : '')
         . spHtmlControl($pdo, $cid, $det)
+        . ($p['estado'] === 'activo' ? spCuentasPagoHtml($pdo, $cid, $p, false) : '')
         . ($pagos ? '<h2>Pagos recibidos</h2><table class="p"><thead><tr><th>Fecha</th><th>Método</th><th>Cuenta</th><th style="text-align:right">Monto</th></tr></thead><tbody>' . $pagos . '</tbody></table>' : '')
         . ($p['estado'] === 'condonado' ? '<p style="margin-top:10px"><strong>Saldo pasado a retiro de socio:</strong> ' . $L($p['condonado_monto']) . ' (gasto N.º ' . (int)$p['condonado_gasto_id'] . ').</p>' : '')
         . '<table class="firmas"><tr><td><div class="linea">' . $e($p['socio']) . '<br><span class="muted">Socio</span></div></td><td><div class="linea">' . $e($alias) . '<br><span class="muted">La empresa</span></div></td></tr></table>
@@ -529,6 +565,8 @@ function spEnviarAviso(PDO $pdo, int $cid, int $id, string $motivo, ?array $cuot
         . '<p>Hola, ' . $e($nombre) . ':</p><p>' . $intro . '</p>'
         . '<p style="margin:14px 0">Prestado: <strong>' . $L($p['monto']) . '</strong> · Pagado: <strong>' . $L($det['pagado']) . '</strong> · Saldo: <strong>' . $L($det['saldo']) . '</strong></p>'
         . spHtmlControl($pdo, $cid, $det, true)
+        . spMovimientosHtml($det)
+        . ($p['estado'] === 'activo' ? spCuentasPagoHtml($pdo, $cid, $p) : '')
         . '<p style="margin-top:14px;font-size:13px;color:#64748b">Adjuntamos el control del préstamo en PDF. Cuando hagas el pago, envía el comprobante para registrarlo.</p></div>';
     $tmp = tempnam(sys_get_temp_dir(), 'sp');
     file_put_contents($tmp, spPdf($pdo, $cid, $id));
@@ -581,4 +619,82 @@ function spAvisosCron(PDO $pdo, callable $log): void
             $log("Préstamo a socio #{$r['id']}: " . $ex->getMessage());
         }
     }
+}
+
+// ── Comprobantes (uno o varios por préstamo y por pago) ─────────────────────
+
+/** $_FILES de un input múltiple (name="comprobantes[]") → lista de archivos sueltos (también acepta uno solo). */
+function spArchivosPost(?array $f): array
+{
+    if (!$f || !isset($f['name'])) return [];
+    if (!is_array($f['name'])) return [$f];
+    $out = [];
+    foreach ($f['name'] as $i => $n) $out[] = ['name' => $n, 'type' => $f['type'][$i], 'tmp_name' => $f['tmp_name'][$i], 'error' => $f['error'][$i], 'size' => $f['size'][$i]];
+    return $out;
+}
+
+/** Guarda varios comprobantes subidos. Devuelve [[archivo, nombre], …] (si uno no es válido, falla y no queda ninguno). */
+function spSubirVarios(array $files, int $cid, string $prefijo): array
+{
+    $hechos = [];
+    try {
+        foreach ($files as $f) if ($s = spSubir($f, $cid, $prefijo)) $hechos[] = $s;
+    } catch (Throwable $e) {
+        foreach ($hechos as $h) @unlink(spDir() . $h[0]);
+        throw $e;
+    }
+    return $hechos;
+}
+
+/** Registra comprobantes en un préstamo (o en uno de sus pagos) y deja el primero en el movimiento del banco si no tiene. */
+function spArchivosAgregar(PDO $pdo, int $cid, int $uid, int $prestamoId, ?int $pagoId, array $guardados): void
+{
+    if (!$guardados) return;
+    $ins = $pdo->prepare("INSERT INTO socios_prestamo_archivos (cliente_id, prestamo_id, pago_id, archivo, nombre, usuario_id) VALUES (?, ?, ?, ?, ?, ?)");
+    foreach ($guardados as [$a, $n]) $ins->execute([$cid, $prestamoId, $pagoId, $a, $n, $uid]);
+    $tabla = $pagoId ? 'socios_prestamo_pagos' : 'socios_prestamos';
+    $id = $pagoId ?: $prestamoId;
+    $pdo->prepare("UPDATE $tabla SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND archivo_adjunto IS NULL")->execute([$guardados[0][0], $guardados[0][1], $id]);
+    $st = $pdo->prepare("SELECT movimiento_id FROM $tabla WHERE id = ?");
+    $st->execute([$id]);
+    if ($mov = (int)$st->fetchColumn())
+        $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND archivo_adjunto IS NULL")->execute([$guardados[0][0], $guardados[0][1], $mov]);
+}
+
+/** Comprobantes del préstamo: ['prestamo' => [...], pago_id => [...]]. */
+function spArchivos(PDO $pdo, int $cid, int $prestamoId): array
+{
+    $out = ['prestamo' => []];
+    try {
+        $st = $pdo->prepare("SELECT id, pago_id, archivo, nombre, creado_en FROM socios_prestamo_archivos WHERE prestamo_id = ? AND cliente_id = ? ORDER BY id");
+        $st->execute([$prestamoId, $cid]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $a) $out[$a['pago_id'] ? (int)$a['pago_id'] : 'prestamo'][] = $a;
+    } catch (Throwable $e) {
+    }
+    return $out;
+}
+
+/** Quita un comprobante (y el archivo si ya nadie lo usa). Si era el principal, pasa el siguiente a su lugar. */
+function spArchivoQuitar(PDO $pdo, int $cid, int $archivoId): void
+{
+    $st = $pdo->prepare("SELECT * FROM socios_prestamo_archivos WHERE id = ? AND cliente_id = ?");
+    $st->execute([$archivoId, $cid]);
+    $a = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$a) throw new Exception("Comprobante no encontrado.");
+    $pdo->prepare("DELETE FROM socios_prestamo_archivos WHERE id = ?")->execute([$archivoId]);
+    $tabla = $a['pago_id'] ? 'socios_prestamo_pagos' : 'socios_prestamos';
+    $id = $a['pago_id'] ?: $a['prestamo_id'];
+    $st = $pdo->prepare("SELECT archivo, nombre FROM socios_prestamo_archivos WHERE prestamo_id = ? AND pago_id <=> ? ORDER BY id LIMIT 1");
+    $st->execute([$a['prestamo_id'], $a['pago_id']]);
+    $sig = $st->fetch(PDO::FETCH_ASSOC) ?: ['archivo' => null, 'nombre' => null];
+    $st = $pdo->prepare("SELECT movimiento_id, archivo_adjunto FROM $tabla WHERE id = ?");
+    $st->execute([$id]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    if ($r && $r['archivo_adjunto'] === $a['archivo']) {
+        $pdo->prepare("UPDATE $tabla SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ?")->execute([$sig['archivo'], $sig['nombre'], $id]);
+        if ($r['movimiento_id']) $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND archivo_adjunto = ?")->execute([$sig['archivo'], $sig['nombre'], (int)$r['movimiento_id'], $a['archivo']]);
+    }
+    $uso = $pdo->prepare("SELECT (SELECT COUNT(*) FROM socios_prestamo_archivos WHERE archivo = ?) + (SELECT COUNT(*) FROM movimientos_bancarios WHERE archivo_adjunto = ?) + (SELECT COUNT(*) FROM gastos WHERE archivo_adjunto = ?)");
+    $uso->execute([$a['archivo'], $a['archivo'], $a['archivo']]);
+    if (!(int)$uso->fetchColumn()) @unlink(spDir() . basename($a['archivo']));
 }
