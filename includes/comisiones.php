@@ -223,19 +223,22 @@ function comisionPagar(PDO $pdo, int $cid, int $uid, int $id, array $d, ?array $
 
 /** Deshace el pago: anula el gasto (y su salida del banco) y la comisión vuelve a «por pagar». */
 /** Corrige el pago de una comisión: anula el gasto y su salida del banco y registra el pago con los datos nuevos.
- *  Sin comprobante nuevo se conserva el anterior. Devuelve el id del gasto nuevo. */
+ *  Los comprobantes que tenía se quedan y los nuevos se agregan. Devuelve el id del gasto nuevo. */
 function comisionEditarPago(PDO $pdo, int $cid, int $uid, int $id, array $d, ?array $adjunto = null): int
 {
     $st = $pdo->prepare("SELECT g.archivo_adjunto, g.archivo_nombre FROM factura_comisiones c LEFT JOIN gastos g ON g.id = c.gasto_id WHERE c.id = ? AND c.cliente_id = ? AND c.estado = 'pagada'");
     $st->execute([$id, $cid]);
     $antes = $st->fetch(PDO::FETCH_ASSOC);
     if (!$antes) throw new Exception("La comisión no está pagada.");
-    if (!$adjunto && $antes['archivo_adjunto']) $adjunto = [$antes['archivo_adjunto'], $antes['archivo_nombre']];
-    comisionAnularPago($pdo, $cid, $id);
+    // Los comprobantes que ya tenía se quedan (los de antes de poder subir varios pasan a la lista)
+    if ($antes['archivo_adjunto'] && !comisionArchivos($pdo, $cid, [$id])) comisionArchivosAgregar($pdo, $cid, $uid, $id, [[$antes['archivo_adjunto'], $antes['archivo_nombre']]]);
+    $actuales = comisionArchivos($pdo, $cid, [$id])[$id] ?? [];
+    if ($actuales) $adjunto = [$actuales[0]['archivo'], $actuales[0]['nombre']];   // el principal sigue siendo el primero de la lista
+    comisionAnularPago($pdo, $cid, $id, true);
     return comisionPagar($pdo, $cid, $uid, $id, ['antes_de_cobro' => 1] + $d, $adjunto);
 }
 
-function comisionAnularPago(PDO $pdo, int $cid, int $id): void
+function comisionAnularPago(PDO $pdo, int $cid, int $id, bool $conservarArchivos = false): void
 {
     $st = $pdo->prepare("SELECT * FROM factura_comisiones WHERE id = ? AND cliente_id = ?");
     $st->execute([$id, $cid]);
@@ -254,7 +257,81 @@ function comisionAnularPago(PDO $pdo, int $cid, int $id): void
         if ($cta = (int)$stc->fetchColumn()) bancoLeyPoblacionalSincronizar($pdo, $cid, $cta);
     }
     $pdo->prepare("UPDATE factura_comisiones SET estado = 'pendiente', gasto_id = NULL, pagada_en = NULL WHERE id = ?")->execute([$id]);
+    // Anulado el pago, sus comprobantes quedan solo en el gasto anulado
+    if (!$conservarArchivos && comisionArchivosDisponible($pdo)) $pdo->prepare("DELETE FROM comision_archivos WHERE comision_id = ? AND cliente_id = ?")->execute([$id, $cid]);
     comisionRecalcular($pdo, $cid, (int)$c['factura_id']);
+}
+
+// ── Comprobantes del pago (uno o varios) ───────────────────────────────────
+
+function comisionArchivosDisponible(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok === null) {
+        try { $pdo->query("SELECT 1 FROM comision_archivos LIMIT 0"); $ok = true; } catch (Throwable $e) { $ok = false; }
+    }
+    return $ok;
+}
+
+/** $_FILES de un input múltiple (name="comprobantes[]") → lista de archivos sueltos (también acepta uno solo). */
+function comisionArchivosPost(?array $f): array
+{
+    if (!$f || !isset($f['name'])) return [];
+    if (!is_array($f['name'])) return [$f];
+    $out = [];
+    foreach ($f['name'] as $i => $n) $out[] = ['name' => $n, 'type' => $f['type'][$i], 'tmp_name' => $f['tmp_name'][$i], 'error' => $f['error'][$i], 'size' => $f['size'][$i]];
+    return $out;
+}
+
+/** Registra comprobantes [[archivo, nombre], …] en la comisión y deja el primero en su gasto (y su salida del banco) si no tiene. */
+function comisionArchivosAgregar(PDO $pdo, int $cid, int $uid, int $id, array $guardados): void
+{
+    if (!$guardados || !comisionArchivosDisponible($pdo)) return;
+    $ins = $pdo->prepare("INSERT INTO comision_archivos (cliente_id, comision_id, archivo, nombre, usuario_id) VALUES (?, ?, ?, ?, ?)");
+    foreach ($guardados as [$a, $n]) $ins->execute([$cid, $id, $a, $n, $uid]);
+    $st = $pdo->prepare("SELECT gasto_id FROM factura_comisiones WHERE id = ? AND cliente_id = ?");
+    $st->execute([$id, $cid]);
+    if ($gid = (int)$st->fetchColumn()) comisionArchivoPrincipal($pdo, $cid, $gid, $guardados[0], true);
+}
+
+/** Pone el comprobante principal del gasto de la comisión (y de su salida del banco). $soloSiFalta: no reemplaza uno que ya tenga. */
+function comisionArchivoPrincipal(PDO $pdo, int $cid, int $gid, ?array $a, bool $soloSiFalta = false): void
+{
+    $cond = $soloSiFalta ? " AND archivo_adjunto IS NULL" : "";
+    $pdo->prepare("UPDATE gastos SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND cliente_id = ?$cond")->execute([$a[0] ?? null, $a[1] ?? null, $gid, $cid]);
+    try {
+        $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE gasto_id = ? AND cliente_id = ? AND anulado = 0$cond")->execute([$a[0] ?? null, $a[1] ?? null, $gid, $cid]);
+    } catch (PDOException $e) {
+        // sin la columna de comprobante en movimientos
+    }
+}
+
+/** Comprobantes de varias comisiones: [comision_id => [[id, archivo, nombre], …]]. */
+function comisionArchivos(PDO $pdo, int $cid, array $ids): array
+{
+    $ids = array_values(array_filter(array_map('intval', $ids)));
+    if (!$ids || !comisionArchivosDisponible($pdo)) return [];
+    $st = $pdo->prepare("SELECT id, comision_id, archivo, nombre FROM comision_archivos WHERE cliente_id = ? AND comision_id IN (" . implode(',', $ids) . ") ORDER BY id");
+    $st->execute([$cid]);
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $a) $out[(int)$a['comision_id']][] = $a;
+    return $out;
+}
+
+/** Quita un comprobante del pago. Si era el principal del gasto, pasa el siguiente a su lugar. */
+function comisionArchivoQuitar(PDO $pdo, int $cid, int $archivoId): void
+{
+    $st = $pdo->prepare("SELECT a.*, c.gasto_id FROM comision_archivos a JOIN factura_comisiones c ON c.id = a.comision_id WHERE a.id = ? AND a.cliente_id = ?");
+    $st->execute([$archivoId, $cid]);
+    $a = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$a) throw new Exception("Comprobante no encontrado.");
+    $pdo->prepare("DELETE FROM comision_archivos WHERE id = ?")->execute([$archivoId]);
+    if (!$a['gasto_id']) return;
+    $st = $pdo->prepare("SELECT archivo_adjunto FROM gastos WHERE id = ?");
+    $st->execute([(int)$a['gasto_id']]);
+    if ($st->fetchColumn() !== $a['archivo']) return;
+    $sig = comisionArchivos($pdo, $cid, [(int)$a['comision_id']])[(int)$a['comision_id']][0] ?? null;
+    comisionArchivoPrincipal($pdo, $cid, (int)$a['gasto_id'], $sig ? [$sig['archivo'], $sig['nombre']] : null);
 }
 
 /** Recibo de pago de una comisión (PDF) para que lo firme quien la recibe. Solo comisiones pagadas. */

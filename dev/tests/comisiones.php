@@ -49,7 +49,8 @@ suite('Comisiones por venta: en la factura, editables y pagadas como gasto', fun
     $f = login('qa.facturador@local.test');
     $r = $f->post('includes/comision_accion.php', ['accion' => 'pagar', 'id' => $cmid, 'fecha' => date('Y-m-d')]);
     check('el facturador no paga comisiones', !($r['json']['success'] ?? true));
-    $r = $c->post('includes/comision_accion.php', ['accion' => 'pagar', 'id' => $cmid, 'fecha' => date('Y-m-d'), 'monto' => 750, 'metodo' => 'transferencia', 'cuenta_id' => $cta]);
+    $r = $c->post('includes/comision_accion.php', ['accion' => 'pagar', 'id' => $cmid, 'fecha' => date('Y-m-d'), 'monto' => 750, 'metodo' => 'transferencia', 'cuenta_id' => $cta,
+        'comprobantes[0]' => new CURLFile(archivoTemporal('png'), 'image/png', 'transferencia.png'), 'comprobantes[1]' => new CURLFile(archivoTemporal('pdf'), 'application/pdf', 'constancia.pdf')]);
     $gid = (int)($r['json']['gasto_id'] ?? 0);
     $gs = $pdo->query("SELECT g.*, cg.nombre AS cat FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id = g.categoria_id WHERE g.id = $gid")->fetch(PDO::FETCH_ASSOC);
     $mov = $pdo->query("SELECT sentido, monto FROM movimientos_bancarios WHERE gasto_id = $gid AND anulado = 0")->fetch(PDO::FETCH_ASSOC);
@@ -59,15 +60,25 @@ suite('Comisiones por venta: en la factura, editables y pagadas como gasto', fun
     check('ya pagada deja de salir en Cuentas por pagar', !str_contains($p['body'], 'QA Referidor'));
     $p = $c->get('comisiones', ['desde' => '2000-01-01']);
     check('la página Comisiones la muestra pagada', sinErroresPhp($p['body']) && str_contains($p['body'], 'QA Referidor') && str_contains($p['body'], 'gasto #' . $gid), errorPhp($p['body']));
+    $arch = comisionArchivos($pdo, 2, [$cmid])[$cmid] ?? [];
+    check('se guardan los dos comprobantes y el primero queda en el gasto y en la salida del banco', count($arch) === 2 && $gs['archivo_adjunto'] === $arch[0]['archivo']
+        && $pdo->query("SELECT archivo_adjunto FROM movimientos_bancarios WHERE gasto_id = $gid AND anulado = 0")->fetchColumn() === $arch[0]['archivo'], json_encode($arch));
+    $p = $c->get('comision_archivo', ['archivo' => $arch[1]['id'] ?? 0]);
+    check('se abre cada comprobante', str_starts_with($p['body'], '%PDF'));
+    $r = $c->post('includes/comision_accion.php', ['accion' => 'archivo_quitar', 'archivo' => $arch[0]['id'] ?? 0]);
+    check('al quitar el principal, el siguiente pasa al gasto', ($r['json']['success'] ?? false) && $pdo->query("SELECT archivo_adjunto FROM gastos WHERE id = $gid")->fetchColumn() === $arch[1]['archivo'], $r['body']);
     $p = $c->get('comision_recibo_pdf', ['id' => $cmid]);
     check('genera el recibo de pago en PDF para firmar', str_starts_with($p['body'], '%PDF'), substr($p['body'], 0, 300));
-    $r = $c->post('includes/comision_accion.php', ['accion' => 'editar_pago', 'id' => $cmid, 'fecha' => date('Y-m-d'), 'monto' => 800, 'metodo' => 'efectivo', 'cuenta_id' => $cta]);
+    $r = $c->post('includes/comision_accion.php', ['accion' => 'editar_pago', 'id' => $cmid, 'fecha' => date('Y-m-d'), 'monto' => 800, 'metodo' => 'efectivo', 'cuenta_id' => $cta,
+        'comprobantes[0]' => new CURLFile(archivoTemporal('png'), 'image/png', 'otra.png')]);
     $gid2 = (int)($r['json']['gasto_id'] ?? 0);
     check('editar el pago anula el gasto anterior y su salida y registra el nuevo', ($r['json']['success'] ?? false) && $gid2 && $gid2 !== $gid
         && $pdo->query("SELECT estado FROM gastos WHERE id = $gid")->fetchColumn() === 'anulado'
         && !(int)$pdo->query("SELECT COUNT(*) FROM movimientos_bancarios WHERE gasto_id = $gid AND anulado = 0")->fetchColumn()
         && (float)$pdo->query("SELECT monto FROM movimientos_bancarios WHERE gasto_id = $gid2 AND anulado = 0")->fetchColumn() === 800.0
         && (float)comisionDeFactura($pdo, 2, $fid)['monto'] === 800.0 && comisionDeFactura($pdo, 2, $fid)['estado'] === 'pagada', $r['body']);
+    $arch = comisionArchivos($pdo, 2, [$cmid])[$cmid] ?? [];
+    check('al editar el pago se quedan los comprobantes y se agrega el nuevo', count($arch) === 2 && $pdo->query("SELECT archivo_adjunto FROM gastos WHERE id = $gid2")->fetchColumn() === $arch[0]['archivo'], json_encode($arch));
     $pdo->exec("DELETE FROM gastos WHERE id = $gid"); $gid = $gid2;
     $r = $c->post('includes/comision_accion.php', ['accion' => 'anular_pago', 'id' => $cmid]);
     check('anular el pago anula el gasto y su salida, y vuelve a «Por pagar»', ($r['json']['success'] ?? false) && $pdo->query("SELECT estado FROM gastos WHERE id = $gid")->fetchColumn() === 'anulado'

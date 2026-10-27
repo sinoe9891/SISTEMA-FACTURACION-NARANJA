@@ -50,7 +50,7 @@ const PERMISOS_ACCIONES = [
     'boucher_lote' => ['bouchers', 'pagos_nomina', 'colaboradores'], 'boucher_pdf' => ['bouchers', 'pagos_nomina', 'colaboradores', 'gastos'],
     'licencia_accion' => ['licencias'], 'licencias_exportar' => ['licencias'],
     'proveedor_accion' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar', 'gastos_operativos'], 'proveedor_logo' => ['proveedores', 'gastos', 'licencias', 'cuentas_pagar'],
-    'comision_accion' => ['comisiones', 'generar_factura', 'lista_facturas'], 'comision_recibo_pdf' => ['comisiones'],
+    'comision_accion' => ['comisiones', 'generar_factura', 'lista_facturas'], 'comision_recibo_pdf' => ['comisiones'], 'comision_archivo' => ['comisiones'],
     'gasto_operativo_accion' => ['gastos_operativos'], 'gasto_operativo_archivo' => ['gastos_operativos'], 'gastos_operativos_exportar' => ['gastos_operativos'],
     'categoria_gasto_guardar' => ['categorias_gastos'], 'categoria_gasto_actualizar' => ['categorias_gastos'], 'categoria_gasto_eliminar' => ['categorias_gastos'],
     // Bancos
@@ -81,7 +81,7 @@ const PERMISOS_ACCIONES = [
 
 /** Páginas que se abren en el navegador (al bloquearlas se redirige); lo demás son acciones (responden 403). */
 const PERMISOS_VISTAS = ['ver_factura', 'cotizacion_editar', 'cotizacion_pdf', 'editar_factura', 'editar_contrato', 'facturas_contrato', 'generar_recibo', 'estado_cuenta', 'gasto_ver', 'banco_cuenta',
-    'colaborador_ver', 'colaborador_reporte', 'socio_prestamo', 'socio_prestamo_pdf', 'socio_prestamo_archivo', 'comision_recibo_pdf', 'gasto_operativo_archivo', 'gastos_operativos_exportar', 'crear_cliente', 'editar_cliente', 'inventario_kardex', 'inventario_reportes', 'crear_cai', 'editar_cai', 'nuevo_cobro'];
+    'colaborador_ver', 'colaborador_reporte', 'socio_prestamo', 'socio_prestamo_pdf', 'socio_prestamo_archivo', 'comision_recibo_pdf', 'comision_archivo', 'gasto_operativo_archivo', 'gastos_operativos_exportar', 'crear_cliente', 'editar_cliente', 'inventario_kardex', 'inventario_reportes', 'crear_cai', 'editar_cai', 'nuevo_cobro'];
 
 /** Páginas del menú lateral (cada una es su propia opción). */
 const PERMISOS_PAGINAS = ['generar_factura', 'lista_facturas', 'cotizaciones', 'contratos', 'crear_contrato', 'cuentas_cobrar', 'pagos_recibidos', 'cobros_programados', 'cuentas_pagar', 'gastos',
