@@ -42,6 +42,8 @@ suite('Comisiones por venta: en la factura, editables y pagadas como gasto', fun
     $pdo->exec("UPDATE facturas SET pagada = 1 WHERE id = $fid");
     $l = array_values(array_filter(comisionesLista($pdo, 2, ['desde' => '2000-01-01']), fn($x) => (int)$x['factura_id'] === $fid));
     check('pagada la factura, la comisión queda «Por pagar»', ($l[0]['vista'] ?? '') === 'por_pagar');
+    $p = $c->get('cuentas_pagar');
+    check('la comisión por pagar sale en Cuentas por pagar', sinErroresPhp($p['body']) && str_contains($p['body'], 'Comisiones por venta por pagar') && str_contains($p['body'], 'QA Referidor'), errorPhp($p['body']));
     $pdo->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, titular, moneda, saldo_inicial, fecha_saldo_inicial, activa) VALUES (2,'QA','ahorro','QA-COM','QA','HNL',5000,'2020-01-01',1)");
     $cta = (int)$pdo->lastInsertId();
     $f = login('qa.facturador@local.test');
@@ -53,10 +55,20 @@ suite('Comisiones por venta: en la factura, editables y pagadas como gasto', fun
     $mov = $pdo->query("SELECT sentido, monto FROM movimientos_bancarios WHERE gasto_id = $gid AND anulado = 0")->fetch(PDO::FETCH_ASSOC);
     check('al pagarla se registra el gasto «Comisiones por venta» y sale del banco', $gs && $gs['cat'] === 'Comisiones por venta' && (float)$gs['monto'] === 750.0 && $gs['proveedor'] === 'QA Referidor'
         && $mov && $mov['sentido'] === 'salida', $r['body']);
+    $p = $c->get('cuentas_pagar');
+    check('ya pagada deja de salir en Cuentas por pagar', !str_contains($p['body'], 'QA Referidor'));
     $p = $c->get('comisiones', ['desde' => '2000-01-01']);
     check('la página Comisiones la muestra pagada', sinErroresPhp($p['body']) && str_contains($p['body'], 'QA Referidor') && str_contains($p['body'], 'gasto #' . $gid), errorPhp($p['body']));
     $p = $c->get('comision_recibo_pdf', ['id' => $cmid]);
     check('genera el recibo de pago en PDF para firmar', str_starts_with($p['body'], '%PDF'), substr($p['body'], 0, 300));
+    $r = $c->post('includes/comision_accion.php', ['accion' => 'editar_pago', 'id' => $cmid, 'fecha' => date('Y-m-d'), 'monto' => 800, 'metodo' => 'efectivo', 'cuenta_id' => $cta]);
+    $gid2 = (int)($r['json']['gasto_id'] ?? 0);
+    check('editar el pago anula el gasto anterior y su salida y registra el nuevo', ($r['json']['success'] ?? false) && $gid2 && $gid2 !== $gid
+        && $pdo->query("SELECT estado FROM gastos WHERE id = $gid")->fetchColumn() === 'anulado'
+        && !(int)$pdo->query("SELECT COUNT(*) FROM movimientos_bancarios WHERE gasto_id = $gid AND anulado = 0")->fetchColumn()
+        && (float)$pdo->query("SELECT monto FROM movimientos_bancarios WHERE gasto_id = $gid2 AND anulado = 0")->fetchColumn() === 800.0
+        && (float)comisionDeFactura($pdo, 2, $fid)['monto'] === 800.0 && comisionDeFactura($pdo, 2, $fid)['estado'] === 'pagada', $r['body']);
+    $pdo->exec("DELETE FROM gastos WHERE id = $gid"); $gid = $gid2;
     $r = $c->post('includes/comision_accion.php', ['accion' => 'anular_pago', 'id' => $cmid]);
     check('anular el pago anula el gasto y su salida, y vuelve a «Por pagar»', ($r['json']['success'] ?? false) && $pdo->query("SELECT estado FROM gastos WHERE id = $gid")->fetchColumn() === 'anulado'
         && !(int)$pdo->query("SELECT COUNT(*) FROM movimientos_bancarios WHERE gasto_id = $gid AND anulado = 0")->fetchColumn() && comisionDeFactura($pdo, 2, $fid)['estado'] === 'pendiente', $r['body']);

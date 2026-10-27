@@ -3,9 +3,12 @@ $titulo = 'Cuentas por pagar';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/cuentas.php';
+require_once '../../includes/comisiones.php';
 
 $cid = cliente_actual();
 $gastos = $cid ? cxpPendientes($pdo, $cid) : [];
+// Comisiones por venta listas para pagar (el cliente ya pagó la factura): aún no son gasto, se pagan en Comisiones
+$comisiones = $cid ? array_values(array_filter(comisionesLista($pdo, (int)$cid), fn($c) => $c['vista'] === 'por_pagar')) : [];
 $cuentasHnl = bancosDisponible($pdo) ? array_values(array_filter(bancoCuentas($pdo, $cid, true), fn($c) => $c['moneda'] === 'HNL')) : [];
 
 $grupos = ['vencido' => 0.0, 'hoy_7' => 0.0, '8_30' => 0.0, 'mas_30' => 0.0];
@@ -54,7 +57,29 @@ require_once '../../includes/templates/header.php';
     <a href="gastos" class="btn btn-sm btn-outline-secondary"><i class="bi bi-wallet2 me-1"></i> Todos los gastos</a>
 </div>
 
-<?php if (!$gastos): ?>
+<?php if ($comisiones): ?>
+<div class="app-card mb-3" id="cpComisiones">
+    <div class="app-card-header flex-wrap gap-2">
+        <span><i class="bi bi-person-badge me-1 text-success"></i> Comisiones por venta por pagar · <?= count($comisiones) ?> · <strong><?= $L(array_sum(array_map(fn($c) => (float)$c['monto'], $comisiones))) ?></strong></span>
+        <a href="comisiones?estado=por_pagar&desde=2000-01-01" class="btn btn-sm btn-success"><i class="bi bi-cash me-1"></i> Pagar en Comisiones</a>
+    </div>
+    <div class="table-responsive">
+        <table class="table app-table mb-0">
+            <thead><tr><th>Vendedor</th><th>Factura</th><th>Cliente</th><th class="app-num">Comisión</th></tr></thead>
+            <tbody>
+                <?php foreach ($comisiones as $c): ?>
+                    <tr><td><strong><?= htmlspecialchars($c['vendedor']) ?></strong><?php if (!empty($c['cuenta_banco'])): ?><div class="small text-muted">Pagar a <?= htmlspecialchars($c['cuenta_banco']) ?></div><?php endif; ?></td>
+                        <td class="text-nowrap"><a href="ver_factura?id=<?= (int)$c['factura_id'] ?>"><?= htmlspecialchars($c['correlativo']) ?></a><div class="small text-muted"><?= date('d/m/Y', strtotime($c['fecha_factura'])) ?></div></td>
+                        <td class="small"><?= htmlspecialchars($c['cliente']) ?></td>
+                        <td class="app-num fw-semibold"><?= number_format((float)$c['monto'], 2) ?></td></tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if (!$gastos && !$comisiones): ?>
     <div class="alert alert-success d-flex align-items-center gap-2"><i class="bi bi-check-circle-fill fs-5"></i> <div><strong>Todo al día.</strong> No hay pagos pendientes.</div></div>
 <?php endif; ?>
 

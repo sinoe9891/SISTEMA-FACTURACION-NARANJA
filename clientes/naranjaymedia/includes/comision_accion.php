@@ -20,8 +20,8 @@ try {
     $id = (int)($_POST['id'] ?? 0);
     $admin = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);
     if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true)) throw new Exception("Tu rol no maneja comisiones.");
-    if (in_array($accion, ['pagar', 'anular_pago', 'quitar'], true) && !$admin) throw new Exception("Solo un administrador paga o quita comisiones.");
-    if ($accion === 'pagar') $adj = guardarAdjuntoGasto($_FILES['comprobante'] ?? null, $cid);
+    if (in_array($accion, ['pagar', 'editar_pago', 'anular_pago', 'quitar'], true) && !$admin) throw new Exception("Solo un administrador paga o quita comisiones.");
+    if (in_array($accion, ['pagar', 'editar_pago'], true)) $adj = guardarAdjuntoGasto($_FILES['comprobante'] ?? null, $cid);
 
     $pdo->beginTransaction();
     $extra = [];
@@ -50,6 +50,10 @@ try {
         case 'pagar':
             $extra['gasto_id'] = comisionPagar($pdo, $cid, $uid, $id, $_POST, $adj);
             $msg = 'Comisión pagada (gasto N.º ' . $extra['gasto_id'] . ').';
+            break;
+        case 'editar_pago':
+            $extra['gasto_id'] = comisionEditarPago($pdo, $cid, $uid, $id, $_POST, $adj);
+            $msg = 'Pago corregido (gasto N.º ' . $extra['gasto_id'] . ').';
             break;
         case 'anular_pago':
             comisionAnularPago($pdo, $cid, $id);

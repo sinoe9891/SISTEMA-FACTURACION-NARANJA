@@ -152,7 +152,8 @@ function comisionesLista(PDO $pdo, int $cid, array $f = []): array
     if (!empty($f['desde'])) { $w[] = "DATE(f.fecha_emision) >= ?"; $p[] = $f['desde']; }
     if (!empty($f['hasta'])) { $w[] = "DATE(f.fecha_emision) <= ?"; $p[] = $f['hasta']; }
     $st = $pdo->prepare("SELECT c.*, v.nombre AS vendedor, v.identidad, v.tipo AS vendedor_tipo, " . (comisionVendCuenta($pdo) ? "v.cuenta_banco" : "NULL AS cuenta_banco") . ", f.correlativo, DATE(f.fecha_emision) AS fecha_factura, f.subtotal, f.total, f.pagada, f.estado AS factura_estado,
-                                cf.nombre AS cliente, g.fecha AS fecha_pago, g.metodo_pago, g.archivo_adjunto AS gasto_archivo
+                                cf.nombre AS cliente, g.fecha AS fecha_pago, g.metodo_pago, g.archivo_adjunto AS gasto_archivo,
+                                (SELECT mb.cuenta_id FROM movimientos_bancarios mb WHERE mb.gasto_id = c.gasto_id AND mb.anulado = 0 AND mb.sentido = 'salida' ORDER BY mb.id LIMIT 1) AS cuenta_pago
                          FROM factura_comisiones c JOIN vendedores v ON v.id = c.vendedor_id JOIN facturas f ON f.id = c.factura_id
                          JOIN clientes_factura cf ON cf.id = f.receptor_id LEFT JOIN gastos g ON g.id = c.gasto_id
                          WHERE " . implode(' AND ', $w) . " ORDER BY f.fecha_emision DESC, c.id DESC");
@@ -221,6 +222,19 @@ function comisionPagar(PDO $pdo, int $cid, int $uid, int $id, array $d, ?array $
 }
 
 /** Deshace el pago: anula el gasto (y su salida del banco) y la comisión vuelve a «por pagar». */
+/** Corrige el pago de una comisión: anula el gasto y su salida del banco y registra el pago con los datos nuevos.
+ *  Sin comprobante nuevo se conserva el anterior. Devuelve el id del gasto nuevo. */
+function comisionEditarPago(PDO $pdo, int $cid, int $uid, int $id, array $d, ?array $adjunto = null): int
+{
+    $st = $pdo->prepare("SELECT g.archivo_adjunto, g.archivo_nombre FROM factura_comisiones c LEFT JOIN gastos g ON g.id = c.gasto_id WHERE c.id = ? AND c.cliente_id = ? AND c.estado = 'pagada'");
+    $st->execute([$id, $cid]);
+    $antes = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$antes) throw new Exception("La comisión no está pagada.");
+    if (!$adjunto && $antes['archivo_adjunto']) $adjunto = [$antes['archivo_adjunto'], $antes['archivo_nombre']];
+    comisionAnularPago($pdo, $cid, $id);
+    return comisionPagar($pdo, $cid, $uid, $id, ['antes_de_cobro' => 1] + $d, $adjunto);
+}
+
 function comisionAnularPago(PDO $pdo, int $cid, int $id): void
 {
     $st = $pdo->prepare("SELECT * FROM factura_comisiones WHERE id = ? AND cliente_id = ?");

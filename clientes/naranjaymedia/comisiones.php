@@ -83,6 +83,7 @@ require_once '../../includes/templates/header.php';
                         <?php if ($puedeEditar && $c['vista'] !== 'pagada' && $c['vista'] !== 'anulada'): ?><button class="btn btn-sm btn-outline-primary cm-editar" data-c='<?= $e(json_encode(['id' => (int)$c['id'], 'vendedor_id' => (int)$c['vendedor_id'], 'tipo' => $c['tipo'], 'valor' => (float)$c['valor'], 'notas' => (string)$c['notas'], 'correlativo' => $c['correlativo']])) ?>' title="Editar"><i class="bi bi-pencil"></i></button><?php endif; ?>
                         <?php if ($esAdmin && in_array($c['vista'], ['por_pagar', 'esperando'], true)): ?><button class="btn btn-sm btn-success cm-pagar" data-id="<?= (int)$c['id'] ?>" data-monto="<?= (float)$c['monto'] ?>" data-cobrada="<?= (int)$c['pagada'] ?>" data-desc="<?= $e($c['vendedor'] . ' · factura ' . $c['correlativo'] . (!empty($c['cuenta_banco']) ? ' · pagar a ' . $c['cuenta_banco'] : '')) ?>" title="Pagar"><i class="bi bi-cash"></i></button><?php endif; ?>
                         <?php if ($c['vista'] === 'pagada'): ?><a class="btn btn-sm btn-outline-secondary" href="comision_recibo_pdf?id=<?= (int)$c['id'] ?>" target="_blank" title="Recibo para que lo firme quien recibe la comisión"><i class="bi bi-file-earmark-pdf"></i> Recibo</a><?php endif; ?>
+                        <?php if ($esAdmin && $c['vista'] === 'pagada'): ?><button class="btn btn-sm btn-outline-primary cm-editar-pago" data-p='<?= $e(json_encode(['id' => (int)$c['id'], 'fecha' => (string)($c['fecha_pago'] ?: substr((string)$c['pagada_en'], 0, 10)), 'monto' => (float)$c['monto'], 'metodo' => (string)($c['metodo_pago'] ?: 'transferencia'), 'cuenta' => (int)$c['cuenta_pago'], 'comprobante' => !empty($c['gasto_archivo'])])) ?>' data-desc="<?= $e($c['vendedor'] . ' · factura ' . $c['correlativo']) ?>" title="Editar el pago"><i class="bi bi-pencil-square"></i></button><?php endif; ?>
                         <?php if ($esAdmin && $c['vista'] === 'pagada'): ?><button class="btn btn-sm btn-outline-danger cm-anular" data-id="<?= (int)$c['id'] ?>" title="Anular el pago"><i class="bi bi-arrow-counterclockwise"></i></button><?php endif; ?>
                         <?php if ($esAdmin && $c['vista'] !== 'pagada'): ?><button class="btn btn-sm btn-outline-danger cm-quitar" data-id="<?= (int)$c['id'] ?>" title="Quitar la comisión"><i class="bi bi-trash3"></i></button><?php endif; ?>
                     </td></tr>
@@ -108,7 +109,7 @@ require_once '../../includes/templates/header.php';
 
 <!-- Pagar comisión -->
 <div class="modal fade" id="mPagar" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form class="modal-content" id="fPagar" novalidate>
-    <div class="modal-header"><h5 class="modal-title">Pagar comisión</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-header"><h5 class="modal-title" id="pTitulo">Pagar comisión</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body row g-2"><input type="hidden" name="accion" value="pagar"><input type="hidden" name="id">
         <div class="col-12 small text-muted" id="pDesc"></div>
         <div class="col-12 d-none" id="pAviso"><div class="alert alert-warning py-2 small mb-0"><input class="form-check-input me-1" type="checkbox" name="antes_de_cobro" value="1" id="pAntes"><label for="pAntes">El cliente aún no paga la factura: pagar la comisión igual</label></div></div>
@@ -116,10 +117,10 @@ require_once '../../includes/templates/header.php';
         <div class="col-6"><label class="form-label small">Monto (L)</label><input type="number" name="monto" class="form-control" step="0.01" min="0.01"></div>
         <div class="col-6"><label class="form-label small">Método</label><select name="metodo" class="form-select"><option value="transferencia">Transferencia</option><option value="efectivo">Efectivo</option><option value="cheque">Cheque</option><option value="otro">Otro</option></select></div>
         <div class="col-6"><label class="form-label small">Sale de la cuenta</label><select name="cuenta_id" class="form-select"><option value="">— No registrar en banco —</option><?php foreach ($cuentasHnl as $cb): if (!(int)$cb['activa']) continue; ?><option value="<?= (int)$cb['id'] ?>" <?= !empty($cb['predeterminada']) ? 'selected' : '' ?>><?= $e($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?></select></div>
-        <div class="col-12"><label class="form-label small">Comprobante (opcional)</label><input type="file" name="comprobante" class="form-control form-control-sm" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
+        <div class="col-12"><label class="form-label small">Comprobante (opcional)</label><input type="file" name="comprobante" class="form-control form-control-sm" accept=".jpg,.jpeg,.png,.webp,.pdf"><div class="form-text d-none" id="pCompHint">Si no subís otro, se queda el comprobante que ya tiene.</div></div>
         <div class="col-12"><label class="form-label small">Notas</label><input name="notas" class="form-control" maxlength="200"></div>
     </div>
-    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-success">Pagar</button></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-success" id="pBoton">Pagar</button></div>
 </form></div></div>
 
 <!-- Vendedores -->
@@ -173,7 +174,14 @@ require_once '../../includes/templates/header.php';
         const ed = e.target.closest('.cm-editar');
         if (ed) { const c = JSON.parse(ed.dataset.c), fe = document.getElementById('fEditar'); fe.id.value = c.id; fe.vendedor_id.value = c.vendedor_id; fe.tipo.value = c.tipo; fe.valor.value = c.valor; fe.notas.value = c.notas; document.getElementById('eFact').textContent = c.correlativo; bootstrap.Modal.getOrCreateInstance(document.getElementById('mEditar')).show(); return; }
         const pg = e.target.closest('.cm-pagar');
-        if (pg) { const fp = document.getElementById('fPagar'); fp.reset(); fp.id.value = pg.dataset.id; fp.monto.value = pg.dataset.monto; fp.fecha.value = new Date().toLocaleDateString('en-CA');
+        const ep = e.target.closest('.cm-editar-pago');
+        if (ep) { const p = JSON.parse(ep.dataset.p), fp = document.getElementById('fPagar'); fp.reset(); fp.accion.value = 'editar_pago'; fp.id.value = p.id;
+            fp.fecha.value = p.fecha; fp.monto.value = p.monto; fp.metodo.value = p.metodo; fp.cuenta_id.value = p.cuenta || '';
+            document.getElementById('pTitulo').textContent = 'Editar pago de la comisión'; document.getElementById('pBoton').textContent = 'Guardar cambios';
+            document.getElementById('pCompHint').classList.toggle('d-none', !p.comprobante);
+            document.getElementById('pDesc').textContent = ep.dataset.desc + ' · se anula el pago anterior y se registra con estos datos'; document.getElementById('pAviso').classList.add('d-none');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('mPagar')).show(); return; }
+        if (pg) { const fp = document.getElementById('fPagar'); fp.reset(); fp.accion.value = 'pagar'; document.getElementById('pTitulo').textContent = 'Pagar comisión'; document.getElementById('pBoton').textContent = 'Pagar'; document.getElementById('pCompHint').classList.add('d-none'); fp.id.value = pg.dataset.id; fp.monto.value = pg.dataset.monto; fp.fecha.value = new Date().toLocaleDateString('en-CA');
             document.getElementById('pDesc').textContent = pg.dataset.desc; document.getElementById('pAviso').classList.toggle('d-none', pg.dataset.cobrada === '1');
             bootstrap.Modal.getOrCreateInstance(document.getElementById('mPagar')).show(); return; }
         const an = e.target.closest('.cm-anular');
