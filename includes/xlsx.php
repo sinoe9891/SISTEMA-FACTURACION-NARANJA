@@ -12,10 +12,18 @@
 // Formatos: 'texto' (por defecto), 'dinero' (#,##0.00), 'entero', 'fecha' (dd/mm/yyyy, recibe 'Y-m-d' o 'Y-m-d H:i:s').
 // Los textos con saltos de línea se muestran ajustados dentro de la celda.
 
+/** Fórmula explícita generada por el servidor; los textos nunca se interpretan como fórmulas. */
+final class XlsxFormula
+{
+    public function __construct(public string $expresion, public float $resultado = 0) {}
+}
+
 class XlsxSimple
 {
     private array $cols = [];
     private array $filas = [];
+    private ?int $finFiltro = null;
+    public function filtroHasta(int $fila): void { $this->finFiltro = max(1, $fila); }
 
     public function __construct(private string $hoja = 'Hoja1') {}
 
@@ -81,7 +89,9 @@ class XlsxSimple
                 if ($v === null || $v === '') continue;
                 $fmt = $this->cols[$i]['fmt'] ?? 'texto';
                 $ref = self::col($i) . $r;
-                if (in_array($fmt, ['dinero', 'entero'], true) && is_numeric($v)) {
+                if ($v instanceof XlsxFormula) {
+                    $x .= '<c r="' . $ref . '" s="' . $this->estilo($fmt, $negrita, false, $anulada) . '"><f>' . self::esc(ltrim($v->expresion, '=')) . '</f><v>' . $v->resultado . '</v></c>';
+                } elseif (in_array($fmt, ['dinero', 'entero'], true) && is_numeric($v)) {
                     $x .= '<c r="' . $ref . '" s="' . $this->estilo($fmt, $negrita, false, $anulada) . '"><v>' . (0 + $v) . '</v></c>';
                 } elseif ($fmt === 'fecha' && ($serial = self::serialFecha((string)$v)) !== null) {
                     $x .= '<c r="' . $ref . '" s="' . $this->estilo('fecha', $negrita, false, $anulada) . '"><v>' . $serial . '</v></c>';
@@ -93,7 +103,7 @@ class XlsxSimple
             $x .= '</row>';
         }
         $ultima = self::col(max(count($this->cols) - 1, 0));
-        return $x . '</sheetData><autoFilter ref="A1:' . $ultima . (count($this->filas) + 1) . '"/></worksheet>';
+        return $x . '</sheetData><autoFilter ref="A1:' . $ultima . ($this->finFiltro ?? (count($this->filas) + 1)) . '"/></worksheet>';
     }
 
     public function contenido(): string
@@ -102,7 +112,7 @@ class XlsxSimple
         $archivos = [
             '[Content_Types].xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
             '_rels/.rels' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
-            'xl/workbook.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="' . $hoja . '" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">\'' . $hoja . '\'!$A$1:$' . self::col(max(count($this->cols) - 1, 0)) . '$' . (count($this->filas) + 1) . '</definedName></definedNames></workbook>',
+            'xl/workbook.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="' . $hoja . '" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">\'' . $hoja . '\'!$A$1:$' . self::col(max(count($this->cols) - 1, 0)) . '$' . ($this->finFiltro ?? (count($this->filas) + 1)) . '</definedName></definedNames></workbook>',
             'xl/_rels/workbook.xml.rels' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
             'xl/styles.xml' => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
                 . '<numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.00"/><numFmt numFmtId="165" formatCode="dd/mm/yyyy"/></numFmts>'

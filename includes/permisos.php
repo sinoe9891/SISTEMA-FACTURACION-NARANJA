@@ -54,7 +54,7 @@ const PERMISOS_ACCIONES = [
     'gasto_operativo_accion' => ['gastos_operativos'], 'gasto_operativo_archivo' => ['gastos_operativos'], 'gastos_operativos_exportar' => ['gastos_operativos'],
     'categoria_gasto_guardar' => ['categorias_gastos'], 'categoria_gasto_actualizar' => ['categorias_gastos'], 'categoria_gasto_eliminar' => ['categorias_gastos'],
     // Bancos
-    'banco_cuenta' => ['bancos'], 'movimiento_archivo' => ['bancos'], 'banco_accion' => ['bancos', 'cheques', 'configuracion_tasa'],
+    'bancos_exportar' => ['bancos'], 'banco_cuenta' => ['bancos'], 'movimiento_archivo' => ['bancos'], 'banco_accion' => ['bancos', 'cheques', 'configuracion_tasa'],
     'tarjeta_guardar' => ['tarjetas'], 'tarjeta_actualizar' => ['tarjetas'], 'tarjeta_eliminar' => ['tarjetas'],
     'activo_accion' => ['activos'], 'socio_accion' => ['socios'], 'socio_archivo' => ['socios'], 'socio_prestamo' => ['socios'], 'socio_prestamo_accion' => ['socios'], 'socio_prestamo_pdf' => ['socios'], 'socio_prestamo_archivo' => ['socios'],
     // Reportes
@@ -80,7 +80,7 @@ const PERMISOS_ACCIONES = [
 ];
 
 /** Páginas que se abren en el navegador (al bloquearlas se redirige); lo demás son acciones (responden 403). */
-const PERMISOS_VISTAS = ['ver_factura', 'cotizacion_editar', 'cotizacion_pdf', 'editar_factura', 'editar_contrato', 'facturas_contrato', 'generar_recibo', 'estado_cuenta', 'gasto_ver', 'banco_cuenta',
+const PERMISOS_VISTAS = ['ver_factura', 'cotizacion_editar', 'cotizacion_pdf', 'editar_factura', 'editar_contrato', 'facturas_contrato', 'generar_recibo', 'estado_cuenta', 'gasto_ver', 'banco_cuenta', 'bancos_exportar',
     'colaborador_ver', 'colaborador_reporte', 'socio_prestamo', 'socio_prestamo_pdf', 'socio_prestamo_archivo', 'comision_recibo_pdf', 'comision_archivo', 'gasto_operativo_archivo', 'gastos_operativos_exportar', 'crear_cliente', 'editar_cliente', 'inventario_kardex', 'inventario_reportes', 'crear_cai', 'editar_cai', 'nuevo_cobro'];
 
 /** Páginas del menú lateral (cada una es su propia opción). */

@@ -153,7 +153,7 @@ require_once '../../includes/templates/header.php';
         @media(max-width:575px){.bm-heading{padding:14px;align-items:flex-start}.bm-heading p{max-width:190px}.bm-filters{grid-template-columns:minmax(0,1fr) 105px;padding:14px;gap:10px}.bm-filters>div:nth-child(1),.bm-filters>div:nth-child(2){grid-column:1/-1}.bm-card .app-pager{padding:12px 14px}.bm-heading h2{font-size:14px}}
         </style>
         <div class="app-card bm-card">
-            <div class="bm-heading"><div><h2><i class="bi bi-clock-history"></i> Últimos movimientos</h2><p>Consulta las entradas y salidas de tus cuentas.</p></div><a href="cheques" class="btn btn-sm btn-outline-secondary"><i class="bi bi-journal-text me-1"></i> Chequera</a></div>
+            <div class="bm-heading"><div><h2><i class="bi bi-clock-history"></i> Últimos movimientos</h2><p>Consulta las entradas y salidas de tus cuentas.</p></div><div class="d-flex gap-2 flex-wrap"><button type="button" id="bmExportar" class="btn btn-sm btn-outline-success"><i class="bi bi-file-earmark-excel me-1"></i> Exportar Excel</button><a href="cheques" class="btn btn-sm btn-outline-secondary"><i class="bi bi-journal-text me-1"></i> Chequera</a></div></div>
             <div class="bm-filters">
                 <div><label for="bmBuscar">Buscar</label><div class="bm-search"><i class="bi bi-search"></i><input id="bmBuscar" type="search" class="form-control form-control-sm" placeholder="Descripción, referencia o importe…"></div></div>
                 <div><label for="bmCuenta">Cuenta bancaria</label><select id="bmCuenta" class="form-select form-select-sm"><option value="">Todas las cuentas</option><?php foreach ($cuentas as $bc): ?><option value="<?= (int)$bc['id'] ?>"><?= htmlspecialchars($bc['banco'].' · '.$bc['numero'].' · '.$bc['moneda']) ?></option><?php endforeach; ?></select></div>
@@ -166,7 +166,7 @@ require_once '../../includes/templates/header.php';
                     <tbody>
                         <?php if (!$recientes): ?><tr><td colspan="8" class="text-center text-muted py-4">Sin movimientos.</td></tr><?php endif; ?>
                         <?php foreach ($recientes as $m): ?>
-                            <tr data-fila data-cuenta="<?= (int)$m['cuenta_id'] ?>" data-tipo-cuenta="<?= htmlspecialchars($m['cuenta_tipo']) ?>" class="<?= (int)$m['anulado'] ? 'text-decoration-line-through text-muted' : '' ?>">
+                            <tr data-fila data-mov-id="<?= (int)$m['id'] ?>" data-cuenta="<?= (int)$m['cuenta_id'] ?>" data-tipo-cuenta="<?= htmlspecialchars($m['cuenta_tipo']) ?>" class="<?= (int)$m['anulado'] ? 'text-decoration-line-through text-muted' : '' ?>">
                                 <td class="app-n"></td><td class="text-nowrap" data-sort="<?= htmlspecialchars($m['fecha']) ?>"><?= date('d/m/Y', strtotime($m['fecha'])) ?></td>
                                 <td class="bm-account"><strong><?= htmlspecialchars($m['banco']) ?></strong><span class="font-monospace"><?= htmlspecialchars($m['numero']) ?></span><small><?= $m['cuenta_tipo']==='cheques'?'Cheques':'Ahorro' ?> · <?= htmlspecialchars($m['moneda']) ?></small></td>
                                 <td><span class="app-badge app-badge-muted"><?= $etiquetasTipo[$m['tipo']] ?? $m['tipo'] ?></span></td>
@@ -356,6 +356,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const cuenta=document.getElementById('bmCuenta'), tipo=document.getElementById('bmTipoCuenta');
     const tabla=AppTabla(document.getElementById('bmTabla'), {buscar:'#bmBuscar',porPagina:'#bmPagina',pie:'#bmPie',vacio:'Sin movimientos con estos filtros.',filtro:tr=>(!cuenta.value||tr.dataset.cuenta===cuenta.value)&&(!tipo.value||tr.dataset.tipoCuenta===tipo.value)});
     cuenta.addEventListener('change',()=>tabla.refrescar()); tipo.addEventListener('change',()=>tabla.refrescar());
+    document.getElementById('bmExportar').addEventListener('click',()=>{
+        const q=document.getElementById('bmBuscar').value.trim().toLowerCase();
+        const filas=[...document.querySelectorAll('#bmTabla tbody tr[data-fila]')].filter(tr=>(!cuenta.value||tr.dataset.cuenta===cuenta.value)&&(!tipo.value||tr.dataset.tipoCuenta===tipo.value)&&(!q||(tr.dataset.buscar||tr.textContent).toLowerCase().includes(q)));
+        if(!filas.length) return Swal.fire('Sin movimientos','No hay movimientos con estos filtros para exportar.','info');
+        const form=document.createElement('form'); form.method='POST';form.action='bancos_exportar';form.target='_blank';
+        const valores={ids:JSON.stringify(filas.map(tr=>Number(tr.dataset.movId))),filtros:cuenta.selectedOptions[0].text+' · '+tipo.selectedOptions[0].text+(q?' · Búsqueda: '+q:''),_csrf:document.querySelector('meta[name="csrf-token"]')?.content||''};
+        for(const [name,value] of Object.entries(valores)){const i=document.createElement('input');i.type='hidden';i.name=name;i.value=value;form.appendChild(i);}
+        document.body.appendChild(form);form.submit();form.remove();
+    });
 });
 document.addEventListener('click', e => { const b=e.target.closest('.bm-ver'); if (!b) return; const t=document.getElementById('bmDetalle'+b.dataset.id); if(t) Swal.fire({title:'Movimiento #'+b.dataset.id,html:t.innerHTML,width:640,confirmButtonText:'Cerrar'}); });
 </script>
