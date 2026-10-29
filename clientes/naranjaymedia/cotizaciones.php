@@ -14,7 +14,7 @@ $lista = [];
 $cfg = [];
 if ($instalada) {
     $conCat = cotizacionCategoriasDisponible($pdo);
-    $st = $pdo->prepare("SELECT c.*, cf.nombre AS cliente, cf.email AS cliente_email, f.correlativo AS factura_correlativo," . ($conCat ? " k.nombre AS categoria, k.icono AS categoria_icono," : " NULL AS categoria, NULL AS categoria_icono,") . "
+    $st = $pdo->prepare("SELECT c.*, cf.nombre AS cliente, cf.email AS cliente_email, f.correlativo AS factura_correlativo, f.moneda AS factura_moneda, f.total AS factura_total," . ($conCat ? " k.nombre AS categoria, k.icono AS categoria_icono," : " NULL AS categoria, NULL AS categoria_icono,") . "
                                 (SELECT COUNT(*) FROM cotizacion_items i WHERE i.cotizacion_id = c.id) AS lineas
                          FROM cotizaciones c JOIN clientes_factura cf ON cf.id = c.receptor_id LEFT JOIN facturas f ON f.id = c.factura_id" . ($conCat ? " LEFT JOIN cotizaciones_categorias k ON k.id = c.categoria_id" : '') . "
                          WHERE c.cliente_id = ? ORDER BY c.fecha DESC, c.id DESC");
@@ -90,7 +90,7 @@ require_once '../../includes/templates/header.php';
                                 <?php if (in_array($c['vista'], ['borrador', 'enviada'], true)): ?><div class="small <?= $dRest <= 3 ? 'text-danger' : 'text-muted' ?>"><?= $dRest === 0 ? 'vence hoy' : 'faltan ' . $dRest . ' día' . ($dRest === 1 ? '' : 's') ?></div><?php endif; ?></td>
                             <td class="app-num fw-semibold" data-sort="<?= round((float)$c['total'] * (($c['moneda'] ?? 'HNL') === 'USD' ? $tasaCot : 1), 2) ?>"><?= cotizacionMonto($c, $c['total']) ?></td>
                             <td><span class="badge" style="background:<?= $bg ?>;color:<?= $fg ?>"><i class="bi <?= $ico ?> me-1"></i><?= $txt ?></span>
-                                <?php if ($c['factura_id']): ?><div class="small"><a href="ver_factura?id=<?= (int)$c['factura_id'] ?>" target="_blank" class="font-monospace"><?= htmlspecialchars((string)$c['factura_correlativo']) ?></a></div><?php endif; ?></td>
+                                <?php if ($c['factura_id']): ?><div class="small"><a href="ver_factura?id=<?= (int)$c['factura_id'] ?>" target="_blank" class="font-monospace"><?= htmlspecialchars((string)$c['factura_correlativo']) ?></a><div class="text-muted">Factura en <?= htmlspecialchars($c['factura_moneda'] ?: 'HNL') ?> · L <?= number_format((float)$c['factura_total'],2) ?></div><div class="text-muted">Vínculo de seguimiento; puede corresponder a un anticipo.</div></div><?php endif; ?></td>
                             <td class="text-end text-nowrap">
                                 <a class="btn btn-sm btn-outline-danger" href="cotizacion_pdf?id=<?= (int)$c['id'] ?>" target="_blank" title="Ver PDF"><i class="bi bi-file-earmark-pdf"></i></a>
                                 <?php if ($puedeEditar): ?>
@@ -100,7 +100,7 @@ require_once '../../includes/templates/header.php';
                                         <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' title="Más"><i class="bi bi-three-dots"></i></button>
                                         <ul class="dropdown-menu dropdown-menu-end">
                                             <?php if ($c['estado'] !== 'facturada'): ?>
-                                                <?php if ($puedeFacturar): ?><li><a class="dropdown-item" href="generar_factura?cotizacion_id=<?= (int)$c['id'] ?>"><i class="bi bi-receipt me-2 text-primary"></i>Convertir en factura</a></li><li><hr class="dropdown-divider"></li><?php endif; ?>
+                                                <?php if ($puedeFacturar): ?><li><button class="dropdown-item cot-vincular" type="button" data-id="<?= (int)$c['id'] ?>"><i class="bi bi-link-45deg me-2"></i>Vincular factura existente</button></li><li><a class="dropdown-item" href="generar_factura?cotizacion_id=<?= (int)$c['id'] ?>"><i class="bi bi-receipt me-2 text-primary"></i>Convertir en factura</a></li><li><hr class="dropdown-divider"></li><?php endif; ?>
                                                 <?php if ($c['estado'] === 'borrador'): ?><li><a class="dropdown-item cot-enviada" href="#" data-id="<?= (int)$c['id'] ?>"><i class="bi bi-whatsapp me-2 text-success"></i>Marcar como enviada (WhatsApp u otro)</a></li><?php endif; ?>
                                                 <li><a class="dropdown-item cot-estado" href="#" data-id="<?= (int)$c['id'] ?>" data-estado="aceptada"><i class="bi bi-hand-thumbs-up me-2 text-success"></i>Marcar aceptada</a></li>
                                                 <li><a class="dropdown-item cot-estado" href="#" data-id="<?= (int)$c['id'] ?>" data-estado="rechazada"><i class="bi bi-hand-thumbs-down me-2 text-danger"></i>Marcar rechazada</a></li>
@@ -342,4 +342,5 @@ ListaVinetas(document.getElementById('cfgCondiciones'), { placeholderTitulo: 'Ej
 })();
 </script>
 
+<script src="../js/cotizacion-vincular.js?v=1"></script>
 <?php require_once '../../includes/templates/footer.php'; ?>

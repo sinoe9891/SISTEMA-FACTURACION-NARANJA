@@ -125,7 +125,7 @@ function cotizacionSiguienteNumero(PDO $pdo, int $cid, string $fecha): string
 function cotizacionObtener(PDO $pdo, int $cid, int $id): array
 {
     $st = $pdo->prepare("SELECT c.*, cf.nombre AS cliente, cf.rtn AS cliente_rtn, cf.email AS cliente_email, cf.direccion AS cliente_direccion,
-                                cf.telefono AS cliente_telefono, cf.contacto_nombre, f.correlativo AS factura_correlativo
+                                cf.telefono AS cliente_telefono, cf.contacto_nombre, f.correlativo AS factura_correlativo, f.moneda AS factura_moneda, f.total AS factura_total
                          FROM cotizaciones c JOIN clientes_factura cf ON cf.id = c.receptor_id
                          LEFT JOIN facturas f ON f.id = c.factura_id
                          WHERE c.id = ? AND c.cliente_id = ?");
@@ -480,4 +480,20 @@ function cotizacionEnviar(PDO $pdo, int $cid, int $id, ?int $uid, string $para, 
     }
     $pdo->prepare("UPDATE cotizaciones SET estado = IF(estado = 'borrador', 'enviada', estado), enviada_en = NOW(), enviada_a = ? WHERE id = ? AND cliente_id = ?")
         ->execute([mb_substr(trim($para . ($cc ? ', ' . $cc : '')), 0, 500), $id, $cid]);
+}
+
+/** Vincula un documento ya emitido sin convertir ni reescribir la propuesta original. */
+function cotizacionVincularFactura(PDO $pdo, int $cid, int $id, int $fid): void
+{
+    $s = $pdo->prepare('SELECT * FROM cotizaciones WHERE id=? AND cliente_id=? FOR UPDATE');
+    $s->execute([$id,$cid]); $c=$s->fetch(PDO::FETCH_ASSOC);
+    if (!$c) throw new Exception('Cotización no encontrada.');
+    if ($c['factura_id']) throw new Exception('Esta cotización ya tiene una factura vinculada.');
+    $s=$pdo->prepare("SELECT * FROM facturas WHERE id=? AND cliente_id=? AND receptor_id=? AND estado='emitida' FOR UPDATE");
+    $s->execute([$fid,$cid,$c['receptor_id']]); $f=$s->fetch(PDO::FETCH_ASSOC);
+    if (!$f) throw new Exception('Selecciona una factura emitida del mismo cliente.');
+    $s=$pdo->prepare('SELECT id FROM cotizaciones WHERE factura_id=? AND cliente_id=?');
+    $s->execute([$fid,$cid]);
+    if ($s->fetchColumn()) throw new Exception('La factura ya está vinculada a otra cotización.');
+    $pdo->prepare("UPDATE cotizaciones SET factura_id=?, estado='facturada' WHERE id=? AND cliente_id=?")->execute([$fid,$id,$cid]);
 }

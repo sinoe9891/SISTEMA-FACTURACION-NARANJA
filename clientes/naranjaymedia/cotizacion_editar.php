@@ -50,13 +50,15 @@ require_once '../../includes/templates/header.php';
     </div>
     <div class="d-flex gap-2 flex-wrap">
         <a href="cotizaciones" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i> Cotizaciones</a>
+        <?php if ($cot && !$cot['factura_id'] && $puedeEditar && permisoPuede($pdo, 'generar_factura')): ?><button type="button" class="btn btn-outline-primary cot-vincular" data-id="<?= (int)$id ?>">Vincular factura existente</button><?php endif; ?>
         <?php if ($cot): ?><a href="cotizacion_pdf?id=<?= $id ?>" target="_blank" class="btn btn-outline-danger"><i class="bi bi-file-earmark-pdf me-1"></i> Ver PDF</a><?php endif; ?>
     </div>
 </div>
 
 <?php if ($cot && $cot['estado'] === 'facturada'): ?>
-    <div class="alert alert-info"><i class="bi bi-receipt me-1"></i> Esta cotización ya se convirtió en la factura
-        <a href="ver_factura?id=<?= (int)$cot['factura_id'] ?>" target="_blank" class="fw-semibold"><?= htmlspecialchars((string)$cot['factura_correlativo']) ?></a>: ya no se edita.</div>
+    <div class="alert alert-info"><i class="bi bi-receipt me-1"></i> Esta cotización tiene vinculada la factura
+        <a href="ver_factura?id=<?= (int)$cot['factura_id'] ?>" target="_blank" class="fw-semibold"><?= htmlspecialchars((string)$cot['factura_correlativo']) ?></a> · Factura en <?= htmlspecialchars($cot['factura_moneda'] ?: 'HNL') ?>, total L <?= number_format((float)$cot['factura_total'],2) ?>.
+        <div class="small mt-1">La cotización conserva su moneda y total originales. La factura vinculada puede corresponder a un anticipo; este vínculo no confirma el cobro ni la facturación completa del proyecto.</div></div>
 <?php endif; ?>
 
 <form id="fCot" novalidate>
@@ -411,4 +413,5 @@ ListaVinetas(document.getElementById('cCondiciones'), { placeholderTitulo: 'Ej.:
 })();
 </script>
 
+<script src="../js/cotizacion-vincular.js?v=1"></script>
 <?php require_once '../../includes/templates/footer.php'; ?>

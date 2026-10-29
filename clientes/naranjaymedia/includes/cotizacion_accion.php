@@ -23,6 +23,14 @@ try {
     $esAdmin = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);
     $puedeEditar = in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true);
 
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['facturas'])) {
+        if (!$puedeEditar || !permisoPuede($pdo, 'generar_factura')) throw new Exception('No tienes permiso para vincular facturas.');
+        $c = cotizacionObtener($pdo, $cid, (int)$_GET['facturas']);
+        $st = $pdo->prepare("SELECT f.id,f.correlativo,f.fecha_emision,f.moneda,f.total,f.total_usd FROM facturas f WHERE f.cliente_id=? AND f.receptor_id=? AND f.estado='emitida' AND NOT EXISTS (SELECT 1 FROM cotizaciones c WHERE c.factura_id=f.id AND c.cliente_id=f.cliente_id) ORDER BY f.fecha_emision DESC,f.id DESC");
+        $st->execute([$cid,$c['receptor_id']]);
+        echo json_encode(['success'=>true,'cotizacion'=>['numero'=>$c['numero'],'moneda'=>$c['moneda']??'HNL','total'=>$c['total']],'facturas'=>$st->fetchAll(PDO::FETCH_ASSOC)],JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['correo'])) {
         $c = cotizacionObtener($pdo, $cid, (int)$_GET['correo']);
         [$asunto, $mensaje] = cotizacionCorreoDefecto($pdo, $cid, $c);
@@ -43,6 +51,13 @@ try {
     $accion = $_POST['accion'] ?? '';
     $id = (int)($_POST['id'] ?? 0);
     switch ($accion) {
+        case 'vincular_factura':
+            if (!permisoPuede($pdo, 'generar_factura')) throw new Exception('No tienes permiso para vincular facturas.');
+            $pdo->beginTransaction();
+            cotizacionVincularFactura($pdo,$cid,$id,(int)($_POST['factura_id']??0));
+            $pdo->commit();
+            echo json_encode(['success'=>true,'message'=>'Factura vinculada. La cotización conserva sus importes y moneda originales.']);
+            break;
         case 'guardar':
             $pdo->beginTransaction();
             $id = cotizacionGuardar($pdo, $cid, $uid, $_POST, $id);
