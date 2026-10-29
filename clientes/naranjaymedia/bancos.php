@@ -132,9 +132,34 @@ require_once '../../includes/templates/header.php';
             <?php endforeach; ?>
         </div>
 
-        <div class="app-card">
-            <div class="app-card-header flex-wrap gap-2"><span><i class="bi bi-clock-history me-1"></i> Últimos movimientos</span><div class="app-toolbar flex-wrap"><input id="bmBuscar" type="search" class="form-control form-control-sm" style="max-width:260px" placeholder="Buscar movimiento…" aria-label="Buscar movimiento"><select id="bmPagina" class="form-select form-select-sm" style="width:auto" aria-label="Movimientos por página"><?php foreach ([10,25,50,100,200,300] as $n): ?><option value="<?= $n ?>"><?= $n ?>/pág</option><?php endforeach; ?><option value="100000">Todas</option></select><a href="cheques" class="small">Chequera →</a></div></div>
-            <div class="app-card-body py-3"><div class="row g-2"><div class="col-12 col-md-8"><label class="form-label small" for="bmCuenta">Cuenta bancaria</label><select id="bmCuenta" class="form-select form-select-sm"><option value="">Todas las cuentas</option><?php foreach ($cuentas as $bc): ?><option value="<?= (int)$bc['id'] ?>"><?= htmlspecialchars($bc['banco'].' · '.$bc['numero'].' · '.$bc['moneda']) ?></option><?php endforeach; ?></select></div><div class="col-12 col-md-4"><label class="form-label small" for="bmTipoCuenta">Tipo de cuenta</label><select id="bmTipoCuenta" class="form-select form-select-sm"><option value="">Ahorro y cheques</option><option value="ahorro">Ahorro</option><option value="cheques">Cheques</option></select></div></div></div>
+        <style>
+        .bm-card {overflow:hidden;min-width:0}
+        .bm-heading {display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid #e2e8f0}
+        .bm-heading h2 {display:flex;align-items:center;gap:8px;font-size:15px;font-weight:650;margin:0;color:#243550}
+        .bm-heading p {font-size:12px;color:#718096;margin:5px 0 0}
+        .bm-heading>a {flex-shrink:0}
+        .bm-filters {display:grid;grid-template-columns:minmax(180px,1.2fr) minmax(220px,1.4fr) minmax(150px,.8fr) 105px;gap:12px;padding:16px 20px;background:#fafbfd}
+        .bm-filters>div {min-width:0}.bm-filters label {display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:6px}
+        .bm-filters .form-control,.bm-filters .form-select {height:36px;font-size:12px;border-radius:7px;width:100%;min-width:0}
+        .bm-search {position:relative}.bm-search>i {position:absolute;left:11px;top:10px;font-size:12px;color:#8190a5}.bm-search input {padding-left:31px}
+        #bmTabla {margin-bottom:0;min-width:850px}#bmTabla th {font-size:10px;white-space:nowrap}#bmTabla td {vertical-align:middle;padding-top:12px;padding-bottom:12px;font-size:12px}
+        #bmTabla tbody tr[data-fila]:hover {background:#f8faff}
+        .bm-account {min-width:140px}.bm-account strong {display:block;font-size:12px;font-weight:600}.bm-account span {display:block;color:#64748b;font-size:11px;margin-top:2px}.bm-account small {display:block;color:#8490a2;font-size:10px;margin-top:3px}
+        .bm-description {width:40%;min-width:220px}.bm-description-text {display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.5;overflow-wrap:anywhere;max-width:600px}
+        .bm-reference {display:block;color:#8490a2;font-size:10px;margin-top:4px}.bm-amount {font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+        .bm-ver {white-space:nowrap;border-color:#dbe5f3!important;background:#f5f8ff;color:#3155a0;font-size:11px!important;border-radius:7px;padding:6px 10px}
+        .bm-card .app-pager {padding:12px 20px;border-top:1px solid #e2e8f0;flex-wrap:wrap;gap:8px}
+        @media(max-width:1100px){.bm-filters{grid-template-columns:1fr 1fr}}
+        @media(max-width:575px){.bm-heading{padding:14px;align-items:flex-start}.bm-heading p{max-width:190px}.bm-filters{grid-template-columns:minmax(0,1fr) 105px;padding:14px;gap:10px}.bm-filters>div:nth-child(1),.bm-filters>div:nth-child(2){grid-column:1/-1}.bm-card .app-pager{padding:12px 14px}.bm-heading h2{font-size:14px}}
+        </style>
+        <div class="app-card bm-card">
+            <div class="bm-heading"><div><h2><i class="bi bi-clock-history"></i> Últimos movimientos</h2><p>Consulta las entradas y salidas de tus cuentas.</p></div><a href="cheques" class="btn btn-sm btn-outline-secondary"><i class="bi bi-journal-text me-1"></i> Chequera</a></div>
+            <div class="bm-filters">
+                <div><label for="bmBuscar">Buscar</label><div class="bm-search"><i class="bi bi-search"></i><input id="bmBuscar" type="search" class="form-control form-control-sm" placeholder="Descripción, referencia o importe…"></div></div>
+                <div><label for="bmCuenta">Cuenta bancaria</label><select id="bmCuenta" class="form-select form-select-sm"><option value="">Todas las cuentas</option><?php foreach ($cuentas as $bc): ?><option value="<?= (int)$bc['id'] ?>"><?= htmlspecialchars($bc['banco'].' · '.$bc['numero'].' · '.$bc['moneda']) ?></option><?php endforeach; ?></select></div>
+                <div><label for="bmTipoCuenta">Tipo de cuenta</label><select id="bmTipoCuenta" class="form-select form-select-sm"><option value="">Todos los tipos</option><option value="ahorro">Ahorro</option><option value="cheques">Cheques</option></select></div>
+                <div><label for="bmPagina">Mostrar</label><select id="bmPagina" class="form-select form-select-sm"><?php foreach ([10,25,50,100,200,300] as $n): ?><option value="<?= $n ?>"><?= $n ?>/pág</option><?php endforeach; ?><option value="100000">Todas</option></select></div>
+            </div>
             <div class="table-responsive">
                 <table id="bmTabla" data-ordenar class="table app-table">
                     <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Cuenta</th><th>Tipo</th><th>Descripción</th><th class="app-num">Entrada</th><th class="app-num">Salida</th><th class="no-orden">Detalle</th></tr></thead>
@@ -143,12 +168,12 @@ require_once '../../includes/templates/header.php';
                         <?php foreach ($recientes as $m): ?>
                             <tr data-fila data-cuenta="<?= (int)$m['cuenta_id'] ?>" data-tipo-cuenta="<?= htmlspecialchars($m['cuenta_tipo']) ?>" class="<?= (int)$m['anulado'] ? 'text-decoration-line-through text-muted' : '' ?>">
                                 <td class="app-n"></td><td class="text-nowrap" data-sort="<?= htmlspecialchars($m['fecha']) ?>"><?= date('d/m/Y', strtotime($m['fecha'])) ?></td>
-                                <td class="text-nowrap small"><?= htmlspecialchars($m['banco']) ?> <span class="font-monospace"><?= htmlspecialchars($m['numero']) ?></span></td>
+                                <td class="bm-account"><strong><?= htmlspecialchars($m['banco']) ?></strong><span class="font-monospace"><?= htmlspecialchars($m['numero']) ?></span><small><?= $m['cuenta_tipo']==='cheques'?'Cheques':'Ahorro' ?> · <?= htmlspecialchars($m['moneda']) ?></small></td>
                                 <td><span class="app-badge app-badge-muted"><?= $etiquetasTipo[$m['tipo']] ?? $m['tipo'] ?></span></td>
-                                <td><?= htmlspecialchars($m['descripcion']) ?><?= (int)$m['anulado'] ? ' <span class="app-badge app-badge-danger">Anulado</span>' : '' ?></td>
-                                <td class="app-num text-success" data-sort="<?= $m['sentido'] === 'entrada' ? (float)$m['monto'] : 0 ?>"><?= $m['sentido'] === 'entrada' ? bancoMoneda((float)$m['monto'], $m['moneda']) : '' ?></td>
-                                <td class="app-num text-danger" data-sort="<?= $m['sentido'] === 'salida' ? (float)$m['monto'] : 0 ?>"><?= $m['sentido'] === 'salida' ? bancoMoneda((float)$m['monto'], $m['moneda']) : '' ?></td>
-                                <td><button type="button" class="btn btn-sm btn-outline-primary bm-ver" data-id="<?= (int)$m['id'] ?>">Ver</button>
+                                <td class="bm-description"><div class="bm-description-text" title="<?= htmlspecialchars($m['descripcion']) ?>"><?= htmlspecialchars($m['descripcion']) ?></div><?php if ($m['referencia']): ?><small class="bm-reference">Ref. <?= htmlspecialchars($m['referencia']) ?></small><?php endif; ?><?= (int)$m['anulado'] ? ' <span class="app-badge app-badge-danger">Anulado</span>' : '' ?></td>
+                                <td class="app-num text-success bm-amount" data-sort="<?= $m['sentido'] === 'entrada' ? (float)$m['monto'] : 0 ?>"><?= $m['sentido'] === 'entrada' ? bancoMoneda((float)$m['monto'], $m['moneda']) : '' ?></td>
+                                <td class="app-num text-danger bm-amount" data-sort="<?= $m['sentido'] === 'salida' ? (float)$m['monto'] : 0 ?>"><?= $m['sentido'] === 'salida' ? bancoMoneda((float)$m['monto'], $m['moneda']) : '' ?></td>
+                                <td><button type="button" class="btn btn-sm btn-outline-primary bm-ver" data-id="<?= (int)$m['id'] ?>" aria-label="Ver movimiento #<?= (int)$m['id'] ?>"><i class="bi bi-eye me-1"></i>Ver</button>
                                 <template id="bmDetalle<?= (int)$m['id'] ?>"><div class="text-start"><dl class="row small">
                                 <?php foreach (['Fecha'=>date('d/m/Y',strtotime($m['fecha'])),'Cuenta'=>$m['banco'].' · '.$m['numero'],'Tipo'=>$etiquetasTipo[$m['tipo']]??$m['tipo'],'Descripción'=>$m['descripcion'],'Referencia'=>$m['referencia']?:'Sin referencia','Importe'=>($m['sentido']==='entrada'?'Entrada: ':'Salida: ').bancoMoneda((float)$m['monto'],$m['moneda']),'Estado'=>$m['anulado']?'Anulado':($m['conciliado']?'Conciliado':'Sin conciliar')] as $label=>$valor): ?><dt class="col-sm-4"><?= htmlspecialchars($label) ?></dt><dd class="col-sm-8" style="overflow-wrap:anywhere"><?= htmlspecialchars($valor) ?></dd><?php endforeach; ?></dl>
                                 <div class="d-flex gap-2 flex-wrap"><a class="btn btn-sm btn-outline-primary" href="banco_cuenta?id=<?= (int)$m['cuenta_id'] ?>&desde=<?= urlencode($m['fecha']) ?>&hasta=<?= urlencode($m['fecha']) ?>&anulados=1">Ver en la cuenta</a>
