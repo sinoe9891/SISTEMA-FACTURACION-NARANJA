@@ -33,15 +33,15 @@ foreach ($activas as $c) {
 $recientes = [];
 if ($instalado && $cid) {
     $stmt = $pdo->prepare("
-        SELECT m.*, c.banco, c.numero, c.moneda
+        SELECT m.*, c.banco, c.numero, c.moneda, c.tipo AS cuenta_tipo
         FROM movimientos_bancarios m JOIN cuentas_bancarias c ON c.id = m.cuenta_id
-        WHERE m.cliente_id = ? ORDER BY m.fecha DESC, m.id DESC LIMIT 15
+        WHERE m.cliente_id = ? ORDER BY m.fecha DESC, m.id DESC
     ");
     $stmt->execute([$cid]);
     $recientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 $etiquetasTipo = ['deposito' => 'Depósito', 'retiro' => 'Retiro', 'transferencia' => 'Transferencia', 'cheque' => 'Cheque',
-    'pago_gasto' => 'Pago de gasto', 'cobro_factura' => 'Cobro de factura', 'comision' => 'Comisión', 'interes' => 'Interés', 'ajuste' => 'Ajuste'];
+    'prestamo_socio' => 'Préstamo a socio', 'pago_gasto' => 'Pago de gasto', 'cobro_factura' => 'Cobro de factura', 'comision' => 'Comisión', 'interes' => 'Interés', 'ajuste' => 'Ajuste'];
 
 require_once '../../includes/templates/header.php';
 ?>
@@ -133,25 +133,33 @@ require_once '../../includes/templates/header.php';
         </div>
 
         <div class="app-card">
-            <div class="app-card-header"><span><i class="bi bi-clock-history me-1"></i> Últimos movimientos</span><a href="cheques" class="small">Chequera →</a></div>
+            <div class="app-card-header flex-wrap gap-2"><span><i class="bi bi-clock-history me-1"></i> Últimos movimientos</span><div class="app-toolbar flex-wrap"><input id="bmBuscar" type="search" class="form-control form-control-sm" style="max-width:260px" placeholder="Buscar movimiento…" aria-label="Buscar movimiento"><select id="bmPagina" class="form-select form-select-sm" style="width:auto" aria-label="Movimientos por página"><?php foreach ([10,25,50,100,200,300] as $n): ?><option value="<?= $n ?>"><?= $n ?>/pág</option><?php endforeach; ?><option value="100000">Todas</option></select><a href="cheques" class="small">Chequera →</a></div></div>
+            <div class="app-card-body py-3"><div class="row g-2"><div class="col-12 col-md-8"><label class="form-label small" for="bmCuenta">Cuenta bancaria</label><select id="bmCuenta" class="form-select form-select-sm"><option value="">Todas las cuentas</option><?php foreach ($cuentas as $bc): ?><option value="<?= (int)$bc['id'] ?>"><?= htmlspecialchars($bc['banco'].' · '.$bc['numero'].' · '.$bc['moneda']) ?></option><?php endforeach; ?></select></div><div class="col-12 col-md-4"><label class="form-label small" for="bmTipoCuenta">Tipo de cuenta</label><select id="bmTipoCuenta" class="form-select form-select-sm"><option value="">Ahorro y cheques</option><option value="ahorro">Ahorro</option><option value="cheques">Cheques</option></select></div></div></div>
             <div class="table-responsive">
-                <table data-paginar class="table app-table">
-                    <thead><tr><th>Fecha</th><th>Cuenta</th><th>Tipo</th><th>Descripción</th><th class="app-num">Entrada</th><th class="app-num">Salida</th></tr></thead>
+                <table id="bmTabla" data-ordenar class="table app-table">
+                    <thead><tr><th class="app-n">#</th><th>Fecha</th><th>Cuenta</th><th>Tipo</th><th>Descripción</th><th class="app-num">Entrada</th><th class="app-num">Salida</th><th class="no-orden">Detalle</th></tr></thead>
                     <tbody>
-                        <?php if (!$recientes): ?><tr><td colspan="6" class="text-center text-muted py-4">Sin movimientos.</td></tr><?php endif; ?>
+                        <?php if (!$recientes): ?><tr><td colspan="8" class="text-center text-muted py-4">Sin movimientos.</td></tr><?php endif; ?>
                         <?php foreach ($recientes as $m): ?>
-                            <tr class="<?= (int)$m['anulado'] ? 'text-decoration-line-through text-muted' : '' ?>">
-                                <td class="text-nowrap"><?= date('d/m/Y', strtotime($m['fecha'])) ?></td>
+                            <tr data-fila data-cuenta="<?= (int)$m['cuenta_id'] ?>" data-tipo-cuenta="<?= htmlspecialchars($m['cuenta_tipo']) ?>" class="<?= (int)$m['anulado'] ? 'text-decoration-line-through text-muted' : '' ?>">
+                                <td class="app-n"></td><td class="text-nowrap" data-sort="<?= htmlspecialchars($m['fecha']) ?>"><?= date('d/m/Y', strtotime($m['fecha'])) ?></td>
                                 <td class="text-nowrap small"><?= htmlspecialchars($m['banco']) ?> <span class="font-monospace"><?= htmlspecialchars($m['numero']) ?></span></td>
                                 <td><span class="app-badge app-badge-muted"><?= $etiquetasTipo[$m['tipo']] ?? $m['tipo'] ?></span></td>
                                 <td><?= htmlspecialchars($m['descripcion']) ?><?= (int)$m['anulado'] ? ' <span class="app-badge app-badge-danger">Anulado</span>' : '' ?></td>
-                                <td class="app-num text-success"><?= $m['sentido'] === 'entrada' ? bancoMoneda((float)$m['monto'], $m['moneda']) : '' ?></td>
-                                <td class="app-num text-danger"><?= $m['sentido'] === 'salida' ? bancoMoneda((float)$m['monto'], $m['moneda']) : '' ?></td>
+                                <td class="app-num text-success" data-sort="<?= $m['sentido'] === 'entrada' ? (float)$m['monto'] : 0 ?>"><?= $m['sentido'] === 'entrada' ? bancoMoneda((float)$m['monto'], $m['moneda']) : '' ?></td>
+                                <td class="app-num text-danger" data-sort="<?= $m['sentido'] === 'salida' ? (float)$m['monto'] : 0 ?>"><?= $m['sentido'] === 'salida' ? bancoMoneda((float)$m['monto'], $m['moneda']) : '' ?></td>
+                                <td><button type="button" class="btn btn-sm btn-outline-primary bm-ver" data-id="<?= (int)$m['id'] ?>">Ver</button>
+                                <template id="bmDetalle<?= (int)$m['id'] ?>"><div class="text-start"><dl class="row small">
+                                <?php foreach (['Fecha'=>date('d/m/Y',strtotime($m['fecha'])),'Cuenta'=>$m['banco'].' · '.$m['numero'],'Tipo'=>$etiquetasTipo[$m['tipo']]??$m['tipo'],'Descripción'=>$m['descripcion'],'Referencia'=>$m['referencia']?:'Sin referencia','Importe'=>($m['sentido']==='entrada'?'Entrada: ':'Salida: ').bancoMoneda((float)$m['monto'],$m['moneda']),'Estado'=>$m['anulado']?'Anulado':($m['conciliado']?'Conciliado':'Sin conciliar')] as $label=>$valor): ?><dt class="col-sm-4"><?= htmlspecialchars($label) ?></dt><dd class="col-sm-8" style="overflow-wrap:anywhere"><?= htmlspecialchars($valor) ?></dd><?php endforeach; ?></dl>
+                                <div class="d-flex gap-2 flex-wrap"><a class="btn btn-sm btn-outline-primary" href="banco_cuenta?id=<?= (int)$m['cuenta_id'] ?>&desde=<?= urlencode($m['fecha']) ?>&hasta=<?= urlencode($m['fecha']) ?>&anulados=1">Ver en la cuenta</a>
+                                <?php if ($m['gasto_id']): ?><a class="btn btn-sm btn-outline-primary" href="gasto_ver?id=<?= (int)$m['gasto_id'] ?>">Ver gasto</a><?php endif; ?>
+                                <?php if ($m['factura_id']): ?><a class="btn btn-sm btn-outline-primary" href="ver_factura?id=<?= (int)$m['factura_id'] ?>">Ver factura</a><?php endif; ?>
+                                <?php if (!empty($m['archivo_adjunto'])): ?><a class="btn btn-sm btn-outline-secondary" target="_blank" href="movimiento_archivo?id=<?= (int)$m['id'] ?>">Comprobante</a><?php endif; ?></div></div></template></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
-            </div>
+            </div><div class="app-pager" id="bmPie"></div>
         </div>
     <?php endif; ?>
 
@@ -317,4 +325,13 @@ require_once '../../includes/templates/header.php';
 })();
 </script>
 
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    if (!document.getElementById('bmTabla')) return;
+    const cuenta=document.getElementById('bmCuenta'), tipo=document.getElementById('bmTipoCuenta');
+    const tabla=AppTabla(document.getElementById('bmTabla'), {buscar:'#bmBuscar',porPagina:'#bmPagina',pie:'#bmPie',vacio:'Sin movimientos con estos filtros.',filtro:tr=>(!cuenta.value||tr.dataset.cuenta===cuenta.value)&&(!tipo.value||tr.dataset.tipoCuenta===tipo.value)});
+    cuenta.addEventListener('change',()=>tabla.refrescar()); tipo.addEventListener('change',()=>tabla.refrescar());
+});
+document.addEventListener('click', e => { const b=e.target.closest('.bm-ver'); if (!b) return; const t=document.getElementById('bmDetalle'+b.dataset.id); if(t) Swal.fire({title:'Movimiento #'+b.dataset.id,html:t.innerHTML,width:640,confirmButtonText:'Cerrar'}); });
+</script>
 <?php require_once '../../includes/templates/footer.php'; ?>
