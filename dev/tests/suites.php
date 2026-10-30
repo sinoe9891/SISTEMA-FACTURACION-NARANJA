@@ -3182,3 +3182,4 @@ require __DIR__ . "/socios_prestamos.php";
 require __DIR__ . "/comisiones.php";
 
 require __DIR__ . "/cotizacion_vincular.php";
+require __DIR__ . "/factura_gastos_cobrar_edicion.php";

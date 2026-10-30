@@ -125,3 +125,54 @@ function gastosMarcarCobrados(PDO $pdo, int $cid, array $ids, int $facturaId, in
     }
     return $n;
 }
+
+/** Gastos (y cobros anuales de licencias, id negativo) que ya se cobraron en una factura. */
+function gastosCobradosEnFactura(PDO $pdo, int $cid, int $facturaId): array
+{
+    if (!gastosCobrarDisponible($pdo)) return [];
+    $lic = false;
+    try { $lic = (bool)$pdo->query("SHOW COLUMNS FROM gastos LIKE 'licencia_id'")->fetchColumn(); } catch (Throwable $e) { $lic = false; }
+    $anual = $lic && licenciasCobrosDisponible($pdo);
+    $st = $pdo->prepare("SELECT g.id, g.fecha, g.descripcion, g.monto, g.cobrar_receptor_id, cf.nombre AS cliente"
+        . ($lic ? ", " . licenciaComisionSql('g.monto') . " AS comision_pct" : ", NULL AS comision_pct") . "
+        FROM gastos g JOIN clientes_factura cf ON cf.id = g.cobrar_receptor_id" . ($lic ? " LEFT JOIN licencias l ON l.id = g.licencia_id" : '') . "
+        WHERE g.cliente_id = ? AND g.cobrado_factura_id = ?" . ($anual ? " AND NOT EXISTS (SELECT 1 FROM licencias_cobros lc WHERE lc.gasto_id = g.id)" : '') . " ORDER BY g.fecha, g.id");
+    $st->execute([$cid, $facturaId]);
+    $out = $st->fetchAll(PDO::FETCH_ASSOC);
+    if ($anual) {
+        $st = $pdo->prepare("SELECT -lc.id AS id, lc.fecha, CONCAT('Licencia: ', l.nombre, ' · año ', lc.anio_n, ' de ', lc.anios, ' (', DATE_FORMAT(lc.desde, '%d/%m/%Y'), ' al ', DATE_FORMAT(lc.hasta, '%d/%m/%Y'), ')') AS descripcion,
+                                    lc.costo AS monto, l.receptor_id AS cobrar_receptor_id, cf.nombre AS cliente, " . licenciaComisionSql('lc.costo') . " AS comision_pct
+                             FROM licencias_cobros lc JOIN licencias l ON l.id = lc.licencia_id JOIN clientes_factura cf ON cf.id = l.receptor_id
+                             WHERE lc.cliente_id = ? AND lc.factura_id = ? ORDER BY lc.fecha, lc.id");
+        $st->execute([$cid, $facturaId]);
+        $out = array_merge($out, $st->fetchAll(PDO::FETCH_ASSOC));
+    }
+    return $out;
+}
+
+/**
+ * Al editar una factura: deja como cobrados en ella exactamente los marcados ($ids). Los que tenía y se desmarcaron
+ * vuelven a quedar pendientes de cobrar; los nuevos se marcan. Devuelve [marcados, liberados].
+ */
+function gastosSincronizarCobrados(PDO $pdo, int $cid, int $facturaId, int $receptorId, array $ids): array
+{
+    if (!gastosCobrarDisponible($pdo)) return [0, 0];
+    $ids = array_values(array_filter(array_map('intval', $ids)));
+    $libres = 0;
+    foreach (gastosCobradosEnFactura($pdo, $cid, $facturaId) as $g) {
+        if (in_array((int)$g['id'], $ids, true)) continue;
+        if ((int)$g['id'] > 0) {
+            $st = $pdo->prepare("UPDATE gastos SET cobrado_factura_id = NULL WHERE id = ? AND cliente_id = ? AND cobrado_factura_id = ?");
+            $st->execute([(int)$g['id'], $cid, $facturaId]);
+        } else {
+            $st = $pdo->prepare("UPDATE licencias_cobros SET factura_id = NULL WHERE id = ? AND cliente_id = ? AND factura_id = ?");
+            $st->execute([abs((int)$g['id']), $cid, $facturaId]);
+            // Su gasto ya no está cobrado del todo
+            $pdo->prepare("UPDATE gastos g JOIN licencias_cobros lc ON lc.gasto_id = g.id SET g.cobrado_factura_id = NULL WHERE lc.id = ? AND g.cliente_id = ?")->execute([abs((int)$g['id']), $cid]);
+        }
+        $libres += $st->rowCount();
+    }
+    $ya = array_map(fn($g) => (int)$g['id'], gastosCobradosEnFactura($pdo, $cid, $facturaId));
+    $nuevos = array_values(array_diff($ids, $ya));
+    return [$nuevos ? gastosMarcarCobrados($pdo, $cid, $nuevos, $facturaId, $receptorId) : 0, $libres];
+}

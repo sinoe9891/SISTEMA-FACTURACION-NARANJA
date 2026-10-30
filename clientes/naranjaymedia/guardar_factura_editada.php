@@ -295,6 +295,11 @@ try {
 	// Comisión por venta: la del formulario; sin ese campo, solo se recalcula si cambió el subtotal
 	if (array_key_exists('comision_activa', $_POST)) comisionDesdeFactura($pdo, (int)$cliente_factura, (int)$usuario_id, (int)$factura_id, $_POST);
 	else comisionRecalcular($pdo, (int)$cliente_factura, (int)$factura_id);
+	// Gastos que se le cobran al cliente: quedan cobrados en esta factura exactamente los marcados
+	if (!empty($_POST['gastos_cobrar_form'])) {
+		require_once '../../includes/gastos_cobrar.php';
+		gastosSincronizarCobrados($pdo, (int)$cliente_factura, (int)$factura_id, $cambiar_receptor ? (int)$receptor_id : (int)$factura['receptor_id'], (array)($_POST['gastos_cobrar'] ?? []));
+	}
 	if ($conMoneda) facturaGuardarMoneda($pdo, (int)$factura_id, $tasa, $moneda === 'USD' ? facturaTotalUsd($lineasUsd, (bool)$exonerado) : null, $preciosUsd);
 
 	if ($cambiar_receptor) {

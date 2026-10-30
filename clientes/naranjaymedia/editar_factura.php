@@ -64,6 +64,15 @@ $stmt = $pdo->prepare("SELECT * FROM factura_items_receptor WHERE factura_id=?")
 $stmt->execute([$factura_id]);
 $items = $stmt->fetchAll();
 
+// Gastos que se le cobran al cliente (hosting, dominio, pauta…): los pendientes y los que ya se cobran en esta factura
+require_once '../../includes/gastos_cobrar.php';
+$gcCid = (int)$factura['cliente_id'];
+$gcGrupo = gastosGrupoDe($pdo, $gcCid, (int)$factura['receptor_id']);
+$gcFila = fn($g, $marcado) => ['id' => (int)$g['id'], 'fecha' => $g['fecha'], 'descripcion' => $g['descripcion'] . (count($gcGrupo) > 1 ? ' · a nombre de ' . $g['cliente'] : ''),
+    'monto' => (float)$g['monto'], 'pct' => $g['comision_pct'] !== null ? (float)$g['comision_pct'] : null,
+    'precio' => $g['comision_pct'] !== null ? round((float)$g['monto'] * (1 + (float)$g['comision_pct'] / 100), 2) : null, 'marcado' => $marcado];
+$gcLista = array_merge(array_map(fn($g) => $gcFila($g, true), gastosCobradosEnFactura($pdo, $gcCid, (int)$factura['id'])),
+    array_map(fn($g) => $gcFila($g, false), array_filter(gastosPorCobrar($pdo, $gcCid), fn($g) => in_array((int)$g['cobrar_receptor_id'], $gcGrupo, true))));
 require_once '../../includes/templates/header.php';
 ?>
 
@@ -325,6 +334,19 @@ require_once '../../includes/templates/header.php';
                         </select>
                         <div class="form-text" id="contratoAyuda">Selecciona el contrato al que corresponde o «Sin contrato». La asociación se guarda al guardar la factura y no cambia sus productos ni importes.</div>
                         </div>
+                        <?php if ($gcLista): $gcE = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8'); ?>
+                        <div class="col-12">
+                            <input type="hidden" name="gastos_cobrar_form" value="1">
+                            <div class="alert alert-warning mb-0 py-2 small">
+                                <div class="fw-semibold mb-1"><i class="bi bi-arrow-repeat me-1"></i>Gastos de cobrarle a este cliente</div>
+                                <?php foreach ($gcLista as $g): ?>
+                                <div class="form-check"><input class="form-check-input" type="checkbox" name="gastos_cobrar[]" value="<?= (int)$g['id'] ?>" id="gc<?= (int)$g['id'] ?>" <?= $g['marcado'] ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="gc<?= (int)$g['id'] ?>"><?= $gcE($g['descripcion']) ?> · <?= date('d/m/Y', strtotime($g['fecha'])) ?> · costo <strong>L <?= number_format($g['monto'], 2) ?></strong><?= $g['precio'] !== null ? ' → cobrar <strong>L ' . number_format($g['precio'], 2) . '</strong> (+' . rtrim(rtrim(number_format($g['pct'], 2), '0'), '.') . ' %)' : '' ?><?= $g['marcado'] ? ' <span class="badge text-bg-success">cobrado en esta factura</span>' : '' ?></label></div>
+                                <?php endforeach; ?>
+                                <div class="text-muted mt-1">Agrega la línea en el detalle y marca aquí los que incluyes. Si desmarcas uno, vuelve a quedar pendiente de cobrar.</div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                         <?php $pgCid = (int)$factura['cliente_id']; $pgActual = $factura['programa_id'] ?? null; $pgLabel = 'fe-form-label'; $pgSelect = 'form-select'; $pgReceptor = 'receptorSelect'; require '../../includes/templates/programa_campo.php'; ?>
                         <script>
                             document.getElementById('contratoSelect').addEventListener('change', function () {
