@@ -174,7 +174,7 @@ try {
         if (($_POST['metodo_pago'] ?? '') === 'tarjeta') $cuentaSalida = 0;   // lo de tarjeta sale al pagar la tarjeta
         require_once __DIR__ . '/../../../includes/bancos.php';
         if (!empty($_POST['cuenta_editar'])) {
-            // Ya tenía salida del banco: se cambia de cuenta, se quita («No registrar en banco») o se rehace si cambió monto/fecha
+            // Ya tenía salida del banco: se cambia de cuenta, se quita («No registrar en banco») o se rehace si cambió el monto
             bancoGastoCambiarCuenta($pdo, $cid, $gasto_id, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
         } elseif ($cuentaSalida) {
             bancoSalidaGasto($pdo, $cid, $gasto_id, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
@@ -252,7 +252,7 @@ try {
         if (($_POST['metodo_pago'] ?? '') === 'tarjeta') $cuentaSalida = 0;   // lo de tarjeta sale al pagar la tarjeta
         require_once __DIR__ . '/../../../includes/bancos.php';
         if (!empty($_POST['cuenta_editar'])) {
-            // Ya tenía salida del banco: se cambia de cuenta, se quita («No registrar en banco») o se rehace si cambió monto/fecha
+            // Ya tenía salida del banco: se cambia de cuenta, se quita («No registrar en banco») o se rehace si cambió el monto
             bancoGastoCambiarCuenta($pdo, $cid, $gasto_id, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
         } elseif ($cuentaSalida) {
             bancoSalidaGasto($pdo, $cid, $gasto_id, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));

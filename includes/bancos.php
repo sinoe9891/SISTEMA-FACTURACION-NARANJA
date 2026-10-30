@@ -141,13 +141,29 @@ function bancoLeyPoblacionalSincronizar(PDO $pdo, int $cid, int $cuentaId = 0, i
     $MES = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $cta) {
         $k = (int)$cta['id'];
-        $sal = $pdo->prepare("SELECT id, fecha, monto, descripcion FROM movimientos_bancarios
-                              WHERE cuenta_id = ? AND anulado = 0 AND sentido = 'salida' AND tipo <> 'comision' AND fecha >= ?");
+        $sal = $pdo->prepare("SELECT id, fecha, monto, descripcion, referencia FROM movimientos_bancarios
+                              WHERE cuenta_id = ? AND anulado = 0 AND sentido = 'salida' AND tipo <> 'comision' AND fecha >= ? ORDER BY id");
         $sal->execute([$k, $cta['fecha_saldo_inicial']]);
         $salidas = [];
         // Si la cuenta no la cobra (apagada o en dólares), sus cargos se anulan
-        if ($cta['moneda'] === 'HNL' && (int)$cta['ley_poblacional'] === 1)
-            foreach ($sal->fetchAll(PDO::FETCH_ASSOC) as $s) $salidas['LP#' . $s['id']] = $s;
+        if ($cta['moneda'] === 'HNL' && (int)$cta['ley_poblacional'] === 1) {
+            // Varios pagos en una sola transferencia (misma fecha y misma referencia del banco): el banco cobra la ley
+            // una vez sobre el total, así que el cargo va en la primera salida del grupo
+            $grupo = [];
+            foreach ($sal->fetchAll(PDO::FETCH_ASSOC) as $s) {
+                $r = mb_strtolower(trim((string)$s['referencia']));
+                $gk = $r !== '' && !str_starts_with($r, 'lp') ? $s['fecha'] . '|' . $r : 'id' . $s['id'];
+                if (isset($grupo[$gk])) {
+                    $salidas[$grupo[$gk]]['monto'] = (float)$salidas[$grupo[$gk]]['monto'] + (float)$s['monto'];
+                    $salidas[$grupo[$gk]]['n'] = ($salidas[$grupo[$gk]]['n'] ?? 1) + 1;
+                    continue;
+                }
+                $grupo[$gk] = 'LP#' . $s['id'];
+                $salidas['LP#' . $s['id']] = $s;
+            }
+            foreach ($salidas as &$s) if (!empty($s['n'])) $s['descripcion'] .= ' (' . $s['n'] . ' pagos en una transferencia)';
+            unset($s);
+        }
         $lp = $pdo->prepare("SELECT id, referencia, gasto_id, monto, fecha FROM movimientos_bancarios WHERE cuenta_id = ? AND tipo = 'comision' AND referencia LIKE 'LP#%' AND anulado = 0");
         $lp->execute([$k]);
         $hechos = [];
@@ -159,6 +175,13 @@ function bancoLeyPoblacionalSincronizar(PDO $pdo, int $cid, int $cuentaId = 0, i
                 continue;
             }
             $hechos[$c['referencia']] = true;
+            // El monto de su salida cambió (o ahora la comparte con otros pagos): se ajusta el cargo
+            $debe = leyPoblacionalMonto((float)$salidas[$c['referencia']]['monto']);
+            if (abs($debe - (float)$c['monto']) >= 0.005) {
+                if ($debe > 0) $pdo->prepare("UPDATE movimientos_bancarios SET monto = ? WHERE id = ?")->execute([$debe, $c['id']]);
+                else $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ?")->execute([$c['id']]);
+                if ($c['gasto_id']) $meses[(int)$c['gasto_id']] = true;
+            }
         }
         foreach ($salidas as $ref => $s) {
             if (isset($hechos[$ref])) continue;
@@ -283,10 +306,10 @@ function bancoTransferir(PDO $pdo, int $cid, int $usuario, array $d): array
 
 /**
  * Cambia (o quita, con $cuentaId = 0) la cuenta de donde salió el pago de un gasto: anula su salida (y su Ley Poblacional)
- * y la vuelve a registrar en la cuenta elegida. También la rehace si cambió el monto o la fecha del gasto.
+ * y la vuelve a registrar en la cuenta elegida (con la misma fecha del pago). También la rehace si cambió el monto del gasto.
  * Devuelve true si cambió algo.
  */
-function bancoGastoCambiarCuenta(PDO $pdo, int $cid, int $gastoId, int $cuentaId, int $usuario): bool
+function bancoGastoCambiarCuenta(PDO $pdo, int $cid, int $gastoId, int $cuentaId, int $usuario, ?string $fecha = null): bool
 {
     if (!bancosDisponible($pdo)) return false;
     $st = $pdo->prepare("SELECT * FROM movimientos_bancarios WHERE cliente_id = ? AND gasto_id = ? AND anulado = 0 AND tipo <> 'comision'");
@@ -297,7 +320,7 @@ function bancoGastoCambiarCuenta(PDO $pdo, int $cid, int $gastoId, int $cuentaId
     $g = $st->fetch(PDO::FETCH_ASSOC);
     if (!$g) return false;
     if ($g['estado'] !== 'pagado') $cuentaId = 0;
-    if (count($movs) === 1 && (int)$movs[0]['cuenta_id'] === $cuentaId && abs((float)$movs[0]['monto'] - (float)$g['monto']) < 0.005 && $movs[0]['fecha'] === $g['fecha']) return false;
+    if (count($movs) === 1 && (int)$movs[0]['cuenta_id'] === $cuentaId && abs((float)$movs[0]['monto'] - (float)$g['monto']) < 0.005 && (!$fecha || $movs[0]['fecha'] === $fecha)) return false;
     if (!$movs && !$cuentaId) return false;
     $cuentas = [];
     foreach ($movs as $m) {
@@ -307,7 +330,7 @@ function bancoGastoCambiarCuenta(PDO $pdo, int $cid, int $gastoId, int $cuentaId
         $cuentas[(int)$m['cuenta_id']] = true;
     }
     foreach (array_keys($cuentas) as $k) bancoLeyPoblacionalSincronizar($pdo, $cid, $k, $usuario);
-    if ($cuentaId) bancoSalidaGasto($pdo, $cid, $gastoId, $cuentaId, $usuario);
+    if ($cuentaId) bancoSalidaGasto($pdo, $cid, $gastoId, $cuentaId, $usuario, $fecha ?: ($movs[0]['fecha'] ?? null));
     return true;
 }
 
@@ -399,7 +422,7 @@ function bancoMoneda(float $monto, string $moneda): string
  * El pago de un gasto sale de una cuenta bancaria: registra la salida (tipo «pago de gasto») ligada al gasto.
  * No duplica: si el gasto ya tiene una salida vigente, no hace nada. Devuelve el id del movimiento o null.
  */
-function bancoSalidaGasto(PDO $pdo, int $cid, int $gastoId, int $cuentaId, int $usuario): ?int
+function bancoSalidaGasto(PDO $pdo, int $cid, int $gastoId, int $cuentaId, int $usuario, ?string $fecha = null): ?int
 {
     if (!$cuentaId || !bancosDisponible($pdo)) return null;
     $st = $pdo->prepare("SELECT COUNT(*) FROM movimientos_bancarios WHERE cliente_id = ? AND gasto_id = ? AND anulado = 0");
@@ -412,7 +435,7 @@ function bancoSalidaGasto(PDO $pdo, int $cid, int $gastoId, int $cuentaId, int $
     $cuenta = bancoCuenta($pdo, $cid, $cuentaId, true);
     if ($cuenta['moneda'] !== 'HNL') throw new Exception("Los gastos son en lempiras: elige una cuenta en lempiras.");
     return bancoInsertarMovimiento($pdo, $cid, $cuentaId, [
-        'fecha' => $g['fecha'], 'sentido' => 'salida', 'tipo' => 'pago_gasto', 'monto' => (float)$g['monto'],
+        'fecha' => $fecha ?: $g['fecha'], 'sentido' => 'salida', 'tipo' => 'pago_gasto', 'monto' => (float)$g['monto'],
         'descripcion' => mb_substr('Pago: ' . $g['descripcion'], 0, 255),
         'referencia' => $g['factura_ref'], 'gasto_id' => (int)$g['id'], 'usuario_id' => $usuario,
     ]);

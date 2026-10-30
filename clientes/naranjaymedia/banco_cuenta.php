@@ -35,7 +35,9 @@ $stmt = $pdo->prepare("SELECT COALESCE(SUM(CASE WHEN sentido = 'entrada' THEN mo
 $stmt->execute([$cuenta['id'], $desde]);
 $saldoAnterior = round((float)$cuenta['saldo_inicial'] + (float)$stmt->fetchColumn(), 2);
 
-$stmt = $pdo->prepare("SELECT * FROM movimientos_bancarios WHERE cuenta_id = ? AND fecha BETWEEN ? AND ?" . ($verAnulados ? "" : " AND anulado = 0") . " ORDER BY fecha, id");
+// El pago de un gasto muestra el comprobante del gasto si el movimiento no tiene uno propio
+$stmt = $pdo->prepare("SELECT m.*, IF(m.tipo = 'comision', NULL, g.archivo_adjunto) AS gasto_archivo FROM movimientos_bancarios m LEFT JOIN gastos g ON g.id = m.gasto_id
+                       WHERE m.cuenta_id = ? AND m.fecha BETWEEN ? AND ?" . ($verAnulados ? "" : " AND m.anulado = 0") . " ORDER BY m.fecha, m.id");
 $stmt->execute([$cuenta['id'], $desde, $hasta]);
 $movs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -54,7 +56,7 @@ unset($m);
 $movs = array_reverse($movs);
 $tiposEnPeriodo = array_values(array_unique(array_column($movs, 'tipo')));
 $movs = array_values(array_filter($movs, fn($m) => (!$fSentido || $m['sentido'] === $fSentido) && (!$fTipo || $m['tipo'] === $fTipo)
-    && (!$fConcil || ($fConcil === 'si') === (bool)(int)$m['conciliado']) && (!$fComp || ($fComp === 'con') === !empty($m['archivo_adjunto']))));
+    && (!$fConcil || ($fConcil === 'si') === (bool)(int)$m['conciliado']) && (!$fComp || ($fComp === 'con') === (!empty($m['archivo_adjunto']) || !empty($m['gasto_archivo'])))));
 $hoyD = new DateTime('today');
 $rangos = [
     'Este mes' => [$hoyD->format('Y-m-01'), $hoyD->format('Y-m-t')],
@@ -128,7 +130,8 @@ require_once '../../includes/templates/header.php';
                         <td class="text-nowrap" data-sort="<?= $m['fecha'] ?> <?= str_pad((string)$m['id'], 9, '0', STR_PAD_LEFT) ?>"><?= date('d/m/Y', strtotime($m['fecha'])) ?></td>
                         <td><span class="app-badge app-badge-muted"><?= $etiquetasTipo[$m['tipo']] ?? $m['tipo'] ?></span></td>
                         <td><?= htmlspecialchars($m['descripcion']) ?>
-                            <?php if (!empty($m['archivo_adjunto'])): ?> <a href="movimiento_archivo?id=<?= (int)$m['id'] ?>" target="_blank" class="text-secondary" title="Ver comprobante"><i class="bi bi-paperclip"></i></a><?php endif; ?>
+                            <?php if (!empty($m['archivo_adjunto'])): ?> <a href="movimiento_archivo?id=<?= (int)$m['id'] ?>" target="_blank" class="text-secondary" title="Ver comprobante"><i class="bi bi-paperclip"></i></a>
+                            <?php elseif (!empty($m['gasto_archivo'])): ?> <a href="gasto_archivo?id=<?= (int)$m['gasto_id'] ?>" target="_blank" class="text-secondary" title="Ver comprobante del gasto"><i class="bi bi-paperclip"></i></a><?php endif; ?>
                             <?php if (!empty($m['gasto_id'])): ?> <a href="gasto_ver?id=<?= (int)$m['gasto_id'] ?>" class="app-badge app-badge-muted text-decoration-none" title="Ver el gasto">Gasto #<?= (int)$m['gasto_id'] ?></a><?php endif; ?><?= $m['tasa_cambio'] ? ' <small class="text-muted">(tasa ' . rtrim(rtrim(number_format((float)$m['tasa_cambio'], 4), '0'), '.') . ')</small>' : '' ?><?= $anul ? ' <span class="app-badge app-badge-danger">Anulado</span>' : '' ?></td>
                         <td class="small font-monospace"><?= htmlspecialchars($m['referencia'] ?? '') ?></td>
                         <td class="app-num text-success" data-sort="<?= $m['sentido'] === 'entrada' ? (float)$m['monto'] : 0 ?>"><?= $m['sentido'] === 'entrada' ? bancoMoneda((float)$m['monto'], $mon) : '' ?></td>

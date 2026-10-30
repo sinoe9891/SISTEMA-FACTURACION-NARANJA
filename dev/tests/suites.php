@@ -207,6 +207,11 @@ suite('Gastos: comprobantes y recurrencia', function () {
     check('al editarlo se mueve la salida (y su Ley Poblacional) a la cuenta B', ($r['json']['success'] ?? false) && !$movDe($ctaA) && count($movDe($ctaB)) === 2 && (float)$movDe($ctaB)[1]['monto'] === 4.0, $r['body'] . json_encode($movDe($ctaB)));
     $r = $c->post('includes/gasto_actualizar.php', $edit + ['cuenta_id' => '']);
     check('«No registrar en banco» quita la salida y su Ley Poblacional', ($r['json']['success'] ?? false) && !$movDe($ctaB), $r['body']);
+    // Dos pagos en una sola transferencia (misma fecha y referencia): una Ley Poblacional sobre el total, como el banco
+    foreach (['QA seguro sept', 'QA seguro oct'] as $dsc)
+        $c->post('includes/gasto_guardar.php', array_merge($base, ['descripcion' => $dsc, 'monto' => 2047.80, 'fecha' => date('Y-m-d'), 'frecuencia' => 'unico', 'estado' => 'pagado', 'metodo_pago' => 'transferencia', 'cuenta_id' => $ctaA, 'factura_ref' => 'REF-QA-202']));
+    $lpA = db()->query("SELECT monto FROM movimientos_bancarios WHERE cuenta_id = $ctaA AND anulado = 0 AND tipo = 'comision'")->fetchAll(PDO::FETCH_COLUMN);
+    check('dos pagos en una transferencia pagan una sola Ley Poblacional sobre el total (L 10, no 6 + 6)', count($lpA) === 1 && (float)$lpA[0] === 10.0, json_encode($lpA));
     db()->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id IN ($ctaA, $ctaB)"); db()->exec("DELETE FROM gastos WHERE factura_ref LIKE 'LP-$ctaA-%' OR factura_ref LIKE 'LP-$ctaB-%'"); db()->exec("DELETE FROM cuentas_bancarias WHERE id IN ($ctaA, $ctaB)");
 
     // Quincenas: editar con "actualizar grupo" no pisa fecha/estado/descripcion de la otra
