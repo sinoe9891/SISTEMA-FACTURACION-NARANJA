@@ -195,6 +195,20 @@ suite('Gastos: comprobantes y recurrencia', function () {
     $sigP = db()->query("SELECT fecha, estado FROM gastos WHERE descripcion='QA seguro pagado' AND id <> " . (int)($r['json']['gasto_id'] ?? 0))->fetchAll(PDO::FETCH_ASSOC);
     check('mensual registrado pagado programa el siguiente', count($sigP) === 1 && $sigP[0]['fecha'] === '2026-10-30' && $sigP[0]['estado'] === 'pendiente' && str_contains($r['json']['message'] ?? '', '30/10/2026'), json_encode($sigP) . ' ' . substr($r['body'], 0, 200));
 
+    // Editar un gasto pagado: cambiar la cuenta de donde salió (con su Ley Poblacional) o quitar la salida
+    db()->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, titular, moneda, saldo_inicial, fecha_saldo_inicial, activa, ley_poblacional) VALUES (2,'QA','ahorro','QA-A','QA','HNL',50000,'2020-01-01',1,1), (2,'QA','ahorro','QA-B','QA','HNL',50000,'2020-01-01',1,1)");
+    $ctaB = (int)db()->lastInsertId() + 1; $ctaA = $ctaB - 1;
+    $r = $c->post('includes/gasto_guardar.php', array_merge($base, ['descripcion' => 'QA mover cuenta', 'monto' => 1600, 'frecuencia' => 'unico', 'estado' => 'pagado', 'metodo_pago' => 'transferencia', 'cuenta_id' => $ctaA]));
+    $gm = (int)($r['json']['gasto_id'] ?? 0);
+    $movDe = fn($cta) => db()->query("SELECT tipo, monto FROM movimientos_bancarios WHERE cuenta_id = $cta AND anulado = 0 ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+    check('el gasto pagado sale de la cuenta A con su Ley Poblacional', count($movDe($ctaA)) === 2, json_encode($movDe($ctaA)));
+    $edit = ['gasto_id' => $gm, 'descripcion' => 'QA mover cuenta', 'monto' => 1600, 'fecha' => date('Y-m-d'), 'frecuencia' => 'unico', 'tipo' => 'variable', 'metodo_pago' => 'transferencia', 'categoria_id' => $cat, 'estado' => 'pagado', 'cuenta_editar' => 1];
+    $r = $c->post('includes/gasto_actualizar.php', $edit + ['cuenta_id' => $ctaB]);
+    check('al editarlo se mueve la salida (y su Ley Poblacional) a la cuenta B', ($r['json']['success'] ?? false) && !$movDe($ctaA) && count($movDe($ctaB)) === 2 && (float)$movDe($ctaB)[1]['monto'] === 4.0, $r['body'] . json_encode($movDe($ctaB)));
+    $r = $c->post('includes/gasto_actualizar.php', $edit + ['cuenta_id' => '']);
+    check('«No registrar en banco» quita la salida y su Ley Poblacional', ($r['json']['success'] ?? false) && !$movDe($ctaB), $r['body']);
+    db()->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id IN ($ctaA, $ctaB)"); db()->exec("DELETE FROM gastos WHERE factura_ref LIKE 'LP-$ctaA-%' OR factura_ref LIKE 'LP-$ctaB-%'"); db()->exec("DELETE FROM cuentas_bancarias WHERE id IN ($ctaA, $ctaB)");
+
     // Quincenas: editar con "actualizar grupo" no pisa fecha/estado/descripcion de la otra
     $r = $c->post('includes/gasto_guardar.php', array_merge($base, ['descripcion' => 'QA quincena', 'frecuencia' => 'quincenal', 'dia_pago' => 15, 'dia_pago_2' => 30, 'estado' => 'pendiente', 'fecha' => date('Y-m-15')]));
     [$q1, $q2] = $r['json']['ids_creados'] ?? [0, 0];

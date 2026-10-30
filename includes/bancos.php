@@ -281,6 +281,36 @@ function bancoTransferir(PDO $pdo, int $cid, int $usuario, array $d): array
     return [$monto, $montoDestino];
 }
 
+/**
+ * Cambia (o quita, con $cuentaId = 0) la cuenta de donde salió el pago de un gasto: anula su salida (y su Ley Poblacional)
+ * y la vuelve a registrar en la cuenta elegida. También la rehace si cambió el monto o la fecha del gasto.
+ * Devuelve true si cambió algo.
+ */
+function bancoGastoCambiarCuenta(PDO $pdo, int $cid, int $gastoId, int $cuentaId, int $usuario): bool
+{
+    if (!bancosDisponible($pdo)) return false;
+    $st = $pdo->prepare("SELECT * FROM movimientos_bancarios WHERE cliente_id = ? AND gasto_id = ? AND anulado = 0 AND tipo <> 'comision'");
+    $st->execute([$cid, $gastoId]);
+    $movs = $st->fetchAll(PDO::FETCH_ASSOC);
+    $st = $pdo->prepare("SELECT monto, fecha, estado FROM gastos WHERE id = ? AND cliente_id = ?");
+    $st->execute([$gastoId, $cid]);
+    $g = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$g) return false;
+    if ($g['estado'] !== 'pagado') $cuentaId = 0;
+    if (count($movs) === 1 && (int)$movs[0]['cuenta_id'] === $cuentaId && abs((float)$movs[0]['monto'] - (float)$g['monto']) < 0.005 && $movs[0]['fecha'] === $g['fecha']) return false;
+    if (!$movs && !$cuentaId) return false;
+    $cuentas = [];
+    foreach ($movs as $m) {
+        if ((int)$m['conciliado']) throw new Exception("La salida del banco de este gasto ya está conciliada: quita la conciliación antes de cambiarla.");
+        if ($m['cheque_id']) throw new Exception("Este gasto se pagó con cheque: cámbialo desde la chequera.");
+        $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ?")->execute([(int)$m['id']]);
+        $cuentas[(int)$m['cuenta_id']] = true;
+    }
+    foreach (array_keys($cuentas) as $k) bancoLeyPoblacionalSincronizar($pdo, $cid, $k, $usuario);
+    if ($cuentaId) bancoSalidaGasto($pdo, $cid, $gastoId, $cuentaId, $usuario);
+    return true;
+}
+
 /** Anula un movimiento (y su pareja si es transferencia). Los de cheques se anulan desde el cheque. */
 function bancoAnularMovimiento(PDO $pdo, int $cid, int $movId): void
 {

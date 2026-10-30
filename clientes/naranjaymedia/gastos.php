@@ -108,7 +108,7 @@ if ($gcDisponible) {
 
 /* ── Gastos con filtros ───────────────────────────────────────────────────── */
 $sql    = "SELECT g.*, cg.nombre AS cat_nombre, cg.color AS cat_color, cg.icono AS cat_icono" . ($gcDisponible ? ", fc.correlativo AS cobrado_correlativo" : '')
-           . ($cuentas_pago ? ", (SELECT CONCAT(b.banco, ' ', b.numero) FROM movimientos_bancarios m JOIN cuentas_bancarias b ON b.id = m.cuenta_id WHERE m.gasto_id = g.id AND m.anulado = 0 LIMIT 1) AS banco_salida" : ", NULL AS banco_salida") . "
+           . ($cuentas_pago ? ", (SELECT CONCAT(b.banco, ' ', b.numero) FROM movimientos_bancarios m JOIN cuentas_bancarias b ON b.id = m.cuenta_id WHERE m.gasto_id = g.id AND m.anulado = 0 LIMIT 1) AS banco_salida, (SELECT m.cuenta_id FROM movimientos_bancarios m WHERE m.gasto_id = g.id AND m.anulado = 0 AND m.tipo <> 'comision' LIMIT 1) AS banco_salida_id" : ", NULL AS banco_salida, NULL AS banco_salida_id") . "
            FROM gastos g LEFT JOIN categorias_gastos cg ON cg.id=g.categoria_id" . ($gcDisponible ? " LEFT JOIN facturas fc ON fc.id = g.cobrado_factura_id" : '') . "
            WHERE g.cliente_id=? AND g.fecha BETWEEN ? AND ?";
 $params = [$cliente_id, $fecha_ini, $fecha_fin];
@@ -1258,6 +1258,7 @@ $total  = count($gastos);
                                 <option value="">— No registrar en banco —</option>
                                 <?php foreach ($cuentas_pago as $cp): ?><option value="<?= (int)$cp['id'] ?>"><?= htmlspecialchars($cp['banco'] . ' ' . $cp['numero']) ?></option><?php endforeach; ?>
                             </select>
+                            <input type="hidden" name="cuenta_editar" id="g_cuenta_editar" value="">
                             <div id="g_cuenta_ya" class="small text-success mt-1" style="display:none"></div>
                             <small class="text-muted" style="font-size:.72rem">Si eliges una cuenta, el pago queda como salida en Bancos.</small>
                         </div>
@@ -1677,9 +1678,13 @@ $total  = count($gastos);
         if (gc) {
             const ya = gc.dataset.ya || '';
             gc.style.display = document.getElementById('g_estado').value === 'pagado' && m !== 'tarjeta' ? '' : 'none';
-            document.getElementById('g_cuenta').style.display = ya ? 'none' : '';
+            // Ya salió del banco: se puede cambiar la cuenta o quitar la salida («No registrar en banco»)
+            const selC = document.getElementById('g_cuenta'), cambio = ya && selC.value !== (gc.dataset.yaId || '');
             document.getElementById('g_cuenta_ya').style.display = ya ? '' : 'none';
-            document.getElementById('g_cuenta_ya').innerHTML = ya ? '<i class="bi bi-bank me-1"></i>Ya salió de ' + ya.replace(/[<>&"]/g, '') : '';
+            document.getElementById('g_cuenta_ya').className = 'small mt-1 ' + (cambio ? 'text-warning' : 'text-success');
+            document.getElementById('g_cuenta_ya').innerHTML = !ya ? '' : cambio
+                ? '<i class="bi bi-arrow-left-right me-1"></i>' + (selC.value ? 'La salida (y su Ley Poblacional) pasa de ' + ya.replace(/[<>&"]/g, '') + ' a la cuenta elegida.' : 'Se quita la salida de ' + ya.replace(/[<>&"]/g, '') + ' (y su Ley Poblacional).')
+                : '<i class="bi bi-bank me-1"></i>Salió de ' + ya.replace(/[<>&"]/g, '') + '. Si la cambiás, se mueve la salida.';
         }
         // Info de anual
         const help = document.getElementById('frec_help');
@@ -1692,6 +1697,7 @@ $total  = count($gastos);
     document.getElementById('g_frec').addEventListener('change', toggleCamposGasto);
     document.getElementById('g_metodo').addEventListener('change', toggleCamposGasto);
     document.getElementById('g_estado').addEventListener('change', toggleCamposGasto);
+    document.getElementById('g_cuenta')?.addEventListener('change', toggleCamposGasto);
 
     // Cuando se selecciona un colaborador, auto-fill proveedor si está vacío
     document.getElementById('g_colab').addEventListener('change', function() {
@@ -1709,7 +1715,7 @@ $total  = count($gastos);
 
     function limpiarModalGasto() {
         const gcNu = document.getElementById('grpCuentaGasto');
-        if (gcNu) gcNu.dataset.ya = '';
+        if (gcNu) { gcNu.dataset.ya = ''; gcNu.dataset.yaId = ''; document.getElementById('g_cuenta_editar').value = ''; }
         document.getElementById('formGasto').reset();
         document.getElementById('g_id').value = '';
         document.getElementById('g_fecha').value = new Date().toISOString().slice(0, 10);
@@ -1780,7 +1786,8 @@ $total  = count($gastos);
             document.getElementById('g_colab').value =
                 ''; // Colaborador no guardado en gastos directamente (usa proveedor)
             const gcEd = document.getElementById('grpCuentaGasto');
-            if (gcEd) { gcEd.dataset.ya = g.banco_salida || ''; document.getElementById('g_cuenta').value = ''; }
+            if (gcEd) { gcEd.dataset.ya = g.banco_salida_id ? (g.banco_salida || '') : ''; gcEd.dataset.yaId = g.banco_salida_id ? String(g.banco_salida_id) : '';
+                document.getElementById('g_cuenta').value = gcEd.dataset.yaId; document.getElementById('g_cuenta_editar').value = gcEd.dataset.yaId ? '1' : ''; }
             document.getElementById('g_metodo').value = g.metodo_pago || 'efectivo';
             document.getElementById('g_metodo').dispatchEvent(new Event('change'));
             if (g.tarjeta_id) document.getElementById('g_tarjeta').value = g.tarjeta_id;

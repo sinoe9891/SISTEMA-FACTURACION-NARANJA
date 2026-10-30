@@ -171,9 +171,13 @@ try {
         }
     // El pago salió de una cuenta bancaria: queda la salida en Bancos (no se duplica si ya la tiene)
         $cuentaSalida = (int)($_POST['cuenta_id'] ?? 0);
-        if ($cuentaSalida && ($_POST['metodo_pago'] ?? '') !== 'tarjeta') {
-            require_once __DIR__ . '/../../../includes/bancos.php';
-            foreach ([$gasto_id] as $idSal) bancoSalidaGasto($pdo, $cid, (int)$idSal, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
+        if (($_POST['metodo_pago'] ?? '') === 'tarjeta') $cuentaSalida = 0;   // lo de tarjeta sale al pagar la tarjeta
+        require_once __DIR__ . '/../../../includes/bancos.php';
+        if (!empty($_POST['cuenta_editar'])) {
+            // Ya tenía salida del banco: se cambia de cuenta, se quita («No registrar en banco») o se rehace si cambió monto/fecha
+            bancoGastoCambiarCuenta($pdo, $cid, $gasto_id, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
+        } elseif ($cuentaSalida) {
+            bancoSalidaGasto($pdo, $cid, $gasto_id, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
         }
         $pdo->commit();
         $mensaje = 'Ambas quincenas del grupo actualizadas correctamente.';
@@ -245,9 +249,13 @@ try {
         proveedorVincular($pdo, $cid, 'gastos', [$gasto_id], $gastoActual['proveedor'] ?? null);
         // El pago salió de una cuenta bancaria: queda la salida en Bancos (no se duplica si ya la tiene)
         $cuentaSalida = (int)($_POST['cuenta_id'] ?? 0);
-        if ($cuentaSalida && ($_POST['metodo_pago'] ?? '') !== 'tarjeta') {
-            require_once __DIR__ . '/../../../includes/bancos.php';
-            foreach ([$gasto_id] as $idSal) bancoSalidaGasto($pdo, $cid, (int)$idSal, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
+        if (($_POST['metodo_pago'] ?? '') === 'tarjeta') $cuentaSalida = 0;   // lo de tarjeta sale al pagar la tarjeta
+        require_once __DIR__ . '/../../../includes/bancos.php';
+        if (!empty($_POST['cuenta_editar'])) {
+            // Ya tenía salida del banco: se cambia de cuenta, se quita («No registrar en banco») o se rehace si cambió monto/fecha
+            bancoGastoCambiarCuenta($pdo, $cid, $gasto_id, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
+        } elseif ($cuentaSalida) {
+            bancoSalidaGasto($pdo, $cid, $gasto_id, $cuentaSalida, (int)($_SESSION['usuario_id'] ?? 0));
         }
         $pdo->commit();
         $mensaje = 'Gasto actualizado correctamente.';
