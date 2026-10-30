@@ -198,11 +198,29 @@ try {
     require_once __DIR__ . '/../../../includes/proveedores.php';
     proveedorVincular($pdo, $cid, 'gastos', $ids_creados);
 
+    // Recurrente (mensual, quincenal, anual) registrado ya pagado: se programa el del período siguiente, igual que al pagarlo
+    $siguiente = null;
+    if ($estado === 'pagado' && in_array($frecuencia, ['mensual', 'quincenal', 'anual'], true)) {
+        require_once __DIR__ . '/_gasto_recurrencia.php';
+        $stG = $pdo->prepare("SELECT * FROM gastos WHERE id = ? AND cliente_id = ?");
+        foreach ($ids_creados as $idG) {
+            $stG->execute([(int)$idG, $cid]);
+            if ($g = $stG->fetch(PDO::FETCH_ASSOC))
+                $siguiente = programarSiguienteGastoRecurrente($pdo, ['estado' => 'pendiente'] + $g, $cid, (int)($_SESSION['usuario_id'] ?? 0)) ?? $siguiente;
+        }
+        if ($siguiente) {
+            $nuevos = $pdo->prepare("SELECT id FROM gastos WHERE cliente_id = ? AND gasto_grupo_id IN (" . implode(',', array_map('intval', $ids_creados)) . ") AND estado = 'pendiente'");
+            $nuevos->execute([$cid]);
+            proveedorVincular($pdo, $cid, 'gastos', array_map('intval', $nuevos->fetchAll(PDO::FETCH_COLUMN)));
+        }
+    }
+
     $pdo->commit();
 
     $msg = count($ids_creados) > 1
         ? "Gasto quincenal registrado en " . count($ids_creados) . " registros."
         : "Gasto registrado correctamente.";
+    if ($siguiente) $msg .= " El siguiente quedó programado para el " . date('d/m/Y', strtotime($siguiente)) . ".";
 
     echo json_encode([
         'success'     => true,

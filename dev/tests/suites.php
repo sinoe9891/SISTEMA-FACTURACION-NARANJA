@@ -186,6 +186,11 @@ suite('Gastos: comprobantes y recurrencia', function () {
     $r = $c->post('includes/gasto_marcar_pagado.php', ['gasto_id' => $gid, 'fecha' => date('Y-m-d'), 'metodo_pago' => 'efectivo']);
     check('volver a pagarlo NO duplica el mes siguiente', (int)db()->query("SELECT COUNT(*) FROM gastos WHERE descripcion='QA recurrente' AND fecha=" . db()->quote((string)$sig))->fetchColumn() === 1);
 
+    // Mensual registrado ya pagado: se programa el mes siguiente (pendiente)
+    $r = $c->post('includes/gasto_guardar.php', array_merge($base, ['descripcion' => 'QA seguro pagado', 'frecuencia' => 'mensual', 'dia_pago' => 30, 'estado' => 'pagado', 'fecha' => '2026-09-30']));
+    $sigP = db()->query("SELECT fecha, estado FROM gastos WHERE descripcion='QA seguro pagado' AND id <> " . (int)($r['json']['gasto_id'] ?? 0))->fetchAll(PDO::FETCH_ASSOC);
+    check('mensual registrado pagado programa el siguiente', count($sigP) === 1 && $sigP[0]['fecha'] === '2026-10-30' && $sigP[0]['estado'] === 'pendiente' && str_contains($r['json']['message'] ?? '', '30/10/2026'), json_encode($sigP) . ' ' . substr($r['body'], 0, 200));
+
     // Quincenas: editar con "actualizar grupo" no pisa fecha/estado/descripcion de la otra
     $r = $c->post('includes/gasto_guardar.php', array_merge($base, ['descripcion' => 'QA quincena', 'frecuencia' => 'quincenal', 'dia_pago' => 15, 'dia_pago_2' => 30, 'estado' => 'pendiente', 'fecha' => date('Y-m-15')]));
     [$q1, $q2] = $r['json']['ids_creados'] ?? [0, 0];
