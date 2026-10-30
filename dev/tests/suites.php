@@ -185,6 +185,10 @@ suite('Gastos: comprobantes y recurrencia', function () {
     db()->exec("UPDATE gastos SET estado='pendiente' WHERE id=" . (int)$gid);
     $r = $c->post('includes/gasto_marcar_pagado.php', ['gasto_id' => $gid, 'fecha' => date('Y-m-d'), 'metodo_pago' => 'efectivo']);
     check('volver a pagarlo NO duplica el mes siguiente', (int)db()->query("SELECT COUNT(*) FROM gastos WHERE descripcion='QA recurrente' AND fecha=" . db()->quote((string)$sig))->fetchColumn() === 1);
+    check('pagarlo sin comprobante nuevo conserva el que tenía', db()->query("SELECT archivo_adjunto FROM gastos WHERE id=" . (int)$gid)->fetchColumn() === $arch2);
+    db()->exec("UPDATE gastos SET estado='pendiente' WHERE id=" . (int)$gid);
+    $r = $c->post('includes/gasto_marcar_pagado.php', ['gasto_id' => $gid, 'fecha' => date('Y-m-d'), 'metodo_pago' => 'efectivo', 'quitar_comprobante' => 1]);
+    check('al pagarlo se puede quitar el comprobante (y se borra del disco)', ($r['json']['success'] ?? false) && !db()->query("SELECT archivo_adjunto FROM gastos WHERE id=" . (int)$gid)->fetchColumn() && !is_file(UPLOADS . '/gastos/' . $arch2), substr($r['body'], 0, 150));
 
     // Mensual registrado ya pagado: se programa el mes siguiente (pendiente)
     $r = $c->post('includes/gasto_guardar.php', array_merge($base, ['descripcion' => 'QA seguro pagado', 'frecuencia' => 'mensual', 'dia_pago' => 30, 'estado' => 'pagado', 'fecha' => '2026-09-30']));

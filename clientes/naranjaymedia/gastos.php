@@ -1061,7 +1061,7 @@ $total  = count($gastos);
                                         data-gasto='<?= json_encode($g, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>'
                                         title="Editar"><i class="bi bi-pencil-fill"></i></button>
                                     <?php if ($est === 'pendiente'): ?><button class="btn-a btn-pay btn-pagar-gasto"
-                                            data-id="<?= $g['id'] ?>" title="Marcar pagado"><i
+                                            data-id="<?= $g['id'] ?>" data-comp="<?= htmlspecialchars(empty($g['archivo_adjunto']) ? '' : ($g['archivo_nombre'] ?: 'comprobante')) ?>" title="Marcar pagado"><i
                                                 class="bi bi-check-lg"></i></button><?php endif; ?>
                                     <?php if ($est !== 'anulado'): ?><button class="btn-a btn-anu btn-anular-gasto"
                                             data-id="<?= $g['id'] ?>"
@@ -1812,7 +1812,24 @@ $total  = count($gastos);
         })();
     });
 
-    document.getElementById('btnGuardarGasto').addEventListener('click', () => {
+    document.getElementById('btnGuardarGasto').addEventListener('click', async () => {
+        // Comprobante nuevo en un gasto «Pendiente»: lo normal es que ya esté pagado, se pregunta
+        const estSel = document.getElementById('g_estado');
+        if (estSel.value === 'pendiente' && document.getElementById('gsArchivo').files.length) {
+            const q = await Swal.fire({ icon: 'question', title: 'Adjuntaste un comprobante', html: 'El gasto está como <strong>Pendiente</strong>. ¿Ya está pagado?',
+                showDenyButton: true, showCancelButton: true, confirmButtonText: 'Sí, ya está pagado', denyButtonText: 'No, sigue pendiente', cancelButtonText: 'Volver',
+                confirmButtonColor: '#059669', denyButtonColor: '#64748b' });
+            if (q.isDismissed) return;
+            if (q.isConfirmed) {
+                estSel.value = 'pagado'; toggleCamposGasto();
+                const gc = document.getElementById('grpCuentaGasto');
+                if (gc && gc.style.display !== 'none') {   // falta decir de qué cuenta salió: se revisa y se guarda
+                    gc.scrollIntoView({ behavior: 'smooth', block: 'center' }); document.getElementById('g_cuenta')?.focus();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Marcado como pagado: revisá de qué cuenta salió y guardá.', timer: 3500, showConfirmButton: false });
+                    return;
+                }
+            }
+        }
         const isEdit = !!document.getElementById('g_id').value;
         const btn = document.getElementById('btnGuardarGasto');
         btn.disabled = true;
@@ -1872,7 +1889,12 @@ $total  = count($gastos);
                             </select>
                         </div>
                         <label class="form-label mt-3" for="qp_archivo">Comprobante <span class="text-muted fw-normal">(opcional · JPG, PNG, WEBP o PDF · máx. 5 MB)</span></label>
-                        <input type="file" id="qp_archivo" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf">
+                        ${btn.dataset.comp ? `<div id="qp_actual" class="d-flex align-items-center gap-2 flex-wrap border rounded p-2 mb-2 small bg-light">
+                            <i class="bi bi-paperclip text-success"></i><a href="gasto_archivo?id=${encodeURIComponent(btn.dataset.id)}" target="_blank" class="text-truncate" style="max-width:220px">${btn.dataset.comp.replace(/[<>&"]/g, '')}</a>
+                            <span class="ms-auto d-flex gap-1"><button type="button" class="btn btn-sm btn-outline-primary" id="qp_reemplazar"><i class="bi bi-arrow-repeat"></i> Reemplazar</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="qp_quitar"><i class="bi bi-trash3"></i> Quitar</button></span></div>
+                            <div id="qp_quitado" class="d-none small text-danger mb-2"><i class="bi bi-trash3"></i> Se quitará el comprobante. <a href="#" id="qp_deshacer">Deshacer</a></div>` : ''}
+                        <input type="file" id="qp_archivo" class="form-control${btn.dataset.comp ? ' d-none' : ''}" accept=".jpg,.jpeg,.png,.webp,.pdf">
                     </div>`,
                 showCancelButton: true,
                 confirmButtonColor: '#059669',
@@ -1880,6 +1902,13 @@ $total  = count($gastos);
                 cancelButtonText: 'Cancelar',
                 focusConfirm: false,
                 didOpen: () => {
+                    // Ya tiene comprobante: se ve, y se puede reemplazar o quitar
+                    const act = document.getElementById('qp_actual'), inpA = document.getElementById('qp_archivo'), quitado = document.getElementById('qp_quitado');
+                    if (act) {
+                        document.getElementById('qp_reemplazar').addEventListener('click', () => { inpA.classList.remove('d-none'); inpA.click(); });
+                        document.getElementById('qp_quitar').addEventListener('click', () => { act.classList.add('d-none'); quitado.classList.remove('d-none'); inpA.classList.remove('d-none'); inpA.value = ''; });
+                        document.getElementById('qp_deshacer').addEventListener('click', e => { e.preventDefault(); act.classList.remove('d-none'); quitado.classList.add('d-none'); inpA.classList.add('d-none'); inpA.value = ''; });
+                    }
                     const met = document.getElementById('qp_metodo');
                     met.addEventListener('change', () =>
                         document.getElementById('qp_tarjeta_wrap').classList.toggle('d-none', met.value !== 'tarjeta'));
@@ -1896,6 +1925,7 @@ $total  = count($gastos);
                     fd.append('tarjeta_id', document.getElementById('qp_tarjeta').value);
                     if (document.getElementById('qp_cuenta')) fd.append('cuenta_id', document.getElementById('qp_cuenta').value);
                     if (arch) fd.append('archivo_adjunto', arch);
+                    else if (document.getElementById('qp_quitado') && !document.getElementById('qp_quitado').classList.contains('d-none')) fd.append('quitar_comprobante', '1');
                     return fetch('includes/gasto_marcar_pagado.php', {
                         method: 'POST',
                         body: fd

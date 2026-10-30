@@ -51,6 +51,8 @@ try {
     if ($notas)                { $sets[] = 'notas=?';       $params[] = $notas; }
     if ($arch_adj)             { $sets[] = 'archivo_adjunto=?'; $params[] = $arch_adj;
                                  $sets[] = 'archivo_nombre=?';  $params[] = $arch_nom; }
+    $quitar = !$arch_adj && !empty($_POST['quitar_comprobante']) && !empty($gastoActual['archivo_adjunto']);
+    if ($quitar)               { $sets[] = 'archivo_adjunto=NULL'; $sets[] = 'archivo_nombre=NULL'; }
     $params[] = $gasto_id;
     $params[] = $cid;
 
@@ -74,7 +76,7 @@ try {
     $siguiente  = programarSiguienteGastoRecurrente($pdo, $gastoActual, $cid, $usuario_id);
     $pdo->commit();
     // Si se reemplazó el comprobante, borrar el anterior si ya nadie lo usa
-    if ($arch_adj && $gastoActual['archivo_adjunto'] !== $arch_adj) borrarAdjuntoGastoSiHuerfano($pdo, $gastoActual['archivo_adjunto']);
+    if (($arch_adj && $gastoActual['archivo_adjunto'] !== $arch_adj) || $quitar) borrarAdjuntoGastoSiHuerfano($pdo, $gastoActual['archivo_adjunto']);
 
     $msg = 'Gasto marcado como pagado.';
     if ($siguiente) $msg .= ' Se programó el siguiente pago para el ' . date('d/m/Y', strtotime($siguiente)) . '.';
