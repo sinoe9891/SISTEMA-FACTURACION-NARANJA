@@ -340,10 +340,10 @@ require_once '../../includes/templates/header.php';
                             <div class="alert alert-warning mb-0 py-2 small">
                                 <div class="fw-semibold mb-1"><i class="bi bi-arrow-repeat me-1"></i>Gastos de cobrarle a este cliente</div>
                                 <?php foreach ($gcLista as $g): ?>
-                                <div class="form-check"><input class="form-check-input" type="checkbox" name="gastos_cobrar[]" value="<?= (int)$g['id'] ?>" id="gc<?= (int)$g['id'] ?>" <?= $g['marcado'] ? 'checked' : '' ?>>
+                                <div class="form-check"><input class="form-check-input" type="checkbox" name="gastos_cobrar[]" value="<?= (int)$g['id'] ?>" id="gc<?= (int)$g['id'] ?>" data-desc="<?= $gcE($g['descripcion']) ?>" data-precio="<?= $g['precio'] ?? $g['monto'] ?>" <?= $g['marcado'] ? 'checked' : '' ?>>
                                     <label class="form-check-label" for="gc<?= (int)$g['id'] ?>"><?= $gcE($g['descripcion']) ?> · <?= date('d/m/Y', strtotime($g['fecha'])) ?> · costo <strong>L <?= number_format($g['monto'], 2) ?></strong><?= $g['precio'] !== null ? ' → cobrar <strong>L ' . number_format($g['precio'], 2) . '</strong> (+' . rtrim(rtrim(number_format($g['pct'], 2), '0'), '.') . ' %)' : '' ?><?= $g['marcado'] ? ' <span class="badge text-bg-success">cobrado en esta factura</span>' : '' ?></label></div>
                                 <?php endforeach; ?>
-                                <div class="text-muted mt-1">Agrega la línea en el detalle y marca aquí los que incluyes. Si desmarcas uno, vuelve a quedar pendiente de cobrar.</div>
+                                <div class="text-muted mt-1">Al marcarlo se agrega su línea al detalle (revisa producto y precio). Si desmarcas uno, vuelve a quedar pendiente de cobrar.</div>
                             </div>
                         </div>
                         <?php endif; ?>
@@ -610,9 +610,12 @@ require_once '../../includes/templates/header.php';
 </div>
 
 <script src="../../clientes/js/moneda-factura.js?v=<?= @filemtime(__DIR__ . '/../js/moneda-factura.js') ?>"></script>
+<script src="../../clientes/js/gastos-cobrar-filas.js?v=<?= @filemtime(__DIR__ . '/../js/gastos-cobrar-filas.js') ?>"></script>
 <script>
 	// Moneda de los precios (en dólares se convierten el precio unitario y el subtotal de cada línea)
 	const MF = MonedaFactura({ precios: () => [...document.querySelectorAll('#productos-container input.precio-unitario, #productos-container input.subtotal-producto')], recalcular: () => calcularTotalYLetra() });
+	// Gastos de cobrarle al cliente: al marcarlo se agrega su línea al detalle (y al desmarcarlo se quita)
+	GastosCobrarFilas({ agregar: () => document.getElementById('agregar-producto').click(), recalcular: () => calcularTotalYLetra(), aMoneda: l => MF.desdeLempiras(l) });
 	/* ── Exoneración ─────────────────────────────────────────────────────────── */
 	document.getElementById('exonerado').addEventListener('change', function() {
 		document.getElementById('campos-exoneracion').style.display = this.checked ? 'block' : 'none';
@@ -627,6 +630,7 @@ require_once '../../includes/templates/header.php';
 		if (!baseItem) baseItem = template.querySelector('.producto-item');
 		if (!baseItem) return;
 		const nuevo = baseItem.cloneNode(true);
+		delete nuevo.dataset.gc;   // la línea de un gasto por cobrar es solo la original
 		const index = contenedor.children.length;
 		nuevo.querySelectorAll('input,select,textarea').forEach(el => {
 			if (el.name?.includes('[cantidad]')) el.value = 1;

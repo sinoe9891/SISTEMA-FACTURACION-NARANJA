@@ -375,7 +375,7 @@ require_once '../../includes/templates/header.php';
                                 <div class="alert alert-warning mb-0 py-2 small">
                                     <div class="fw-semibold mb-1"><i class="bi bi-arrow-repeat me-1"></i>Gastos pendientes de cobrarle a este cliente</div>
                                     <div id="listaGastosCobrar"></div>
-                                    <div class="text-muted mt-1" id="gcAyuda">Agrega la línea en el detalle y marca aquí los que incluyes: al guardar quedan como cobrados en esta factura.</div>
+                                    <div class="text-muted mt-1" id="gcAyuda">Al marcarlo se agrega su línea al detalle (revisa producto y precio); al guardar queda como cobrado en esta factura.</div>
                                     <div class="mt-1" id="gcOperativos"></div>
                                 </div>
                             </div>
@@ -528,6 +528,7 @@ require_once '../../includes/templates/header.php';
 </div>
 
 <script src="../../clientes/js/moneda-factura.js?v=<?= @filemtime(__DIR__ . '/../js/moneda-factura.js') ?>"></script>
+<script src="../../clientes/js/gastos-cobrar-filas.js?v=<?= @filemtime(__DIR__ . '/../js/gastos-cobrar-filas.js') ?>"></script>
 <script>
     const CLIENTE_ID = <?= json_encode($cliente_id) ?>;
     const CONTRATOS_FACTURA = <?= json_encode($contratosFactura, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
@@ -545,10 +546,12 @@ require_once '../../includes/templates/header.php';
         document.getElementById('gcOperativos').innerHTML = op ? `<i class="bi bi-hourglass-split me-1"></i>Además hay <strong>${op.n}</strong> gasto${op.n > 1 ? 's' : ''} operativo${op.n > 1 ? 's' : ''} por aprobar (L ${op.l.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}): apruébalos para poder cobrarlos. <a href="gastos_operativos?estado=pendiente&desde=2000-01-01&cuenta=${op.cuenta}" target="_blank">Revisarlos</a>` : '';
         const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         document.getElementById('listaGastosCobrar').innerHTML = lista.map(g => `<div class="form-check">
-            <input class="form-check-input" type="checkbox" name="gastos_cobrar[]" value="${g.id}" id="gc${g.id}">
+            <input class="form-check-input" type="checkbox" name="gastos_cobrar[]" value="${g.id}" id="gc${g.id}" data-desc="${esc(g.descripcion)}" data-precio="${g.precio !== null ? g.precio : g.monto}"${document.querySelector(`.producto-item[data-gc="${g.id}"]`) ? ' checked' : ''}>
             <label class="form-check-label" for="gc${g.id}">${esc(g.descripcion)} · ${g.fecha.split('-').reverse().join('/')} · costo <strong>L ${g.monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>${g.precio !== null ? ` → cobrar <strong>L ${g.precio.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> (+${g.pct} %)` : ''}</label></div>`).join('');
     }
     if (document.getElementById('receptor_id').value) pintarGastosCobrar(document.getElementById('receptor_id').value);
+    // Al marcar un gasto se agrega su línea al detalle (y al desmarcarlo se quita)
+    GastosCobrarFilas({ agregar: () => document.getElementById('agregar-producto').click(), recalcular: () => calcularTotales(), aMoneda: l => MF.desdeLempiras(l) });
 
     /* ── Cambio de receptor ──────────────────────────────────────────────────── */
     document.getElementById('receptor_id').addEventListener('change', function() {
@@ -620,6 +623,7 @@ require_once '../../includes/templates/header.php';
     document.getElementById('agregar-producto').addEventListener('click', () => {
         const cont = document.getElementById('productos-container');
         const nuevo = cont.children[0].cloneNode(true);
+        delete nuevo.dataset.gc;   // la línea de un gasto por cobrar es solo la original
         nuevo.querySelectorAll('input,select,textarea').forEach(el => {
             if (el.name?.includes('productos')) el.name = el.name.replace(/\[\d+\]/, `[${productoIndex}]`);
             if (el.tagName === 'INPUT') el.value = el.name?.includes('cantidad') ? 1 : '';
