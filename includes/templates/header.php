@@ -156,6 +156,8 @@ $primerNombre = explode(' ', USUARIO_NOMBRE)[0];
 	<link rel="stylesheet" href="../../clientes/css/app.css?v=<?= @filemtime($__cssDir . 'app.css') ?>">
 	<script>
 		window.APP_BASE = "<?= rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\') ?>";
+		// Una ventanita (SweetAlert) abierta encima de un modal de Bootstrap: el modal no le roba el foco (si no, no deja escribir en sus campos)
+		window.addEventListener('focusin', e => { if (e.target.closest && e.target.closest('.swal2-container')) e.stopImmediatePropagation(); }, true);
 		// Orden de las tablas: montos («l 1,234.56», «7,000») como número y fechas dd/mm/aaaa como fecha; lo demás como texto
 		window.tablaComparar = function (a, b) {
 			const val = t => {
