@@ -624,16 +624,29 @@ require_once '../../includes/templates/header.php';
     });
     document.getElementById('productos-container').addEventListener('input', calcularTotales);
 
-    /* ── Contrato → sugerir monto ────────────────────────────────────────────── */
-    document.getElementById('contrato_id').addEventListener('change', function() {
+    /* ── Contrato → su servicio y monto en la primera línea ───────────────────── */
+    document.getElementById('contrato_id').addEventListener('change', async function() {
+        const ct = CONTRATOS_FACTURA.find(c => String(c.id) === this.value);
+        if (!ct) return;
         const m = MF.desdeLempiras(parseFloat(this.selectedOptions[0]?.dataset.monto) || 0);
-        if (m > 0) {
-            const inp = document.querySelector('input[name="productos[0][precio]"]');
-            if (inp && !parseFloat(inp.value)) {
-                inp.value = m.toFixed(2);
-                calcularTotales();
-            }
+        const fila = document.querySelector('#productos-container .producto-item');
+        const sel = fila.querySelector('select[name$="[id]"]'), pr = fila.querySelector('input[name$="[precio]"]');
+        // Si la primera línea ya tiene otro servicio, se pregunta antes de cambiarla
+        if (sel.value && String(sel.value) !== String(ct.producto_id || '')) {
+            const r = await Swal.fire({ icon: 'question', title: '¿Poner el servicio del contrato en la primera línea?',
+                text: 'La primera línea ya tiene otro producto o servicio.', showCancelButton: true, confirmButtonText: 'Sí, reemplazarla', cancelButtonText: 'No, dejarla' });
+            if (!r.isConfirmed) return;
         }
+        if (ct.producto_id) {
+            if ([...sel.options].some(o => o.value === String(ct.producto_id))) {
+                sel.value = String(ct.producto_id);
+                sel.dispatchEvent(new Event('change', { bubbles: true }));   // precio de catálogo; abajo se pone el del contrato
+            } else Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'El servicio del contrato no está en la lista: elegilo en la primera línea.', timer: 3500, showConfirmButton: false });
+        }
+        const cant = fila.querySelector('input[name$="[cantidad]"]');
+        if (cant) cant.value = 1;
+        if (m > 0) pr.value = m.toFixed(2);
+        calcularTotales();
     });
 
     /* ── Agregar / quitar líneas ─────────────────────────────────────────────── */
