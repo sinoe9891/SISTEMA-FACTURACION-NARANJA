@@ -46,7 +46,7 @@ suite('Asociación de contrato al editar factura', function () {
         $c->post('guardar_factura_editada.php',['condicion_pago'=>'credito']+$base);
         $pg=$c->get('editar_factura',['id'=>$fid]);
         check('crédito guardado sale seleccionado al editar', $campo('condicion_pago')==='credito' && str_contains($pg['body'],'value="credito" selected') && !str_contains($pg['body'],'value="contado" selected'));
-        check('fecha de emisión propuesta es hoy', str_contains($pg['body'],'name="fecha_emision" id="fechaEmision"') && str_contains($pg['body'],'value="'.date('Y-m-d').'T'));
+        check('fecha de emisión: se conserva la guardada si sigue el orden', str_contains($pg['body'],'name="fecha_emision" id="fechaEmision"') && (str_contains($pg['body'],'Fecha guardada de la factura.') || str_contains($pg['body'],'(no sigue el orden)')));
         $c->post('guardar_factura_editada.php',['condicion_pago'=>'contado']+$base);
         check('contado guardado', $campo('condicion_pago')==='contado');
         $fut=date('Y-m-d H:i',strtotime('+1 day'));

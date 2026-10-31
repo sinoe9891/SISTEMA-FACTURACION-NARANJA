@@ -38,7 +38,7 @@ $facturaDeclarada = ($factura['estado_declarada'] == 1 || $factura['estado_decla
 // admin solo si NO está declarada; superadmin siempre puede (con advertencia)
 $puedeEditarReceptor = $es_superadmin || ($es_admin && !$facturaDeclarada);
 
-$stmtClientes = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cliente_id=?");
+$stmtClientes = $pdo->prepare("SELECT id, nombre, nombre_comercial FROM clientes_factura WHERE cliente_id=?");
 $stmtClientes->execute([$cliente_id]);
 $clientes = $stmtClientes->fetchAll();
 
@@ -312,7 +312,7 @@ require_once '../../includes/templates/header.php';
 							data-original="<?= $factura['receptor_id'] ?>" <?= $puedeEditarReceptor ? '' : 'disabled' ?>>
 							<?php foreach ($clientes as $cl): ?>
 								<option value="<?= $cl['id'] ?>" <?= $cl['id'] == $factura['receptor_id'] ? 'selected' : '' ?>>
-									<?= htmlspecialchars($cl['nombre']) ?></option>
+									<?= htmlspecialchars($cl['nombre']) ?><?= !empty($cl['nombre_comercial']) ? ' · ' . htmlspecialchars($cl['nombre_comercial']) : '' ?></option>
 							<?php endforeach; ?>
 						</select>
 						<?php if ($puedeEditarReceptor): ?>
@@ -368,11 +368,14 @@ require_once '../../includes/templates/header.php';
 						<div class="row g-3">
 							<div class="col-md-6">
 								<label class="fe-form-label">Fecha de emisión</label>
-								<?php // Propone la fecha de hoy; se puede cambiar y debajo se revisa el orden con la anterior y la siguiente ?>
+								<?php // Si la fecha guardada sigue el orden con la anterior y la siguiente se conserva; si no, se propone la de hoy y debajo se explica y se sugiere otra
+								$feGuardada = date('Y-m-d H:i', strtotime($factura['fecha_emision']));
+								$feEnOrden = (!$fechaVecinas['anterior'] || $feGuardada >= $fechaVecinas['anterior']['fecha'])
+									&& (!$fechaVecinas['siguiente'] || $feGuardada <= $fechaVecinas['siguiente']['fecha']); ?>
 								<input type="datetime-local" name="fecha_emision" id="fechaEmision" class="form-control"
-									value="<?= date('Y-m-d\TH:i') ?>"
+									value="<?= $feEnOrden ? date('Y-m-d\TH:i', strtotime($feGuardada)) : date('Y-m-d\TH:i') ?>"
 									<?= !$es_admin ? 'readonly' : '' ?>>
-								<div class="form-text">Fecha que tenía: <?= date('d/m/Y h:i a', strtotime($factura['fecha_emision'])) ?></div>
+								<div class="form-text"><?= $feEnOrden ? 'Fecha guardada de la factura.' : 'Fecha que tenía: ' . date('d/m/Y h:i a', strtotime($factura['fecha_emision'])) . ' (no sigue el orden).' ?></div>
 							</div>
 							<div class="col-md-6">
 								<label class="fe-form-label">Condición de pago</label>

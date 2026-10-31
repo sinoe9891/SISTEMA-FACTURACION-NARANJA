@@ -34,6 +34,7 @@ try {
 	$telefono = telefonoHN($_POST['telefono'] ?? '');
 	$email = trim($_POST['email'] ?? null);
 	$contacto_nombre = trim($_POST['contacto_nombre'] ?? '') ?: null;
+	$nombre_comercial = mb_substr(trim($_POST['nombre_comercial'] ?? ''), 0, 150) ?: null;   // se puede cambiar aunque tenga facturas
 
 	if (!$id || $nombre === '' || $rtn === '' || $direccion === '') {
 		throw new Exception("Datos incompletos.");
@@ -48,18 +49,18 @@ try {
 		// Solo se puede actualizar dirección, teléfono, email y contacto
 		$stmt = $pdo->prepare("
 			UPDATE clientes_factura
-			SET direccion = ?, telefono = ?, email = ?, contacto_nombre = ?
+			SET direccion = ?, telefono = ?, email = ?, contacto_nombre = ?, nombre_comercial = ?
 			WHERE id = ? AND cliente_id = ?
 		");
-		$stmt->execute([$direccion, $telefono, $email, $contacto_nombre, $id, $cliente_id]);
+		$stmt->execute([$direccion, $telefono, $email, $contacto_nombre, $nombre_comercial, $id, $cliente_id]);
 	} else {
 		// Se puede actualizar todo
 		$stmt = $pdo->prepare("
 			UPDATE clientes_factura
-			SET nombre = ?, rtn = ?, direccion = ?, telefono = ?, email = ?, contacto_nombre = ?
+			SET nombre = ?, rtn = ?, direccion = ?, telefono = ?, email = ?, contacto_nombre = ?, nombre_comercial = ?
 			WHERE id = ? AND cliente_id = ?
 		");
-		$stmt->execute([$nombre, $rtn, $direccion, $telefono, $email, $contacto_nombre, $id, $cliente_id]);
+		$stmt->execute([$nombre, $rtn, $direccion, $telefono, $email, $contacto_nombre, $nombre_comercial, $id, $cliente_id]);
 	}
 
 	header("Location: clientes.php?updated=1");

@@ -102,6 +102,22 @@ suite('Teléfono de clientes con formato +504', function () {
     check('vacío y extranjeros se dejan', telefonoHN('') === '' && telefonoHN('+1 305 555 0101') === '+1 305 555 0101');
 });
 
+suite('Clientes: nombre comercial aparte de la razón social', function () {
+    $c = login('qa.admin@local.test');
+    $rtn = 'QA' . random_int(100000000, 999999999);
+    $c->post('guardar_cliente.php', ['nombre' => 'QA RAZON SOCIAL S.A.', 'nombre_comercial' => 'QA Comercial', 'rtn' => $rtn, 'direccion' => 'QA', 'telefono' => '22024060']);
+    $cl = db()->query("SELECT * FROM clientes_factura WHERE rtn = '$rtn'")->fetch(PDO::FETCH_ASSOC);
+    try {
+        check('se guarda el nombre comercial y el teléfono con formato', ($cl['nombre_comercial'] ?? '') === 'QA Comercial' && ($cl['telefono'] ?? '') === '+504 2202-4060', json_encode($cl));
+        $c->post('actualizar_cliente.php', ['id' => $cl['id'], 'nombre' => $cl['nombre'], 'nombre_comercial' => 'QA Otro', 'rtn' => $rtn, 'direccion' => 'QA']);
+        check('se puede cambiar', db()->query("SELECT nombre_comercial FROM clientes_factura WHERE id = " . (int)$cl['id'])->fetchColumn() === 'QA Otro');
+        $pg = $c->get('clientes');
+        check('la lista de clientes lo muestra', str_contains($pg['body'], 'QA Otro'));
+    } finally {
+        if ($cl) db()->exec("DELETE FROM clientes_factura WHERE id = " . (int)$cl['id']);
+    }
+});
+
 suite('Facturas: borrado y correlativo', function () {
     $c = login('qa.admin@local.test');
     $cai = db()->query("SELECT * FROM cai_rangos WHERE cliente_id=2 AND fecha_limite >= CURDATE() AND correlativo_actual < (rango_fin - rango_inicio + 1) ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);

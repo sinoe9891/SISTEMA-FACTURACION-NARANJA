@@ -735,9 +735,10 @@ $total_clientes = count($clientes);
 				<tbody id="cfBody">
 					<?php foreach ($clientes as $c): ?>
 						<tr data-search="<?= strtolower(htmlspecialchars(
-												$c['nombre'] . ' ' . $c['rtn'] . ' ' . ($c['direccion'] ?? '') . ' ' . ($c['telefono'] ?? '') . ' ' . ($c['email'] ?? '')
+												$c['nombre'] . ' ' . ($c['nombre_comercial'] ?? '') . ' ' . $c['rtn'] . ' ' . ($c['direccion'] ?? '') . ' ' . ($c['telefono'] ?? '') . ' ' . ($c['email'] ?? '')
 											)) ?>">
 							<td><span class="fw-semibold" data-col="nombre"><?= htmlspecialchars($c['nombre']) ?></span>
+								<?php if (!empty($c['nombre_comercial'])): ?><div class="small text-muted"><i class="bi bi-shop me-1"></i><?= htmlspecialchars($c['nombre_comercial']) ?></div><?php endif; ?>
 							</td>
 							<td><span class="rtn-badge" data-col="rtn"><?= htmlspecialchars($c['rtn']) ?></span></td>
 							<td data-col="direccion"><?= htmlspecialchars($c['direccion'] ?? '—') ?></td>

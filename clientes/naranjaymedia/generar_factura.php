@@ -56,7 +56,7 @@ $mfTasa = facturaTasaSugerida($pdo, (int)$cliente_id);
 $mfLabel = 'fv-form-label';
 
 /* ── Clientes factura ───────────────────────────────────────────────────── */
-$stmtClientes = $pdo->prepare("SELECT id, nombre FROM clientes_factura WHERE cliente_id = ? ORDER BY nombre ASC");
+$stmtClientes = $pdo->prepare("SELECT id, nombre, nombre_comercial FROM clientes_factura WHERE cliente_id = ? ORDER BY nombre ASC");
 $stmtClientes->execute([$cliente_id]);
 $clientes = $stmtClientes->fetchAll();
 
@@ -348,7 +348,7 @@ require_once '../../includes/templates/header.php';
                                     <?php foreach ($clientes as $cl): ?>
                                         <option value="<?= $cl['id'] ?>"
                                             <?= $cl['id'] == $get_receptor_id ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($cl['nombre']) ?></option>
+                                            <?= htmlspecialchars($cl['nombre']) ?><?= !empty($cl['nombre_comercial']) ? ' · ' . htmlspecialchars($cl['nombre_comercial']) : '' ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>

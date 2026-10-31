@@ -36,6 +36,7 @@ try {
 	$telefono   = telefonoHN($_POST['telefono'] ?? '');
 	$email      = trim($_POST['email'] ?? null);
 	$contacto_nombre = trim($_POST['contacto_nombre'] ?? '') ?: null;
+	$nombre_comercial = mb_substr(trim($_POST['nombre_comercial'] ?? ''), 0, 150) ?: null;
 
 	if ($nombre === '' || $rtn === '' || $direccion === '') {
 		throw new Exception("Nombre, RTN y Dirección son obligatorios.");
@@ -50,10 +51,10 @@ try {
 
 	// Insertar cliente nuevo
 	$stmt = $pdo->prepare("
-		INSERT INTO clientes_factura (cliente_id, nombre, rtn, direccion, telefono, email, contacto_nombre)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO clientes_factura (cliente_id, nombre, nombre_comercial, rtn, direccion, telefono, email, contacto_nombre)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	");
-	$stmt->execute([$cliente_id, $nombre, $rtn, $direccion, $telefono, $email, $contacto_nombre]);
+	$stmt->execute([$cliente_id, $nombre, $nombre_comercial, $rtn, $direccion, $telefono, $email, $contacto_nombre]);
 
 	header("Location: clientes.php?created=1");
 	exit;

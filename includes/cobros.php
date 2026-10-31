@@ -59,10 +59,11 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
     $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
     $antIds = $tipo === 'envio_recibo' ? array_values(array_unique(array_filter(array_map('intval', $antIds)))) : [];
     if (!$ids && !$antIds) throw new Exception($tipo === 'envio_recibo' ? "Selecciona al menos un recibo." : "Selecciona al menos un pago del plan.");
-    $st = $pdo->prepare("SELECT nombre FROM clientes_factura WHERE id = ? AND cliente_id = ?");
+    $st = $pdo->prepare("SELECT nombre, nombre_comercial FROM clientes_factura WHERE id = ? AND cliente_id = ?");
     $st->execute([$rid, $cid]);
-    $cliente = $st->fetchColumn();
-    if ($cliente === false) throw new Exception("Cliente no válido.");
+    $cf = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$cf) throw new Exception("Cliente no válido.");
+    $cliente = $cf['nombre'];
     $h = fn($v) => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
     $b = fn($v) => '<strong>' . $h($v) . '</strong>';
     $MES = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -70,7 +71,7 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
     $in = implode(',', array_fill(0, max(1, count($ids)), '?'));
     $total = 0.0;
     $lineas = [];
-    $saludoA = $cliente;   // en recordatorios de contratos de un mismo programa (p. ej. PROGRESE), al equipo del programa
+    $saludoA = trim((string)$cf['nombre_comercial']) ?: $cliente;   // el saludo usa el nombre comercial si lo tiene; en recordatorios de contratos de un mismo programa (p. ej. PROGRESE), al equipo del programa
     if ($tipo === 'envio_recibo') {
         $filas = [];
         if ($ids) {

@@ -174,7 +174,7 @@ try {
 		$conProg = programasDisponible($pdo);
 		$stmtFacturas = $pdo->prepare("
 			SELECT f.id, f.correlativo, f.total, f.receptor_id, f.cliente_id, f.enviada_receptor, f.fecha_emision,
-			       cf.nombre AS receptor_nombre, cf.contacto_nombre, " . ($conProg ? "pg.nombre" : "NULL") . " AS programa
+			       cf.nombre AS receptor_nombre, cf.nombre_comercial, cf.contacto_nombre, " . ($conProg ? "pg.nombre" : "NULL") . " AS programa
 			FROM facturas f
 			INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
 			" . ($conProg ? "LEFT JOIN programas pg ON pg.id = f.programa_id" : "") . "
@@ -205,7 +205,7 @@ try {
 		$programas = array_values(array_unique(array_map(fn($f) => (string)$f['programa'], $facturasSel)));
 		$programaComun = count($programas) === 1 && $programas[0] !== '' ? $programas[0] : null;
 		// Saludo al equipo del cliente (el cobro suele ir a varias personas en copia)
-		$saludo = 'Buen día, equipo de ' . ($programaComun ?? $receptor_nombre) . ':';
+		$saludo = 'Buen día, equipo de ' . ($programaComun ?? (trim((string)$facturasSel[0]['nombre_comercial']) ?: $receptor_nombre)) . ':';   // con el nombre comercial si lo tiene
 		if ($programaComun) $receptor_nombre = $programaComun . ' · ' . $receptor_nombre;
 
 		// Saldo real de cada factura (descuenta abonos registrados en cuentas por cobrar)

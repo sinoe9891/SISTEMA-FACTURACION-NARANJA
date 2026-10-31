@@ -85,7 +85,7 @@ $stmtFacturas = $pdo->prepare("
     SELECT " . ($__conProg ? "pg.nombre" : "NULL") . " AS programa, f.id, f.correlativo, f.fecha_emision, f.total, f.subtotal,
            f.estado, f.pagada, f.enviada_receptor, f.estado_declarada,
            (f.isv_15 + f.isv_18) AS isv_total,
-           f.requiere_subsanacion, f.notas_internas, f.receptor_id, cf.nombre AS receptor
+           f.requiere_subsanacion, f.notas_internas, f.receptor_id, cf.nombre AS receptor, cf.nombre_comercial
     FROM facturas f
     INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
     " . ($__conProg ? "LEFT JOIN programas pg ON pg.id = f.programa_id" : "") . "
@@ -1646,7 +1646,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 						};
 					?>
 						<tr data-env="<?= (int)$f['enviada_receptor'] === 1 ? 1 : 0 ?>" data-pag="<?= (int)$f['pagada'] === 1 ? 1 : 0 ?>" data-dec="<?= $f['estado'] === 'anulada' ? 'na' : (($f['estado_declarada'] == 1 || $f['estado_declarada'] === 'si') ? 1 : 0) ?>"
-							data-search="<?= strtolower(htmlspecialchars($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $f['programa'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision'])))) ?>">
+							data-search="<?= strtolower(htmlspecialchars($f['correlativo'] . ' ' . $f['receptor'] . ' ' . ($f['nombre_comercial'] ?? '') . ' ' . $f['programa'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision'])))) ?>">
 							<td class="fh-select-col"><input type="checkbox" class="fh-row-check fh-row-select"
 									data-factura-id="<?= $f['id'] ?>" data-receptor-id="<?= (int)$f['receptor_id'] ?>" data-estado="<?= htmlspecialchars($f['estado']) ?>"></td>
 							<td data-sort-val="<?= htmlspecialchars($f['correlativo']) ?>"><span class="corr-mono" data-col="corr"><?= htmlspecialchars($f['correlativo']) ?></span>
@@ -1668,7 +1668,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><span data-hl><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></span>
 								<?php if (!isset($fechaDesorden[(int)$f['id']]) && substr((string)$f['fecha_emision'], 0, 10) > date('Y-m-d')): ?><span class="badge text-bg-info d-block mt-1" style="width:max-content" title="Fecha de emisión posterior a hoy, en orden con las demás facturas"><i class="bi bi-calendar-event me-1"></i>Fecha futura</span><?php endif; ?>
 								<?php if (isset($fechaDesorden[(int)$f['id']])): ?><a href="editar_factura?id=<?= (int)$f['id'] ?>" class="badge text-bg-warning text-decoration-none d-block mt-1" style="width:max-content" title="<?= htmlspecialchars(implode('. ', $fechaDesorden[(int)$f['id']]) . '. Abrí Editar para ver la fecha sugerida.') ?>"><i class="bi bi-exclamation-triangle-fill me-1"></i>Revisar fecha</a><?php endif; ?></td>
-							<td><span data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></span><?= programaEtiqueta($f['programa']) ?>
+							<td><span data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></span><?php if (!empty($f['nombre_comercial'])): ?><div class="small text-muted"><?= htmlspecialchars($f['nombre_comercial']) ?></div><?php endif; ?><?= programaEtiqueta($f['programa']) ?>
 <?php if (!empty($f['requiere_subsanacion']) || !empty($f['notas_internas'])): ?>
 <div class="mt-1"><button type="button" class="fh-nota-btn"
  data-factura="<?= htmlspecialchars($f['correlativo'], ENT_QUOTES, 'UTF-8') ?>"

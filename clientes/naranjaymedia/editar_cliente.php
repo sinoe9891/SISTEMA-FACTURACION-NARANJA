@@ -579,6 +579,18 @@ if ($establecimiento_activo) {
 						<span class="cf-field-hint">Nombre completo tal como aparece en los documentos legales.</span>
 					</div>
 
+					<!-- Nombre comercial -->
+					<div class="cf-field cf-field-full">
+						<label class="cf-label" for="nombre_comercial">
+							<i class="bi bi-shop"></i> Nombre comercial <span class="text-muted fw-normal">(opcional)</span>
+						</label>
+						<input type="text" id="nombre_comercial" name="nombre_comercial" class="cf-input" maxlength="150"
+							value="<?= htmlspecialchars($cliente['nombre_comercial'] ?? '') ?>"
+							placeholder="Ej: CARE Internacional Honduras" autocomplete="off"
+							data-original="<?= htmlspecialchars($cliente['nombre_comercial'] ?? '') ?>">
+						<span class="cf-field-hint">Cómo lo conocés. Se ve en las listas y en el saludo de los correos; la factura lleva la razón social.</span>
+					</div>
+
 					<!-- RTN -->
 					<div class="cf-field">
 						<label class="cf-label" for="rtn">
