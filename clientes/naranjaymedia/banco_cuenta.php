@@ -66,7 +66,7 @@ $rangos = [
 ];
 $saldoActual = bancoSaldo($pdo, (int)$cuenta['id']);
 $etiquetasTipo = ['deposito' => 'Depósito', 'retiro' => 'Retiro', 'transferencia' => 'Transferencia', 'cheque' => 'Cheque',
-    'pago_gasto' => 'Pago de gasto', 'cobro_factura' => 'Cobro de factura', 'comision' => 'Comisión', 'interes' => 'Interés', 'ajuste' => 'Ajuste',
+    'pago_gasto' => 'Pago de gasto', 'cobro_factura' => 'Cobro de factura', 'comision' => 'Comisión bancaria', 'interes' => 'Interés ganado', 'ajuste' => 'Ajuste',
     'prestamo_colaborador' => 'Préstamo a colaborador', 'prestamo_recibido' => 'Préstamo recibido', 'prestamo_socio' => 'Préstamo a socio'];
 
 require_once '../../includes/templates/header.php';

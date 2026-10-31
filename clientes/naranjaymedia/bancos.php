@@ -41,7 +41,7 @@ if ($instalado && $cid) {
     $recientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 $etiquetasTipo = ['deposito' => 'Depósito', 'retiro' => 'Retiro', 'transferencia' => 'Transferencia', 'cheque' => 'Cheque',
-    'prestamo_socio' => 'Préstamo a socio', 'pago_gasto' => 'Pago de gasto', 'cobro_factura' => 'Cobro de factura', 'comision' => 'Comisión', 'interes' => 'Interés', 'ajuste' => 'Ajuste'];
+    'prestamo_socio' => 'Préstamo a socio', 'pago_gasto' => 'Pago de gasto', 'cobro_factura' => 'Cobro de factura', 'comision' => 'Comisión bancaria', 'interes' => 'Interés ganado', 'ajuste' => 'Ajuste'];
 
 require_once '../../includes/templates/header.php';
 ?>
@@ -224,7 +224,7 @@ require_once '../../includes/templates/header.php';
                         <div class="col-12"><label class="form-label">Cuenta *</label>
                             <select class="form-select" name="cuenta_id" required><?php foreach ($activas as $c): ?><option value="<?= (int)$c['id'] ?>"<?= bancoSel($c) ?>><?= htmlspecialchars($c['banco'] . ' ' . $c['numero'] . ' (' . $c['moneda'] . ')') ?></option><?php endforeach; ?></select></div>
                         <div class="col-6"><label class="form-label">Tipo *</label>
-                            <select class="form-select" name="tipo" id="movTipo"><option value="deposito">Depósito (+)</option><option value="retiro">Retiro (−)</option><option value="comision">Comisión bancaria (−)</option><option value="interes">Interés ganado (+)</option><option value="ajuste">Ajuste (±)</option></select></div>
+                            <select class="form-select" name="tipo" id="movTipo"><option value="deposito">Depósito (+)</option><option value="retiro">Retiro (−)</option><option value="comision">Comisión o cargo bancario: ISR, mantenimiento… (−)</option><option value="interes">Interés ganado (+)</option><option value="ajuste">Ajuste (±)</option></select></div>
                         <div class="col-6 d-none" id="movSentidoWrap"><label class="form-label">El ajuste…</label>
                             <select class="form-select" name="sentido"><option value="entrada">Suma</option><option value="salida">Resta</option></select></div>
                         <div class="col-6"><label class="form-label">Fecha *</label><input class="form-control" type="date" name="fecha" required value="<?= date('Y-m-d') ?>"></div>

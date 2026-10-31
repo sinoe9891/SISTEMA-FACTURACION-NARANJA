@@ -13,7 +13,7 @@ $st->execute([$cid,...$ids]);$porId=array_column($st->fetchAll(PDO::FETCH_ASSOC)
 if(count($porId)!==count($ids)){http_response_code(403);exit('Uno o más movimientos no están disponibles para tu empresa.');}
 $x=new XlsxSimple('Movimientos bancarios');
 $x->columnas([['N.º',7,'entero'],['ID',9,'entero'],['Fecha',13,'fecha'],['Banco',20],['Cuenta',22],['Tipo de cuenta',16],['Moneda',10],['Tipo de movimiento',24],['Descripción',65],['Referencia',20],['Estado',16],['Entrada',18,'dinero'],['Salida',18,'dinero'],['Movimiento neto',20,'dinero']]);
-$tipos=['deposito'=>'Depósito','retiro'=>'Retiro','transferencia'=>'Transferencia','cheque'=>'Cheque','pago_gasto'=>'Pago de gasto','cobro_factura'=>'Cobro de factura','comision'=>'Comisión bancaria','interes'=>'Interés','ajuste'=>'Ajuste','prestamo_socio'=>'Préstamo a socio'];
+$tipos=['deposito'=>'Depósito','retiro'=>'Retiro','transferencia'=>'Transferencia','cheque'=>'Cheque','pago_gasto'=>'Pago de gasto','cobro_factura'=>'Cobro de factura','comision'=>'Comisión bancaria','interes'=>'Interés ganado','ajuste'=>'Ajuste','prestamo_socio'=>'Préstamo a socio'];
 $tot=['HNL'=>[0.,0.],'USD'=>[0.,0.]];
 foreach($ids as $i=>$id){
  $m=$porId[$id];$r=$i+2;$anulado=(bool)$m['anulado'];$entrada=$m['sentido']==='entrada'?(float)$m['monto']:0.;$salida=$m['sentido']==='salida'?(float)$m['monto']:0.;
