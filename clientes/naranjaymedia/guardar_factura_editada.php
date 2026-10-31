@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $factura_id = $_POST['factura_id'] ?? null;
 $receptor_id = $_POST['receptor_id'] ?? null;
 $fecha_emision = $_POST['fecha_emision'] ?? null;
-$condicion_pago = $_POST['condicion_pago'] ?? 'Contado';
+$condicion_pago = strtolower(trim((string)($_POST['condicion_pago'] ?? 'contado')));
 $exonerado = isset($_POST['exonerado']) ? 1 : 0;
 $orden_compra_exenta = trim($_POST['orden_compra_exenta'] ?? '');
 $constancia_exoneracion = trim($_POST['constancia_exoneracion'] ?? '');
@@ -94,8 +94,15 @@ if ($autorizador['rol'] !== 'superadmin' && (int)$autorizador['cliente_id'] !== 
 // A partir de aquí todo se calcula con la empresa de la factura
 $cliente_factura = (int)$factura['cliente_id'];
 
-if ($fecha_emision !== null && !DateTime::createFromFormat('Y-m-d H:i:s', $fecha_emision) && !DateTime::createFromFormat('Y-m-d\TH:i', $fecha_emision) && !DateTime::createFromFormat('Y-m-d', $fecha_emision)) {
-	die("Fecha de emisión inválida.");
+if (!in_array($condicion_pago, ['contado', 'credito'], true)) die("Condición de pago inválida.");
+// La factura editada se emite de nuevo: sin fecha, la de ahora; nunca una fecha futura
+if ($fecha_emision === null || trim($fecha_emision) === '') {
+	$fecha_emision = date('Y-m-d H:i:s');
+} else {
+	$fe = DateTime::createFromFormat('Y-m-d H:i:s', $fecha_emision) ?: DateTime::createFromFormat('Y-m-d\TH:i', $fecha_emision) ?: DateTime::createFromFormat('Y-m-d', $fecha_emision);
+	if (!$fe) die("Fecha de emisión inválida.");
+	if ($fe->getTimestamp() > time() + 300) die("La fecha de emisión no puede ser futura.");
+	$fecha_emision = $fe->format('Y-m-d H:i:s');
 }
 if (empty($productos) || !is_array($productos)) {
 	die("La factura debe tener al menos un producto.");

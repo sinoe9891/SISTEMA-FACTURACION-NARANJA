@@ -365,16 +365,19 @@ require_once '../../includes/templates/header.php';
 						<div class="row g-3">
 							<div class="col-md-6">
 								<label class="fe-form-label">Fecha de emisión</label>
+								<?php // Al editar, la factura se emite de nuevo: la fecha es la de hoy (no puede ser futura) ?>
 								<input type="datetime-local" name="fecha_emision" class="form-control"
-									value="<?= date('Y-m-d\TH:i', strtotime($factura['fecha_emision'])) ?>"
+									value="<?= date('Y-m-d\TH:i') ?>" max="<?= date('Y-m-d\TH:i') ?>"
 									<?= !$es_admin ? 'readonly' : '' ?>>
+								<div class="form-text">Se emite con la fecha de hoy. Fecha anterior: <?= date('d/m/Y h:i a', strtotime($factura['fecha_emision'])) ?></div>
 							</div>
 							<div class="col-md-6">
 								<label class="fe-form-label">Condición de pago</label>
 								<select name="condicion_pago" class="form-select">
-									<option value="Contado" <?= $factura['condicion_pago'] === 'Contado' ? 'selected' : '' ?>>
+									<?php $condActual = strtolower((string)$factura['condicion_pago']); ?>
+									<option value="contado" <?= $condActual === 'contado' ? 'selected' : '' ?>>
 										Contado</option>
-									<option value="Credito" <?= $factura['condicion_pago'] === 'Credito' ? 'selected' : '' ?>>
+									<option value="credito" <?= $condActual === 'credito' ? 'selected' : '' ?>>
 										Crédito</option>
 								</select>
 							</div>

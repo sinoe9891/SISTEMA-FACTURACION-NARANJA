@@ -36,6 +36,19 @@ suite('Asociación de contrato al editar factura', function () {
         $pdo->prepare("INSERT INTO contratos_plan (cliente_id,contrato_id,fecha,concepto,monto,isv,total,tipo,orden,factura_id) VALUES (2,?,'2026-10-07','QA',100,0,100,'cuota',1,?)")->execute([$cts[1],$fid]);
         $r=$c->post('guardar_factura_editada.php',$base+['contrato_id'=>'']);
         check('no desvincula si hay pagos del plan asociados', (int)$valor()===$cts[1] && str_contains($r['body'],'pagos del plan'));
+        // Condición de pago: se guarda y al volver a editar sale la misma; la fecha propuesta es la de hoy y no se acepta futura
+        $campo=fn($k)=>$pdo->query("SELECT $k FROM facturas WHERE id=$fid")->fetchColumn();
+        $c->post('guardar_factura_editada.php',['condicion_pago'=>'credito']+$base);
+        $pg=$c->get('editar_factura',['id'=>$fid]);
+        check('crédito guardado sale seleccionado al editar', $campo('condicion_pago')==='credito' && str_contains($pg['body'],'value="credito" selected') && !str_contains($pg['body'],'value="contado" selected'));
+        check('fecha de emisión propuesta es hoy', str_contains($pg['body'],'name="fecha_emision" class="form-control"') && str_contains($pg['body'],'value="'.date('Y-m-d').'T'));
+        $c->post('guardar_factura_editada.php',['condicion_pago'=>'contado']+$base);
+        check('contado guardado', $campo('condicion_pago')==='contado');
+        $antes=$campo('fecha_emision');
+        $r=$c->post('guardar_factura_editada.php',['fecha_emision'=>date('Y-m-d\TH:i',strtotime('+1 day'))]+$base);
+        check('rechaza fecha de emisión futura', $campo('fecha_emision')===$antes && str_contains($r['body'],'no puede ser futura'));
+        $r=$c->post('guardar_factura_editada.php',['condicion_pago'=>'xx']+$base);
+        check('rechaza condición inválida', str_contains($r['body'],'Condición de pago inválida'));
     } finally {
         $pdo->prepare('DELETE FROM contratos_plan WHERE factura_id=?')->execute([$fid]);
         foreach ($cts as $ct) { $pdo->prepare('DELETE FROM contratos_clientes_rotativos WHERE contrato_id=?')->execute([$ct]); }
