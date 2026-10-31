@@ -15,6 +15,7 @@ suite('Asociación de contrato al editar factura', function () {
         }
         $base=['factura_id'=>$fid,'receptor_id'=>$rid,'fecha_emision'=>'2026-10-07T08:00','condicion_pago'=>'Credito','estado'=>'emitida','motivo'=>'QA asociación', 'usuario_autoriza'=>'qa.admin@local.test','clave_autoriza'=>QA_PASS,'productos[0][id]'=>$prod,'productos[0][cantidad]'=>1,'productos[0][precio_unitario]'=>100];
         $valor=fn()=>$pdo->query("SELECT contrato_id FROM facturas WHERE id=$fid")->fetchColumn();
+        require_once dirname(__DIR__,2).'/includes/factura_contrato.php';
         $lista=array_column(facturaContratosDisponibles($pdo,2),null,'id');
         check('el contrato trae su servicio para la primera línea de la factura nueva', ($lista[$cts[0]]['producto_id'] ?? null)===$prod);
         $pgN=$c->get('generar_factura');
