@@ -36,7 +36,7 @@ function facturaUltimaPorCai(PDO $pdo, int $cid): array
 
 
 /**
- * Facturas cuya fecha no sigue el orden de su talonario o es futura: [id => [motivos]] (para el aviso en la lista).
+ * Facturas cuya fecha no sigue el orden de su talonario: [id => [motivos]] (para el aviso «Revisar fecha» en la lista).
  */
 function facturasFechaFueraDeOrden(PDO $pdo, int $cid): array
 {
@@ -54,7 +54,7 @@ function facturasFechaFueraDeOrden(PDO $pdo, int $cid): array
             $m = [];
             if ($i > 0 && $dia($f) < $dia($lista[$i - 1])) $m[] = 'Fecha anterior a la de la factura ' . $ver($lista[$i - 1]);
             if (isset($lista[$i + 1]) && $dia($f) > $dia($lista[$i + 1])) $m[] = 'Fecha posterior a la de la factura ' . $ver($lista[$i + 1]);
-            if ($dia($f) > $hoy) $m[] = 'Fecha futura';
+            if ($m && $dia($f) > $hoy) $m[] = 'Fecha futura';   // futura sola no es problema: se muestra aparte (facturasFechaFutura)
             if ($m) $out[(int)$f['id']] = $m;
         }
     }

@@ -1655,6 +1655,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 								<?php endif; ?>
 							</td>
 							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><span data-hl><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></span>
+								<?php if (!isset($fechaDesorden[(int)$f['id']]) && substr((string)$f['fecha_emision'], 0, 10) > date('Y-m-d')): ?><span class="badge text-bg-info d-block mt-1" style="width:max-content" title="Fecha de emisión posterior a hoy, en orden con las demás facturas"><i class="bi bi-calendar-event me-1"></i>Fecha futura</span><?php endif; ?>
 								<?php if (isset($fechaDesorden[(int)$f['id']])): ?><a href="editar_factura?id=<?= (int)$f['id'] ?>" class="badge text-bg-warning text-decoration-none d-block mt-1" style="width:max-content" title="<?= htmlspecialchars(implode('. ', $fechaDesorden[(int)$f['id']]) . '. Abrí Editar para ver la fecha sugerida.') ?>"><i class="bi bi-exclamation-triangle-fill me-1"></i>Revisar fecha</a><?php endif; ?></td>
 							<td><span data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></span><?= programaEtiqueta($f['programa']) ?>
 <?php if (!empty($f['requiere_subsanacion']) || !empty($f['notas_internas'])): ?>
