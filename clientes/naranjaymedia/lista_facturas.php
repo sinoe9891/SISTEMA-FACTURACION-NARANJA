@@ -772,7 +772,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		display: flex;
 		gap: .35rem;
 		align-items: center;
-		flex-wrap: wrap;
+		flex-wrap: nowrap;
 	}
 
 	.fh-select-col {
@@ -817,6 +817,13 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		transition: all var(--tr);
 		text-decoration: none;
 		white-space: nowrap;
+	}
+
+	/* Botón solo con ícono (el nombre sale al pasar el mouse) */
+	.btn-fa-ico {
+		padding: .32rem .5rem;
+		font-size: .85rem;
+		justify-content: center;
 	}
 
 	.btn-fa-view {
@@ -1660,7 +1667,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 </button></div>
 <?php endif; ?>
 </td>
-							<td data-col="total" data-sort-val="<?= $f['total'] ?>"><strong>L
+							<td data-col="total" data-sort-val="<?= $f['total'] ?>" style="white-space:nowrap"><strong>L
 									<?= number_format($f['total'], 2) ?></strong></td>
 							<td>
 								<span class="st-badge <?= $estadoCls ?>">
@@ -1688,38 +1695,37 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 							<td>
 								<div class="fh-actions">
 									<?php if ($f['estado'] === 'emitida'): ?>
-										<button onclick="accionFactura(<?= $f['id'] ?>,'anular')" class="btn-fa btn-fa-warn"><i
-												class="bi bi-slash-circle"></i> Anular</button>
+										<button onclick="accionFactura(<?= $f['id'] ?>,'anular')" class="btn-fa btn-fa-ico btn-fa-warn" title="Anular" aria-label="Anular"><i
+												class="bi bi-slash-circle"></i></button>
 										<?php if ($puedeElim || $esAdmin): ?>
 											<button type="button" onclick="editarFacturaMenu(<?= $f['id'] ?>, <?= (int)$f['pagada'] ?>, <?= ($f['estado_declarada'] == 1 || $f['estado_declarada'] === 'si') ? 1 : 0 ?>, <?= (int)$f['enviada_receptor'] ?>)"
-												class="btn-fa btn-fa-edit"><i class="bi bi-pencil-fill"></i> Editar</button>
+												class="btn-fa btn-fa-ico btn-fa-edit" title="Editar" aria-label="Editar"><i class="bi bi-pencil-fill"></i></button>
 											<button onclick="accionFactura(<?= $f['id'] ?>,'eliminar')"
-												class="btn-fa btn-fa-danger"><i class="bi bi-trash3-fill"></i> Eliminar</button>
+												class="btn-fa btn-fa-ico btn-fa-danger" title="Eliminar" aria-label="Eliminar"><i class="bi bi-trash3-fill"></i></button>
 										<?php endif; ?>
 									<?php elseif ($f['estado'] === 'anulada'): ?>
-										<span class="btn-fa btn-fa-sec" style="cursor:default;">Anulada</span>
 										<button onclick="accionFactura(<?= $f['id'] ?>,'restaurar')"
-											class="btn-fa btn-fa-success"><i class="bi bi-arrow-counterclockwise"></i>
-											Reactivar</button>
+											class="btn-fa btn-fa-ico btn-fa-success" title="Reactivar" aria-label="Reactivar"><i class="bi bi-arrow-counterclockwise"></i></button>
 									<?php elseif ($f['estado'] === 'borrador'): ?>
 										<button onclick="accionFactura(<?= $f['id'] ?>,'restaurar')"
-											class="btn-fa btn-fa-success"><i class="bi bi-arrow-counterclockwise"></i>
-											Reactivar</button>
+											class="btn-fa btn-fa-ico btn-fa-success" title="Reactivar" aria-label="Reactivar"><i class="bi bi-arrow-counterclockwise"></i></button>
 									<?php endif; ?>
 								</div>
 								<?php if ($esAdmin && !$puedeElim && $f['estado'] === 'emitida'): ?>
-									<div style="font-size:.7rem;color:var(--warning);margin-top:4px;"><i
+									<div style="font-size:.7rem;color:var(--warning);margin-top:4px;white-space:nowrap;"><i
 											class="bi bi-exclamation-triangle-fill"></i> No es la última del CAI</div>
 								<?php endif; ?>
 							</td>
 							<td>
-								<a href="ver_factura?id=<?= $f['id'] ?>" class="btn-fa btn-fa-view" target="_blank"
-									rel="noopener noreferrer"
+								<div class="fh-actions">
+								<a href="ver_factura?id=<?= $f['id'] ?>" class="btn-fa btn-fa-ico btn-fa-view" target="_blank"
+									rel="noopener noreferrer" title="Ver / PDF" aria-label="Ver / PDF"
 									onclick="window.open(this.href, '_blank', 'noopener,noreferrer'); return false;"><i
-										class="bi bi-printer-fill"></i> Ver/PDF</a>
+										class="bi bi-printer-fill"></i></a>
 									<?php if ($puedeCobrarLf && $f['estado'] === 'emitida' && empty($f['pagada'])): ?>
-										<a href="cuentas_cobrar?cobrar=<?= (int)$f['id'] ?>" class="btn-fa btn-fa-cobro mt-1" title="Registrar el pago del cliente con su comprobante; al completar el total queda pagada"><i class="bi bi-cash-coin"></i> Cobro</a>
+										<a href="cuentas_cobrar?cobrar=<?= (int)$f['id'] ?>" class="btn-fa btn-fa-ico btn-fa-cobro" title="Registrar cobro: el pago del cliente con su comprobante; al completar el total queda pagada" aria-label="Registrar cobro"><i class="bi bi-cash-coin"></i></a>
 									<?php endif; ?>
+								</div>
 							</td>
 						</tr>
 					<?php endforeach; ?>
