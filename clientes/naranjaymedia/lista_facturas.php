@@ -772,7 +772,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		display: flex;
 		gap: .35rem;
 		align-items: center;
-		flex-wrap: nowrap;
+		flex-wrap: wrap;
 	}
 
 	.fh-select-col {
@@ -986,6 +986,16 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		font-weight: 600;
 		color: #1e293b;
 	}
+
+	/* Situación: enviada · pagada · declarada como semáforo */
+	.sit { display: flex; gap: .3rem; }
+	.sit-ico { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; font-size: .8rem; border: 1px solid transparent; }
+	.sit-ok { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
+	.sit-no { background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0; }
+	.sit-pend { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+	.sit-na { background: #f8fafc; color: #cbd5e1; border-color: #f1f5f9; }
+	.fh-sit-filtros { display: flex; gap: .35rem; flex-wrap: wrap; }
+	td .fh-actions { flex-wrap: nowrap; }
 
 	/* Badge declarada */
 	.dec-si {
@@ -1568,6 +1578,11 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 						placeholder="Buscar correlativo, cliente, estado…" autocomplete="off">
 					<button class="fh-clear-btn" id="fhClear"><i class="bi bi-x-lg"></i></button>
 				</div>
+				<div class="fh-sit-filtros" title="Filtrar por situación (se combinan)">
+					<select class="fh-per-page" data-sit="env" aria-label="Filtrar por enviada"><option value="">Enviada: todas</option><option value="1">Enviada: sí</option><option value="0">Enviada: no</option></select>
+					<select class="fh-per-page" data-sit="pag" aria-label="Filtrar por pagada"><option value="">Pagada: todas</option><option value="1">Pagada: sí</option><option value="0">Pagada: no</option></select>
+					<select class="fh-per-page" data-sit="dec" aria-label="Filtrar por declarada"><option value="">Declarada: todas</option><option value="1">Declarada: sí</option><option value="0">Declarada: pendiente</option></select>
+				</div>
 				<select class="fh-per-page" id="fhPerPage">
 					<option value="10" selected>10/pág</option>
 					<option value="25">25/pág</option>
@@ -1613,12 +1628,8 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 						</th>
 						<th data-col="4"><i class="bi bi-circle me-1"></i>Estado<i class="bi bi-arrow-up sort-icon"></i>
 						</th>
-						<th data-col="5"><i class="bi bi-send me-1"></i>Enviada<i class="bi bi-arrow-up sort-icon"></i>
+						<th data-col="5" title="Enviada · Pagada · Declarada SAR. Al ordenar, primero las que tienen menos pendientes (de nuevo: las que más)"><i class="bi bi-stoplights me-1"></i>Situación<i class="bi bi-arrow-up sort-icon"></i>
 						</th>
-						<th data-col="6"><i class="bi bi-check2 me-1"></i>Pagada<i class="bi bi-arrow-up sort-icon"></i>
-						</th>
-						<th data-col="7"><i class="bi bi-journal-check me-1"></i>Declarada SAR<i
-								class="bi bi-arrow-up sort-icon"></i></th>
 						<th>Acciones</th>
 						<th>PDF</th>
 					</tr>
@@ -1634,7 +1645,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 							default   => 'st-borrador'
 						};
 					?>
-						<tr
+						<tr data-env="<?= (int)$f['enviada_receptor'] === 1 ? 1 : 0 ?>" data-pag="<?= (int)$f['pagada'] === 1 ? 1 : 0 ?>" data-dec="<?= $f['estado'] === 'anulada' ? 'na' : (($f['estado_declarada'] == 1 || $f['estado_declarada'] === 'si') ? 1 : 0) ?>"
 							data-search="<?= strtolower(htmlspecialchars($f['correlativo'] . ' ' . $f['receptor'] . ' ' . $f['programa'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision'])))) ?>">
 							<td class="fh-select-col"><input type="checkbox" class="fh-row-check fh-row-select"
 									data-factura-id="<?= $f['id'] ?>" data-receptor-id="<?= (int)$f['receptor_id'] ?>" data-estado="<?= htmlspecialchars($f['estado']) ?>"></td>
@@ -1676,23 +1687,16 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 									<?= ucfirst($f['estado']) ?>
 								</span>
 							</td>
-							<td><span
-									class="yn-badge <?= $f['enviada_receptor'] == 1 ? 'yn-yes' : 'yn-no' ?>"><?= $f['enviada_receptor'] == 1 ? '<i class="bi bi-check-lg"></i> Sí' : '<i class="bi bi-x-lg"></i> No' ?></span>
-							</td>
-							<td><span
-									class="yn-badge <?= $f['pagada'] == 1 ? 'yn-yes' : 'yn-no' ?>"><?= $f['pagada'] == 1 ? '<i class="bi bi-check-lg"></i> Sí' : '<i class="bi bi-x-lg"></i> No' ?></span>
-							</td>
-							<td>
-								<?php if ($f['estado'] === 'anulada'): ?>
-									<span class="yn-badge" style="background:#f1f5f9;color:#94a3b8;border:1px solid #e2e8f0;">
-										<i class="bi bi-dash"></i> N/A
-									</span>
-								<?php elseif ($f['estado_declarada'] == 1 || $f['estado_declarada'] === 'si'): ?>
-									<span class="yn-badge dec-si"><i class="bi bi-patch-check-fill"></i> Declarada</span>
-								<?php else: ?>
-									<span class="yn-badge dec-no"><i class="bi bi-exclamation-circle-fill"></i> Pendiente</span>
-								<?php endif; ?>
-							</td>
+							<?php // Situación: enviada, pagada y declarada como semáforo (el orden usa cuántas faltan)
+								$sitEnv = (int)$f['enviada_receptor'] === 1; $sitPag = (int)$f['pagada'] === 1;
+								$sitAnul = $f['estado'] === 'anulada'; $sitDec = $f['estado_declarada'] == 1 || $f['estado_declarada'] === 'si';
+								$sitFaltan = $sitAnul ? -1 : (!$sitEnv) + (!$sitPag) + (!$sitDec); ?>
+							<td data-sort-val="<?= $sitFaltan ?>"><div class="sit">
+								<span class="sit-ico <?= $sitEnv ? 'sit-ok' : 'sit-no' ?>" title="Enviada: <?= $sitEnv ? 'Sí' : 'No' ?>" aria-label="Enviada: <?= $sitEnv ? 'Sí' : 'No' ?>"><i class="bi bi-send-fill"></i></span>
+								<span class="sit-ico <?= $sitPag ? 'sit-ok' : 'sit-no' ?>" title="Pagada: <?= $sitPag ? 'Sí' : 'No' ?>" aria-label="Pagada: <?= $sitPag ? 'Sí' : 'No' ?>"><i class="bi bi-cash-coin"></i></span>
+								<?php if ($sitAnul): ?><span class="sit-ico sit-na" title="Declarada SAR: no aplica (anulada)" aria-label="Declarada SAR: no aplica"><i class="bi bi-bank"></i></span>
+								<?php else: ?><span class="sit-ico <?= $sitDec ? 'sit-ok' : 'sit-pend' ?>" title="Declarada SAR: <?= $sitDec ? 'Sí' : 'Pendiente' ?>" aria-label="Declarada SAR: <?= $sitDec ? 'Sí' : 'Pendiente' ?>"><i class="bi bi-bank"></i></span><?php endif; ?>
+							</div></td>
 							<td>
 								<div class="fh-actions">
 									<?php if ($f['estado'] === 'emitida'): ?>
@@ -1805,7 +1809,8 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 			return tablaComparar(a, b);
 		};
 		const filtered = () => {
-			const base = !query ? allRows : allRows.filter(r => r.dataset.search.includes(query.toLowerCase()));
+			const sit = [...document.querySelectorAll('[data-sit]')].filter(x => x.value !== '');
+			const base = allRows.filter(r => (!query || r.dataset.search.includes(query.toLowerCase())) && sit.every(x => r.dataset[x.dataset.sit] === x.value));
 			if (sortCol < 0) return base;
 			return [...base].sort((a, b) => {
 				const va = colTxt(a, sortCol),
@@ -1899,6 +1904,8 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 			updIcons();
 			render();
 		}));
+		// Filtros de situación (enviada, pagada, declarada): se combinan con la búsqueda
+		document.querySelectorAll('[data-sit]').forEach(x => x.addEventListener('change', () => { page = 1; render(); }));
 		let deb;
 		$s.addEventListener('input', () => {
 			clearTimeout(deb);
