@@ -65,6 +65,9 @@ $stmtCai = $pdo->prepare("SELECT id, cai, rango_inicio, rango_fin, correlativo_a
     FROM cai_rangos WHERE cliente_id = ? AND fecha_limite >= CURDATE() ORDER BY fecha_creacion ASC");
 $stmtCai->execute([$cliente_id]);
 $cais = $stmtCai->fetchAll();
+// Fecha de emisión: la última factura de cada CAI, para revisar el orden si se elige otra fecha
+require_once '../../includes/factura_fechas.php';
+$ultimaPorCai = facturaUltimaPorCai($pdo, (int)$cliente_id);
 
 /* ── Si viene con receptor: pre-cargar productos y contratos ───────────── */
 $productos_iniciales = [];
@@ -306,7 +309,7 @@ require_once '../../includes/templates/header.php';
         <?php if ($cotizacion): ?><input type="hidden" name="cotizacion_id" value="<?= (int)$cotizacion['id'] ?>">
             <div class="alert alert-info"><i class="bi bi-file-earmark-text me-1"></i> Factura de la cotización <strong><?= htmlspecialchars($cotizacion['numero']) ?></strong> (<?= monedaFmt($cotizacion['total'], $mfMoneda) ?>): ya trae el cliente y las líneas. Revisa y elige el CAI. Al guardar, la cotización queda como facturada.</div>
         <?php endif; ?>
-        <input type="hidden" name="fecha_emision" value="<?= date('Y-m-d H:i:s') ?>">
+        <input type="hidden" name="fecha_manual" id="fechaManual" value="0">
 
         <div class="row g-4">
             <div class="col-lg-8">
@@ -446,6 +449,10 @@ require_once '../../includes/templates/header.php';
                     <div class="fv-card-body">
                         <div class="row g-3 align-items-center">
                             <div class="col-md-4">
+                                <label class="fv-form-label">Fecha de emisión</label>
+                                <input type="datetime-local" name="fecha_emision" id="fechaEmision" class="form-control" value="<?= date('Y-m-d\TH:i') ?>">
+                            </div>
+                            <div class="col-md-4">
                                 <label class="fv-form-label">Condición</label>
                                 <select name="condicion_pago" class="form-select" required>
                                     <option value="Credito" selected>Crédito</option>
@@ -529,7 +536,17 @@ require_once '../../includes/templates/header.php';
 
 <script src="../../clientes/js/moneda-factura.js?v=<?= @filemtime(__DIR__ . '/../js/moneda-factura.js') ?>"></script>
 <script src="../../clientes/js/gastos-cobrar-filas.js?v=<?= @filemtime(__DIR__ . '/../js/gastos-cobrar-filas.js') ?>"></script>
+<script src="../../clientes/js/factura-fecha-orden.js?v=<?= @filemtime(__DIR__ . '/../js/factura-fecha-orden.js') ?>"></script>
 <script>
+    // Fecha de emisión: si no se toca se usa la hora real al guardar; si se cambia, debe ir después de la última del CAI
+    (() => {
+        const ULT = <?= json_encode($ultimaPorCai, JSON_HEX_TAG) ?>, cai = document.getElementById('cai_rango_id'), fe = document.getElementById('fechaEmision');
+        const manual = () => { document.getElementById('fechaManual').value = '1'; };
+        fe.addEventListener('input', manual);
+        const ffo = FacturaFechaOrden({ form: document.getElementById('formFactura'), input: fe, alElegir: manual,
+            vecinas: () => ({ anterior: ULT[cai.value] || null, siguiente: null }) });
+        cai.addEventListener('change', ffo.pintar);
+    })();
     const CLIENTE_ID = <?= json_encode($cliente_id) ?>;
     const CONTRATOS_FACTURA = <?= json_encode($contratosFactura, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
     let productoIndex = 1;

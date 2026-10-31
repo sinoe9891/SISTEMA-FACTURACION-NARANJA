@@ -95,13 +95,12 @@ if ($autorizador['rol'] !== 'superadmin' && (int)$autorizador['cliente_id'] !== 
 $cliente_factura = (int)$factura['cliente_id'];
 
 if (!in_array($condicion_pago, ['contado', 'credito'], true)) die("Condición de pago inválida.");
-// La factura editada se emite de nuevo: sin fecha, la de ahora; nunca una fecha futura
+// Sin fecha, la de ahora (el orden con las demás facturas se revisa en la pantalla)
 if ($fecha_emision === null || trim($fecha_emision) === '') {
 	$fecha_emision = date('Y-m-d H:i:s');
 } else {
 	$fe = DateTime::createFromFormat('Y-m-d H:i:s', $fecha_emision) ?: DateTime::createFromFormat('Y-m-d\TH:i', $fecha_emision) ?: DateTime::createFromFormat('Y-m-d', $fecha_emision);
 	if (!$fe) die("Fecha de emisión inválida.");
-	if ($fe->getTimestamp() > time() + 300) die("La fecha de emisión no puede ser futura.");
 	$fecha_emision = $fe->format('Y-m-d H:i:s');
 }
 if (empty($productos) || !is_array($productos)) {

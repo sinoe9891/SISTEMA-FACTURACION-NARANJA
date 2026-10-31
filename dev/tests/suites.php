@@ -120,8 +120,16 @@ suite('Facturas: borrado y correlativo', function () {
 
     $r = $borrar($f2);
     check('SÍ se puede borrar la última factura', ($r['json']['success'] ?? false), substr($r['body'], 0, 120));
-    $r3 = $crear();
+    // Fecha de emisión elegida al crear (fecha_manual): se respeta; sin elegirla, la hora real
+    $r3 = $c->post('guardar_factura.php', [
+        'receptor_id' => 1, 'cai_rango_id' => $cai['id'], 'condicion_pago' => 'credito', 'establecimiento_id' => $cai['establecimiento_id'],
+        'fecha_manual' => 1, 'fecha_emision' => date('Y-m-d', strtotime('-1 day')) . 'T09:30',
+        'productos[0][id]' => $prod, 'productos[0][cantidad]' => 1, 'productos[0][detalles]' => 'QA',
+    ]);
     $f3 = $r3['json']['factura_id'] ?? 0;
+    $fr = db()->query("SELECT fecha_emision, condicion_pago FROM facturas WHERE id=" . (int)$f3)->fetch(PDO::FETCH_ASSOC);
+    check('nueva factura con fecha elegida y crédito', ($fr['fecha_emision'] ?? '') === date('Y-m-d', strtotime('-1 day')) . ' 09:30:00' && ($fr['condicion_pago'] ?? '') === 'credito', json_encode($fr) . substr($r3['body'], 0, 120));
+    check('sin fecha elegida usa la hora real', abs(strtotime((string)db()->query("SELECT fecha_emision FROM facturas WHERE id=" . (int)$f1)->fetchColumn()) - time()) < 120);
     $corr3 = db()->query("SELECT correlativo FROM facturas WHERE id=" . (int)$f3)->fetchColumn();
     check('la siguiente factura reutiliza el número borrado (no se salta ni duplica)', $corr3 === $corr2, "$corr3 vs $corr2");
     $dup = db()->query("SELECT correlativo, COUNT(*) n FROM facturas WHERE cai_id={$cai['id']} GROUP BY correlativo HAVING n>1")->fetchAll();

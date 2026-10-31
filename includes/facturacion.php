@@ -29,9 +29,14 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
     $exonerado          = !empty($d['exonerado']) ? 1 : 0;
     $establecimiento_id = filter_var($d['establecimiento_id'] ?? null, FILTER_VALIDATE_INT) ?: null;
     $productos          = $d['productos'] ?? [];
-    // Una factura nueva siempre nace emitida y con la fecha/hora real de emisión
+    // Una factura nueva siempre nace emitida, con la fecha/hora real de emisión salvo que se elija otra (fecha_manual)
     $estado        = 'emitida';
     $fecha_emision = date('Y-m-d H:i:s');
+    if (!empty($d['fecha_manual']) && trim((string)($d['fecha_emision'] ?? '')) !== '') {
+        $fe = DateTime::createFromFormat('Y-m-d\TH:i', (string)$d['fecha_emision']) ?: DateTime::createFromFormat('Y-m-d H:i:s', (string)$d['fecha_emision']);
+        if (!$fe) throw new Exception("Fecha de emisión inválida.");
+        $fecha_emision = $fe->format('Y-m-d H:i:s');
+    }
 
     $orden_compra_exenta    = $exonerado ? trim((string)($d['orden_compra_exenta'] ?? '')) : null;
     $constancia_exoneracion = $exonerado ? trim((string)($d['constancia_exoneracion'] ?? '')) : null;

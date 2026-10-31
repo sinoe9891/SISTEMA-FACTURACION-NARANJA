@@ -41,12 +41,20 @@ suite('Asociación de contrato al editar factura', function () {
         $c->post('guardar_factura_editada.php',['condicion_pago'=>'credito']+$base);
         $pg=$c->get('editar_factura',['id'=>$fid]);
         check('crédito guardado sale seleccionado al editar', $campo('condicion_pago')==='credito' && str_contains($pg['body'],'value="credito" selected') && !str_contains($pg['body'],'value="contado" selected'));
-        check('fecha de emisión propuesta es hoy', str_contains($pg['body'],'name="fecha_emision" class="form-control"') && str_contains($pg['body'],'value="'.date('Y-m-d').'T'));
+        check('fecha de emisión propuesta es hoy', str_contains($pg['body'],'name="fecha_emision" id="fechaEmision"') && str_contains($pg['body'],'value="'.date('Y-m-d').'T'));
         $c->post('guardar_factura_editada.php',['condicion_pago'=>'contado']+$base);
         check('contado guardado', $campo('condicion_pago')==='contado');
-        $antes=$campo('fecha_emision');
-        $r=$c->post('guardar_factura_editada.php',['fecha_emision'=>date('Y-m-d\TH:i',strtotime('+1 day'))]+$base);
-        check('rechaza fecha de emisión futura', $campo('fecha_emision')===$antes && str_contains($r['body'],'no puede ser futura'));
+        $fut=date('Y-m-d H:i',strtotime('+1 day'));
+        $c->post('guardar_factura_editada.php',['fecha_emision'=>str_replace(' ','T',$fut)]+$base);
+        check('la fecha se puede poner libre (también futura)', $campo('fecha_emision')===$fut.':00');
+        check('la página revisa el orden de la fecha con la anterior y la siguiente', str_contains($pg['body'],'factura-fecha-orden.js') && str_contains($pg['body'],'FacturaFechaOrden(') && str_contains($pg['body'],'"anterior"'));
+        require_once dirname(__DIR__,2).'/includes/factura_fechas.php';
+        $serie=implode('-',array_slice(explode('-',(string)$pdo->query("SELECT correlativo FROM facturas WHERE cliente_id=2 AND correlativo LIKE '000-%' ORDER BY correlativo DESC LIMIT 1")->fetchColumn()),0,3));
+        $lista=$pdo->query("SELECT correlativo, fecha_emision FROM facturas WHERE cliente_id=2 AND correlativo LIKE '$serie-%' ORDER BY correlativo LIMIT 3")->fetchAll(PDO::FETCH_ASSOC);
+        if (count($lista)===3) {
+            $v=facturaVecinas($pdo,2,$lista[1]['correlativo']);
+            check('vecinas: la anterior y la siguiente del mismo talonario', $v['anterior']['correlativo']===$lista[0]['correlativo'] && $v['siguiente']['correlativo']===$lista[2]['correlativo']);
+        }
         $r=$c->post('guardar_factura_editada.php',['condicion_pago'=>'xx']+$base);
         check('rechaza condición inválida', str_contains($r['body'],'Condición de pago inválida'));
     } finally {

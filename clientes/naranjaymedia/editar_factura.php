@@ -66,6 +66,9 @@ $items = $stmt->fetchAll();
 
 // Gastos que se le cobran al cliente (hosting, dominio, pauta…): los pendientes y los que ya se cobran en esta factura
 require_once '../../includes/gastos_cobrar.php';
+// Fecha de emisión: factura anterior y siguiente del talonario para revisar el orden
+require_once '../../includes/factura_fechas.php';
+$fechaVecinas = facturaVecinas($pdo, $cliente_id, (string)$factura['correlativo']);
 $gcCid = (int)$factura['cliente_id'];
 $gcGrupo = gastosGrupoDe($pdo, $gcCid, (int)$factura['receptor_id']);
 $gcFila = fn($g, $marcado) => ['id' => (int)$g['id'], 'fecha' => $g['fecha'], 'descripcion' => $g['descripcion'] . (count($gcGrupo) > 1 ? ' · a nombre de ' . $g['cliente'] : ''),
@@ -365,11 +368,11 @@ require_once '../../includes/templates/header.php';
 						<div class="row g-3">
 							<div class="col-md-6">
 								<label class="fe-form-label">Fecha de emisión</label>
-								<?php // Al editar, la factura se emite de nuevo: la fecha es la de hoy (no puede ser futura) ?>
-								<input type="datetime-local" name="fecha_emision" class="form-control"
-									value="<?= date('Y-m-d\TH:i') ?>" max="<?= date('Y-m-d\TH:i') ?>"
+								<?php // Propone la fecha de hoy; se puede cambiar y debajo se revisa el orden con la anterior y la siguiente ?>
+								<input type="datetime-local" name="fecha_emision" id="fechaEmision" class="form-control"
+									value="<?= date('Y-m-d\TH:i') ?>"
 									<?= !$es_admin ? 'readonly' : '' ?>>
-								<div class="form-text">Se emite con la fecha de hoy. Fecha anterior: <?= date('d/m/Y h:i a', strtotime($factura['fecha_emision'])) ?></div>
+								<div class="form-text">Fecha que tenía: <?= date('d/m/Y h:i a', strtotime($factura['fecha_emision'])) ?></div>
 							</div>
 							<div class="col-md-6">
 								<label class="fe-form-label">Condición de pago</label>
@@ -614,7 +617,11 @@ require_once '../../includes/templates/header.php';
 
 <script src="../../clientes/js/moneda-factura.js?v=<?= @filemtime(__DIR__ . '/../js/moneda-factura.js') ?>"></script>
 <script src="../../clientes/js/gastos-cobrar-filas.js?v=<?= @filemtime(__DIR__ . '/../js/gastos-cobrar-filas.js') ?>"></script>
+<script src="../../clientes/js/factura-fecha-orden.js?v=<?= @filemtime(__DIR__ . '/../js/factura-fecha-orden.js') ?>"></script>
 <script>
+	// Fecha de emisión: en orden con la factura anterior y la siguiente del talonario (si no, explica y sugiere una)
+	FacturaFechaOrden({ form: document.getElementById('formEditar'), input: document.getElementById('fechaEmision'),
+		vecinas: () => (<?= json_encode($fechaVecinas, JSON_HEX_TAG) ?>), original: <?= json_encode(date('Y-m-d H:i', strtotime($factura['fecha_emision']))) ?> });
 	// Moneda de los precios (en dólares se convierten el precio unitario y el subtotal de cada línea)
 	const MF = MonedaFactura({ precios: () => [...document.querySelectorAll('#productos-container input.precio-unitario, #productos-container input.subtotal-producto')], recalcular: () => calcularTotalYLetra() });
 	// Gastos de cobrarle al cliente: al marcarlo se agrega su línea al detalle (y al desmarcarlo se quita)
@@ -768,6 +775,19 @@ require_once '../../includes/templates/header.php';
         return !campo ? null : (campo.type === 'checkbox' ? (campo.checked ? 'Sí' : 'No') : campo.selectedOptions[0].textContent.trim());
     };
     const estadosInicialesMotivo = Object.fromEntries(camposEstadoMotivo.map(id => [id, leerEstadoMotivo(id)]));
+    // Otros datos que cambian y van al motivo sugerido: cliente, fecha de emisión, condición y total
+    const textoSel = el => el ? (el.selectedOptions[0]?.textContent || '').trim() : '';
+    const verFecha = v => v ? v.slice(8, 10) + '/' + v.slice(5, 7) + '/' + v.slice(0, 4) + ' ' + v.slice(11, 16) : '';
+    const elRecep = document.getElementById('receptorSelect'), elCond = document.querySelector('[name="condicion_pago"]'), elTotal = document.getElementById('h_total');
+    const inicialesMotivo = { receptor: textoSel(elRecep), fecha: <?= json_encode(date('Y-m-d\TH:i', strtotime($factura['fecha_emision']))) ?>, cond: textoSel(elCond), total: parseFloat(elTotal.value) || 0 };
+    const cambiosDatos = () => {
+        const c = [], fe = document.getElementById('fechaEmision').value, tot = parseFloat(elTotal.value) || 0;
+        if (textoSel(elRecep) !== inicialesMotivo.receptor) c.push('Cliente: ' + inicialesMotivo.receptor + ' → ' + textoSel(elRecep));
+        if (fe.slice(0, 16) !== inicialesMotivo.fecha) c.push('Fecha de emisión: ' + verFecha(inicialesMotivo.fecha) + ' → ' + verFecha(fe));
+        if (textoSel(elCond) !== inicialesMotivo.cond) c.push('Condición: ' + inicialesMotivo.cond + ' → ' + textoSel(elCond));
+        if (Math.abs(tot - inicialesMotivo.total) > 0.004) c.push('Total: ' + inicialesMotivo.total.toFixed(2) + ' → ' + tot.toFixed(2));
+        return c;
+    };
 	document.getElementById('formEditar').addEventListener('submit', function(e) {
 		e.preventDefault();
 		Swal.fire({
@@ -782,7 +802,8 @@ require_once '../../includes/templates/header.php';
             didOpen: () => {
                 const etiquetas = {estado:'Estado', pagada:'Pagada', estado_declarada:'Declarada', enviada_receptor:'Enviada', requiereSubsanacion:'Subsanación'};
                 const cambios = camposEstadoMotivo.filter(id => leerEstadoMotivo(id) !== estadosInicialesMotivo[id]).map(id => etiquetas[id] + ': ' + estadosInicialesMotivo[id] + ' → ' + leerEstadoMotivo(id));
-                document.getElementById('motivo').value = cambios.length ? 'Cambio de estado: ' + cambios.join('; ') + '.' : '';
+                const datos = cambiosDatos();
+                document.getElementById('motivo').value = [cambios.length ? 'Cambio de estado: ' + cambios.join('; ') + '.' : '', datos.length ? 'Cambios: ' + datos.join('; ') + '.' : ''].filter(Boolean).join(' ');
             },
 			preConfirm: () => {
 				const m = document.getElementById('motivo').value.trim();
