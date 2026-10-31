@@ -49,6 +49,7 @@ suite('Asociación de contrato al editar factura', function () {
         check('la fecha se puede poner libre (también futura)', $campo('fecha_emision')===$fut.':00');
         check('la página revisa el orden de la fecha con la anterior y la siguiente', str_contains($pg['body'],'factura-fecha-orden.js') && str_contains($pg['body'],'FacturaFechaOrden(') && str_contains($pg['body'],'"anterior"'));
         require_once dirname(__DIR__,2).'/includes/factura_fechas.php';
+        check('la lista avisa la fecha futura', in_array('Fecha futura', facturasFechaFueraDeOrden($pdo,2)[$fid] ?? [], true));
         $serie=implode('-',array_slice(explode('-',(string)$pdo->query("SELECT correlativo FROM facturas WHERE cliente_id=2 AND correlativo LIKE '000-%' ORDER BY correlativo DESC LIMIT 1")->fetchColumn()),0,3));
         $lista=$pdo->query("SELECT correlativo, fecha_emision FROM facturas WHERE cliente_id=2 AND correlativo LIKE '$serie-%' ORDER BY correlativo LIMIT 3")->fetchAll(PDO::FETCH_ASSOC);
         if (count($lista)===3) {

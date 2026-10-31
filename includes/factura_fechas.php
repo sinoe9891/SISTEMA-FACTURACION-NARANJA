@@ -34,3 +34,29 @@ function facturaUltimaPorCai(PDO $pdo, int $cid): array
     return $out;
 }
 
+
+/**
+ * Facturas cuya fecha no sigue el orden de su talonario o es futura: [id => [motivos]] (para el aviso en la lista).
+ */
+function facturasFechaFueraDeOrden(PDO $pdo, int $cid): array
+{
+    $st = $pdo->prepare("SELECT id, correlativo, fecha_emision FROM facturas WHERE cliente_id = ? AND fecha_emision IS NOT NULL ORDER BY correlativo");
+    $st->execute([$cid]);
+    $series = [];
+    foreach ($st as $f) $series[implode('-', array_slice(explode('-', $f['correlativo']), 0, 3))][] = $f;
+    $ver = fn($f) => ltrim(substr($f['correlativo'], -8), '0') . ' (' . date('d/m/Y h:i a', strtotime($f['fecha_emision'])) . ')';
+    // Se compara por día: dentro del mismo día no se avisa (horas cargadas sin minuto o editadas sin segundos)
+    $dia = fn($f) => substr($f['fecha_emision'], 0, 10);
+    $hoy = date('Y-m-d');
+    $out = [];
+    foreach ($series as $lista) {
+        foreach ($lista as $i => $f) {
+            $m = [];
+            if ($i > 0 && $dia($f) < $dia($lista[$i - 1])) $m[] = 'Fecha anterior a la de la factura ' . $ver($lista[$i - 1]);
+            if (isset($lista[$i + 1]) && $dia($f) > $dia($lista[$i + 1])) $m[] = 'Fecha posterior a la de la factura ' . $ver($lista[$i + 1]);
+            if ($dia($f) > $hoy) $m[] = 'Fecha futura';
+            if ($m) $out[(int)$f['id']] = $m;
+        }
+    }
+    return $out;
+}

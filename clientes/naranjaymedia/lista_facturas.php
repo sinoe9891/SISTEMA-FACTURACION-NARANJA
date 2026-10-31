@@ -95,6 +95,9 @@ $stmtFacturas = $pdo->prepare("
 ");
 $stmtFacturas->execute($params);
 $facturas = $stmtFacturas->fetchAll();
+// Fechas de emisión fuera del orden de su talonario (o futuras): aviso en la fila
+require_once '../../includes/factura_fechas.php';
+$fechaDesorden = facturasFechaFueraDeOrden($pdo, (int)$cliente_id);
 
 // Envíos por correo de cada factura (Cobros por correo): el programado pendiente manda; si no, el último enviado o con error
 $enviosCorreo = [];
@@ -1644,7 +1647,8 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 									<a href="cobros_programados" class="app-envio app-envio-<?= $evTxt[0] ?>" title="<?= htmlspecialchars($evTxt[4]) ?>"><i class="bi <?= $evTxt[1] ?>"></i><?php if ($evTxt[2]): ?><i class="bi <?= $evTxt[2] ?>"></i><?php endif; ?> <?= $evTxt[3] ?></a>
 								<?php endif; ?>
 							</td>
-							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></td>
+							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><span data-hl><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></span>
+								<?php if (isset($fechaDesorden[(int)$f['id']])): ?><a href="editar_factura?id=<?= (int)$f['id'] ?>" class="badge text-bg-warning text-decoration-none d-block mt-1" style="width:max-content" title="<?= htmlspecialchars(implode('. ', $fechaDesorden[(int)$f['id']]) . '. Abrí Editar para ver la fecha sugerida.') ?>"><i class="bi bi-exclamation-triangle-fill me-1"></i>Revisar fecha</a><?php endif; ?></td>
 							<td><span data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></span><?= programaEtiqueta($f['programa']) ?>
 <?php if (!empty($f['requiere_subsanacion']) || !empty($f['notas_internas'])): ?>
 <div class="mt-1"><button type="button" class="fh-nota-btn"
@@ -1836,7 +1840,8 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 				$empty.style.display = 'none';
 				rows.slice(s, e).forEach(r => {
 					r.style.display = '';
-					r.querySelectorAll('[data-col]').forEach(c => {
+					r.querySelectorAll('[data-col]').forEach(td => {
+						const c = td.querySelector('[data-hl]') || td;   // si la celda trae avisos, solo se resalta su texto
 						const o = c.dataset.original ?? c.textContent;
 						c.dataset.original = o;
 						c.innerHTML = hl(o, query);
