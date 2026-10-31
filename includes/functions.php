@@ -181,3 +181,19 @@ function validarRangoCai(PDO $pdo, int $cliente_id, int $rango_inicio, int $rang
 	if ($otro = $stmt->fetch(PDO::FETCH_ASSOC))
 		throw new Exception("El rango se traslapa con el CAI {$otro['cai']} ({$a[1]}: {$otro['rango_inicio']} – {$otro['rango_fin']}).");
 }
+
+/**
+ * Teléfono de Honduras con formato «+504 2202-4060». Acepta varios separados por coma, punto y coma o «/»
+ * (quedan «+504 2202-4060, +504 2566-0055»). Lo que no tenga 8 dígitos (con o sin 504) se deja como vino.
+ */
+function telefonoHN(?string $tel): string
+{
+    $partes = preg_split('/\s*[,;\/]\s*|\s+y\s+/i', trim((string)$tel), -1, PREG_SPLIT_NO_EMPTY);
+    $out = [];
+    foreach ($partes as $p) {
+        $d = preg_replace('/\D/', '', $p);
+        if (strlen($d) === 11 && str_starts_with($d, '504')) $d = substr($d, 3);
+        $out[] = strlen($d) === 8 ? '+504 ' . substr($d, 0, 4) . '-' . substr($d, 4) : trim($p);
+    }
+    return implode(', ', $out);
+}

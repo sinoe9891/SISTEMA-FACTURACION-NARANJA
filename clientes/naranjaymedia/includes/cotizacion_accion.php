@@ -113,7 +113,7 @@ try {
             if ($ya = $st->fetchColumn()) throw new Exception("Ese cliente ya existe: elígelo en la lista.");
             $t = fn($k, $m) => mb_substr(trim((string)($_POST[$k] ?? '')), 0, $m) ?: null;
             $pdo->prepare("INSERT INTO clientes_factura (cliente_id, nombre, rtn, direccion, telefono, email, contacto_nombre) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                ->execute([$cid, $nombre, $t('rtn', 25), $t('direccion', 2000), $t('telefono', 50), $email ?: null, $t('contacto_nombre', 150)]);
+                ->execute([$cid, $nombre, $t('rtn', 25), $t('direccion', 2000), mb_substr(telefonoHN($_POST['telefono'] ?? ''), 0, 50), $email ?: null, $t('contacto_nombre', 150)]);
             echo json_encode(['success' => true, 'cliente' => ['id' => (int)$pdo->lastInsertId(), 'nombre' => $nombre, 'email' => $email], 'message' => 'Cliente creado.'], JSON_UNESCAPED_UNICODE);
             break;
 

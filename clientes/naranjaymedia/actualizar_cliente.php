@@ -31,7 +31,7 @@ try {
 	$nombre = trim($_POST['nombre'] ?? '');
 	$rtn = trim($_POST['rtn'] ?? '');
 	$direccion = trim($_POST['direccion'] ?? '');
-	$telefono = trim($_POST['telefono'] ?? null);
+	$telefono = telefonoHN($_POST['telefono'] ?? '');
 	$email = trim($_POST['email'] ?? null);
 	$contacto_nombre = trim($_POST['contacto_nombre'] ?? '') ?: null;
 

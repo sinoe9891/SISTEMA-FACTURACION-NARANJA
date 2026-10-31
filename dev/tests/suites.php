@@ -93,6 +93,15 @@ suite('APIs aisladas por empresa', function () {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+suite('Teléfono de clientes con formato +504', function () {
+    require_once dirname(__DIR__, 2) . '/includes/functions.php';
+    check('8 dígitos', telefonoHN('22024060') === '+504 2202-4060');
+    check('con 504 pegado', telefonoHN('+50498030881') === '+504 9803-0881');
+    check('ya con guion', telefonoHN('2773-2027') === '+504 2773-2027');
+    check('varios números', telefonoHN('2202 4060 / 25660055') === '+504 2202-4060, +504 2566-0055');
+    check('vacío y extranjeros se dejan', telefonoHN('') === '' && telefonoHN('+1 305 555 0101') === '+1 305 555 0101');
+});
+
 suite('Facturas: borrado y correlativo', function () {
     $c = login('qa.admin@local.test');
     $cai = db()->query("SELECT * FROM cai_rangos WHERE cliente_id=2 AND fecha_limite >= CURDATE() AND correlativo_actual < (rango_fin - rango_inicio + 1) ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
