@@ -172,6 +172,70 @@ $primerNombre = explode(' ', USUARIO_NOMBRE)[0];
 			return String(x).localeCompare(String(y), 'es', { numeric: true });
 		};
 	</script>
+	<script>
+		// Cierre de sesión por inactividad: avisa con una cuenta regresiva antes de cerrarla; «Seguir conectado» la renueva
+		window.SESION = { restante: <?= sesionSegundosRestantes(isset($_SESSION['ultima_actividad']) ? (int)$_SESSION['ultima_actividad'] : null) ?>, aviso: 60 };
+		document.addEventListener('DOMContentLoaded', () => {
+			const S = window.SESION, API = '../../includes/api/sesion_estado.php';
+			let fin = Date.now() + S.restante * 1000, ultimoPing = Date.now(), actividad = false, abierto = false, revisando = false;
+			const fmt = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+			// Segundos restantes según el servidor; null = sesión cerrada; undefined = no se pudo consultar
+			const consultar = async renovar => {
+				try {
+					const r = await fetch(API + (renovar ? '?renovar=1' : ''), { credentials: 'same-origin', cache: 'no-store' });
+					if (r.status === 401) return null;
+					const d = await r.json();
+					return typeof d.restante === 'number' ? d.restante : undefined;
+				} catch (e) { return undefined; }
+			};
+			const expiro = () => {
+				abierto = true;
+				Swal.fire({ icon: 'info', title: 'Tu sesión se cerró', text: 'Pasó mucho tiempo sin usar el sistema. Iniciá sesión de nuevo para continuar.',
+					confirmButtonText: 'Ir a iniciar sesión', allowOutsideClick: false, allowEscapeKey: false }).then(() => { location.href = 'logout'; });
+			};
+			const renovar = async () => {
+				const r = await consultar(true);
+				if (r === null) return expiro();
+				if (typeof r === 'number') { fin = Date.now() + r * 1000; ultimoPing = Date.now(); }
+				actividad = false;
+			};
+			// Lo que cuenta como usar el sistema (se renueva como máximo cada minuto)
+			['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { actividad = true; }, { passive: true }));
+			const avisar = () => {
+				abierto = true;
+				Swal.fire({ icon: 'warning', title: 'Tu sesión se va a cerrar',
+					html: 'Por seguridad se cierra después de un rato sin usar el sistema.<br>Se cerrará en <strong id="sesionCuenta" style="font-size:1.4rem">' + fmt(Math.max(0, Math.round((fin - Date.now()) / 1000))) + '</strong>',
+					showCancelButton: true, confirmButtonText: 'Seguir conectado', cancelButtonText: 'Cerrar sesión',
+					allowOutsideClick: false, allowEscapeKey: false, reverseButtons: true }).then(async r => {
+					if (r.isConfirmed) { abierto = false; await renovar(); }
+					else if (r.dismiss === Swal.DismissReason.cancel) location.href = 'logout';
+				});
+			};
+			setInterval(async () => {
+				const resto = Math.round((fin - Date.now()) / 1000);
+				if (abierto) {
+					const el = document.getElementById('sesionCuenta');
+					if (el) el.textContent = fmt(Math.max(0, resto));
+					if (el && resto <= 0 && !revisando) {   // se acabó el tiempo: se confirma con el servidor
+						revisando = true;
+						const r = await consultar(false);
+						revisando = false;
+						if (!r) { Swal.close(); expiro(); } else { fin = Date.now() + r * 1000; Swal.close(); abierto = false; }
+					}
+					return;
+				}
+				if (actividad && Date.now() - ultimoPing > 60000) { await renovar(); return; }
+				if (resto <= S.aviso && !revisando && !(window.Swal && Swal.isVisible())) {
+					revisando = true;
+					const r = await consultar(false);   // otra pestaña pudo haberla renovado
+					revisando = false;
+					if (r === null) return expiro();
+					if (typeof r === 'number') fin = Date.now() + r * 1000;
+					if (typeof r !== 'number' || r <= S.aviso) avisar();
+				}
+			}, 1000);
+		});
+	</script>
 </head>
 
 

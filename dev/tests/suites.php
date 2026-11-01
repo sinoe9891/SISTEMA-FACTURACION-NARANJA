@@ -93,6 +93,18 @@ suite('APIs aisladas por empresa', function () {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+suite('Sesión: cierre por inactividad con aviso', function () {
+    require_once dirname(__DIR__, 2) . '/includes/sesion_inicio.php';
+    check('el límite es de 5 minutos', SESION_INACTIVIDAD_SEG === 300);
+    check('restante: recién iniciada, a la mitad y vencida', sesionSegundosRestantes(null) === 300 && sesionSegundosRestantes(1000, 1150) === 150 && sesionSegundosRestantes(1000, 1400) === 0);
+    $c = login('qa.admin@local.test');
+    $r = $c->get('../../includes/api/sesion_estado.php');
+    $d = json_decode($r['body'], true);
+    check('sesion_estado devuelve el tiempo restante', is_array($d) && ($d['restante'] ?? -1) > 240 && $d['restante'] <= 300, substr($r['body'], 0, 120));
+    $pg = $c->get('clientes');
+    check('las páginas llevan el aviso de cierre', str_contains($pg['body'], 'window.SESION') && str_contains($pg['body'], 'Seguir conectado'));
+});
+
 suite('Teléfono de clientes con formato +504', function () {
     require_once dirname(__DIR__, 2) . '/includes/functions.php';
     check('8 dígitos', telefonoHN('22024060') === '+504 2202-4060');

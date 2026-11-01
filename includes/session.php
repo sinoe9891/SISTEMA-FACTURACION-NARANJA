@@ -5,7 +5,7 @@ iniciarSesionSegura();
 require_once __DIR__ . '/db.php';
 
 $uri = $_SERVER['REQUEST_URI'] ?? '';
-$isApi = (strpos($uri, '/includes/api/') === 0);
+$isApi = (strpos($uri, '/includes/api/') !== false);
 
 // Si NO hay sesión
 if (!isset($_SESSION['usuario_id'])) {
@@ -17,6 +17,25 @@ if (!isset($_SESSION['usuario_id'])) {
     }
     header("Location: /");
     exit;
+}
+
+// Inactividad: pasado el límite sin usar el sistema se cierra la sesión.
+// La consulta del tiempo restante (sesion_estado.php sin ?renovar=1) no cuenta como actividad.
+$__ahora = time();
+if (isset($_SESSION['ultima_actividad']) && sesionSegundosRestantes((int)$_SESSION['ultima_actividad'], $__ahora) <= 0) {
+    $_SESSION = [];
+    session_destroy();
+    if ($isApi) {
+        http_response_code(401);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'Sesión expirada por inactividad', 'expirada' => true]);
+        exit;
+    }
+    header("Location: /");
+    exit;
+}
+if (!(basename($_SERVER['SCRIPT_NAME'] ?? '') === 'sesion_estado.php' && empty($_GET['renovar']))) {
+    $_SESSION['ultima_actividad'] = $__ahora;
 }
 
 $usuario_id = (int)$_SESSION['usuario_id'];
