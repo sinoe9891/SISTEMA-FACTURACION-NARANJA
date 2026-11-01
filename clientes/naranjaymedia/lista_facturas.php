@@ -128,7 +128,10 @@ $anuladas_count    = count(array_filter($facturas, fn($f) => $f['estado'] === 'a
 $pagadas_count     = count(array_filter($facturas, fn($f) => $f['pagada'] == 1 && $f['estado'] === 'emitida'));
 $pendientes_facts  = array_filter($facturas, fn($f) => $f['estado'] === 'emitida' && $f['pagada'] != 1);
 $pendientes_count  = count($pendientes_facts);
-$pendientes_monto  = array_sum(array_map(fn($f) => (float)$f['total'], $pendientes_facts));
+// Lo pendiente es el saldo (total − abonos, incluidos los anticipos aplicados), igual que en Cuentas por cobrar
+require_once '../../includes/cuentas.php';
+$__abonos          = cxcAbonadoPorFactura($pdo, (int)$cliente_id);
+$pendientes_monto  = array_sum(array_map(fn($f) => cxcSaldoDe((float)$f['total'], (float)($__abonos[$f['id']] ?? 0), false), $pendientes_facts));
 $total_monto       = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
 $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
 $puedeCobrarLf     = in_array($datos['rol'], ['admin', 'superadmin', 'facturador'], true) && permisoPuede($pdo, 'cuentas_cobrar');   // «Registrar cobro» → Cuentas por cobrar

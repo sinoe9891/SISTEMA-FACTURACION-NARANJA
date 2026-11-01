@@ -93,6 +93,21 @@ suite('APIs aisladas por empresa', function () {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+suite('Saldo de facturas con abonos o anticipos aplicados', function () {
+    require_once dirname(__DIR__, 2) . '/includes/cuentas.php';
+    check('sin abonos y sin pagar: el total', cxcSaldoDe(1000, 0, false) === 1000.0);
+    check('sin abonos y pagada: cero', cxcSaldoDe(1000, 0, true) === 0.0);
+    check('con abonos: total menos lo abonado', cxcSaldoDe(397900, 278530, false) === 119370.0);
+    check('abonado de más no da saldo negativo', cxcSaldoDe(100, 150, false) === 0.0);
+    $c = login('qa.admin@local.test');
+    $d = $c->get('dashboard');
+    check('el Dashboard carga con el monto adeudado', sinErroresPhp($d['body']) && str_contains($d['body'], 'Monto'), errorPhp($d['body']));
+    $k = $c->get('contratos');
+    check('Contratos carga sin errores', sinErroresPhp($k['body']), errorPhp($k['body']));
+    $h = $c->get('lista_facturas');
+    check('Historial de facturas carga sin errores', sinErroresPhp($h['body']), errorPhp($h['body']));
+});
+
 suite('Sesión: cierre por inactividad con aviso', function () {
     require_once dirname(__DIR__, 2) . '/includes/sesion_inicio.php';
     check('el límite es de 5 minutos', SESION_INACTIVIDAD_SEG === 300);

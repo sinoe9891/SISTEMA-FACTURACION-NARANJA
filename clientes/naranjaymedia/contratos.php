@@ -3,6 +3,7 @@ $titulo = 'Contratos';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/cuentas.php';
 require_once '../../includes/templates/header.php';
 
 $ctEsAdmin = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);   // casillas para eliminar contratos
@@ -25,7 +26,8 @@ $stmtKpi = $pdo->prepare("
 $stmtKpi->execute([$cliente_id]);
 $kpi = $stmtKpi->fetch(PDO::FETCH_ASSOC);
 
-// Lista completa
+// Lista completa. Lo impago de cada contrato es el saldo de sus facturas (total − abonos, con los anticipos aplicados)
+$__abonoSql = cxcDisponible($pdo) ? "COALESCE((SELECT SUM(cb.monto) FROM cobros_factura cb WHERE cb.factura_id = f7.id AND cb.anulado = 0), 0)" : "0";
 $stmtLista = $pdo->prepare("
     SELECT c.*,
            cf.nombre AS receptor_nombre, cf.rtn AS receptor_rtn,
@@ -41,7 +43,7 @@ $stmtLista = $pdo->prepare("
            (SELECT MAX(COALESCE(f5.periodo_anio, YEAR(f5.fecha_emision)) * 12 + COALESCE(f5.periodo_mes, MONTH(f5.fecha_emision)) - 1)
               FROM facturas f5 WHERE f5.contrato_id=c.id AND f5.cliente_id=c.cliente_id AND f5.estado='emitida') AS ultimo_mes_cubierto,
            (SELECT COUNT(*) FROM facturas f6 WHERE f6.contrato_id=c.id AND f6.cliente_id=c.cliente_id AND f6.estado='emitida' AND f6.pagada=0) AS impagas_n,
-           (SELECT COALESCE(SUM(f7.total),0) FROM facturas f7 WHERE f7.contrato_id=c.id AND f7.cliente_id=c.cliente_id AND f7.estado='emitida' AND f7.pagada=0) AS impagas_total,
+           (SELECT COALESCE(SUM(GREATEST(f7.total - " . $__abonoSql . ", 0)),0) FROM facturas f7 WHERE f7.contrato_id=c.id AND f7.cliente_id=c.cliente_id AND f7.estado='emitida' AND f7.pagada=0) AS impagas_total,
            (SELECT COALESCE(SUM(f4.total),0) FROM facturas f4 WHERE f4.contrato_id=c.id AND f4.cliente_id=c.cliente_id AND f4.estado='emitida') AS total_monto_contrato,
            CASE
                WHEN c.fecha_inicio > CURDATE() THEN DATE(CONCAT(YEAR(c.fecha_inicio),'-',LPAD(MONTH(c.fecha_inicio),2,'0'),'-',LPAD(LEAST(c.dia_pago,DAY(LAST_DAY(c.fecha_inicio))),2,'0')))
@@ -107,14 +109,16 @@ $total_contratos = count($contratos);
 // la factura (nunca antes de emitirla). Solo es «vencida» cuando esa fecha ya pasó.
 $porCobrar = [];
 $stPC = $pdo->prepare("
-    SELECT f.contrato_id, f.total, DATE(f.fecha_emision) emision,
+    SELECT f.id, f.contrato_id, f.total, DATE(f.fecha_emision) emision,
            COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) pa, COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) pm, c.dia_pago
     FROM facturas f JOIN contratos c ON c.id = f.contrato_id AND c.cliente_id = f.cliente_id
     WHERE f.cliente_id = ? AND f.estado = 'emitida' AND f.pagada = 0 AND f.contrato_id IS NOT NULL
 ");
 $stPC->execute([$cliente_id]);
 $hoyStr = date('Y-m-d');
+$__abonos = cxcAbonadoPorFactura($pdo, (int)$cliente_id);
 foreach ($stPC->fetchAll(PDO::FETCH_ASSOC) as $f) {
+    $f['total'] = cxcSaldoDe((float)$f['total'], (float)($__abonos[$f['id']] ?? 0), false);   // saldo, no el total
     $ult = (int)date('t', mktime(0, 0, 0, (int)$f['pm'], 1, (int)$f['pa']));
     $vence = sprintf('%04d-%02d-%02d', $f['pa'], $f['pm'], min(max(1, (int)$f['dia_pago']), $ult));
     // Igual que Cuentas por cobrar: si se facturó después del día de pago de su mes, se debe desde ese día (no desde que se emitió)

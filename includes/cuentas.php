@@ -24,6 +24,22 @@ function cxcDisponible(PDO $pdo): bool
     return $ok;
 }
 
+/** Abonado a cada factura (cobros no anulados, incluidos los anticipos aplicados): [factura_id => monto]. */
+function cxcAbonadoPorFactura(PDO $pdo, int $cid): array
+{
+    if (!cxcDisponible($pdo)) return [];
+    $st = $pdo->prepare("SELECT factura_id, SUM(monto) FROM cobros_factura WHERE cliente_id = ? AND anulado = 0 GROUP BY factura_id");
+    $st->execute([$cid]);
+    return array_map('floatval', $st->fetchAll(PDO::FETCH_KEY_PAIR));
+}
+
+/** Lo que falta cobrar de una factura según su total, lo abonado y su marca «pagada» (misma regla que cxcSqlSaldo). */
+function cxcSaldoDe(float $total, float $abonado, bool $pagada): float
+{
+    if ($abonado > 0) return max(0.0, round($total - $abonado, 2));
+    return $pagada ? 0.0 : round($total, 2);
+}
+
 /** Expresión SQL del saldo de la factura f (requiere el alias f y la subconsulta de abonos). */
 function cxcSqlSaldo(): string
 {

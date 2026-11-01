@@ -241,9 +241,10 @@ unset($__nd);
 /// ==============================
 /// Pendientes de pago (facturas emitidas no pagadas)
 /// ==============================
+// El monto es el saldo (total − abonos, incluidos los anticipos aplicados), igual que en Cuentas por cobrar
+require_once __DIR__ . '/cuentas.php';
 $stmtPendientesPago = $pdo->prepare("
-	SELECT COUNT(*) AS cantidad,
-	       IFNULL(SUM(total), 0) AS monto_pendiente
+	SELECT id, total, pagada
 	FROM facturas
 	WHERE cliente_id = ?
 	  AND establecimiento_id = ?
@@ -251,7 +252,12 @@ $stmtPendientesPago = $pdo->prepare("
 	  AND (pagada = 0 OR pagada IS NULL)
 ");
 $stmtPendientesPago->execute([$cliente_id, $establecimiento_activo]);
-$pendientes_pago = $stmtPendientesPago->fetch(PDO::FETCH_ASSOC);
+$__abonos = cxcAbonadoPorFactura($pdo, (int)$cliente_id);
+$pendientes_pago = ['cantidad' => 0, 'monto_pendiente' => 0.0];
+foreach ($stmtPendientesPago->fetchAll(PDO::FETCH_ASSOC) as $__f) {
+	$pendientes_pago['cantidad']++;
+	$pendientes_pago['monto_pendiente'] += cxcSaldoDe((float)$__f['total'], (float)($__abonos[$__f['id']] ?? 0), false);
+}
 $cant_pendientes_pago  = (int)($pendientes_pago['cantidad'] ?? 0);
 $monto_pendientes_pago = (float)($pendientes_pago['monto_pendiente'] ?? 0);
 
