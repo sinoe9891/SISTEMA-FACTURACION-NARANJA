@@ -188,11 +188,8 @@ $primerNombre = explode(' ', USUARIO_NOMBRE)[0];
 					return typeof d.restante === 'number' ? d.restante : undefined;
 				} catch (e) { return undefined; }
 			};
-			const expiro = () => {
-				abierto = true;
-				Swal.fire({ icon: 'info', title: 'Tu sesión se cerró', text: 'Pasó mucho tiempo sin usar el sistema. Iniciá sesión de nuevo para continuar.',
-					confirmButtonText: 'Ir a iniciar sesión', allowOutsideClick: false, allowEscapeKey: false }).then(() => { location.href = 'logout'; });
-			};
+			// Sesión cerrada: a la página «Tu sesión ha sido cerrada» (con el botón para iniciar sesión de nuevo)
+			const expiro = () => { abierto = true; location.href = 'sesion_cerrada?m=inactividad'; };
 			const renovar = async () => {
 				const r = await consultar(true);
 				if (r === null) return expiro();

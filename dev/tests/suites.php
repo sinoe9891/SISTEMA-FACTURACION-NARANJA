@@ -118,6 +118,14 @@ suite('Sesión: cierre por inactividad con aviso', function () {
     check('sesion_estado devuelve el tiempo restante', is_array($d) && ($d['restante'] ?? -1) > 240 && $d['restante'] <= 300, substr($r['body'], 0, 120));
     $pg = $c->get('clientes');
     check('las páginas llevan el aviso de cierre', str_contains($pg['body'], 'window.SESION') && str_contains($pg['body'], 'Seguir conectado'));
+    $anon = new Cliente('anon');
+    $i = $anon->get('sesion_cerrada', ['m' => 'inactividad']);
+    check('sesion_cerrada (inactividad): página pública con el mensaje y el botón', $i['code'] === 200 && str_contains($i['body'], 'Tu sesión ha sido cerrada') && str_contains($i['body'], '5 minutos') && str_contains($i['body'], 'Iniciar sesión de nuevo') && str_contains($i['body'], 'app-login-logo'));
+    $o = $anon->get('sesion_cerrada', ['m' => 'salida']);
+    check('sesion_cerrada (salida): mensaje de despedida', str_contains($o['body'], 'Cerraste tu sesión'));
+    $l = login('qa.admin@local.test');
+    $r = $l->get('logout');
+    check('cerrar sesión lleva a la página de sesión cerrada', str_contains((string)($r['loc'] ?? ''), 'sesion_cerrada?m=salida'), (string)($r['loc'] ?? ''));
 });
 
 suite('Teléfono de clientes con formato +504', function () {

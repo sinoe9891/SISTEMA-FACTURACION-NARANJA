@@ -31,7 +31,8 @@ if (isset($_SESSION['ultima_actividad']) && sesionSegundosRestantes((int)$_SESSI
         echo json_encode(['error' => 'Sesión expirada por inactividad', 'expirada' => true]);
         exit;
     }
-    header("Location: /");
+    // A la página «Tu sesión ha sido cerrada» de la empresa (/clientes/<empresa>/); fuera de ella, al inicio
+    header('Location: ' . (preg_match('#^(.*?/clientes/[^/]+/)#', parse_url($uri, PHP_URL_PATH) ?? '', $__m) ? $__m[1] . 'sesion_cerrada?m=inactividad' : '/'));
     exit;
 }
 if (!(basename($_SERVER['SCRIPT_NAME'] ?? '') === 'sesion_estado.php' && empty($_GET['renovar']))) {
