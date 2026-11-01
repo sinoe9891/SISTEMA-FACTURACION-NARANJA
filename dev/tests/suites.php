@@ -102,6 +102,19 @@ suite('Saldo de facturas con abonos o anticipos aplicados', function () {
     $c = login('qa.admin@local.test');
     $d = $c->get('dashboard');
     check('el Dashboard carga con el monto adeudado', sinErroresPhp($d['body']) && str_contains($d['body'], 'Monto'), errorPhp($d['body']));
+    // Fecha de pago (vencimiento) y su semáforo
+    check('vencimiento de contrato: su día de pago en el mes de emisión', facturaVencimiento('2026-11-01 23:30:00', null, null, 10, 'contado') === '2026-11-10');
+    check('vencimiento de contrato con período: el día de pago de ese mes (tope fin de mes)', facturaVencimiento('2026-11-05', 2, 2026, 31, 'contado') === '2026-02-28');
+    check('sin contrato: contado vence el día de emisión y crédito a 30 días', facturaVencimiento('2026-11-01', null, null, null, 'contado') === '2026-11-01' && facturaVencimiento('2026-11-01', null, null, null, 'credito') === '2026-12-01');
+    check('semáforo: vencida, hoy, pronto y futura', facturaVencEstado('2026-10-30', '2026-11-01')['clase'] === 'vencida' && facturaVencEstado('2026-11-01', '2026-11-01')['clase'] === 'hoy' && facturaVencEstado('2026-11-05', '2026-11-01')['clase'] === 'pronto' && facturaVencEstado('2026-11-20', '2026-11-01')['clase'] === 'futura');
+    check('semáforo: texto de días', facturaVencEstado('2026-10-30', '2026-11-01')['txt'] === 'Vencida hace 2 d' && facturaVencEstado('2026-11-05', '2026-11-01')['txt'] === 'Vence en 4 d');
+    $h2 = $c->get('lista_facturas');
+    check('el Historial trae el filtro y las etiquetas de vencimiento', str_contains($h2['body'], 'id="fhVenc"') && str_contains($h2['body'], 'data-ven='), errorPhp($h2['body']));
+    $cb = $c->get('cobro_accion.php', ['facturas' => 1]);
+    $cbj = json_decode($cb['body'], true);
+    check('la API de cobros trae la fecha de pago de cada factura', !empty($cbj['success']) && (empty($cbj['facturas']) || isset($cbj['facturas'][0]['vence'])), substr($cb['body'], 0, 160));
+    $nc = $c->get('nuevo_cobro', ['receptor_id' => 1, 'tipo' => 'envio_factura']);
+    check('Nuevo cobro llena la fecha de envío con la fecha de pago', sinErroresPhp($nc['body']) && str_contains($nc['body'], 'cFechaAyuda') && str_contains($nc['body'], 'fechaPorPago'), errorPhp($nc['body']));
     $k = $c->get('contratos');
     check('Contratos carga sin errores', sinErroresPhp($k['body']), errorPhp($k['body']));
     $h = $c->get('lista_facturas');

@@ -85,7 +85,9 @@ $stmtFacturas = $pdo->prepare("
     SELECT " . ($__conProg ? "pg.nombre" : "NULL") . " AS programa, f.id, f.correlativo, f.fecha_emision, f.total, f.subtotal,
            f.estado, f.pagada, f.enviada_receptor, f.estado_declarada,
            (f.isv_15 + f.isv_18) AS isv_total,
-           f.requiere_subsanacion, f.notas_internas, f.receptor_id, cf.nombre AS receptor, cf.nombre_comercial
+           f.requiere_subsanacion, f.notas_internas, f.receptor_id, cf.nombre AS receptor, cf.nombre_comercial,
+           f.condicion_pago, f.periodo_mes, f.periodo_anio,
+           (SELECT ct.dia_pago FROM contratos ct WHERE ct.id = f.contrato_id AND ct.cliente_id = f.cliente_id) AS dia_pago
     FROM facturas f
     INNER JOIN clientes_factura cf ON f.receptor_id = cf.id
     " . ($__conProg ? "LEFT JOIN programas pg ON pg.id = f.programa_id" : "") . "
@@ -1584,6 +1586,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 				<div class="fh-sit-filtros" title="Filtrar por situación (se combinan)">
 					<select class="fh-per-page" data-sit="env" aria-label="Filtrar por enviada"><option value="">Enviada: todas</option><option value="1">Enviada: sí</option><option value="0">Enviada: no</option></select>
 					<select class="fh-per-page" data-sit="pag" aria-label="Filtrar por pagada"><option value="">Pagada: todas</option><option value="1">Pagada: sí</option><option value="0">Pagada: no</option></select>
+					<select class="fh-per-page" data-sit="ven" id="fhVenc" aria-label="Filtrar por vencimiento"><option value="">Vencimiento: todos</option><option value="vencida">Vencidas</option><option value="pronto">Vencen hoy o en 7 días</option></select>
 					<select class="fh-per-page" data-sit="dec" aria-label="Filtrar por declarada"><option value="">Declarada: todas</option><option value="1">Declarada: sí</option><option value="0">Declarada: pendiente</option></select>
 				</div>
 				<select class="fh-per-page" id="fhPerPage">
@@ -1648,7 +1651,12 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 							default   => 'st-borrador'
 						};
 					?>
-						<tr data-env="<?= (int)$f['enviada_receptor'] === 1 ? 1 : 0 ?>" data-pag="<?= (int)$f['pagada'] === 1 ? 1 : 0 ?>" data-dec="<?= $f['estado'] === 'anulada' ? 'na' : (($f['estado_declarada'] == 1 || $f['estado_declarada'] === 'si') ? 1 : 0) ?>"
+						<?php // Vencimiento: solo facturas emitidas con saldo; semáforo por días (verde queda para lo pagado)
+						$venc = null;
+						if ($f['estado'] === 'emitida' && cxcSaldoDe((float)$f['total'], (float)($__abonos[$f['id']] ?? 0), (int)$f['pagada'] === 1) > 0.004) {
+							$venc = facturaVencEstado(facturaVencimiento((string)$f['fecha_emision'], (int)$f['periodo_mes'] ?: null, (int)$f['periodo_anio'] ?: null, (int)$f['dia_pago'] ?: null, $f['condicion_pago']));
+						} ?>
+						<tr data-ven="<?= $venc ? ($venc['clase'] === 'vencida' ? 'vencida' : (in_array($venc['clase'], ['hoy', 'pronto'], true) ? 'pronto' : 'otra')) : 'na' ?>" data-env="<?= (int)$f['enviada_receptor'] === 1 ? 1 : 0 ?>" data-pag="<?= (int)$f['pagada'] === 1 ? 1 : 0 ?>" data-dec="<?= $f['estado'] === 'anulada' ? 'na' : (($f['estado_declarada'] == 1 || $f['estado_declarada'] === 'si') ? 1 : 0) ?>"
 							data-search="<?= strtolower(htmlspecialchars($f['correlativo'] . ' ' . $f['receptor'] . ' ' . ($f['nombre_comercial'] ?? '') . ' ' . $f['programa'] . ' ' . $f['estado'] . ' ' . date('d/m/Y', strtotime($f['fecha_emision'])))) ?>">
 							<td class="fh-select-col"><input type="checkbox" class="fh-row-check fh-row-select"
 									data-factura-id="<?= $f['id'] ?>" data-receptor-id="<?= (int)$f['receptor_id'] ?>" data-estado="<?= htmlspecialchars($f['estado']) ?>"></td>
@@ -1670,6 +1678,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 							</td>
 							<td data-col="fecha" data-sort-val="<?= htmlspecialchars((string)$f['fecha_emision']) ?>"><span data-hl><?= date('d/m/Y', strtotime($f['fecha_emision'])) ?></span>
 								<?php if (!isset($fechaDesorden[(int)$f['id']]) && substr((string)$f['fecha_emision'], 0, 10) > date('Y-m-d')): ?><span class="badge text-bg-info d-block mt-1" style="width:max-content" title="Fecha de emisión posterior a hoy, en orden con las demás facturas"><i class="bi bi-calendar-event me-1"></i>Fecha futura</span><?php endif; ?>
+								<?php if ($venc): $vc = ['vencida' => 'text-bg-danger', 'hoy' => 'text-bg-warning', 'pronto' => 'text-bg-warning', 'futura' => 'text-bg-light border'][$venc['clase']]; ?><span class="badge <?= $vc ?> d-block mt-1" style="width:max-content" title="Fecha de pago de esta factura: <?= date('d/m/Y', strtotime(facturaVencimiento((string)$f['fecha_emision'], (int)$f['periodo_mes'] ?: null, (int)$f['periodo_anio'] ?: null, (int)$f['dia_pago'] ?: null, $f['condicion_pago']))) ?>"><i class="bi bi-<?= $venc['clase'] === 'futura' ? 'calendar-event' : 'alarm' ?> me-1"></i><?= $venc['txt'] ?></span><?php endif; ?>
 								<?php if (isset($fechaDesorden[(int)$f['id']])): ?><a href="editar_factura?id=<?= (int)$f['id'] ?>" class="badge text-bg-warning text-decoration-none d-block mt-1" style="width:max-content" title="<?= htmlspecialchars(implode('. ', $fechaDesorden[(int)$f['id']]) . '. Abrí Editar para ver la fecha sugerida.') ?>"><i class="bi bi-exclamation-triangle-fill me-1"></i>Revisar fecha</a><?php endif; ?></td>
 							<td><span data-col="receptor"><?= htmlspecialchars($f['receptor']) ?></span><?php if (!empty($f['nombre_comercial'])): ?><div class="small text-muted"><?= htmlspecialchars($f['nombre_comercial']) ?></div><?php endif; ?><?= programaEtiqueta($f['programa']) ?>
 <?php if (!empty($f['requiere_subsanacion']) || !empty($f['notas_internas'])): ?>
@@ -1907,6 +1916,9 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 			updIcons();
 			render();
 		}));
+		// Llegar desde el Dashboard con ?venc=vencida|pronto deja ese filtro puesto
+		const vencUrl = new URLSearchParams(location.search).get('venc'), $venc = document.getElementById('fhVenc');
+		if ($venc && ['vencida', 'pronto'].includes(vencUrl)) { $venc.value = vencUrl; page = 1; render(); }
 		// Filtros de situación (enviada, pagada, declarada): se combinan con la búsqueda
 		document.querySelectorAll('[data-sit]').forEach(x => x.addEventListener('change', () => { page = 1; render(); }));
 		let deb;

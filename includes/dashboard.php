@@ -244,7 +244,8 @@ unset($__nd);
 // El monto es el saldo (total − abonos, incluidos los anticipos aplicados), igual que en Cuentas por cobrar
 require_once __DIR__ . '/cuentas.php';
 $stmtPendientesPago = $pdo->prepare("
-	SELECT id, total, pagada
+	SELECT id, total, pagada, fecha_emision, condicion_pago, periodo_mes, periodo_anio,
+	       (SELECT ct.dia_pago FROM contratos ct WHERE ct.id = facturas.contrato_id AND ct.cliente_id = facturas.cliente_id) AS dia_pago
 	FROM facturas
 	WHERE cliente_id = ?
 	  AND establecimiento_id = ?
@@ -254,9 +255,16 @@ $stmtPendientesPago = $pdo->prepare("
 $stmtPendientesPago->execute([$cliente_id, $establecimiento_activo]);
 $__abonos = cxcAbonadoPorFactura($pdo, (int)$cliente_id);
 $pendientes_pago = ['cantidad' => 0, 'monto_pendiente' => 0.0];
+// Vencimientos (fecha de pago de cada factura, ver facturaVencimiento): vencidas y las que vencen hoy o en los próximos 7 días
+$venc_vencidas = ['n' => 0, 'monto' => 0.0];
+$venc_proximas = ['n' => 0, 'monto' => 0.0];
 foreach ($stmtPendientesPago->fetchAll(PDO::FETCH_ASSOC) as $__f) {
+	$__saldo = cxcSaldoDe((float)$__f['total'], (float)($__abonos[$__f['id']] ?? 0), false);
 	$pendientes_pago['cantidad']++;
-	$pendientes_pago['monto_pendiente'] += cxcSaldoDe((float)$__f['total'], (float)($__abonos[$__f['id']] ?? 0), false);
+	$pendientes_pago['monto_pendiente'] += $__saldo;
+	$__v = facturaVencEstado(facturaVencimiento((string)$__f['fecha_emision'], (int)$__f['periodo_mes'] ?: null, (int)$__f['periodo_anio'] ?: null, (int)$__f['dia_pago'] ?: null, $__f['condicion_pago']));
+	if ($__v['clase'] === 'vencida') { $venc_vencidas['n']++; $venc_vencidas['monto'] += $__saldo; }
+	elseif (in_array($__v['clase'], ['hoy', 'pronto'], true)) { $venc_proximas['n']++; $venc_proximas['monto'] += $__saldo; }
 }
 $cant_pendientes_pago  = (int)($pendientes_pago['cantidad'] ?? 0);
 $monto_pendientes_pago = (float)($pendientes_pago['monto_pendiente'] ?? 0);

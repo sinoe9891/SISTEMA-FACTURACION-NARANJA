@@ -413,6 +413,16 @@ unset($__v);
                         <?php if (($cant_pendientes_pago ?? 0) > 0): ?>
                             <div class="d-flex justify-content-between mb-1"><span class="text-muted small">Facturas</span><span
                                     class="fw-semibold"><?= (int)$cant_pendientes_pago ?></span></div>
+                            <?php if (($venc_vencidas['n'] ?? 0) > 0): ?>
+                                <a href="lista_facturas?venc=vencida" class="d-flex justify-content-between mb-1 text-decoration-none" title="Ver las facturas vencidas">
+                                    <span class="small text-danger fw-semibold"><i class="bi bi-circle-fill me-1" style="font-size:.55rem"></i>Vencidas · <?= (int)$venc_vencidas['n'] ?></span>
+                                    <span class="small text-danger fw-semibold">L <?= number_format($venc_vencidas['monto'], 2) ?></span></a>
+                            <?php endif; ?>
+                            <?php if (($venc_proximas['n'] ?? 0) > 0): ?>
+                                <a href="lista_facturas?venc=pronto" class="d-flex justify-content-between mb-1 text-decoration-none" title="Ver las que vencen hoy o en 7 días">
+                                    <span class="small fw-semibold" style="color:#b45309"><i class="bi bi-circle-fill me-1" style="font-size:.55rem"></i>Vencen en 7 días · <?= (int)$venc_proximas['n'] ?></span>
+                                    <span class="small fw-semibold" style="color:#b45309">L <?= number_format($venc_proximas['monto'], 2) ?></span></a>
+                            <?php endif; ?>
                             <div class="d-flex justify-content-between pt-2 border-top mt-1"><span class="fw-bold">Monto
                                     adeudado</span><span class="fw-bold text-danger">L
                                     <?= number_format($monto_pendientes_pago ?? 0, 2) ?></span></div>

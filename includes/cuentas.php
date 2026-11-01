@@ -40,6 +40,35 @@ function cxcSaldoDe(float $total, float $abonado, bool $pagada): float
     return $pagada ? 0.0 : round($total, 2);
 }
 
+/**
+ * Fecha de pago (vencimiento) de una factura, 'Y-m-d':
+ *  - de un contrato: el día de pago del contrato en el mes de su período (o, sin período, el mes de emisión);
+ *  - sin contrato: contado vence el día de emisión; crédito, 30 días después.
+ */
+function facturaVencimiento(string $emision, ?int $periodoMes, ?int $periodoAnio, ?int $diaPago, ?string $condicion): string
+{
+    $e = substr($emision, 0, 10);
+    if ($diaPago) {
+        $m = $periodoMes ?: (int)substr($e, 5, 2);
+        $a = $periodoAnio ?: (int)substr($e, 0, 4);
+        return sprintf('%04d-%02d-%02d', $a, $m, min(max(1, $diaPago), (int)date('t', mktime(0, 0, 0, $m, 1, $a))));
+    }
+    return strtolower((string)$condicion) === 'credito' ? date('Y-m-d', strtotime($e . ' +30 days')) : $e;
+}
+
+/**
+ * Semáforo del vencimiento de una factura con saldo: clase vencida (rojo) | hoy (naranja) | pronto (ámbar, 1–7 días) | futura (neutro).
+ * Devuelve ['clase', 'dias' (negativo = ya venció), 'txt'].
+ */
+function facturaVencEstado(string $vence, ?string $hoy = null): array
+{
+    $dias = (int)round((strtotime($vence) - strtotime($hoy ?? date('Y-m-d'))) / 86400);
+    if ($dias < 0) return ['clase' => 'vencida', 'dias' => $dias, 'txt' => 'Vencida hace ' . (-$dias) . ' d'];
+    if ($dias === 0) return ['clase' => 'hoy', 'dias' => 0, 'txt' => 'Vence hoy'];
+    if ($dias <= 7) return ['clase' => 'pronto', 'dias' => $dias, 'txt' => 'Vence en ' . $dias . ' d'];
+    return ['clase' => 'futura', 'dias' => $dias, 'txt' => 'Vence ' . date('d/m', strtotime($vence))];
+}
+
 /** Expresión SQL del saldo de la factura f (requiere el alias f y la subconsulta de abonos). */
 function cxcSqlSaldo(): string
 {

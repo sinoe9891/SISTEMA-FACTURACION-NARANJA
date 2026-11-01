@@ -82,6 +82,7 @@ try {
         $hayCxc = cxcDisponible($pdo);
         $st = $pdo->prepare("
             SELECT f.id, f.correlativo, f.contrato_id, " . ($pdo->query("SHOW COLUMNS FROM facturas LIKE 'programa_id'")->fetchColumn() ? "f.programa_id" : "NULL AS programa_id") . ", DATE(f.fecha_emision) AS fecha, f.total, f.pagada, f.enviada_receptor AS enviada,
+                   f.condicion_pago, (SELECT ct.dia_pago FROM contratos ct WHERE ct.id = f.contrato_id AND ct.cliente_id = f.cliente_id) AS dia_pago,
                    COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) AS pm, COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) AS pa,
                    " . ($hayCxc ? "COALESCE((SELECT SUM(c.monto) FROM cobros_factura c WHERE c.factura_id = f.id AND c.anulado = 0), 0)" : "0") . " AS abonado
             FROM facturas f
@@ -89,6 +90,7 @@ try {
             ORDER BY f.fecha_emision DESC, f.id DESC");
         $st->execute([$cid, $rid]);
         $facturas = array_map(function ($f) {
+            $f['vence'] = facturaVencimiento((string)$f['fecha'], (int)$f['pm'], (int)$f['pa'], (int)$f['dia_pago'] ?: null, $f['condicion_pago']);   // fecha de pago
             $f['abonado'] = round((float)$f['abonado'], 2);
             $f['saldo'] = $f['abonado'] > 0 ? max(0, round((float)$f['total'] - $f['abonado'], 2)) : ((int)$f['pagada'] ? 0.0 : round((float)$f['total'], 2));
             return $f;

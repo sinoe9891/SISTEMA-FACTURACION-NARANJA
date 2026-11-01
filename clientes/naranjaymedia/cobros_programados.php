@@ -180,8 +180,9 @@ require_once '../../includes/templates/header.php';
                     <textarea id="cMensaje" class="form-control" rows="12"></textarea>
                     <div class="form-text">Plantillas en <a href="configuracion_mensajes">Mensajes y cuentas de pago</a>. Se agregan el logo, el pie con los correos de respuesta y los PDF.</div></div>
                 <div class="col-md-5"><label class="form-label">5. Fecha y hora de envío</label>
-                    <input class="form-control" type="datetime-local" name="programado_para" value="<?= $manana ?>">
+                    <input class="form-control" type="datetime-local" name="programado_para" id="cFecha" value="<?= $manana ?>">
                     <div class="form-text">Hora de Honduras. Ahora son las <?= date('g:i a') ?>.</div>
+                    <div class="form-text fw-semibold" id="cFechaAyuda"></div>
                     <div class="small text-warning-emphasis aviso-finde d-none mt-1"></div></div>
                 <div class="col-md-7 d-flex flex-wrap align-items-end gap-2 justify-content-md-end">
                     <button type="button" class="btn btn-outline-dark" id="btnPrevia"><i class="bi bi-window me-1"></i>Vista previa</button>
@@ -475,10 +476,29 @@ require_once '../../includes/templates/header.php';
     const docsMarcados = () => [...document.querySelectorAll('#cDocs input:checked')].map(i => i.value);
     const marcarInicial = f => pre.ids.length ? pre.ids.includes(+f.id) : (pre.contrato ? f.contrato_id == pre.contrato && f.saldo > 0 : f.saldo > 0);
     const seleccionadas = () => [...(tablaActiva() || $tb).querySelectorAll('input[type=checkbox]:checked')].map(i => i.value);
+    // Fecha de envío: si las facturas marcadas ya tienen fecha de pago se programa ese mismo día a las 8:00 a. m.
+    // (si ya venció alguna o la hora ya pasó, mañana a las 8:00). Si la persona cambia la fecha a mano, ya no se toca.
+    const $fecha = document.getElementById('cFecha'), $fechaAyuda = document.getElementById('cFechaAyuda');
+    let fechaManual = false;
+    $fecha?.addEventListener('input', () => { fechaManual = true; if ($fechaAyuda) $fechaAyuda.textContent = ''; });
+    const verFecha = ymd => ymd.split('-').reverse().join('/');
+    function fechaPorPago() {
+        if (!$fecha || fechaManual || bloque() !== 'facturas') return;
+        const p = n => String(n).padStart(2, '0'), ymd = d => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+        const ahora = new Date(), man = new Date(ahora.getTime() + 86400000), mananaTxt = ymd(man) + 'T08:00';
+        const vence = [...$tb.querySelectorAll('input[type=checkbox]:checked')].map(i => i.dataset.vence).filter(Boolean).sort();
+        const dec = (v, txt) => { $fecha.value = v; $fechaAyuda.textContent = txt; if (typeof avisoFinde === 'function') avisoFinde($fecha); };
+        if (!vence.length) return dec(mananaTxt, '');
+        const primera = vence[0];
+        if (primera < ymd(ahora)) return dec(mananaTxt, `Hay facturas vencidas desde el ${verFecha(primera)}: se programó para mañana a las 8:00 a. m.`);
+        if (new Date(primera + 'T08:00') > ahora) return dec(primera + 'T08:00', `Fecha de pago de la factura: ${verFecha(primera)} → se programó ese día a las 8:00 a. m. (podés cambiarla).`);
+        dec(mananaTxt, `La fecha de pago es hoy (${verFecha(primera)}) y ya pasaron las 8:00 a. m.: se programó para mañana a las 8:00 a. m.`);
+    }
     function resumen() {
         const filas = [...$tb.querySelectorAll('input[type=checkbox]:checked')];
         const saldo = filas.reduce((s, i) => s + Number(i.dataset.saldo), 0);
         document.getElementById('cResumen').innerHTML = filas.length ? `<strong>${filas.length}</strong> factura(s) · saldo <strong>${L(saldo)}</strong>` : '<span class="text-muted">Ninguna factura seleccionada.</span>';
+        fechaPorPago();
     }
     $tb?.addEventListener('change', resumen);
 
@@ -517,7 +537,7 @@ require_once '../../includes/templates/header.php';
             ctProg = d.contrato_programa || {};
             ccManual = false;
             $tb.innerHTML = d.facturas.length ? d.facturas.map(f => `<tr>
-                <td><input class="form-check-input" type="checkbox" name="factura_ids[]" value="${f.id}" data-saldo="${f.saldo}" data-contrato="${f.contrato_id || ''}" data-programa="${f.programa_id || ''}" ${marcarInicial(f) ? 'checked' : ''}></td>
+                <td><input class="form-check-input" type="checkbox" name="factura_ids[]" value="${f.id}" data-saldo="${f.saldo}" data-vence="${f.vence || ''}" data-contrato="${f.contrato_id || ''}" data-programa="${f.programa_id || ''}" ${marcarInicial(f) ? 'checked' : ''}></td>
                 <td class="font-monospace small text-nowrap"><a href="ver_factura?id=${f.id}" target="_blank">${esc(f.correlativo)}</a>
                     <div style="font-size:.68rem">${+f.enviada ? '<span class="text-muted">Ya enviada</span>' : '<span class="badge rounded-pill" style="background:#dbeafe;color:#1e40af">Nueva</span>'}</div></td>
                 <td class="small">${meses[f.pm]} ${f.pa}</td><td class="small text-nowrap">${f.fecha.split('-').reverse().join('/')}</td>
