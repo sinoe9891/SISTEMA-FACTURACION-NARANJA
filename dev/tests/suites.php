@@ -160,19 +160,27 @@ suite('Nombre y versión del sistema', function () {
     check('el inicio de sesión también', str_contains($i['body'], 'NaranjaFact v' . APP_VERSION), errorPhp($i['body']));
 });
 
-suite('Historial: selector de CAI (activos, con pendientes, vencidos, todos)', function () {
+suite('Historial: grupo de CAI y CAI del grupo', function () {
     $c = login('qa.admin@local.test');
     $cont = fn($r) => substr_count($r['body'], '<tr data-ven=');
     $def = $c->get('lista_facturas');
-    check('la primera opción es «CAI activos» y están las otras tres en orden', sinErroresPhp($def['body']) && preg_match('#<select name="cai_id"[^>]*>\s*<option value="">— CAI activos —</option>\s*<option value="pendientes"[^>]*>— CAI activos y con pendientes —</option>\s*<option value="vencidos"[^>]*>— CAI vencidos —</option>\s*<option value="todos"[^>]*>— Todos los CAI —</option>#', $def['body']) === 1, errorPhp($def['body']));
-    $pen = $c->get('lista_facturas', ['cai_id' => 'pendientes']);
-    $ven = $c->get('lista_facturas', ['cai_id' => 'vencidos']);
-    $todos = $c->get('lista_facturas', ['cai_id' => 'todos']);
-    check('todos = activos + con pendientes + vencidos sin repetir; cada grupo cargó sin errores', sinErroresPhp($pen['body'] . $ven['body'] . $todos['body']) && $cont($todos) >= $cont($pen) && $cont($pen) >= $cont($def), $cont($def) . '/' . $cont($pen) . '/' . $cont($ven) . '/' . $cont($todos));
+    check('el grupo por defecto es «CAI activos» y están los demás en orden', sinErroresPhp($def['body']) && preg_match('#<select name="cai_grupo"[^>]*>\s*<option value="" selected>CAI activos</option>\s*<option value="pendientes"[^>]*>CAI activos y con pendientes</option>\s*<option value="vencidos"[^>]*>CAI vencidos</option>\s*<option value="todos"[^>]*>Todos los CAI</option>#', $def['body']) === 1, errorPhp($def['body']));
+    check('el segundo select es de los CAI del grupo (cada uno con sus grupos)', str_contains($def['body'], '<option value="">— Todos —</option>') && str_contains($def['body'], 'data-grupos="'));
+    $pen = $c->get('lista_facturas', ['cai_grupo' => 'pendientes']);
+    $ven = $c->get('lista_facturas', ['cai_grupo' => 'vencidos']);
+    $todos = $c->get('lista_facturas', ['cai_grupo' => 'todos']);
+    check('cada grupo carga sin errores y todos ≥ con pendientes ≥ activos', sinErroresPhp($pen['body'] . $ven['body'] . $todos['body']) && $cont($todos) >= $cont($pen) && $cont($pen) >= $cont($def), $cont($def) . '/' . $cont($pen) . '/' . $cont($ven) . '/' . $cont($todos));
+    $viejo = $c->get('lista_facturas', ['cai_id' => 'todos']);
+    check('los enlaces anteriores (cai_id=todos) siguen funcionando', $cont($viejo) === $cont($todos));
     $act = db()->query("SELECT id FROM cai_rangos WHERE cliente_id=2 AND fecha_limite >= CURDATE()")->fetchAll(PDO::FETCH_COLUMN);
-    if ($act) { $esp = 0; foreach ($act as $id) $esp += $cont($c->get('lista_facturas', ['cai_id' => $id])); check('por defecto = la suma de los CAI activos', $cont($def) === $esp, $cont($def) . ' vs ' . $esp); }
+    if ($act) { $esp = 0; foreach ($act as $id) $esp += $cont($c->get('lista_facturas', ['cai_id' => $id, 'cai_grupo' => 'activos'])); check('por defecto = la suma de los CAI activos', $cont($def) === $esp, $cont($def) . ' vs ' . $esp); }
     $v = db()->query("SELECT id FROM cai_rangos WHERE cliente_id=2 AND fecha_limite < CURDATE()")->fetchAll(PDO::FETCH_COLUMN);
-    if ($v) { $esp = 0; foreach ($v as $id) $esp += $cont($c->get('lista_facturas', ['cai_id' => $id])); check('«vencidos» = la suma de los CAI vencidos', $cont($ven) === $esp, $cont($ven) . ' vs ' . $esp); }
+    if ($v) {
+        $esp = 0; foreach ($v as $id) $esp += $cont($c->get('lista_facturas', ['cai_id' => $id, 'cai_grupo' => 'vencidos']));
+        check('«vencidos» = la suma de los CAI vencidos', $cont($ven) === $esp, $cont($ven) . ' vs ' . $esp);
+        $x = $c->get('lista_facturas', ['cai_id' => $v[0]]);
+        check('un CAI vencido pedido por número (sin grupo) pasa el grupo a «todos»', preg_match('#<option value="todos" selected>#', $x['body']) === 1);
+    }
 });
 
 suite('Fechas: las facturas anuladas no se avisan ni cuentan para el orden', function () {

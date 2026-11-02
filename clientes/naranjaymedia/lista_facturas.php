@@ -29,32 +29,33 @@ $totalSubsanaciones = (int)$stmtSubsanaciones->fetchColumn();
 $subsanacion = in_array($_GET['subsanacion'] ?? '', ['0', '1', '2'], true) ? $_GET['subsanacion'] : '';
 if (in_array($_GET['estado'] ?? '', ['sub_0', 'sub_1', 'sub_2'], true)) $subsanacion = substr($_GET['estado'], 4);
 $estadoFiltro = in_array($_GET['estado'] ?? '', ['emitida', 'anulada', 'borrador', 'pago_pendiente', 'pagada'], true) ? $_GET['estado'] : '';
-$caix = null;
-if (isset($_GET['cai_id']) && ctype_digit($_GET['cai_id'])) {
-	$caix = intval($_GET['cai_id']);
-	$caix_valid = false;
-	foreach ($cais as $cai) {
-		if ($cai['id'] == $caix) {
-			$caix_valid = true;
-			break;
-		}
-	}
-	if (!$caix_valid) $caix = null;
-}
-if (count($cais) === 1) $caix = $cais[0]['id'];
-// Qué CAI se ven (select «CAI»): por defecto los ACTIVOS (no vencidos: activos, por vencer y agotados); «activos y con pendientes»
-// (suma los vencidos que aún tengan facturas sin pagar o sin declarar); «vencidos»; «todos»; o uno elegido.
-// Antes arrancaba solo en el más nuevo y, con dos vigentes, escondía las del otro. Subsanaciones y pendientes de pago miran todos los CAI.
+// Filtro de CAI en dos pasos: «grupo» (activos —por defecto—, activos y con pendientes, vencidos, todos) y, dentro del grupo, un CAI
+// en concreto (vacío = todos los del grupo). Así el selector del CAI no crece sin límite con los años.
+//   activos    = no vencidos (activos, por vencer y agotados)
+//   pendientes = activos + los vencidos que aún tengan facturas sin pagar o sin declarar (para que nada pendiente quede escondido)
+// Subsanaciones y pendientes de pago miran siempre todos los CAI (igual que el Dashboard).
 $stmtCaiPend = $pdo->prepare("SELECT DISTINCT cai_id FROM facturas WHERE cliente_id = ? AND establecimiento_id = ? AND estado = 'emitida' AND (pagada = 0 OR pagada IS NULL OR estado_declarada = 0)");
 $stmtCaiPend->execute([$cliente_id, $establecimiento_activo]);
 $caiConPendientes = array_map('intval', $stmtCaiPend->fetchAll(PDO::FETCH_COLUMN));
-$caiPedido = (string)($_GET['cai_id'] ?? '');
-$caiModo = $caix ? 'uno' : (in_array($subsanacion, ['1', '2'], true) || $estadoFiltro === 'pago_pendiente' ? 'todos'
-    : (in_array($caiPedido, ['todos', 'pendientes', 'vencidos'], true) ? $caiPedido : 'vigentes'));
 $caiActivosIds = array_values(array_map(fn($c) => (int)$c['id'], array_filter($cais, fn($c) => (int)$c['activo'] === 1)));
 $caiVencidosIds = array_values(array_map(fn($c) => (int)$c['id'], array_filter($cais, fn($c) => (int)$c['activo'] !== 1)));
-$caiVigentesIds = array_values(array_unique(array_merge($caiActivosIds, array_filter($caiVencidosIds, fn($id) => in_array($id, $caiConPendientes, true)))));   // activos + vencidos con pendientes
-if ($caiModo === 'vigentes' && !$caiActivosIds) $caiModo = 'todos';
+$caiGrupos = [
+	'activos' => $caiActivosIds,
+	'pendientes' => array_values(array_unique(array_merge($caiActivosIds, array_filter($caiVencidosIds, fn($id) => in_array($id, $caiConPendientes, true))))),
+	'vencidos' => $caiVencidosIds,
+	'todos' => array_merge($caiActivosIds, $caiVencidosIds),
+];
+$caiGrupo = (string)($_GET['cai_grupo'] ?? '');
+$caiIdRaw = (string)($_GET['cai_id'] ?? '');
+if (in_array($caiIdRaw, ['todos', 'pendientes', 'vencidos'], true)) { if ($caiGrupo === '') $caiGrupo = $caiIdRaw; $caiIdRaw = ''; }   // enlaces anteriores
+if (!isset($caiGrupos[$caiGrupo])) $caiGrupo = 'activos';
+$caix = null;
+if (ctype_digit($caiIdRaw) && in_array((int)$caiIdRaw, $caiGrupos['todos'], true)) $caix = (int)$caiIdRaw;
+if ($caix && !in_array($caix, $caiGrupos[$caiGrupo], true)) $caiGrupo = 'todos';   // un CAI que no es del grupo mostrado (enlaces viejos)
+if (count($cais) === 1) $caix = $cais[0]['id'];
+if (!$caix && (in_array($subsanacion, ['1', '2'], true) || $estadoFiltro === 'pago_pendiente')) $caiGrupo = 'todos';
+if (!$caix && $caiGrupo === 'activos' && !$caiActivosIds) $caiGrupo = 'todos';   // sin CAI activos no queda lista vacía
+$caiModo = $caix ? 'uno' : $caiGrupo;
 // Último correlativo de cada CAI: solo la última factura de un CAI se puede eliminar.
 $ultimoPorCai = [];
 foreach ($cais as $__cai) $ultimoPorCai[(int)$__cai['id']] = trim((string)($__cai['ultimo_correlativo'] ?? ''));
@@ -77,12 +78,8 @@ if ($subsanacion !== '') {
 if ($caix) {
 	$whereExtra .= " AND f.cai_id = ?";
 	$params[] = $caix;
-} elseif ($caiModo === 'vigentes') {
-	$whereExtra .= " AND f.cai_id IN (" . implode(',', $caiActivosIds) . ")";
-} elseif ($caiModo === 'pendientes') {
-	$whereExtra .= " AND f.cai_id IN (" . implode(',', $caiVigentesIds ?: [0]) . ")";
-} elseif ($caiModo === 'vencidos') {
-	$whereExtra .= " AND f.cai_id IN (" . implode(',', $caiVencidosIds ?: [0]) . ")";
+} elseif ($caiModo !== 'todos') {
+	$whereExtra .= " AND f.cai_id IN (" . implode(',', $caiGrupos[$caiModo] ?: [0]) . ")";
 }
 if ($fecha_desde) {
 	$whereExtra .= " AND f.fecha_emision >= ?";
@@ -1358,15 +1355,24 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 			<div class="fh-filter-title"><i class="bi bi-funnel-fill"></i> Filtros de búsqueda</div>
 			<form method="GET" id="fhFilterForm">
 				<div class="fh-filter-grid">
+					<?php if (count($cais) > 1): ?>
+					<div>
+						<label class="fh-label">Grupo de CAI</label>
+						<select name="cai_grupo" class="fh-select">
+							<option value="" <?= $caiGrupo === 'activos' ? 'selected' : '' ?>>CAI activos</option>
+							<option value="pendientes" <?= $caiGrupo === 'pendientes' ? 'selected' : '' ?>>CAI activos y con pendientes</option>
+							<option value="vencidos" <?= $caiGrupo === 'vencidos' ? 'selected' : '' ?>>CAI vencidos</option>
+							<option value="todos" <?= $caiGrupo === 'todos' ? 'selected' : '' ?>>Todos los CAI</option>
+						</select>
+					</div>
+					<?php endif; ?>
 					<div>
 						<label class="fh-label">CAI</label>
 						<select name="cai_id" class="fh-select" <?= (count($cais) === 1) ? 'disabled' : '' ?>>
-							<option value="">— CAI activos —</option>
-							<option value="pendientes" <?= $caiModo === 'pendientes' ? 'selected' : '' ?>>— CAI activos y con pendientes —</option>
-							<option value="vencidos" <?= $caiModo === 'vencidos' ? 'selected' : '' ?>>— CAI vencidos —</option>
-							<option value="todos" <?= $caiModo === 'todos' && !$caix && $caiPedido === 'todos' ? 'selected' : '' ?>>— Todos los CAI —</option>
-							<?php foreach ($cais as $cai): ?>
-								<option value="<?= $cai['id'] ?>" data-desde="<?= htmlspecialchars((string)$cai['fecha_recepcion']) ?>" data-activo="<?= (int)$cai['activo'] ?>" data-hasta="<?= htmlspecialchars((string)$cai['fecha_limite']) ?>" <?= ($caix == $cai['id']) ? 'selected' : '' ?>>
+							<option value="">— Todos —</option>
+							<?php foreach ($cais as $cai):
+								$__gr = array_keys(array_filter($caiGrupos, fn($ids) => in_array((int)$cai['id'], $ids, true))); ?>
+								<option value="<?= $cai['id'] ?>" data-grupos="<?= implode(' ', $__gr) ?>" data-desde="<?= htmlspecialchars((string)$cai['fecha_recepcion']) ?>" data-activo="<?= (int)$cai['activo'] ?>" data-hasta="<?= htmlspecialchars((string)$cai['fecha_limite']) ?>" <?= ($caix == $cai['id']) ? 'selected' : '' ?> <?= in_array((int)$cai['id'], $caiGrupos[$caiGrupo], true) || count($cais) === 1 ? '' : 'hidden disabled' ?>>
 									<?= htmlspecialchars($cai['cai']) ?><?= $cai['activo'] ? ' ✅' : ' ⛔ Vencido' ?> |
 									<?= $cai['rango_inicio'] ?>–<?= $cai['rango_fin'] ?>
 								</option>
@@ -1424,7 +1430,13 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					const desde = f.querySelector('[name=fecha_desde]'), hasta = f.querySelector('[name=fecha_hasta]');
 					const selEstado = f.querySelector('[name=estado]');
 
-					const selCai = f.querySelector('select[name=cai_id]'), selPer = document.getElementById('fhPeriodo');
+					const selCai = f.querySelector('select[name=cai_id]'), selGrp = f.querySelector('select[name=cai_grupo]'), selPer = document.getElementById('fhPeriodo');
+					// El select «CAI» solo ofrece los CAI del grupo elegido
+					const grupoActual = () => selGrp ? (selGrp.value || 'activos') : 'todos';
+					const filtrarOpciones = () => {
+						[...selCai.options].filter(o => o.value).forEach(o => { const ok = (o.dataset.grupos || '').split(' ').includes(grupoActual()); o.hidden = o.disabled = !ok; });
+						if (selCai.selectedOptions[0]?.disabled) selCai.value = '';
+					};
 					const btn = f.querySelector('.btn-filter'), btnHtml = btn.innerHTML;
 					const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 					const pad = n => String(n).padStart(2, '0');
@@ -1432,7 +1444,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					const hoy = new Date(), mesHoy = hoy.getFullYear() * 12 + hoy.getMonth();
 					const llenarPeriodos = () => {
 						// Vigencia: la del CAI elegido; con los grupos (activos, con pendientes, vencidos, todos), de la recepción más antigua al vencimiento más reciente
-						const ops = /^\d+$/.test(selCai.value) ? [selCai.selectedOptions[0]] : [...selCai.options].filter(o => /^\d+$/.test(o.value));
+						const ops = /^\d+$/.test(selCai.value) ? [selCai.selectedOptions[0]] : [...selCai.options].filter(o => /^\d+$/.test(o.value) && !o.disabled);
 						const ini = ops.map(o => o.dataset.desde).filter(Boolean).sort()[0];
 						const fin = ops.map(o => o.dataset.hasta).filter(Boolean).sort().pop();
 						let html = '<option value="">— Rango libre —</option>';
@@ -1479,7 +1491,7 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 						}
 					};
 					selEstado.addEventListener('change', () => {
- if (['sub_1', 'sub_2', 'pago_pendiente'].includes(selEstado.value)) { if (selCai && !selCai.disabled) selCai.value = ''; desde.value = hasta.value = ''; llenarPeriodos(); }   // todas, de cualquier período
+ if (['sub_1', 'sub_2', 'pago_pendiente'].includes(selEstado.value)) { if (selGrp) { selGrp.value = 'todos'; filtrarOpciones(); } if (selCai && !selCai.disabled) selCai.value = ''; desde.value = hasta.value = ''; llenarPeriodos(); }   // todas, de cualquier período
  aplicar();
 });
 f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
@@ -1496,10 +1508,8 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 						e.preventDefault();
  selEstado.value = '';
 						desde.value = hasta.value = '';
-						if (selCai && !selCai.disabled) {
-							const activo = [...selCai.options].find(o => o.dataset.activo === '1');
-							selCai.value = activo ? activo.value : '';
-						}
+						if (selGrp) { selGrp.value = ''; filtrarOpciones(); }
+						if (selCai && !selCai.disabled) selCai.value = '';
 						llenarPeriodos();
 						aplicar();
 					});
@@ -1510,6 +1520,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 						else { desde.value = v + '-01'; hasta.value = finMes(+v.slice(0, 4), +v.slice(5, 7)); }
 						aplicar();
 					});
+					selGrp?.addEventListener('change', () => { filtrarOpciones(); selCai.value = ''; llenarPeriodos(); desde.value = hasta.value = ''; marcarPeriodo(); aplicar(); });
 					selCai?.addEventListener('change', () => {
 						llenarPeriodos();
 						// Si las fechas quedan fuera de la vigencia del nuevo CAI, se quita el filtro de fechas
@@ -1519,6 +1530,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 						aplicar();
 					});
 					[desde, hasta].forEach(i => i.addEventListener('change', () => { marcarPeriodo(); if (!i.value || i.value.length === 10) aplicar(); }));
+					filtrarOpciones();
 					llenarPeriodos();
 				})();
 			</script>
