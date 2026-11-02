@@ -160,6 +160,20 @@ suite('Nombre y versión del sistema', function () {
     check('el inicio de sesión también', str_contains($i['body'], 'NaranjaFact v' . APP_VERSION), errorPhp($i['body']));
 });
 
+suite('CAI: estado y orden en la configuración', function () {
+    require_once dirname(__DIR__, 2) . '/includes/cai_estado.php';
+    $b = ['rango_inicio' => 1, 'rango_fin' => 100, 'correlativo_actual' => 10];
+    check('activo: vigente, con números y más de 30 días', caiEstadoFila($b + ['fecha_limite' => '2026-12-31'], '2026-11-02')['clave'] === 'activo');
+    check('por vencer: 30 días o menos', caiEstadoFila($b + ['fecha_limite' => '2026-11-20'], '2026-11-02')['clave'] === 'por_vencer');
+    check('el último día sigue vigente', caiEstadoFila($b + ['fecha_limite' => '2026-11-02'], '2026-11-02')['clave'] === 'por_vencer');
+    check('agotado: vigente pero sin números', caiEstadoFila(['correlativo_actual' => 100] + $b + ['fecha_limite' => '2026-12-31'], '2026-11-02')['clave'] === 'agotado');
+    check('vencido: la fecha ya pasó', caiEstadoFila($b + ['fecha_limite' => '2026-11-01'], '2026-11-02')['clave'] === 'vencido');
+    check('el orden es activo, por vencer, agotado, vencido', array_map(fn($f) => caiEstadoFila($b + ['fecha_limite' => $f], '2026-11-02')['rank'], ['2026-12-31', '2026-11-10', '2026-11-01']) === [1, 2, 4]);
+    $c = login('qa.admin@local.test');
+    $r = $c->get('configuracion_cai');
+    check('configuración de CAI carga con los estados', sinErroresPhp($r['body']) && preg_match('/status-(activo|por_vencer|agotado|vencido)/', $r['body']) === 1, errorPhp($r['body']));
+});
+
 suite('Alerta del CAI: agotado, vencido, por agotarse y por vencer', function () {
     require_once dirname(__DIR__, 2) . '/includes/cai_estado.php';
     $cai = db()->query("SELECT * FROM cai_rangos WHERE cliente_id=2 AND fecha_limite >= CURDATE() ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);

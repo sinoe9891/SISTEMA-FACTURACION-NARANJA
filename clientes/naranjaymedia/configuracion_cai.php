@@ -53,8 +53,20 @@ if ($rol_usuario === 'superadmin') {
 }
 $cais = $stmt->fetchAll();
 
+// Orden: activos → por vencer → agotados → vencidos. En los dos primeros, el que vence antes arriba (es el que hay que renovar);
+// en los dos últimos, el más reciente arriba.
+require_once '../../includes/cai_estado.php';
+foreach ($cais as &$__c) $__c['estado_cai'] = caiEstadoFila($__c);
+unset($__c);
+usort($cais, function ($a, $b) {
+    if ($a['estado_cai']['rank'] !== $b['estado_cai']['rank']) return $a['estado_cai']['rank'] <=> $b['estado_cai']['rank'];
+    $cmp = strcmp($a['fecha_limite'], $b['fecha_limite']);
+    if ($a['estado_cai']['rank'] >= 3) $cmp = -$cmp;
+    return $cmp ?: ((int)$b['id'] <=> (int)$a['id']);
+});
+
 $total_cais    = count($cais);
-$activos       = count(array_filter($cais, fn($c) => strtotime($c['fecha_limite']) >= time()));
+$activos       = count(array_filter($cais, fn($c) => $c['estado_cai']['rank'] <= 2));   // los que todavía sirven para facturar
 $vencidos      = $total_cais - $activos;
 $hoy           = date('Y-m-d');
 
@@ -468,6 +480,16 @@ require_once '../../includes/templates/config_tabs.php';
         color: var(--danger);
     }
 
+    .status-por_vencer {
+        background: #fef3c7;
+        color: #b45309;
+    }
+
+    .status-agotado {
+        background: #f1f5f9;
+        color: #475569;
+    }
+
     /* Progress bar */
     .mini-progress {
         height: 5px;
@@ -649,7 +671,7 @@ require_once '../../includes/templates/config_tabs.php';
             <div class="cc-stat-icon red"><i class="bi bi-x-circle-fill"></i></div>
             <div>
                 <div class="cc-stat-val"><?= $vencidos ?></div>
-                <div class="cc-stat-lbl">Vencidos</div>
+                <div class="cc-stat-lbl">Vencidos o agotados</div>
             </div>
         </div>
         <div class="cc-stat">
@@ -735,9 +757,10 @@ require_once '../../includes/templates/config_tabs.php';
                                 </div>
                             </td>
                             <td data-col="vence"><?= htmlspecialchars($c['fecha_limite']) ?></td>
-                            <td>
-                                <span class="status-pill <?= $activo ? 'status-activo' : 'status-vencido' ?>">
-                                    <?= $activo ? '<i class="bi bi-check-circle-fill"></i> Activo' : '<i class="bi bi-x-circle-fill"></i> Vencido' ?>
+                            <?php $ec = $c['estado_cai']; $ei = ['activo' => 'check-circle-fill', 'por_vencer' => 'alarm-fill', 'agotado' => 'dash-circle-fill', 'vencido' => 'x-circle-fill'][$ec['clave']]; ?>
+                            <td data-sort-val="<?= $ec['rank'] ?>">
+                                <span class="status-pill status-<?= $ec['clave'] ?>">
+                                    <i class="bi bi-<?= $ei ?>"></i> <?= htmlspecialchars($ec['txt']) ?>
                                 </span>
                             </td>
                             <td>
@@ -801,7 +824,7 @@ require_once '../../includes/templates/config_tabs.php';
 
         function colTxt(r, i) {
             const td = r.querySelectorAll('td')[i];
-            return td ? (td.dataset.original || td.textContent).trim().toLowerCase() : '';
+            return td ? (td.dataset.sortVal ?? (td.dataset.original || td.textContent)).trim().toLowerCase() : '';   // el estado ordena por su rango (activo → por vencer → agotado → vencido)
         }
 
         function filtered() {

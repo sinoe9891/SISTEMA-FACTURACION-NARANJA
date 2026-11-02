@@ -43,3 +43,18 @@ function caiAlerta(PDO $pdo, int $cid, int $estId): ?array
     if (!$avisos) return null;
     return ['nivel' => $rojo ? 'rojo' : 'ambar', 'bloquea' => false, 'titulo' => 'El CAI está por agotarse o vencer', 'detalle' => implode('. ', $avisos) . '. ' . $paso];
 }
+
+/**
+ * Estado de un CAI para listarlo: ['clave' => activo|por_vencer|agotado|vencido, 'rank' (orden), 'txt', 'dias'].
+ * Orden: activos → por vencer (30 días o menos) → agotados (vigentes sin números) → vencidos.
+ */
+function caiEstadoFila(array $c, ?string $hoy = null): array
+{
+    $hoy = $hoy ?? date('Y-m-d');
+    $dias = (int)round((strtotime($c['fecha_limite']) - strtotime($hoy)) / 86400);
+    $restantes = (int)$c['rango_fin'] - (int)$c['rango_inicio'] + 1 - (int)$c['correlativo_actual'];
+    if ($dias < 0) return ['clave' => 'vencido', 'rank' => 4, 'txt' => 'Vencido', 'dias' => $dias];
+    if ($restantes <= 0) return ['clave' => 'agotado', 'rank' => 3, 'txt' => 'Agotado', 'dias' => $dias];
+    if ($dias <= CAI_ALERTA_DIAS) return ['clave' => 'por_vencer', 'rank' => 2, 'txt' => 'Por vencer · ' . $dias . ' d', 'dias' => $dias];
+    return ['clave' => 'activo', 'rank' => 1, 'txt' => 'Activo', 'dias' => $dias];
+}
