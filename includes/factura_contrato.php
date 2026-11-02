@@ -3,7 +3,9 @@
 function facturaContratosDisponibles(PDO $pdo, int $cid): array
 {
     $conProg = function_exists('programasDisponible') ? programasDisponible($pdo) : (bool)$pdo->query("SHOW COLUMNS FROM contratos LIKE 'programa_id'")->fetchColumn();
-    $st = $pdo->prepare("SELECT c.id, c.nombre_contrato, " . ($conProg ? "c.programa_id," : "NULL AS programa_id,") . " c.receptor_id, c.tipo_contrato, c.estado, c.monto, c.frecuencia_meses, c.producto_id,
+    $st = $pdo->prepare("SELECT c.id, c.nombre_contrato, " . ($conProg ? "c.programa_id," : "NULL AS programa_id,") . " c.receptor_id, c.tipo_contrato, c.estado, c.monto, c.frecuencia_meses, c.producto_id, c.fecha_inicio, " . ($conProg ? "(SELECT pg.nombre FROM programas pg WHERE pg.id = c.programa_id)" : "NULL") . " AS programa_nombre,
+        (SELECT MAX(COALESCE(f.periodo_anio, YEAR(f.fecha_emision)) * 12 + COALESCE(f.periodo_mes, MONTH(f.fecha_emision)) - 1)
+           FROM facturas f WHERE f.contrato_id = c.id AND f.cliente_id = c.cliente_id AND f.estado = 'emitida') AS ultimo_cubierto,
         r.receptor_id AS receptor_rotativo, r.monto AS monto_rotativo
         FROM contratos c LEFT JOIN contratos_clientes_rotativos r ON r.contrato_id=c.id AND r.activo=1
         WHERE c.cliente_id=? AND c.tipo_contrato<>'sin_factura' ORDER BY c.nombre_contrato, c.id");
@@ -11,14 +13,16 @@ function facturaContratosDisponibles(PDO $pdo, int $cid): array
     $out = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $id = (int)$r['id'];
-        if (!isset($out[$id])) $out[$id] = ['id'=>$id,'nombre'=>$r['nombre_contrato'] ?: 'Contrato #'.$id,'estado'=>$r['estado'],'receptores'=>[(int)$r['receptor_id']], 'etiquetas'=>[], 'montos'=>[], 'programa_id'=>(int)$r['programa_id'] ?: null, 'producto_id'=>(int)$r['producto_id'] ?: null];
+        if (!isset($out[$id])) $out[$id] = ['id'=>$id,'nombre'=>$r['nombre_contrato'] ?: 'Contrato #'.$id,'estado'=>$r['estado'],'receptores'=>[(int)$r['receptor_id']], 'etiquetas'=>[], 'montos'=>[], 'programa_id'=>(int)$r['programa_id'] ?: null, 'producto_id'=>(int)$r['producto_id'] ?: null,
+            // Para sugerir el período de la factura nueva: mensual/periódico llevan período; proyecto y rotativo no
+            'tipo'=>$r['tipo_contrato'], 'freq'=>max(1, (int)$r['frecuencia_meses']), 'inicio'=>$r['fecha_inicio'], 'ultimo_cubierto'=>$r['ultimo_cubierto'] !== null ? (int)$r['ultimo_cubierto'] : null];
         $periodo = match ($r['tipo_contrato']) {
             'proyecto' => 'total del proyecto',
             'periodico' => 'cada ' . max(1, (int)$r['frecuencia_meses']) . ' mes(es)',
             'rotativo' => 'por turno',
             default => 'mensual',
         };
-        $etiqueta = fn($monto) => '#' . $id . ' · ' . $out[$id]['nombre'] . ' — L ' . number_format((float)$monto, 2) . ' (' . $periodo . ')' . ($r['estado'] !== 'activo' ? ' · ' . $r['estado'] : '');
+        $etiqueta = fn($monto) => '#' . $id . ' · ' . $out[$id]['nombre'] . ' — L ' . number_format((float)$monto, 2) . ' (' . $periodo . ')' . ($r['programa_nombre'] ? ' · ' . $r['programa_nombre'] : '') . ($r['estado'] !== 'activo' ? ' · ' . $r['estado'] : '');
         if (!isset($out[$id]['etiquetas'][(int)$r['receptor_id']])) {
             $out[$id]['etiquetas'][(int)$r['receptor_id']] = $etiqueta($r['monto']);
             $out[$id]['montos'][(int)$r['receptor_id']] = (float)$r['monto'];

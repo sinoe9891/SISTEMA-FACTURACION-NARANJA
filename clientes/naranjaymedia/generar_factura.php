@@ -365,8 +365,20 @@ require_once '../../includes/templates/header.php';
                                     <?php endforeach; ?>
                                 </select>
                                 <div class="form-text">Selecciona el contrato al que corresponde o «Sin contrato». Asociarla facilita el seguimiento mensual desde Contratos.</div>
+                                <div class="row g-2 mt-1" id="bloquePeriodo" hidden>
+                                    <div class="col-7 col-md-5"><label class="fv-form-label">Mes que cubre</label>
+                                        <select name="periodo_mes" id="periodoMes" class="form-select">
+                                            <option value="">— Sin período —</option>
+                                            <?php foreach ([1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'] as $__n => $__m): ?><option value="<?= $__n ?>"><?= $__m ?></option><?php endforeach; ?>
+                                        </select></div>
+                                    <div class="col-5 col-md-3"><label class="fv-form-label">Año</label>
+                                        <select name="periodo_anio" id="periodoAnio" class="form-select">
+                                            <?php for ($__y = (int)date('Y') - 1; $__y <= (int)date('Y') + 1; $__y++): ?><option value="<?= $__y ?>" <?= $__y === (int)date('Y') ? 'selected' : '' ?>><?= $__y ?></option><?php endfor; ?>
+                                        </select></div>
+                                    <div class="col-12 form-text mt-0" id="periodoAyuda"></div>
+                                </div>
                             </div>
-                            <?php $pgCid = (int)$cliente_id; $pgActual = null; $pgLabel = 'fv-form-label'; $pgSelect = 'form-select'; $pgReceptor = 'receptor_id'; require '../../includes/templates/programa_campo.php'; ?>
+                            <?php $pgCid = (int)$cliente_id; $pgActual = null; $pgDefecto = true; $pgLabel = 'fv-form-label'; $pgSelect = 'form-select'; $pgReceptor = 'receptor_id'; require '../../includes/templates/programa_campo.php'; ?>
                             <script>
                                 // El contrato trae su programa (PROGRESE o directo)
                                 document.getElementById('contrato_id').addEventListener('change', function () {
@@ -623,6 +635,35 @@ require_once '../../includes/templates/header.php';
         }
     });
     document.getElementById('productos-container').addEventListener('input', calcularTotales);
+
+    /* ── Contrato → período que cubre la factura (se sugiere el siguiente mes sin facturar) ── */
+    (() => {
+        const selC = document.getElementById('contrato_id'), bq = document.getElementById('bloquePeriodo'), pm = document.getElementById('periodoMes'), pa = document.getElementById('periodoAnio'), ay = document.getElementById('periodoAyuda');
+        const MESES = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        const GET = new URLSearchParams(location.search);
+        let manual = false;
+        [pm, pa].forEach(x => x.addEventListener('change', () => { manual = true; ay.textContent = ''; }));
+        const siguiente = ct => {
+            if (!ct || !['estandar', 'periodico'].includes(ct.tipo)) return null;
+            const ini = ct.inicio ? (+ct.inicio.slice(0, 4)) * 12 + (+ct.inicio.slice(5, 7)) - 1 : null;
+            const idx = ct.ultimo_cubierto !== null ? ct.ultimo_cubierto + (ct.tipo === 'periodico' ? ct.freq : 1) : ini;
+            return idx === null ? null : { mes: idx % 12 + 1, anio: Math.floor(idx / 12) };
+        };
+        const asegurarAnio = a => { if (![...pa.options].some(o => +o.value === a)) pa.add(new Option(a, a)); pa.value = String(a); };
+        function pintar(forzar) {
+            const ct = CONTRATOS_FACTURA.find(c => String(c.id) === selC.value);
+            bq.hidden = !ct || !['estandar', 'periodico'].includes(ct.tipo);
+            if (bq.hidden) { pm.value = ''; return; }
+            if (manual && !forzar) return;
+            const m = +GET.get('periodo_mes'), a = +GET.get('periodo_anio');
+            const s = (m && a && !forzar) ? { mes: m, anio: a } : siguiente(ct);
+            if (!s) return;
+            pm.value = String(s.mes); asegurarAnio(s.anio);
+            ay.textContent = `Se sugiere ${MESES[s.mes]} ${s.anio}: el siguiente mes sin facturar de este contrato. Cambialo si es otro. De este mes depende cuándo vence la factura.`;
+        }
+        selC.addEventListener('change', () => { manual = false; GET.delete('periodo_mes'); GET.delete('periodo_anio'); pintar(true); });
+        pintar(false);
+    })();
 
     /* ── Contrato → su servicio y monto en la primera línea ───────────────────── */
     document.getElementById('contrato_id').addEventListener('change', async function() {

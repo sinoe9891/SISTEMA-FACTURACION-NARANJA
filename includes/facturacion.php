@@ -26,6 +26,10 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
     $cai_id             = filter_var($d['cai_rango_id'] ?? null, FILTER_VALIDATE_INT) ?: null;
     $condicion_pago     = trim((string)($d['condicion_pago'] ?? ''));
     $contrato_id        = filter_var($d['contrato_id'] ?? null, FILTER_VALIDATE_INT) ?: null;
+    // Mes y año que cubre la factura de un contrato (para su vencimiento y el seguimiento mensual); sin período, cuenta el mes de emisión
+    $periodo_mes  = $contrato_id ? (filter_var($d['periodo_mes'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 12]]) ?: null) : null;
+    $periodo_anio = $contrato_id ? (filter_var($d['periodo_anio'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 2020, 'max_range' => 2099]]) ?: null) : null;
+    if (!$periodo_mes || !$periodo_anio) $periodo_mes = $periodo_anio = null;
     $exonerado          = !empty($d['exonerado']) ? 1 : 0;
     $establecimiento_id = filter_var($d['establecimiento_id'] ?? null, FILTER_VALIDATE_INT) ?: null;
     $productos          = $d['productos'] ?? [];
@@ -145,14 +149,14 @@ function crearFactura(PDO $pdo, int $cliente_id, int $usuario_id, array $d): arr
     // ── Guardar ───────────────────────────────────────────────────────────────
     $pdo->prepare("
         INSERT INTO facturas (
-            cliente_id, cai_id, receptor_id, contrato_id, establecimiento_id,
+            cliente_id, cai_id, receptor_id, contrato_id, periodo_mes, periodo_anio, establecimiento_id,
             correlativo, fecha_emision, estado_declarada, enviada_receptor,
             condicion_pago, exonerado, orden_compra_exenta, constancia_exoneracion, registro_sag,
             gravado_total, exento_total, importe_exonerado, importe_gravado_15, importe_gravado_18,
             subtotal, isv_15, isv_18, total, monto_letras, estado
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ")->execute([
-        $cliente_id, $cai_id, $receptor_id, $contrato_id, $establecimiento_id,
+        $cliente_id, $cai_id, $receptor_id, $contrato_id, $periodo_mes, $periodo_anio, $establecimiento_id,
         $correlativo, $fecha_emision,
         $condicion_pago, $exonerado, $orden_compra_exenta, $constancia_exoneracion, $registro_sag,
         round($gravado_total, 2), round($exento_total, 2), round($importe_exonerado, 2), round($importe_gravado_15, 2), round($importe_gravado_18, 2),

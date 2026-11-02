@@ -150,6 +150,39 @@ suite('Teléfono de clientes con formato +504', function () {
     check('vacío y extranjeros se dejan', telefonoHN('') === '' && telefonoHN('+1 305 555 0101') === '+1 305 555 0101');
 });
 
+suite('Factura nueva: período del contrato y programa', function () {
+    require_once dirname(__DIR__, 2) . '/includes/factura_contrato.php';
+    $c = login('qa.admin@local.test');
+    $cai = db()->query("SELECT * FROM cai_rangos WHERE cliente_id=2 AND fecha_limite >= CURDATE() AND correlativo_actual < (rango_fin - rango_inicio + 1) ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $prod = (int)db()->query("SELECT id FROM productos_clientes WHERE cliente_id=2 AND precio > 0 LIMIT 1")->fetchColumn();
+    if (!$cai || !$prod) { check('hay CAI y producto para probar', false); return; }
+    db()->prepare("INSERT INTO contratos (cliente_id,receptor_id,nombre_contrato,producto_id,monto,fecha_inicio,dia_pago,estado,tipo_contrato) VALUES (2,1,'QA período',?,100,'2026-01-01',10,'activo','estandar')")->execute([$prod]);
+    $ct = (int)db()->lastInsertId();
+    $f1 = $f2 = 0;
+    try {
+        $base = ['receptor_id' => 1, 'cai_rango_id' => $cai['id'], 'condicion_pago' => 'contado', 'establecimiento_id' => $cai['establecimiento_id'], 'contrato_id' => $ct,
+            'productos[0][id]' => $prod, 'productos[0][cantidad]' => 1, 'productos[0][detalles]' => 'QA'];
+        $r1 = $c->post('guardar_factura.php', $base + ['periodo_mes' => 10, 'periodo_anio' => 2026]);
+        $f1 = (int)($r1['json']['factura_id'] ?? 0);
+        $d1 = db()->query("SELECT periodo_mes, periodo_anio FROM facturas WHERE id=$f1")->fetch(PDO::FETCH_ASSOC);
+        check('al crear se guarda el período del contrato', (int)($d1['periodo_mes'] ?? 0) === 10 && (int)($d1['periodo_anio'] ?? 0) === 2026, substr($r1['body'], 0, 160));
+        $r2 = $c->post('guardar_factura.php', $base + ['periodo_mes' => 13, 'periodo_anio' => 2026]);
+        $f2 = (int)($r2['json']['factura_id'] ?? 0);
+        $d2 = db()->query("SELECT periodo_mes, periodo_anio FROM facturas WHERE id=$f2")->fetch(PDO::FETCH_ASSOC);
+        check('un período inválido se ignora', $d2 && $d2['periodo_mes'] === null && $d2['periodo_anio'] === null);
+        $lista = array_column(facturaContratosDisponibles(db(), 2), null, 'id');
+        check('el contrato sugiere su siguiente mes: tras octubre, noviembre', ($lista[$ct]['ultimo_cubierto'] ?? null) !== null && $lista[$ct]['tipo'] === 'estandar');
+        $pg = $c->get('generar_factura');
+        check('la pantalla trae el selector de período y el programa por defecto', str_contains($pg['body'], 'id="periodoMes"') && str_contains($pg['body'], 'const DEFECTO = true'), errorPhp($pg['body']));
+    } finally {
+        $borrar = fn($id) => $id ? $c->postJson('procesar_accion_factura.php', ['accion' => 'eliminar', 'factura_id' => $id, 'motivo' => 'QA', 'usuario_autoriza' => 'qa.admin@local.test', 'clave_autoriza' => QA_PASS]) : null;
+        $borrar($f2); $borrar($f1);
+        db()->exec("DELETE FROM bitacora_facturas WHERE factura_id IN (" . ($f1 ?: 0) . "," . ($f2 ?: 0) . ")");
+        db()->exec("DELETE FROM contratos WHERE id=$ct");
+    }
+    check('limpieza: el CAI vuelve a su correlativo original', (int)db()->query("SELECT correlativo_actual FROM cai_rangos WHERE id={$cai['id']}")->fetchColumn() === (int)$cai['correlativo_actual']);
+});
+
 suite('Clientes: nombre comercial aparte de la razón social', function () {
     $c = login('qa.admin@local.test');
     $rtn = 'QA' . random_int(100000000, 999999999);

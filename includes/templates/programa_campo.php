@@ -15,16 +15,17 @@ if (programasDisponible($pdo)):
     const PG = <?= json_encode($__pg, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
     const rec = document.getElementById(<?= json_encode($pgReceptor ?? 'receptor_id') ?>), sel = document.getElementById('programa_id'), box = document.getElementById('programaCampo');
     const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const llenar = () => {
+    const DEFECTO = <?= !empty($pgDefecto) ? 'true' : 'false' ?>;   // factura nueva: si el cliente tiene un único programa se preselecciona
+    const llenar = (usarDefecto = false) => {
         const lista = (PG[rec.value] || []).filter(p => p.activo || String(p.id) === sel.dataset.actual);
-        const antes = sel.value || sel.dataset.actual;
+        const antes = sel.value || sel.dataset.actual || (DEFECTO && usarDefecto && lista.length === 1 ? String(lista[0].id) : '');
         sel.innerHTML = '<option value="">Directo al cliente</option>' + lista.map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join('');
         sel.value = lista.some(p => String(p.id) === antes) ? antes : '';
         box.hidden = !lista.length;
     };
-    rec.addEventListener('change', llenar);
-    window.ProgramaElegir = id => { sel.dataset.actual = id ? String(id) : ''; sel.value = ''; llenar(); };   // p. ej. al elegir un contrato
-    llenar();
+    rec.addEventListener('change', () => { sel.value = ''; sel.dataset.actual = ''; llenar(true); });
+    window.ProgramaElegir = id => { sel.dataset.actual = id ? String(id) : ''; sel.value = ''; llenar(false); };   // p. ej. al elegir un contrato
+    llenar(true);
 })();
 </script>
 <?php endif; ?>
