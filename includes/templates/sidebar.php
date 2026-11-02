@@ -13,7 +13,7 @@
 				<img src="<?= htmlspecialchars($navbarLogo) ?>" alt="Logo">
 				<span>
 					<span class="app-brand-name"><?= htmlspecialchars($alias) ?></span>
-					<span class="app-brand-sub">Sistema de Facturación</span>
+					<span class="app-brand-sub"><?php require_once __DIR__ . '/../version.php'; echo APP_NOMBRE; ?></span>
 				</span>
 			</a>
 			<button type="button" class="btn-close d-lg-none me-3" data-bs-dismiss="offcanvas" data-bs-target="#appSidebar"

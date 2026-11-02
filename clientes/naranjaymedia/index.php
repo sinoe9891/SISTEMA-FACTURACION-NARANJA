@@ -4,6 +4,7 @@ iniciarSesionSegura();
 require_once '../../includes/db.php';
 require_once '../../includes/intentos.php';
 require_once '../../includes/tasa_cambio.php';
+require_once '../../includes/version.php';
 
 if (isset($_SESSION['usuario_id'])) {
     header('Location: ./dashboard');
@@ -288,7 +289,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
         </div>
         </div>
-        <p class="app-login-pie">© <?= date('Y') ?> · Sistema de Facturación · Naranja &amp; Media</p>
+        <p class="app-login-pie">© <?= date('Y') ?> · <?= APP_NOMBRE ?> v<?= APP_VERSION ?> · Naranja &amp; Media</p>
     </main>
 
     <script>

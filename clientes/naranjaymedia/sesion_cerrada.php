@@ -3,6 +3,7 @@
 //   ?m=inactividad → cerrada por 5 minutos sin usar el sistema · ?m=salida → la persona cerró sesión · sin m → mensaje general
 require_once '../../includes/sesion_inicio.php';
 require_once '../../includes/db.php';
+require_once '../../includes/version.php';
 
 // Empresa de la URL (/clientes/<empresa>/…) para su nombre y logo, igual que el inicio de sesión
 $segs = array_values(array_filter(explode('/', trim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/'))));
@@ -51,7 +52,7 @@ header('Cache-Control: no-store');
             <p class="text-muted mb-4"><?= htmlspecialchars($texto) ?></p>
             <a href="./" class="btn btn-primary w-100 py-2"><i class="bi bi-box-arrow-in-right me-1"></i> Iniciar sesión de nuevo</a>
         </div>
-        <p class="app-login-pie">© <?= date('Y') ?> · Sistema de Facturación · Naranja &amp; Media</p>
+        <p class="app-login-pie">© <?= date('Y') ?> · <?= APP_NOMBRE ?> v<?= APP_VERSION ?> · Naranja &amp; Media</p>
     </main>
 </body>
 </html>

@@ -150,6 +150,16 @@ suite('Teléfono de clientes con formato +504', function () {
     check('vacío y extranjeros se dejan', telefonoHN('') === '' && telefonoHN('+1 305 555 0101') === '+1 305 555 0101');
 });
 
+suite('Nombre y versión del sistema', function () {
+    require_once dirname(__DIR__, 2) . '/includes/version.php';
+    check('nombre y versión definidos', APP_NOMBRE === 'NaranjaFact' && preg_match('/^\d+\.\d+\.\d+$/', APP_VERSION) === 1);
+    $c = login('qa.admin@local.test');
+    $d = $c->get('dashboard');
+    check('el pie de las páginas dice NaranjaFact y la versión', str_contains($d['body'], 'NaranjaFact v' . APP_VERSION), errorPhp($d['body']));
+    $i = (new Cliente('anon'))->get('index.php');
+    check('el inicio de sesión también', str_contains($i['body'], 'NaranjaFact v' . APP_VERSION), errorPhp($i['body']));
+});
+
 suite('Alerta del CAI: agotado, vencido, por agotarse y por vencer', function () {
     require_once dirname(__DIR__, 2) . '/includes/cai_estado.php';
     $cai = db()->query("SELECT * FROM cai_rangos WHERE cliente_id=2 AND fecha_limite >= CURDATE() ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
