@@ -160,6 +160,21 @@ suite('Nombre y versión del sistema', function () {
     check('el inicio de sesión también', str_contains($i['body'], 'NaranjaFact v' . APP_VERSION), errorPhp($i['body']));
 });
 
+suite('Historial: por defecto los CAI vigentes', function () {
+    $c = login('qa.admin@local.test');
+    $cont = fn($r) => substr_count($r['body'], '<tr data-ven=');
+    $def = $c->get('lista_facturas');
+    $todos = $c->get('lista_facturas', ['cai_id' => 'todos']);
+    check('carga sin errores y con las dos opciones nuevas del filtro', sinErroresPhp($def['body']) && str_contains($def['body'], '— CAI vigentes y con pendientes —') && str_contains($def['body'], 'value="todos"'), errorPhp($def['body']));
+    check('«todos» muestra al menos las que muestran los vigentes', $cont($todos) >= $cont($def), $cont($todos) . ' vs ' . $cont($def));
+    $est = (int)db()->query("SELECT establecimiento_id FROM cai_rangos WHERE cliente_id=2 ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $vig = db()->query("SELECT id FROM cai_rangos WHERE cliente_id=2 AND (fecha_limite >= CURDATE() OR id IN (SELECT DISTINCT cai_id FROM facturas WHERE cliente_id=2 AND estado='emitida' AND (pagada=0 OR pagada IS NULL OR estado_declarada=0)))")->fetchAll(PDO::FETCH_COLUMN);
+    if ($vig) {
+        $esp = 0; foreach ($vig as $id) $esp += $cont($c->get('lista_facturas', ['cai_id' => $id]));
+        check('por defecto = la suma de los CAI no vencidos y los que tienen pendientes', $cont($def) === $esp, $cont($def) . ' vs ' . $esp);
+    }
+});
+
 suite('CAI: estado y orden en la configuración', function () {
     require_once dirname(__DIR__, 2) . '/includes/cai_estado.php';
     $b = ['rango_inicio' => 1, 'rango_fin' => 100, 'correlativo_actual' => 10];

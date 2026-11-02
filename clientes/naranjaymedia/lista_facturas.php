@@ -42,14 +42,18 @@ if (isset($_GET['cai_id']) && ctype_digit($_GET['cai_id'])) {
 	if (!$caix_valid) $caix = null;
 }
 if (count($cais) === 1) $caix = $cais[0]['id'];
-if ($caix === null && !isset($_GET['cai_id']) && !in_array($subsanacion, ['1', '2'], true)) {
-	foreach ($cais as $cai) {
-		if ($cai['activo'] == 1) {
-			$caix = $cai['id'];
-			break;
-		}
-	}
-}
+// Qué CAI se ven: uno elegido; «todos» (con vencidos); o, por defecto, los CAI NO VENCIDOS (activos, por vencer y agotados) más
+// cualquier CAI vencido que todavía tenga facturas sin pagar o sin declarar (para que nada pendiente quede escondido).
+// Antes arrancaba solo en el más nuevo y, con dos vigentes, escondía las del otro. Subsanaciones y pendientes de pago miran todos los CAI.
+$stmtCaiPend = $pdo->prepare("SELECT DISTINCT cai_id FROM facturas WHERE cliente_id = ? AND establecimiento_id = ? AND estado = 'emitida' AND (pagada = 0 OR pagada IS NULL OR estado_declarada = 0)");
+$stmtCaiPend->execute([$cliente_id, $establecimiento_activo]);
+$caiConPendientes = array_map('intval', $stmtCaiPend->fetchAll(PDO::FETCH_COLUMN));
+$caiModo = $caix ? 'uno' : ((($_GET['cai_id'] ?? '') === 'todos' || in_array($subsanacion, ['1', '2'], true) || $estadoFiltro === 'pago_pendiente') ? 'todos' : 'vigentes');
+$caiVigentesIds = array_values(array_map(fn($c) => (int)$c['id'], array_filter($cais, fn($c) => (int)$c['activo'] === 1 || in_array((int)$c['id'], $caiConPendientes, true))));
+if ($caiModo === 'vigentes' && !$caiVigentesIds) $caiModo = 'todos';
+// Último correlativo de cada CAI: solo la última factura de un CAI se puede eliminar.
+$ultimoPorCai = [];
+foreach ($cais as $__cai) $ultimoPorCai[(int)$__cai['id']] = trim((string)($__cai['ultimo_correlativo'] ?? ''));
 
 $ultimoCorrelativoCAI = null;
 $fecha_desde = !empty($_GET['fecha_desde']) ? $_GET['fecha_desde'] : null;
@@ -69,6 +73,8 @@ if ($subsanacion !== '') {
 if ($caix) {
 	$whereExtra .= " AND f.cai_id = ?";
 	$params[] = $caix;
+} elseif ($caiModo === 'vigentes') {
+	$whereExtra .= " AND f.cai_id IN (" . implode(',', $caiVigentesIds) . ")";
 }
 if ($fecha_desde) {
 	$whereExtra .= " AND f.fecha_emision >= ?";
@@ -82,7 +88,7 @@ if ($fecha_hasta) {
 require_once '../../includes/programas.php';
 $__conProg = programasDisponible($pdo);
 $stmtFacturas = $pdo->prepare("
-    SELECT " . ($__conProg ? "pg.nombre" : "NULL") . " AS programa, f.id, f.correlativo, f.fecha_emision, f.total, f.subtotal,
+    SELECT " . ($__conProg ? "pg.nombre" : "NULL") . " AS programa, f.id, f.cai_id, f.correlativo, f.fecha_emision, f.total, f.subtotal,
            f.estado, f.pagada, f.enviada_receptor, f.estado_declarada,
            (f.isv_15 + f.isv_18) AS isv_total,
            f.requiere_subsanacion, f.notas_internas, f.receptor_id, cf.nombre AS receptor, cf.nombre_comercial,
@@ -1347,7 +1353,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					<div>
 						<label class="fh-label">CAI</label>
 						<select name="cai_id" class="fh-select" <?= (count($cais) === 1) ? 'disabled' : '' ?>>
-							<option value="">— Todos los CAI —</option>
+							<option value="">— CAI vigentes y con pendientes —</option>
+							<option value="todos" <?= $caiModo === 'todos' && !$caix ? 'selected' : '' ?>>— Todos los CAI (con vencidos) —</option>
 							<?php foreach ($cais as $cai): ?>
 								<option value="<?= $cai['id'] ?>" data-desde="<?= htmlspecialchars((string)$cai['fecha_recepcion']) ?>" data-activo="<?= (int)$cai['activo'] ?>" data-hasta="<?= htmlspecialchars((string)$cai['fecha_limite']) ?>" <?= ($caix == $cai['id']) ? 'selected' : '' ?>>
 									<?= htmlspecialchars($cai['cai']) ?><?= $cai['activo'] ? ' ✅' : ' ⛔ Vencido' ?> |
@@ -1645,7 +1652,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 				<tbody id="fhBody">
 					<?php foreach ($facturas as $f):
 						$corrStr   = trim((string)$f['correlativo']);
-						$ultimoStr = trim((string)($ultimoCorrelativoCAI ?? ''));
+						$ultimoStr = $ultimoPorCai[(int)$f['cai_id']] ?? '';
 						$puedeElim = ($corrStr === $ultimoStr);
 						$estadoCls = match ($f['estado']) {
 							'emitida' => 'st-emitida',
