@@ -26,7 +26,12 @@ try {
             WHERE c.factura_id = ? AND c.cliente_id = ? ORDER BY c.fecha, c.id");
         $stmt->execute([$f['id'], $cid]);
         echo json_encode(['success' => true, 'factura' => ['id' => $f['id'], 'correlativo' => $f['correlativo'], 'total' => (float)$f['total'], 'abonado' => $f['abonado'], 'saldo' => $f['saldo']],
-            'cobros' => $stmt->fetchAll(PDO::FETCH_ASSOC)], JSON_UNESCAPED_UNICODE);
+            'cobros' => (function () use ($stmt, $pdo, $cid) {
+                $cobros = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $arch = cxcArchivosDeCobros($pdo, $cid, array_column($cobros, 'id'));
+                foreach ($cobros as &$c) $c['archivos'] = $arch[(int)$c['id']] ?? [];
+                return $cobros;
+            })()], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -37,12 +42,11 @@ try {
         if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true)) throw new Exception("No tienes permiso para registrar cobros.");
         // Comprobante opcional (JPG, PNG, WEBP o PDF; 5 MB), como en gastos
         require_once __DIR__ . '/_gasto_adjuntos.php';
-        $adj = !empty($_FILES['comprobante']) && $pdo->query("SHOW COLUMNS FROM cobros_factura LIKE 'archivo_adjunto'")->fetchColumn()
-            ? guardarAdjuntoGasto($_FILES['comprobante'], $cid) : null;
+        $adj = $pdo->query("SHOW COLUMNS FROM cobros_factura LIKE 'archivo_adjunto'")->fetchColumn() ? guardarAdjuntosGasto(adjuntosLista($_FILES), $cid) : [];
         try {
             $id = cxcRegistrarCobro($pdo, $cid, (int)USUARIO_ID, $_POST, $adj);
         } catch (Throwable $e) {
-            if ($adj) @unlink(gastoAdjuntoDir() . $adj[0]);
+            foreach ($adj as $a) @unlink(gastoAdjuntoDir() . $a[0]);
             throw $e;
         }
         $f = cxcFactura($pdo, $cid, (int)$_POST['factura_id']);
@@ -52,12 +56,11 @@ try {
     } elseif ($accion === 'cobrar_varias') {
         if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true)) throw new Exception("No tienes permiso para registrar cobros.");
         require_once __DIR__ . '/_gasto_adjuntos.php';
-        $adj = !empty($_FILES['comprobante']) && $pdo->query("SHOW COLUMNS FROM cobros_factura LIKE 'archivo_adjunto'")->fetchColumn()
-            ? guardarAdjuntoGasto($_FILES['comprobante'], $cid) : null;
+        $adj = $pdo->query("SHOW COLUMNS FROM cobros_factura LIKE 'archivo_adjunto'")->fetchColumn() ? guardarAdjuntosGasto(adjuntosLista($_FILES), $cid) : [];
         try {
             $hechos = cxcCobrarVarias($pdo, $cid, (int)USUARIO_ID, (array)($_POST['factura_ids'] ?? []), $_POST, $adj, array_map('strval', (array)($_POST['cuentas'] ?? [])));
         } catch (Throwable $e) {
-            if ($adj) @unlink(gastoAdjuntoDir() . $adj[0]);
+            foreach ($adj as $a) @unlink(gastoAdjuntoDir() . $a[0]);
             throw $e;
         }
         $pdo->commit();

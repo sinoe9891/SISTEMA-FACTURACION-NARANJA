@@ -103,3 +103,33 @@ function tarjetaGastoValida(PDO $pdo, ?int $tarjeta_id, int $cid, bool $soloActi
     if (!$stmt->fetchColumn()) throw new Exception("Tarjeta no válida.");
     return $tarjeta_id;
 }
+
+
+/** $_FILES de uno o varios comprobantes (name="comprobantes[]" o "comprobante") → lista de archivos sueltos. */
+function adjuntosLista(array $files): array
+{
+    $out = [];
+    foreach (['comprobantes', 'comprobante'] as $k) {
+        $f = $files[$k] ?? null;
+        if (!$f || !isset($f['name'])) continue;
+        if (!is_array($f['name'])) { $out[] = $f; continue; }
+        foreach ($f['name'] as $i => $n) $out[] = ['name' => $n, 'type' => $f['type'][$i], 'tmp_name' => $f['tmp_name'][$i], 'error' => $f['error'][$i], 'size' => $f['size'][$i]];
+    }
+    return $out;
+}
+
+/** Guarda varios comprobantes → [[archivo, nombre], …] (máximo 10). Si uno no es válido, borra los ya guardados y relanza el error. */
+function guardarAdjuntosGasto(array $lista, int $cid): array
+{
+    $ok = [];
+    try {
+        foreach ($lista as $f) {
+            if (count($ok) >= 10) throw new Exception("Máximo 10 comprobantes por cobro.");
+            if ($a = guardarAdjuntoGasto($f, $cid)) $ok[] = $a;
+        }
+    } catch (Throwable $e) {
+        foreach ($ok as $a) @unlink(gastoAdjuntoDir() . $a[0]);
+        throw $e;
+    }
+    return $ok;
+}

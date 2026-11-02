@@ -2464,7 +2464,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 						<div class="col-6"><label class="form-label small mb-0">Fecha del pago</label><input type="date" id="cvFecha" class="form-control" value="${new Date().toLocaleDateString('en-CA')}"></div>
 						<div class="col-6"><label class="form-label small mb-0">Método</label><select id="cvMetodo" class="form-select"><option value="transferencia">Transferencia</option><option value="deposito">Depósito</option><option value="efectivo">Efectivo</option><option value="cheque">Cheque</option><option value="otro">Otro</option></select></div>
 						<div class="col-6"><label class="form-label small mb-0">Referencia</label><input id="cvRef" class="form-control" maxlength="100"></div>
-						<div class="col-6"><label class="form-label small mb-0">Comprobante (opcional)</label><input type="file" id="cvComp" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf"></div></div>`,
+						<div class="col-6"><label class="form-label small mb-0">Comprobantes (opcional)</label><input type="file" id="cvComp" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf" multiple><div class="form-text" style="font-size:.7rem">Uno o varios (máx. 10, 5 MB cada uno): quedan en cada cobro.</div></div></div>`,
 					showCancelButton: true, showDenyButton: true, focusConfirm: false,
 					confirmButtonText: '<i class="bi bi-cash-coin"></i> Registrar cobros', denyButtonText: 'Solo marcarlas pagadas', cancelButtonText: 'Cancelar',
 					confirmButtonColor: '#15803d', denyButtonColor: '#64748b',
@@ -2473,7 +2473,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 						if (!ids.length) { Swal.showValidationMessage('Marca al menos una factura.'); return false; }
 						if (!document.getElementById('cvFecha').value) { Swal.showValidationMessage('Escribe la fecha del pago.'); return false; }
 						const cuentas = {}; document.querySelectorAll('.cv-cta').forEach(s => cuentas[s.dataset.id] = s.value);
-						return { ids, cuentas, fecha: document.getElementById('cvFecha').value, metodo: document.getElementById('cvMetodo').value, ref: document.getElementById('cvRef').value, comp: document.getElementById('cvComp').files[0] || null };
+						return { ids, cuentas, fecha: document.getElementById('cvFecha').value, metodo: document.getElementById('cvMetodo').value, ref: document.getElementById('cvRef').value, comps: [...document.getElementById('cvComp').files] };
 					}
 				});
 				if (q.isDismissed) return;
@@ -2481,7 +2481,7 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 					const fd = new FormData();
 					fd.append('accion', 'cobrar_varias'); q.value.ids.forEach(id => { fd.append('factura_ids[]', id); fd.append('cuentas[' + id + ']', q.value.cuentas[id]); });
 					fd.append('fecha', q.value.fecha); fd.append('metodo', q.value.metodo); fd.append('referencia', q.value.ref);
-					if (q.value.comp) fd.append('comprobante', q.value.comp);
+					q.value.comps.forEach(f => fd.append('comprobantes[]', f));
 					Swal.fire({ title: 'Registrando cobros…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 					const d = await fetch('includes/cxc_accion.php', { method: 'POST', body: fd, credentials: 'same-origin' }).then(r => r.json()).catch(() => ({ success: false, error: 'Error de conexión.' }));
 					if (!d.success) return Swal.fire('No se pudo registrar', d.error, 'error');

@@ -153,8 +153,31 @@ function cxcActualizarPagada(PDO $pdo, int $facturaId): void
 }
 
 /** Registra un abono. Si viene cuenta_id, el dinero entra a esa cuenta bancaria (HNL). */
+/** Comprobantes del cobro: acepta [archivo, nombre] (uno) o una lista de ellos → lista de [archivo, nombre]. */
+function cxcAdjuntosLista(?array $a): array
+{
+    if (!$a) return [];
+    return is_array($a[0] ?? null) ? array_values($a) : [$a];
+}
+
+/** Comprobantes de varios cobros: [cobro_id => [[id, nombre], …]] (los de la tabla cobro_archivos; si no hay, el principal del cobro). */
+function cxcArchivosDeCobros(PDO $pdo, int $cid, array $ids): array
+{
+    $ids = array_values(array_filter(array_map('intval', $ids)));
+    if (!$ids) return [];
+    $out = [];
+    try {
+        $st = $pdo->prepare("SELECT id, cobro_id, nombre FROM cobro_archivos WHERE cliente_id = ? AND cobro_id IN (" . implode(',', $ids) . ") ORDER BY id");
+        $st->execute([$cid]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $a) $out[(int)$a['cobro_id']][] = ['id' => (int)$a['id'], 'nombre' => $a['nombre']];
+    } catch (Throwable $e) { /* sin la tabla de varios comprobantes */ }
+    return $out;
+}
+
 function cxcRegistrarCobro(PDO $pdo, int $cid, int $usuario, array $d, ?array $adjunto = null): int
 {
+    $adjuntos = cxcAdjuntosLista($adjunto);
+    $adjunto = $adjuntos[0] ?? null;   // el primero queda como principal del cobro y de su entrada en el banco
     $f = cxcFactura($pdo, $cid, (int)($d['factura_id'] ?? 0), true);
     if ($f['estado'] !== 'emitida') throw new Exception("Solo se cobran facturas emitidas.");
     if ($f['saldo'] <= 0) throw new Exception("La factura {$f['correlativo']} no tiene saldo pendiente.");
@@ -190,6 +213,13 @@ function cxcRegistrarCobro(PDO $pdo, int $cid, int $usuario, array $d, ?array $a
             try { $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND archivo_adjunto IS NULL")->execute([$adjunto[0], $adjunto[1], $movId]); }
             catch (PDOException $e) { /* sin comprobante en movimientos */ }
         }
+    }
+    // Todos los comprobantes (la misma captura puede servir a varios cobros: los archivos se comparten)
+    if ($adjuntos) {
+        try {
+            $ins = $pdo->prepare("INSERT INTO cobro_archivos (cliente_id, cobro_id, archivo, nombre, usuario_id) VALUES (?, ?, ?, ?, ?)");
+            foreach ($adjuntos as [$arch, $nom]) $ins->execute([$cid, $id, $arch, $nom, $usuario]);
+        } catch (PDOException $e) { /* sin la tabla: queda el principal */ }
     }
     cxcActualizarPagada($pdo, (int)$f['id']);
     return $id;

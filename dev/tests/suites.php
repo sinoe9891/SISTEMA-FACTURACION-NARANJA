@@ -160,6 +160,44 @@ suite('Nombre y versión del sistema', function () {
     check('el inicio de sesión también', str_contains($i['body'], 'NaranjaFact v' . APP_VERSION), errorPhp($i['body']));
 });
 
+suite('Cobros: uno o varios comprobantes', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    // Factura de prueba: copia de una emitida, sin pagar y con su propio correlativo
+    $base = $pdo->query("SELECT * FROM facturas WHERE cliente_id = 2 AND estado = 'emitida' AND total > 5 LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if (!$base) { check('hay una factura para copiar', false); return; }
+    unset($base['id']); $base['correlativo'] = 'QA-' . bin2hex(random_bytes(5)); $base['pagada'] = 0; $base['estado_declarada'] = 0;
+    $pdo->prepare('INSERT INTO facturas (`' . implode('`,`', array_keys($base)) . '`) VALUES (' . implode(',', array_fill(0, count($base), '?')) . ')')->execute(array_values($base));
+    $fid = (int)$pdo->lastInsertId();
+    $f = ['id' => $fid, 'pagada' => 0];
+    $r = $c->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => $fid, 'fecha' => date('Y-m-d'), 'metodo' => 'transferencia', 'monto' => 1, 'referencia' => 'QA-2ARCH',
+        'comprobantes[0]' => new CURLFile(archivoTemporal('png'), 'image/png', 'captura1.png'), 'comprobantes[1]' => new CURLFile(archivoTemporal('png'), 'image/png', 'captura2.png')]);
+    $cob = $pdo->query("SELECT * FROM cobros_factura WHERE factura_id=$fid AND anulado=0 ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $arch = $cob ? $pdo->query("SELECT * FROM cobro_archivos WHERE cobro_id=" . (int)$cob['id'] . " ORDER BY id")->fetchAll(PDO::FETCH_ASSOC) : [];
+    try {
+        check('se guardan los dos comprobantes y el primero queda como principal', ($r['json']['success'] ?? false) && count($arch) === 2 && $cob['archivo_nombre'] === 'captura1.png' && $arch[1]['nombre'] === 'captura2.png', $r['body']);
+        $j = $c->get('includes/cxc_accion.php', ['factura_id' => $fid]);
+        check('la lista de abonos trae los dos comprobantes', count($j['json']['cobros'][0]['archivos'] ?? []) === 2, $j['body']);
+        $a2 = $c->get('cobro_archivo.php', ['id' => (int)$cob['id'], 'a' => (int)$arch[1]['id']]);
+        check('se puede ver cada comprobante por separado', $a2['code'] === 200 && str_starts_with($a2['body'], "\x89PNG"));
+        $x = $c->get('cobro_archivo.php', ['id' => (int)$cob['id'] + 99999, 'a' => (int)$arch[1]['id']]);
+        check('un comprobante no se abre con el cobro equivocado', $x['code'] === 404);
+        $malo = $c->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => $fid, 'fecha' => date('Y-m-d'), 'metodo' => 'transferencia', 'monto' => 1,
+            'comprobantes[0]' => new CURLFile(archivoTemporal('png'), 'image/png', 'bien.png'), 'comprobantes[1]' => new CURLFile(archivoTemporal('txt'), 'image/jpeg', 'mal.jpg')]);
+        check('si uno de los archivos no es válido no se registra nada', !($malo['json']['success'] ?? true) && (int)$pdo->query("SELECT COUNT(*) FROM cobros_factura WHERE factura_id=$fid AND anulado=0")->fetchColumn() === 1);
+        $pg = $c->get('cuentas_cobrar');
+        check('Cuentas por cobrar y el Historial aceptan varios archivos', str_contains($pg['body'], 'name="comprobantes[]"') && str_contains($c->get('lista_facturas')['body'], "fd.append('comprobantes[]'"));
+    } finally {
+        if ($cob) {
+            $c->post('includes/cxc_accion.php', ['accion' => 'anular_cobro', 'id' => (int)$cob['id'], 'motivo' => 'QA']);
+            foreach ($arch as $a) @unlink(__DIR__ . '/../../clientes/naranjaymedia/includes/uploads/gastos/' . basename((string)$a['archivo']));
+            $pdo->exec("DELETE FROM cobro_archivos WHERE cobro_id = " . (int)$cob['id']);
+            $pdo->exec("DELETE FROM cobros_factura WHERE id = " . (int)$cob['id']);
+        }
+        $pdo->exec("DELETE FROM facturas WHERE id = $fid");
+    }
+});
+
 suite('Historial: grupo de CAI y CAI del grupo', function () {
     $c = login('qa.admin@local.test');
     $cont = fn($r) => substr_count($r['body'], '<tr data-ven=');
@@ -3140,7 +3178,7 @@ suite('Cobro con comprobante y «Registrar cobro» desde la factura y la lista',
     $l = $c->get('lista_facturas');
     check('la lista de facturas tiene el botón «Cobro»', str_contains($l['body'], 'cuentas_cobrar?cobrar=' . $fid));
     $cc = $c->get('cuentas_cobrar', ['cobrar' => $fid]);
-    check('Cuentas por cobrar tiene el comprobante y abre la ventana con ?cobrar', sinErroresPhp($cc['body']) && str_contains($cc['body'], 'name="comprobante"') && str_contains($cc['body'], "get('cobrar')"), errorPhp($cc['body']));
+    check('Cuentas por cobrar tiene el comprobante y abre la ventana con ?cobrar', sinErroresPhp($cc['body']) && str_contains($cc['body'], 'name="comprobantes[]"') && str_contains($cc['body'], 'multiple') && str_contains($cc['body'], "get('cobrar')"), errorPhp($cc['body']));
     $malo = $c->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => $fid, 'fecha' => date('Y-m-d'), 'metodo' => 'transferencia', 'monto' => 1,
         'comprobante' => new CURLFile(archivoTemporal('txt'), 'image/jpeg', 'foto.jpg')]);
     check('rechaza un comprobante que no es imagen ni PDF, y no registra el cobro', !($malo['json']['success'] ?? true) && !$pdo->query("SELECT COUNT(*) FROM cobros_factura WHERE factura_id=$fid AND anulado=0")->fetchColumn());

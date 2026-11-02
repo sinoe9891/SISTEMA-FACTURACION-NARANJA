@@ -221,9 +221,9 @@ require_once '../../includes/templates/header.php';
                             <select class="form-select" name="cuenta_id"><option value="">— No registrar en banco —</option>
                                 <?php foreach ($cuentasHnl as $c): ?><option value="<?= (int)$c['id'] ?>"<?= bancoSel($c) ?>><?= htmlspecialchars($c['banco'] . ' ' . $c['numero']) ?></option><?php endforeach; ?></select>
                             <div class="form-text">Si eliges una cuenta, el cobro aparece como entrada en Bancos.</div></div>
-                        <div class="col-12"><label class="form-label">Comprobante <span class="text-muted small">(captura de la transferencia, cheque… · JPG, PNG o PDF, máx. 5 MB)</span></label>
-                            <input class="form-control" type="file" name="comprobante" accept="image/jpeg,image/png,image/webp,application/pdf">
-                            <div class="form-text">Si es transferencia, adjunta la captura: queda en el cobro y en su entrada del banco.</div></div>
+                        <div class="col-12"><label class="form-label">Comprobantes <span class="text-muted small">(captura de la transferencia, cheque… · JPG, PNG o PDF, máx. 5 MB cada uno)</span></label>
+                            <input class="form-control" type="file" name="comprobantes[]" multiple accept="image/jpeg,image/png,image/webp,application/pdf">
+                            <div class="form-text">Uno o varios (máx. 10). Si es transferencia, adjunta la captura: queda en el cobro y el primero en su entrada del banco.</div></div>
                         <div class="col-12"><label class="form-label">Notas</label><input class="form-control" name="notas" maxlength="255"></div>
                     </div>
                     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-success" type="submit">Registrar cobro</button></div>
