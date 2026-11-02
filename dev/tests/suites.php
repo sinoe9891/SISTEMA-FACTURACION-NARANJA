@@ -160,18 +160,42 @@ suite('Nombre y versión del sistema', function () {
     check('el inicio de sesión también', str_contains($i['body'], 'NaranjaFact v' . APP_VERSION), errorPhp($i['body']));
 });
 
-suite('Historial: por defecto los CAI vigentes', function () {
+suite('Historial: selector de CAI (activos, con pendientes, vencidos, todos)', function () {
     $c = login('qa.admin@local.test');
     $cont = fn($r) => substr_count($r['body'], '<tr data-ven=');
     $def = $c->get('lista_facturas');
+    check('la primera opción es «CAI activos» y están las otras tres en orden', sinErroresPhp($def['body']) && preg_match('#<select name="cai_id"[^>]*>\s*<option value="">— CAI activos —</option>\s*<option value="pendientes"[^>]*>— CAI activos y con pendientes —</option>\s*<option value="vencidos"[^>]*>— CAI vencidos —</option>\s*<option value="todos"[^>]*>— Todos los CAI —</option>#', $def['body']) === 1, errorPhp($def['body']));
+    $pen = $c->get('lista_facturas', ['cai_id' => 'pendientes']);
+    $ven = $c->get('lista_facturas', ['cai_id' => 'vencidos']);
     $todos = $c->get('lista_facturas', ['cai_id' => 'todos']);
-    check('carga sin errores y con las dos opciones nuevas del filtro', sinErroresPhp($def['body']) && str_contains($def['body'], '— CAI vigentes y con pendientes —') && str_contains($def['body'], 'value="todos"'), errorPhp($def['body']));
-    check('«todos» muestra al menos las que muestran los vigentes', $cont($todos) >= $cont($def), $cont($todos) . ' vs ' . $cont($def));
-    $est = (int)db()->query("SELECT establecimiento_id FROM cai_rangos WHERE cliente_id=2 ORDER BY id DESC LIMIT 1")->fetchColumn();
-    $vig = db()->query("SELECT id FROM cai_rangos WHERE cliente_id=2 AND (fecha_limite >= CURDATE() OR id IN (SELECT DISTINCT cai_id FROM facturas WHERE cliente_id=2 AND estado='emitida' AND (pagada=0 OR pagada IS NULL OR estado_declarada=0)))")->fetchAll(PDO::FETCH_COLUMN);
-    if ($vig) {
-        $esp = 0; foreach ($vig as $id) $esp += $cont($c->get('lista_facturas', ['cai_id' => $id]));
-        check('por defecto = la suma de los CAI no vencidos y los que tienen pendientes', $cont($def) === $esp, $cont($def) . ' vs ' . $esp);
+    check('todos = activos + con pendientes + vencidos sin repetir; cada grupo cargó sin errores', sinErroresPhp($pen['body'] . $ven['body'] . $todos['body']) && $cont($todos) >= $cont($pen) && $cont($pen) >= $cont($def), $cont($def) . '/' . $cont($pen) . '/' . $cont($ven) . '/' . $cont($todos));
+    $act = db()->query("SELECT id FROM cai_rangos WHERE cliente_id=2 AND fecha_limite >= CURDATE()")->fetchAll(PDO::FETCH_COLUMN);
+    if ($act) { $esp = 0; foreach ($act as $id) $esp += $cont($c->get('lista_facturas', ['cai_id' => $id])); check('por defecto = la suma de los CAI activos', $cont($def) === $esp, $cont($def) . ' vs ' . $esp); }
+    $v = db()->query("SELECT id FROM cai_rangos WHERE cliente_id=2 AND fecha_limite < CURDATE()")->fetchAll(PDO::FETCH_COLUMN);
+    if ($v) { $esp = 0; foreach ($v as $id) $esp += $cont($c->get('lista_facturas', ['cai_id' => $id])); check('«vencidos» = la suma de los CAI vencidos', $cont($ven) === $esp, $cont($ven) . ' vs ' . $esp); }
+});
+
+suite('Fechas: las facturas anuladas no se avisan ni cuentan para el orden', function () {
+    require_once dirname(__DIR__, 2) . '/includes/factura_fechas.php';
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $prod = (int)$pdo->query("SELECT id FROM productos_clientes WHERE cliente_id=2 LIMIT 1")->fetchColumn();
+    $f = $pdo->query("SELECT * FROM facturas WHERE cliente_id=2 AND estado='emitida' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $serie = implode('-', array_slice(explode('-', $f['correlativo']), 0, 3));
+    $ids = [];
+    try {
+        foreach ([['QAF-1', 'emitida', '2035-01-10 10:00:00'], ['QAF-2', 'anulada', '2029-01-01 10:00:00'], ['QAF-3', 'emitida', '2035-01-20 10:00:00']] as [$n, $est, $fe]) {
+            $g = $f; unset($g['id']); $g['correlativo'] = $serie . '-9999' . substr($n, -1) . '00'; $g['estado'] = $est; $g['fecha_emision'] = $fe; $g['estado_declarada'] = 0;
+            $pdo->prepare('INSERT INTO facturas (`' . implode('`,`', array_keys($g)) . '`) VALUES (' . implode(',', array_fill(0, count($g), '?')) . ')')->execute(array_values($g));
+            $ids[$n] = (int)$pdo->lastInsertId();
+        }
+        $fuera = facturasFechaFueraDeOrden($pdo, (int)$f['cliente_id']);
+        check('la anulada con fecha desordenada no sale con «Revisar fecha»', !isset($fuera[$ids['QAF-2']]));
+        check('y no hace que sus vecinas salgan desordenadas', !isset($fuera[$ids['QAF-1']]) && !isset($fuera[$ids['QAF-3']]));
+        $v = facturaVecinas($pdo, (int)$f['cliente_id'], $pdo->query("SELECT correlativo FROM facturas WHERE id=" . $ids['QAF-3'])->fetchColumn());
+        check('la factura anterior no es la anulada', ($v['anterior']['id'] ?? 0) !== $ids['QAF-2']);
+    } finally {
+        foreach ($ids as $id) $pdo->exec("DELETE FROM facturas WHERE id=$id");
     }
 });
 

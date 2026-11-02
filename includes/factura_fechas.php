@@ -3,6 +3,7 @@
  * Orden de las fechas de emisión: en un mismo talonario (establecimiento-punto-tipo del correlativo) cada factura
  * debe tener fecha igual o posterior a la anterior y no posterior a la siguiente. La fecha se puede poner libre;
  * esto solo sirve para avisar y sugerir una que respete el orden (clientes/js/factura-fecha-orden.js).
+ * Las facturas anuladas no se avisan ni cuentan para el orden.
  */
 
 /** Factura anterior y siguiente del mismo talonario: ['anterior' => [id, correlativo, fecha]|null, 'siguiente' => …]. */
@@ -12,7 +13,7 @@ function facturaVecinas(PDO $pdo, int $cid, string $correlativo): array
     $out = [];
     foreach (['anterior' => ['<', 'DESC'], 'siguiente' => ['>', 'ASC']] as $k => [$op, $ord]) {
         $st = $pdo->prepare("SELECT id, correlativo, fecha_emision AS fecha FROM facturas
-                             WHERE cliente_id = ? AND correlativo LIKE ? AND correlativo $op ? AND fecha_emision IS NOT NULL
+                             WHERE cliente_id = ? AND estado <> 'anulada' AND correlativo LIKE ? AND correlativo $op ? AND fecha_emision IS NOT NULL
                              ORDER BY correlativo $ord LIMIT 1");
         $st->execute([$cid, $serie . '-%', $correlativo]);
         $f = $st->fetch(PDO::FETCH_ASSOC);
@@ -25,7 +26,7 @@ function facturaVecinas(PDO $pdo, int $cid, string $correlativo): array
 function facturaUltimaPorCai(PDO $pdo, int $cid): array
 {
     $st = $pdo->prepare("SELECT f.cai_id, f.id, f.correlativo, f.fecha_emision FROM facturas f
-                         JOIN (SELECT cai_id, MAX(correlativo) c FROM facturas WHERE cliente_id = ? AND cai_id IS NOT NULL GROUP BY cai_id) u
+                         JOIN (SELECT cai_id, MAX(correlativo) c FROM facturas WHERE cliente_id = ? AND estado <> 'anulada' AND cai_id IS NOT NULL GROUP BY cai_id) u
                            ON u.cai_id = f.cai_id AND u.c = f.correlativo
                          WHERE f.cliente_id = ?");
     $st->execute([$cid, $cid]);
@@ -40,7 +41,7 @@ function facturaUltimaPorCai(PDO $pdo, int $cid): array
  */
 function facturasFechaFueraDeOrden(PDO $pdo, int $cid): array
 {
-    $st = $pdo->prepare("SELECT id, correlativo, fecha_emision FROM facturas WHERE cliente_id = ? AND fecha_emision IS NOT NULL ORDER BY correlativo");
+    $st = $pdo->prepare("SELECT id, correlativo, fecha_emision FROM facturas WHERE cliente_id = ? AND estado <> 'anulada' AND fecha_emision IS NOT NULL ORDER BY correlativo");
     $st->execute([$cid]);
     $series = [];
     foreach ($st as $f) $series[implode('-', array_slice(explode('-', $f['correlativo']), 0, 3))][] = $f;

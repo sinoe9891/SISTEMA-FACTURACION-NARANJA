@@ -42,15 +42,19 @@ if (isset($_GET['cai_id']) && ctype_digit($_GET['cai_id'])) {
 	if (!$caix_valid) $caix = null;
 }
 if (count($cais) === 1) $caix = $cais[0]['id'];
-// Qué CAI se ven: uno elegido; «todos» (con vencidos); o, por defecto, los CAI NO VENCIDOS (activos, por vencer y agotados) más
-// cualquier CAI vencido que todavía tenga facturas sin pagar o sin declarar (para que nada pendiente quede escondido).
+// Qué CAI se ven (select «CAI»): por defecto los ACTIVOS (no vencidos: activos, por vencer y agotados); «activos y con pendientes»
+// (suma los vencidos que aún tengan facturas sin pagar o sin declarar); «vencidos»; «todos»; o uno elegido.
 // Antes arrancaba solo en el más nuevo y, con dos vigentes, escondía las del otro. Subsanaciones y pendientes de pago miran todos los CAI.
 $stmtCaiPend = $pdo->prepare("SELECT DISTINCT cai_id FROM facturas WHERE cliente_id = ? AND establecimiento_id = ? AND estado = 'emitida' AND (pagada = 0 OR pagada IS NULL OR estado_declarada = 0)");
 $stmtCaiPend->execute([$cliente_id, $establecimiento_activo]);
 $caiConPendientes = array_map('intval', $stmtCaiPend->fetchAll(PDO::FETCH_COLUMN));
-$caiModo = $caix ? 'uno' : ((($_GET['cai_id'] ?? '') === 'todos' || in_array($subsanacion, ['1', '2'], true) || $estadoFiltro === 'pago_pendiente') ? 'todos' : 'vigentes');
-$caiVigentesIds = array_values(array_map(fn($c) => (int)$c['id'], array_filter($cais, fn($c) => (int)$c['activo'] === 1 || in_array((int)$c['id'], $caiConPendientes, true))));
-if ($caiModo === 'vigentes' && !$caiVigentesIds) $caiModo = 'todos';
+$caiPedido = (string)($_GET['cai_id'] ?? '');
+$caiModo = $caix ? 'uno' : (in_array($subsanacion, ['1', '2'], true) || $estadoFiltro === 'pago_pendiente' ? 'todos'
+    : (in_array($caiPedido, ['todos', 'pendientes', 'vencidos'], true) ? $caiPedido : 'vigentes'));
+$caiActivosIds = array_values(array_map(fn($c) => (int)$c['id'], array_filter($cais, fn($c) => (int)$c['activo'] === 1)));
+$caiVencidosIds = array_values(array_map(fn($c) => (int)$c['id'], array_filter($cais, fn($c) => (int)$c['activo'] !== 1)));
+$caiVigentesIds = array_values(array_unique(array_merge($caiActivosIds, array_filter($caiVencidosIds, fn($id) => in_array($id, $caiConPendientes, true)))));   // activos + vencidos con pendientes
+if ($caiModo === 'vigentes' && !$caiActivosIds) $caiModo = 'todos';
 // Último correlativo de cada CAI: solo la última factura de un CAI se puede eliminar.
 $ultimoPorCai = [];
 foreach ($cais as $__cai) $ultimoPorCai[(int)$__cai['id']] = trim((string)($__cai['ultimo_correlativo'] ?? ''));
@@ -74,7 +78,11 @@ if ($caix) {
 	$whereExtra .= " AND f.cai_id = ?";
 	$params[] = $caix;
 } elseif ($caiModo === 'vigentes') {
-	$whereExtra .= " AND f.cai_id IN (" . implode(',', $caiVigentesIds) . ")";
+	$whereExtra .= " AND f.cai_id IN (" . implode(',', $caiActivosIds) . ")";
+} elseif ($caiModo === 'pendientes') {
+	$whereExtra .= " AND f.cai_id IN (" . implode(',', $caiVigentesIds ?: [0]) . ")";
+} elseif ($caiModo === 'vencidos') {
+	$whereExtra .= " AND f.cai_id IN (" . implode(',', $caiVencidosIds ?: [0]) . ")";
 }
 if ($fecha_desde) {
 	$whereExtra .= " AND f.fecha_emision >= ?";
@@ -1353,8 +1361,10 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					<div>
 						<label class="fh-label">CAI</label>
 						<select name="cai_id" class="fh-select" <?= (count($cais) === 1) ? 'disabled' : '' ?>>
-							<option value="">— CAI vigentes y con pendientes —</option>
-							<option value="todos" <?= $caiModo === 'todos' && !$caix ? 'selected' : '' ?>>— Todos los CAI (con vencidos) —</option>
+							<option value="">— CAI activos —</option>
+							<option value="pendientes" <?= $caiModo === 'pendientes' ? 'selected' : '' ?>>— CAI activos y con pendientes —</option>
+							<option value="vencidos" <?= $caiModo === 'vencidos' ? 'selected' : '' ?>>— CAI vencidos —</option>
+							<option value="todos" <?= $caiModo === 'todos' && !$caix && $caiPedido === 'todos' ? 'selected' : '' ?>>— Todos los CAI —</option>
 							<?php foreach ($cais as $cai): ?>
 								<option value="<?= $cai['id'] ?>" data-desde="<?= htmlspecialchars((string)$cai['fecha_recepcion']) ?>" data-activo="<?= (int)$cai['activo'] ?>" data-hasta="<?= htmlspecialchars((string)$cai['fecha_limite']) ?>" <?= ($caix == $cai['id']) ? 'selected' : '' ?>>
 									<?= htmlspecialchars($cai['cai']) ?><?= $cai['activo'] ? ' ✅' : ' ⛔ Vencido' ?> |
@@ -1421,8 +1431,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 					const finMes = (y, m) => `${y}-${pad(m)}-${pad(new Date(y, m, 0).getDate())}`;
 					const hoy = new Date(), mesHoy = hoy.getFullYear() * 12 + hoy.getMonth();
 					const llenarPeriodos = () => {
-						// Vigencia: la del CAI elegido; con «Todos los CAI», de la recepción más antigua al vencimiento más reciente
-						const ops = selCai.value ? [selCai.selectedOptions[0]] : [...selCai.options].filter(o => o.value);
+						// Vigencia: la del CAI elegido; con los grupos (activos, con pendientes, vencidos, todos), de la recepción más antigua al vencimiento más reciente
+						const ops = /^\d+$/.test(selCai.value) ? [selCai.selectedOptions[0]] : [...selCai.options].filter(o => /^\d+$/.test(o.value));
 						const ini = ops.map(o => o.dataset.desde).filter(Boolean).sort()[0];
 						const fin = ops.map(o => o.dataset.hasta).filter(Boolean).sort().pop();
 						let html = '<option value="">— Rango libre —</option>';
