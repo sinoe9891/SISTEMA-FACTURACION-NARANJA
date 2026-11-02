@@ -150,6 +150,49 @@ suite('Teléfono de clientes con formato +504', function () {
     check('vacío y extranjeros se dejan', telefonoHN('') === '' && telefonoHN('+1 305 555 0101') === '+1 305 555 0101');
 });
 
+suite('Alerta del CAI: agotado, vencido, por agotarse y por vencer', function () {
+    require_once dirname(__DIR__, 2) . '/includes/cai_estado.php';
+    $cai = db()->query("SELECT * FROM cai_rangos WHERE cliente_id=2 AND fecha_limite >= CURDATE() ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if (!$cai) { check('hay un CAI vigente para probar', false); return; }
+    $est = (int)$cai['establecimiento_id'];
+    $otros = db()->query("SELECT id, fecha_limite FROM cai_rangos WHERE cliente_id=2 AND establecimiento_id=$est AND id<>" . (int)$cai['id'])->fetchAll(PDO::FETCH_ASSOC);
+    $total = (int)$cai['rango_fin'] - (int)$cai['rango_inicio'] + 1;
+    $set = fn($act, $lim) => db()->prepare("UPDATE cai_rangos SET correlativo_actual=?, fecha_limite=? WHERE id=?")->execute([$act, $lim, $cai['id']]);
+    try {
+        // Los demás CAI del establecimiento se vencen para que solo cuente este
+        db()->exec("UPDATE cai_rangos SET fecha_limite='2020-01-01' WHERE cliente_id=2 AND establecimiento_id=$est AND id<>" . (int)$cai['id']);
+        $set(0, date('Y-m-d', strtotime('+90 days')));
+        check('con números y fecha de sobra: sin alerta', caiAlerta(db(), 2, $est) === null);
+        $set($total, date('Y-m-d', strtotime('+90 days')));
+        $a = caiAlerta(db(), 2, $est);
+        check('rango agotado: rojo y bloquea', $a && $a['nivel'] === 'rojo' && $a['bloquea'] && str_contains($a['titulo'], 'se agotó'), json_encode($a));
+        $set(0, date('Y-m-d', strtotime('-1 day')));
+        $a = caiAlerta(db(), 2, $est);
+        check('CAI vencido: rojo y bloquea', $a && $a['nivel'] === 'rojo' && $a['bloquea'] && str_contains($a['titulo'], 'venció'));
+        $set($total - 8, date('Y-m-d', strtotime('+90 days')));
+        $a = caiAlerta(db(), 2, $est);
+        check('quedan 8: ámbar y no bloquea', $a && $a['nivel'] === 'ambar' && !$a['bloquea'] && str_contains($a['detalle'], '<strong>8</strong>'));
+        $set($total - 2, date('Y-m-d', strtotime('+90 days')));
+        check('quedan 2: rojo', (caiAlerta(db(), 2, $est)['nivel'] ?? '') === 'rojo');
+        $set(0, date('Y-m-d', strtotime('+20 days')));
+        $a = caiAlerta(db(), 2, $est);
+        check('vence en 20 días: ámbar', $a && $a['nivel'] === 'ambar' && str_contains($a['detalle'], '20'));
+        $set(0, date('Y-m-d', strtotime('+5 days')));
+        check('vence en 5 días: rojo', (caiAlerta(db(), 2, $est)['nivel'] ?? '') === 'rojo');
+        // Pantallas con el CAI agotado
+        $set($total, date('Y-m-d', strtotime('+90 days')));
+        $c = login('qa.admin@local.test');
+        $d = $c->get('dashboard'); $h = $c->get('lista_facturas'); $g = $c->get('generar_factura');
+        check('Dashboard, Historial y Nueva factura muestran la alerta', str_contains($d['body'], 'id="alertaCai"') && str_contains($h['body'], 'id="alertaCai"') && str_contains($g['body'], 'id="alertaCai"'), errorPhp($d['body'] . $h['body'] . $g['body']));
+        check('Nueva factura bloquea el guardado sin números', (bool)preg_match('/id="btnGuardar"\s+disabled/', $g['body']));
+    } finally {
+        db()->prepare("UPDATE cai_rangos SET correlativo_actual=?, fecha_limite=? WHERE id=?")->execute([$cai['correlativo_actual'], $cai['fecha_limite'], $cai['id']]);
+        foreach ($otros as $o) db()->prepare("UPDATE cai_rangos SET fecha_limite=? WHERE id=?")->execute([$o['fecha_limite'], $o['id']]);
+    }
+    $r = db()->query("SELECT correlativo_actual, fecha_limite FROM cai_rangos WHERE id=" . (int)$cai['id'])->fetch(PDO::FETCH_ASSOC);
+    check('limpieza: el CAI queda como estaba', (int)$r['correlativo_actual'] === (int)$cai['correlativo_actual'] && $r['fecha_limite'] === $cai['fecha_limite']);
+});
+
 suite('Factura nueva: período del contrato y programa', function () {
     require_once dirname(__DIR__, 2) . '/includes/factura_contrato.php';
     $c = login('qa.admin@local.test');

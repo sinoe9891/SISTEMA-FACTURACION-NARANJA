@@ -1199,6 +1199,8 @@ $isv_no_decl_mes_actual  = (float)$noDeclMesActual['isv_mes_actual'];
 		<?php endif; ?>
 	</div>
 
+	<?php require_once '../../includes/cai_estado.php'; $caiAlerta = caiAlerta($pdo, (int)$cliente_id, (int)$establecimiento_activo); require '../../includes/templates/cai_alerta.php'; ?>
+
 	<!-- Resumen (se reemplaza al filtrar sin recargar) -->
 	<div id="fhZonaResumen">
 	<!-- Stats strip -->

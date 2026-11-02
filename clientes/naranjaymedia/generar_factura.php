@@ -68,6 +68,9 @@ $cais = $stmtCai->fetchAll();
 // Fecha de emisión: la última factura de cada CAI, para revisar el orden si se elige otra fecha
 require_once '../../includes/factura_fechas.php';
 $ultimaPorCai = facturaUltimaPorCai($pdo, (int)$cliente_id);
+// Estado del CAI: si no hay números o venció, no se puede emitir
+require_once '../../includes/cai_estado.php';
+$caiAlerta = caiAlerta($pdo, (int)$cliente_id, (int)($_SESSION['establecimiento_activo'] ?? 0));
 
 /* ── Si viene con receptor: pre-cargar productos y contratos ───────────── */
 $productos_iniciales = [];
@@ -301,6 +304,7 @@ require_once '../../includes/templates/header.php';
         </div>
     </div>
 
+    <?php $caiAlertaClase = ''; require '../../includes/templates/cai_alerta.php'; ?>
     <form id="formFactura" action="guardar_factura" method="POST">
         <?php if ((int)($_GET['plan_linea'] ?? 0)): ?><input type="hidden" name="plan_linea" value="<?= (int)$_GET['plan_linea'] ?>"><?php endif; ?>
         <input type="hidden" name="establecimiento_id"
@@ -324,8 +328,8 @@ require_once '../../includes/templates/header.php';
                                 $total     = $cai['rango_fin'] - $cai['rango_inicio'] + 1;
                                 $restantes = $total - (int)$cai['correlativo_actual'];
                             ?>
-                                <option value="<?= $cai['id'] ?>">
-                                    <?= htmlspecialchars($cai['cai']) ?> &nbsp;|&nbsp;
+                                <option value="<?= $cai['id'] ?>" <?= $restantes <= 0 ? 'disabled' : '' ?>>
+                                    <?= $restantes <= 0 ? '(AGOTADO) ' : '' ?><?= htmlspecialchars($cai['cai']) ?> &nbsp;|&nbsp;
                                     Rango: <?= $cai['rango_inicio'] ?>–<?= $cai['rango_fin'] ?> &nbsp;|&nbsp;
                                     <?= $restantes ?> restantes &nbsp;|&nbsp;
                                     Válido hasta: <?= $cai['fecha_limite'] ?>
@@ -530,7 +534,7 @@ require_once '../../includes/templates/header.php';
                         <input type="hidden" name="monto_letras" id="h_letras">
                     </div>
                     <div class="p-3 border-top">
-                        <button type="submit" class="btn-guardar w-100" id="btnGuardar">
+                        <button type="submit" class="btn-guardar w-100" id="btnGuardar" <?= !empty($caiAlerta['bloquea']) ? 'disabled title="No hay números disponibles en el CAI: registrá uno nuevo"' : '' ?>>
                             <i class="bi bi-floppy-fill me-1"></i>Guardar y Generar Factura
                         </button>
                     </div>

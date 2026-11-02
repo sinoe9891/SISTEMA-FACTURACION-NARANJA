@@ -266,12 +266,7 @@ unset($__v);
     </div>
 
     <!-- Alertas: todas juntas, debajo del saludo -->
-    <?php if (!empty($alerta_cai_vencido)): ?>
-        <div class="alert alert-danger d-flex align-items-center gap-3 mb-3 rounded-3">
-            <i class="bi bi-calendar-x-fill fs-5"></i>
-            <div><strong>Tu CAI está por vencer.</strong> Fecha límite: <strong><?= formatFechaLimite($fecha_limite) ?></strong>. Solicita uno nuevo al SAR antes de esa fecha.</div>
-        </div>
-    <?php endif; ?>
+    <?php require '../../includes/templates/cai_alerta.php'; ?>
     <?php // Documentos de la empresa por vencer (30 días) o vencidos: semáforo por días que faltan
     require_once '../../includes/documentos.php';
     $docsAviso = permisoPuede($pdo, 'configuracion_documentos') ? array_filter(docsLista($pdo, (int)cliente_actual()), fn($d) => in_array($d['estado'], ['vencido', 'por_vencer'], true)) : [];
@@ -283,12 +278,6 @@ unset($__v);
             <?php endforeach; ?>
             <a href="configuracion_documentos" class="ms-auto">Renovar</a>
         </div></div>
-    <?php endif; ?>
-    <?php if (($facturas_restantes ?? 999999) <= (defined('ALERTA_FACTURAS_RESTANTES') ? ALERTA_FACTURAS_RESTANTES : 0) && ($total_facturas ?? 0) > 0): ?>
-        <div class="alert alert-warning d-flex align-items-center gap-3 mb-3 rounded-3">
-            <i class="bi bi-exclamation-triangle-fill fs-5"></i>
-            <div><strong>¡Atención! Estás por agotar tu rango de facturación:</strong> quedan <strong><?= (int)$facturas_restantes ?></strong> correlativo(s) disponibles.<?php if (permisoPuede($pdo, 'configuracion_cai')): ?> <a href="configuracion_cai" class="alert-link">Ver rangos CAI</a><?php else: ?> Avisa al administrador.<?php endif; ?></div>
-        </div>
     <?php endif; ?>
 
     <!-- Filtro -->

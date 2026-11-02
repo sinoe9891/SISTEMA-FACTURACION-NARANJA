@@ -118,6 +118,10 @@ $stmtCAIs = $pdo->prepare("
 $stmtCAIs->execute([$cliente_id, $establecimiento_activo]);
 $cais_activos = $stmtCAIs->fetchAll(PDO::FETCH_ASSOC);
 
+// Alerta del CAI (agotado, vencido, por agotarse o por vencer)
+require_once __DIR__ . '/cai_estado.php';
+$caiAlerta = caiAlerta($pdo, (int)$cliente_id, (int)$establecimiento_activo);
+
 // Variables CAI para mostrar en dashboard
 $facturas_restantes = 0;
 $fecha_limite = null;       // la más próxima (mínima)
@@ -166,8 +170,6 @@ $stmtFact = $pdo->prepare("
       AND f.establecimiento_id = ?
       AND f.estado = 'emitida'
       AND f.fecha_emision BETWEEN ? AND ?
-      AND CURDATE() <= c.fecha_limite
-      AND (c.rango_inicio + c.correlativo_actual) <= c.rango_fin
 ");
 $stmtFact->execute([$cliente_id, $establecimiento_activo, $fecha_inicio, $fecha_fin]);
 $total_facturas = (int)$stmtFact->fetchColumn();
