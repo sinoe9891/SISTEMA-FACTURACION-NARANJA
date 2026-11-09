@@ -1,6 +1,7 @@
 <?php
 // clientes/naranjaymedia/includes/socio_accion.php — Aportes de socios (solo administradores).
 //   POST accion=aporte: fecha, socio, monto, metodo, referencia, cuenta_id (opcional), notas, comprobante (archivo)
+//   POST accion=editar_aporte: id + los de aporte (+ quitar_comprobante) → corrige el aporte y su depósito en el banco
 //   POST accion=anular: id, motivo
 //   POST accion=socio:  nombre (agrega un socio a la empresa)
 require_once '../../../includes/db.php';
@@ -45,7 +46,9 @@ try {
         exit;
     }
 
-    if ($accion !== 'aporte') throw new Exception("Acción no válida.");
+    $editarId = 0;
+    if ($accion === 'editar_aporte') { $editarId = (int)($_POST['id'] ?? 0); if (!$editarId) throw new Exception("Aporte no válido."); }
+    elseif ($accion !== 'aporte') throw new Exception("Acción no válida.");
     $fecha  = trim((string)($_POST['fecha'] ?? ''));
     $socio  = mb_substr(trim(preg_replace('/\s+/', ' ', (string)($_POST['socio'] ?? ''))), 0, 150);
     $monto  = round((float)str_replace(',', '', (string)($_POST['monto'] ?? 0)), 2);
@@ -75,6 +78,27 @@ try {
         $archivo = 'socio_aporte_' . $cid . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ok[$mime];
         $destino = __DIR__ . '/uploads/gastos/' . $archivo;
         if (!move_uploaded_file($tmp, $destino)) throw new Exception("No se pudo guardar el comprobante.");
+    }
+
+    if ($editarId) {
+        // Editar: socio, quién depositó, fecha, monto, método, referencia, cuenta, notas y comprobante; el depósito del banco se mueve, se crea o se anula
+        require_once '../../../includes/bancos.php';
+        require_once '../../../includes/socios_prestamos.php';
+        $pdo->beginTransaction();
+        $st = $pdo->prepare("SELECT * FROM socios_aportes WHERE id = ? AND cliente_id = ? AND anulado = 0 FOR UPDATE");
+        $st->execute([$editarId, $cid]);
+        $a = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$a) throw new Exception("El aporte no existe o está anulado.");
+        $cuenta = (int)($_POST['cuenta_id'] ?? 0) ?: null;
+        $desc = mb_substr("Aporte de socio: $socio" . ($deposita ? " (depositó: $deposita)" : ''), 0, 255);
+        $mov = spMovimiento($pdo, $cid, (int)USUARIO_ID, $a['movimiento_id'] ? (int)$a['movimiento_id'] : null, $cuenta, 'entrada', $fecha, $monto, $ref, $desc);
+        $nuevoArchivo = $archivo ?: $a['archivo_adjunto'];
+        if (!$archivo && !empty($_POST['quitar_comprobante'])) $nuevoArchivo = null;
+        $pdo->prepare("UPDATE socios_aportes SET fecha = ?, socio = ?, depositante = ?, monto = ?, metodo = ?, referencia = ?, cuenta_id = ?, movimiento_id = ?, notas = ?, archivo_adjunto = ? WHERE id = ? AND cliente_id = ?")
+            ->execute([$fecha, $socio, $deposita, $monto, $metodo, $ref, $cuenta, $mov, $notas, $nuevoArchivo, $editarId, $cid]);
+        $pdo->commit();
+        echo json_encode(['success' => true, 'message' => 'Aporte actualizado.'], JSON_UNESCAPED_UNICODE);
+        exit;
     }
 
     $pdo->beginTransaction();

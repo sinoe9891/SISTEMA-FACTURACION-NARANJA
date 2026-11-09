@@ -261,7 +261,7 @@ suite('Aportes de socios: el socio es de la lista y quien depositó puede ser ot
     $pdo = db();
     $c = login('qa.admin@local.test');
     $nombre = 'QA Socio ' . bin2hex(random_bytes(3));
-    $cuenta = null; $ids = [];
+    $cuenta = null; $ids = []; $cuenta2 = 0;
     try {
         $pg = $c->get('socios');
         check('el formulario de aporte tiene un selector con buscador, el check de quien depositó y «Agregar socio nuevo»', sinErroresPhp($pg['body']) && str_contains($pg['body'], 'id="apSocio"') && str_contains($pg['body'], 'data-buscar') && str_contains($pg['body'], 'id="apOtro"') && str_contains($pg['body'], '__nuevo__'), errorPhp($pg['body']));
@@ -281,10 +281,34 @@ suite('Aportes de socios: el socio es de la lista y quien depositó puede ser ot
         check('si quien depositó es el mismo socio no se guarda aparte', ($r2['json']['success'] ?? false) && $b && $b['depositante'] === null);
         $lista = $c->get('socios');
         check('la lista de aportes muestra quién depositó', str_contains($lista['body'], 'depositó: CLIENTE QA S.A.'));
+        // Editar el aporte: corrige datos y mueve su depósito del banco
+        $pdo->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, titular, moneda, saldo_inicial, fecha_saldo_inicial, activa) VALUES (2,'QA','ahorro','QA-AP2','QA','HNL',0,'2020-01-01',1)");
+        $cuenta2 = (int)$pdo->lastInsertId();
+        $nombre2 = $nombre . ' B';
+        $c->post('includes/socio_accion.php', ['accion' => 'socio', 'nombre' => $nombre2]);
+        $aid = (int)$a['id'];
+        $e = $c->post('includes/socio_accion.php', ['accion' => 'editar_aporte', 'id' => $aid, 'fecha' => date('Y-m-d', strtotime('-1 day')), 'socio' => $nombre2, 'depositante' => 'OTRO CLIENTE', 'monto' => 250.5, 'metodo' => 'deposito', 'referencia' => 'REF-ED', 'cuenta_id' => $cuenta2, 'notas' => 'corregido']);
+        $x = $pdo->query("SELECT * FROM socios_aportes WHERE id = $aid")->fetch(PDO::FETCH_ASSOC);
+        $mv = $pdo->query("SELECT * FROM movimientos_bancarios WHERE id = " . (int)$x['movimiento_id'])->fetch(PDO::FETCH_ASSOC);
+        check('edita socio, quién depositó, fecha, monto, método, referencia y notas', ($e['json']['success'] ?? false) && $x['socio'] === $nombre2 && $x['depositante'] === 'OTRO CLIENTE' && (float)$x['monto'] === 250.5 && $x['metodo'] === 'deposito' && $x['referencia'] === 'REF-ED' && $x['notas'] === 'corregido', $e['body']);
+        check('su depósito en el banco se mueve a la otra cuenta con el nuevo monto, fecha y descripción', $mv && (int)$mv['cuenta_id'] === $cuenta2 && (float)$mv['monto'] === 250.5 && $mv['fecha'] === date('Y-m-d', strtotime('-1 day')) && str_contains($mv['descripcion'], $nombre2) && str_contains($mv['descripcion'], 'OTRO CLIENTE') && (int)$mv['anulado'] === 0);
+        $mal = $c->post('includes/socio_accion.php', ['accion' => 'editar_aporte', 'id' => $aid, 'fecha' => date('Y-m-d'), 'socio' => 'Nadie ' . $nombre, 'monto' => 10, 'metodo' => 'efectivo']);
+        check('al editar tampoco se acepta un socio que no es de la lista', !($mal['json']['success'] ?? true));
+        $pdo->exec("UPDATE movimientos_bancarios SET conciliado = 1 WHERE id = " . (int)$x['movimiento_id']);
+        $cn = $c->post('includes/socio_accion.php', ['accion' => 'editar_aporte', 'id' => $aid, 'fecha' => date('Y-m-d'), 'socio' => $nombre2, 'monto' => 999, 'metodo' => 'deposito', 'cuenta_id' => $cuenta2]);
+        check('un depósito conciliado no se cambia', !($cn['json']['success'] ?? true) && str_contains($cn['body'], 'conciliado') && (float)$pdo->query("SELECT monto FROM socios_aportes WHERE id = $aid")->fetchColumn() === 250.5);
+        $pdo->exec("UPDATE movimientos_bancarios SET conciliado = 0 WHERE id = " . (int)$x['movimiento_id']);
+        $sc = $c->post('includes/socio_accion.php', ['accion' => 'editar_aporte', 'id' => $aid, 'fecha' => date('Y-m-d'), 'socio' => $nombre2, 'monto' => 250.5, 'metodo' => 'deposito', 'cuenta_id' => '']);
+        $x = $pdo->query("SELECT * FROM socios_aportes WHERE id = $aid")->fetch(PDO::FETCH_ASSOC);
+        check('sin cuenta: el depósito del banco se anula', $x['movimiento_id'] === null && (int)$pdo->query("SELECT COUNT(*) FROM movimientos_bancarios WHERE cuenta_id = $cuenta2 AND anulado = 0")->fetchColumn() === 0);
+        $pg2 = $c->get('socios');
+        check('la lista trae el lápiz para editar aportes', str_contains($pg2['body'], 'btn-editar-aporte') && str_contains($pg2['body'], 'editar_aporte'), errorPhp($pg2['body']));
     } finally {
         $pdo->exec("DELETE FROM socios_aportes WHERE cliente_id=2 AND socio='$nombre'");
         if ($cuenta) { $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id=$cuenta"); $pdo->exec("DELETE FROM cuentas_bancarias WHERE id=$cuenta"); }
-        $pdo->exec("DELETE FROM socios WHERE cliente_id=2 AND nombre='$nombre'");
+        $pdo->exec("DELETE FROM socios_aportes WHERE cliente_id=2 AND socio='$nombre ' OR socio LIKE '" . $nombre . " B'");
+        if (!empty($cuenta2)) { $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id=$cuenta2"); $pdo->exec("DELETE FROM cuentas_bancarias WHERE id=$cuenta2"); }
+        $pdo->exec("DELETE FROM socios WHERE cliente_id=2 AND (nombre='$nombre' OR nombre='$nombre B')");
     }
 });
 

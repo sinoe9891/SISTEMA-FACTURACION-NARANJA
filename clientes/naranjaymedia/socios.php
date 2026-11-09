@@ -118,6 +118,7 @@ require_once '../../includes/templates/header.php';
                             <td class="app-num fw-semibold"><?= $L($a['monto']) ?></td>
                             <td class="text-end text-nowrap">
                                 <?php if ($a['archivo_adjunto']): ?><a class="btn btn-sm btn-outline-secondary py-0" href="socio_archivo?id=<?= (int)$a['id'] ?>" target="_blank" title="Comprobante"><i class="bi bi-paperclip"></i></a><?php endif; ?>
+                                <button class="btn btn-sm btn-outline-primary py-0 btn-editar-aporte" title="Editar aporte" data-aporte='<?= htmlspecialchars(json_encode(['id' => (int)$a['id'], 'fecha' => $a['fecha'], 'socio' => $a['socio'], 'depositante' => $a['depositante'] ?? '', 'monto' => (float)$a['monto'], 'metodo' => $a['metodo'], 'referencia' => $a['referencia'], 'cuenta_id' => (int)$a['cuenta_id'], 'notas' => $a['notas'], 'archivo' => (bool)$a['archivo_adjunto']], JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>'><i class="bi bi-pencil"></i></button>
                                 <button class="btn btn-sm btn-outline-danger py-0 btn-anular" data-id="<?= (int)$a['id'] ?>" title="Anular"><i class="bi bi-slash-circle"></i></button></td></tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -215,10 +216,10 @@ require_once '../../includes/templates/header.php';
 
 <div class="modal fade" id="modalAporte" tabindex="-1">
     <div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-box-arrow-in-down me-1"></i> Registrar aporte de socio</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-box-arrow-in-down me-1"></i> <span id="apTitulo">Registrar aporte de socio</span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <form id="formAporte" enctype="multipart/form-data">
-                <input type="hidden" name="accion" value="aporte">
+                <input type="hidden" name="accion" value="aporte"><input type="hidden" name="id" value="">
                 <div class="row g-3">
                     <div class="col-12"><label class="form-label small">Socio <span class="text-danger">*</span></label>
                         <select class="form-select" name="socio" id="apSocio" required data-buscar>
@@ -240,11 +241,12 @@ require_once '../../includes/templates/header.php';
                         <div class="form-text">Si la fecha es anterior al saldo inicial de la cuenta, no se crea el depósito (ya está en ese saldo).</div></div>
                     <?php endif; ?>
                     <div class="col-12"><label class="form-label small">Notas</label><textarea class="form-control" name="notas" rows="2"></textarea></div>
-                    <div class="col-12"><label class="form-label small">Comprobante <span class="text-muted">(opcional · JPG, PNG, PDF · máx 5 MB)</span></label><input type="file" class="form-control form-control-sm" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
+                    <div class="col-12" id="apQuitarWrap" hidden><div class="form-check"><input class="form-check-input" type="checkbox" name="quitar_comprobante" value="1" id="apQuitar"><label class="form-check-label small" for="apQuitar">Quitar el comprobante actual</label></div></div>
+                    <div class="col-12"><label class="form-label small">Comprobante <span class="text-muted">(opcional · JPG, PNG, PDF · máx 5 MB; si subís uno nuevo reemplaza al actual)</span></label><input type="file" class="form-control form-control-sm" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
                 </div>
             </form>
         </div>
-        <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="btnGuardarAporte"><i class="bi bi-check-circle me-1"></i>Registrar aporte</button></div>
+        <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="btnGuardarAporte"><i class="bi bi-check-circle me-1"></i><span id="apBoton">Registrar aporte</span></button></div>
     </div></div>
 </div>
 <?php endif; ?>
@@ -315,6 +317,25 @@ require_once '../../includes/templates/header.php';
             apSocio.value = o.value; apSocio.dispatchEvent(new Event('change'));
         } catch (err) { Swal.fire('No se pudo agregar', err.message, 'error'); apSocio.value = ''; }
     });
+    // Editar un aporte: se abre el mismo formulario con sus datos
+    const fAp = document.getElementById('formAporte'), mAp = document.getElementById('modalAporte');
+    const modoAporte = a => {
+        fAp.reset(); apDep.hidden = true; apOtro.checked = false;
+        fAp.querySelector('[name=accion]').value = a ? 'editar_aporte' : 'aporte';
+        fAp.querySelector('[name=id]').value = a ? a.id : '';
+        document.getElementById('apTitulo').textContent = a ? 'Editar aporte de socio' : 'Registrar aporte de socio';
+        document.getElementById('apBoton').textContent = a ? 'Guardar cambios' : 'Registrar aporte';
+        document.getElementById('apQuitarWrap').hidden = !(a && a.archivo);
+        if (!a) return;
+        apSocio.value = a.socio; fAp.querySelector('[name=fecha]').value = a.fecha; fAp.querySelector('[name=monto]').value = a.monto.toFixed(2);
+        fAp.querySelector('[name=metodo]').value = a.metodo; fAp.querySelector('[name=referencia]').value = a.referencia || '';
+        const cu = fAp.querySelector('[name=cuenta_id]'); if (cu) cu.value = a.cuenta_id ? String(a.cuenta_id) : '';
+        fAp.querySelector('[name=notas]').value = a.notas || '';
+        if (a.depositante) { apOtro.checked = true; apDep.hidden = false; apDep.value = a.depositante; }
+        apSocio.dispatchEvent(new Event('change'));
+    };
+    document.querySelectorAll('.btn-editar-aporte').forEach(b => b.addEventListener('click', () => { modoAporte(JSON.parse(b.dataset.aporte)); bootstrap.Modal.getOrCreateInstance(mAp).show(); }));
+    document.querySelector('[data-bs-target="#modalAporte"]')?.addEventListener('click', () => modoAporte(null));
     document.getElementById('btnGuardarAporte')?.addEventListener('click', async e => {
         const f = document.getElementById('formAporte');
         if (!f.reportValidity()) return;
