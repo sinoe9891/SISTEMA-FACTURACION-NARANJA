@@ -40,6 +40,7 @@ $prestamos = $spInstalado ? spLista($pdo, $cid) : [];
 $spSaldo = array_sum(array_map(fn($x) => $x['saldo'], $prestamos));
 $spVencido = array_sum(array_map(fn($x) => $x['vencido_monto'], $prestamos));
 $sociosSel = $spInstalado ? (function () use ($pdo, $cid) { $st = $pdo->prepare("SELECT id, nombre, email FROM socios WHERE cliente_id = ? AND activo = 1 ORDER BY id"); $st->execute([$cid]); return $st->fetchAll(PDO::FETCH_ASSOC); })() : [];
+$sociosAporte = (function () use ($pdo, $cid) { $st = $pdo->prepare("SELECT id, nombre FROM socios WHERE cliente_id = ? AND activo = 1 ORDER BY id"); $st->execute([$cid]); return $st->fetchAll(PDO::FETCH_ASSOC); })();
 $L = fn($v) => 'L ' . number_format((float)$v, 2);
 $metodos = ['transferencia' => 'Transferencia', 'deposito' => 'Depósito', 'efectivo' => 'Efectivo', 'cheque' => 'Cheque', 'otro' => 'Otro'];
 
@@ -111,7 +112,7 @@ require_once '../../includes/templates/header.php';
                 <tbody>
                     <?php if (!$aportes): ?><tr><td colspan="6" class="text-center text-muted py-4">Sin aportes registrados<?= $anio ? " en $anio" : '' ?>.</td></tr><?php endif; ?>
                     <?php foreach ($aportes as $a): ?>
-                        <tr><td class="text-nowrap"><?= date('d/m/Y', strtotime($a['fecha'])) ?></td><td><?= htmlspecialchars($a['socio']) ?></td>
+                        <tr><td class="text-nowrap"><?= date('d/m/Y', strtotime($a['fecha'])) ?></td><td><?= htmlspecialchars($a['socio']) ?><?php if (!empty($a['depositante'])): ?><div class="small text-muted"><i class="bi bi-person-up me-1"></i>depositó: <?= htmlspecialchars($a['depositante']) ?></div><?php endif; ?></td>
                             <td class="small"><?= htmlspecialchars($metodos[$a['metodo']] ?? $a['metodo']) ?><?= $a['referencia'] ? ' · ' . htmlspecialchars($a['referencia']) : '' ?></td>
                             <td class="small text-muted"><?= htmlspecialchars((string)$a['notas']) ?></td>
                             <td class="app-num fw-semibold"><?= $L($a['monto']) ?></td>
@@ -220,8 +221,13 @@ require_once '../../includes/templates/header.php';
                 <input type="hidden" name="accion" value="aporte">
                 <div class="row g-3">
                     <div class="col-12"><label class="form-label small">Socio <span class="text-danger">*</span></label>
-                        <input class="form-control" name="socio" list="listaSocios" required maxlength="150" placeholder="Elige o escribe el nombre">
-                        <datalist id="listaSocios"><?php foreach ($socios as $s): ?><option value="<?= htmlspecialchars($s) ?>"><?php endforeach; ?></datalist></div>
+                        <select class="form-select" name="socio" id="apSocio" required data-buscar>
+                            <option value="">— Buscar o elegir socio —</option>
+                            <?php foreach ($sociosAporte as $so): ?><option value="<?= htmlspecialchars($so['nombre']) ?>"><?= htmlspecialchars($so['nombre']) ?></option><?php endforeach; ?>
+                            <option value="__nuevo__">➕ Agregar socio nuevo…</option>
+                        </select>
+                        <div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="apOtro"><label class="form-check-label small" for="apOtro">Lo depositó otra persona o empresa (a nombre de este socio)</label></div>
+                        <input class="form-control form-control-sm mt-1" name="depositante" id="apDeposita" maxlength="150" placeholder="Nombre de quien depositó (p. ej. el cliente que pagó)" hidden></div>
                     <div class="col-6"><label class="form-label small">Fecha <span class="text-danger">*</span></label><input type="date" class="form-control" name="fecha" value="<?= date('Y-m-d') ?>" required></div>
                     <div class="col-6"><label class="form-label small">Monto (L) <span class="text-danger">*</span></label><input type="number" class="form-control" name="monto" step="0.01" min="0.01" required></div>
                     <div class="col-6"><label class="form-label small">Método</label>
@@ -295,6 +301,20 @@ require_once '../../includes/templates/header.php';
     }
     document.querySelectorAll('[data-ir-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); bootstrap.Tab.getOrCreateInstance(document.querySelector('[data-bs-target="' + a.dataset.irTab + '"]')).show(); }));
     if (location.hash === '#prestamos') document.getElementById('tabPrestamos')?.click();
+    // Aporte: el socio se elige de la lista (con buscador) o se agrega nuevo; «lo depositó otra persona» abre el nombre libre
+    const apSocio = document.getElementById('apSocio'), apOtro = document.getElementById('apOtro'), apDep = document.getElementById('apDeposita');
+    apOtro?.addEventListener('change', () => { apDep.hidden = !apOtro.checked; if (!apOtro.checked) apDep.value = ''; else apDep.focus(); });
+    apSocio?.addEventListener('change', async () => {
+        if (apSocio.value !== '__nuevo__') return;
+        const { value } = await Swal.fire({ title: 'Agregar socio', input: 'text', inputLabel: 'Nombre completo', showCancelButton: true, confirmButtonText: 'Agregar', cancelButtonText: 'Cancelar', inputValidator: v => !v.trim() && 'Escribe el nombre' });
+        if (!value) { apSocio.value = ''; apSocio.dispatchEvent(new Event('change')); return; }
+        const fd = new FormData(); fd.append('accion', 'socio'); fd.append('nombre', value);
+        try {
+            await enviar(fd);
+            const o = new Option(value.trim(), value.trim()); apSocio.insertBefore(o, apSocio.querySelector('option[value="__nuevo__"]'));
+            apSocio.value = o.value; apSocio.dispatchEvent(new Event('change'));
+        } catch (err) { Swal.fire('No se pudo agregar', err.message, 'error'); apSocio.value = ''; }
+    });
     document.getElementById('btnGuardarAporte')?.addEventListener('click', async e => {
         const f = document.getElementById('formAporte');
         if (!f.reportValidity()) return;

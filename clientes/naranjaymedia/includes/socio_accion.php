@@ -53,7 +53,15 @@ try {
     $ref    = mb_substr(trim((string)($_POST['referencia'] ?? '')), 0, 80) ?: null;
     $notas  = trim((string)($_POST['notas'] ?? '')) ?: null;
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha) || !strtotime($fecha)) throw new Exception("Fecha inválida.");
-    if ($socio === '') throw new Exception("Elige o escribe el socio.");
+    // El aporte se liga a un socio de la lista (no se crean socios al escribir un nombre); quien depositó puede ser cualquier nombre
+    if ($socio === '') throw new Exception("Elige el socio al que corresponde el aporte.");
+    $st = $pdo->prepare("SELECT nombre FROM socios WHERE cliente_id = ? AND activo = 1 AND LOWER(nombre) = LOWER(?) LIMIT 1");
+    $st->execute([$cid, $socio]);
+    $socioReal = $st->fetchColumn();
+    if (!$socioReal) throw new Exception("«{$socio}» no está en la lista de socios. Elígelo de la lista o agrégalo con «Agregar socio nuevo».");
+    $socio = $socioReal;
+    $deposita = mb_substr(trim(preg_replace('/\s+/', ' ', (string)($_POST['depositante'] ?? ''))), 0, 150) ?: null;
+    if ($deposita !== null && mb_strtolower($deposita) === mb_strtolower($socio)) $deposita = null;
     if ($monto <= 0) throw new Exception("El monto debe ser mayor a 0.");
 
     // Comprobante (opcional): se guarda con los de gastos y se entrega por socio_archivo.php
@@ -70,17 +78,16 @@ try {
     }
 
     $pdo->beginTransaction();
-    $pdo->prepare("INSERT IGNORE INTO socios (cliente_id, nombre) VALUES (?, ?)")->execute([$cid, $socio]);
     $cuenta = (int)($_POST['cuenta_id'] ?? 0) ?: null;
     $mov = null;
     if ($cuenta) {
         require_once '../../../includes/bancos.php';
-        $mov = bancoDepositoCobro($pdo, $cid, $cuenta, $fecha, $monto, "Aporte de socio: $socio", $ref, (int)USUARIO_ID);
+        $mov = bancoDepositoCobro($pdo, $cid, $cuenta, $fecha, $monto, mb_substr("Aporte de socio: $socio" . ($deposita ? " (depositó: $deposita)" : ''), 0, 255), $ref, (int)USUARIO_ID);
     }
-    $pdo->prepare("INSERT INTO socios_aportes (cliente_id, fecha, socio, monto, metodo, referencia, cuenta_id, movimiento_id, notas, archivo_adjunto, usuario_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        ->execute([$cid, $fecha, $socio, $monto, $metodo, $ref, $cuenta, $mov, $notas, $archivo, (int)USUARIO_ID]);
+    $pdo->prepare("INSERT INTO socios_aportes (cliente_id, fecha, socio, depositante, monto, metodo, referencia, cuenta_id, movimiento_id, notas, archivo_adjunto, usuario_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        ->execute([$cid, $fecha, $socio, $deposita, $monto, $metodo, $ref, $cuenta, $mov, $notas, $archivo, (int)USUARIO_ID]);
     $pdo->commit();
-    echo json_encode(['success' => true, 'message' => 'Aporte registrado: ' . $socio . ' · L ' . number_format($monto, 2)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['success' => true, 'message' => 'Aporte registrado: ' . $socio . ($deposita ? ' (depositó: ' . $deposita . ')' : '') . ' · L ' . number_format($monto, 2)], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
     if ($destino && is_file($destino)) @unlink($destino);
