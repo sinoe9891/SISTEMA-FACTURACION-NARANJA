@@ -198,6 +198,45 @@ suite('Cobros: uno o varios comprobantes', function () {
     }
 });
 
+suite('Gestionar socios: nombre, correo, desactivar y eliminar', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $n1 = 'QA Gest ' . bin2hex(random_bytes(3)); $n2 = $n1 . ' Renombrado'; $n3 = 'QA Libre ' . bin2hex(random_bytes(3));
+    $cuenta = 0;
+    try {
+        $c->post('includes/socio_accion.php', ['accion' => 'socio', 'nombre' => $n1]);
+        $c->post('includes/socio_accion.php', ['accion' => 'socio', 'nombre' => $n3]);
+        $id1 = (int)$pdo->query("SELECT id FROM socios WHERE cliente_id=2 AND nombre='$n1'")->fetchColumn();
+        $id3 = (int)$pdo->query("SELECT id FROM socios WHERE cliente_id=2 AND nombre='$n3'")->fetchColumn();
+        $pdo->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, titular, moneda, saldo_inicial, fecha_saldo_inicial, activa) VALUES (2,'QA','ahorro','QA-GS1','QA','HNL',0,'2020-01-01',1)");
+        $cuenta = (int)$pdo->lastInsertId();
+        $c->post('includes/socio_accion.php', ['accion' => 'aporte', 'fecha' => date('Y-m-d'), 'socio' => $n1, 'monto' => 50, 'metodo' => 'transferencia', 'cuenta_id' => $cuenta]);
+        $pg = $c->get('socios');
+        check('la pantalla trae «Gestionar socios» con sus socios y el uso de cada uno', sinErroresPhp($pg['body']) && str_contains($pg['body'], 'id="modalSocios"') && str_contains($pg['body'], $n1) && str_contains($pg['body'], 'gs-eliminar'), errorPhp($pg['body']));
+        $e = $c->post('includes/socio_accion.php', ['accion' => 'socio_editar', 'id' => $id1, 'nombre' => $n2, 'email' => 'qa@example.com']);
+        $desc = $pdo->query("SELECT descripcion FROM movimientos_bancarios WHERE cuenta_id=$cuenta AND anulado=0 LIMIT 1")->fetchColumn();
+        check('cambiar el nombre actualiza sus aportes y la descripción de su depósito', ($e['json']['success'] ?? false) && (int)$pdo->query("SELECT COUNT(*) FROM socios_aportes WHERE cliente_id=2 AND socio='$n2'")->fetchColumn() === 1 && str_contains((string)$desc, $n2) && $pdo->query("SELECT email FROM socios WHERE id=$id1")->fetchColumn() === 'qa@example.com', $e['body']);
+        $d = $c->post('includes/socio_accion.php', ['accion' => 'socio_editar', 'id' => $id3, 'nombre' => $n2]);
+        check('no deja repetir el nombre de otro socio', !($d['json']['success'] ?? true) && str_contains($d['body'], 'Ya existe'));
+        $m = $c->post('includes/socio_accion.php', ['accion' => 'socio_editar', 'id' => $id3, 'nombre' => $n3, 'email' => 'no-es-correo']);
+        check('valida el correo', !($m['json']['success'] ?? true));
+        $x = $c->post('includes/socio_accion.php', ['accion' => 'socio_eliminar', 'id' => $id1]);
+        check('un socio con aportes no se elimina', !($x['json']['success'] ?? true) && (int)$pdo->query("SELECT COUNT(*) FROM socios WHERE id=$id1")->fetchColumn() === 1 && str_contains($x['body'], 'no se puede eliminar'));
+        $c->post('includes/socio_accion.php', ['accion' => 'socio_estado', 'id' => $id1, 'activo' => 0]);
+        $lista = $c->get('socios');
+        $sel = preg_match('#<select class="form-select" name="socio" id="apSocio".*?</select>#s', $lista['body'], $mm) ? $mm[0] : '';
+        check('un socio desactivado ya no sale en el selector del aporte, pero se conserva su historial', $sel !== '' && !str_contains($sel, $n2) && (int)$pdo->query("SELECT activo FROM socios WHERE id=$id1")->fetchColumn() === 0 && (int)$pdo->query("SELECT COUNT(*) FROM socios_aportes WHERE socio='$n2'")->fetchColumn() === 1);
+        $c->post('includes/socio_accion.php', ['accion' => 'socio_estado', 'id' => $id1, 'activo' => 1]);
+        check('se puede volver a activar', (int)$pdo->query("SELECT activo FROM socios WHERE id=$id1")->fetchColumn() === 1);
+        $ok = $c->post('includes/socio_accion.php', ['accion' => 'socio_eliminar', 'id' => $id3]);
+        check('un socio sin nada registrado sí se elimina', ($ok['json']['success'] ?? false) && !$pdo->query("SELECT COUNT(*) FROM socios WHERE id=$id3")->fetchColumn());
+    } finally {
+        $pdo->exec("DELETE FROM socios_aportes WHERE cliente_id=2 AND socio IN ('$n1','$n2')");
+        if ($cuenta) { $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id=$cuenta"); $pdo->exec("DELETE FROM cuentas_bancarias WHERE id=$cuenta"); }
+        $pdo->exec("DELETE FROM socios WHERE cliente_id=2 AND nombre IN ('$n1','$n2','$n3')");
+    }
+});
+
 suite('Cobros: editar un abono ya registrado', function () {
     $pdo = db();
     $c = login('qa.admin@local.test');

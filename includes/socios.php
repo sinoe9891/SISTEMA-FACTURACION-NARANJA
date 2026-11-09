@@ -121,3 +121,15 @@ function sociosNombres(PDO $pdo, int $cid): array
     $st->execute([$cid]);
     return array_values(array_unique(array_merge($n, $st->fetchAll(PDO::FETCH_COLUMN))));
 }
+
+
+/** Lo que tiene un socio: aportes (por nombre, también anulados), retiros (gastos) y préstamos. */
+function sociosUso(PDO $pdo, int $cid, array $socio): array
+{
+    $q = function (string $sql, array $p) use ($pdo): int { try { $st = $pdo->prepare($sql); $st->execute($p); return (int)$st->fetchColumn(); } catch (Throwable $e) { return 0; } };
+    return [
+        'aportes' => $q("SELECT COUNT(*) FROM socios_aportes WHERE cliente_id = ? AND socio = ?", [$cid, $socio['nombre']]),
+        'retiros' => $q("SELECT COUNT(*) FROM gastos WHERE cliente_id = ? AND socio_id = ?", [$cid, (int)$socio['id']]),
+        'prestamos' => $q("SELECT COUNT(*) FROM socios_prestamos WHERE cliente_id = ? AND socio_id = ?", [$cid, (int)$socio['id']]),
+    ];
+}

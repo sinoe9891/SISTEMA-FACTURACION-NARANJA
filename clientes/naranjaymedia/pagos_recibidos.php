@@ -216,7 +216,7 @@ require_once '../../includes/templates/header.php';
         document.getElementById('pNotasLbl').textContent = p.tipo === 'anticipo' ? 'Concepto' : 'Notas';
         document.getElementById('pDoc').textContent = p.documento;
         document.getElementById('pMonto').textContent = L(p.monto);
-        document.getElementById('pCompActual').innerHTML = p.archivo ? `<i class="bi bi-paperclip"></i> <a href="pago_recibido_archivo?tipo=${p.tipo}&id=${p.id}" target="_blank">${esc(p.archivo)}</a> · si subes otro, lo reemplaza` : '<span class="text-muted">Sin comprobante.</span>';
+        document.getElementById('pCompActual').innerHTML = p.archivo ? ((/\.pdf$/i.test(p.archivo) ? '' : `<a href="pago_recibido_archivo?tipo=${p.tipo}&id=${p.id}" target="_blank" class="d-block mb-1"><img src="pago_recibido_archivo?tipo=${p.tipo}&id=${p.id}" alt="Comprobante" style="max-height:120px;max-width:100%;border:1px solid #dee2e6;border-radius:6px"></a>`) + `<i class="bi bi-paperclip"></i> <a href="pago_recibido_archivo?tipo=${p.tipo}&id=${p.id}" target="_blank">${esc(p.archivo)}</a> · si subes otro, lo reemplaza`) : '<span class="text-muted">Sin comprobante.</span>';
         document.getElementById('pQuitarGrp').classList.toggle('d-none', !p.archivo);
         modal.show();
     });

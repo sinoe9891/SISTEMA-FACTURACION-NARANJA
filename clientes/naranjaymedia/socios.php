@@ -41,6 +41,7 @@ $spSaldo = array_sum(array_map(fn($x) => $x['saldo'], $prestamos));
 $spVencido = array_sum(array_map(fn($x) => $x['vencido_monto'], $prestamos));
 $sociosSel = $spInstalado ? (function () use ($pdo, $cid) { $st = $pdo->prepare("SELECT id, nombre, email FROM socios WHERE cliente_id = ? AND activo = 1 ORDER BY id"); $st->execute([$cid]); return $st->fetchAll(PDO::FETCH_ASSOC); })() : [];
 $sociosAporte = (function () use ($pdo, $cid) { $st = $pdo->prepare("SELECT id, nombre FROM socios WHERE cliente_id = ? AND activo = 1 ORDER BY id"); $st->execute([$cid]); return $st->fetchAll(PDO::FETCH_ASSOC); })();
+$gestionSocios = (function () use ($pdo, $cid) { $st = $pdo->prepare("SELECT * FROM socios WHERE cliente_id = ? ORDER BY activo DESC, id"); $st->execute([$cid]); $l = $st->fetchAll(PDO::FETCH_ASSOC); foreach ($l as &$x) $x['uso'] = sociosUso($pdo, $cid, $x); return $l; })();
 $L = fn($v) => 'L ' . number_format((float)$v, 2);
 $metodos = ['transferencia' => 'Transferencia', 'deposito' => 'Depósito', 'efectivo' => 'Efectivo', 'cheque' => 'Cheque', 'otro' => 'Otro'];
 
@@ -55,6 +56,7 @@ require_once '../../includes/templates/header.php';
     <?php if ($instalado): ?>
     <div class="d-flex gap-2 flex-wrap">
         <button class="btn btn-outline-secondary" id="btnSocio"><i class="bi bi-person-plus me-1"></i> Agregar socio</button>
+        <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalSocios"><i class="bi bi-people me-1"></i> Gestionar socios</button>
         <?php if ($spInstalado): ?><button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalPrestamo"><i class="bi bi-cash-coin me-1"></i> Nuevo préstamo</button><?php endif; ?>
         <a class="btn btn-outline-warning" href="gastos?nuevo=retiro"><i class="bi bi-box-arrow-up me-1"></i> Registrar retiro</a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalAporte"><i class="bi bi-plus-circle me-1"></i> Registrar aporte</button>
@@ -118,7 +120,7 @@ require_once '../../includes/templates/header.php';
                             <td class="app-num fw-semibold"><?= $L($a['monto']) ?></td>
                             <td class="text-end text-nowrap">
                                 <?php if ($a['archivo_adjunto']): ?><a class="btn btn-sm btn-outline-secondary py-0" href="socio_archivo?id=<?= (int)$a['id'] ?>" target="_blank" title="Comprobante"><i class="bi bi-paperclip"></i></a><?php endif; ?>
-                                <button class="btn btn-sm btn-outline-primary py-0 btn-editar-aporte" title="Editar aporte" data-aporte='<?= htmlspecialchars(json_encode(['id' => (int)$a['id'], 'fecha' => $a['fecha'], 'socio' => $a['socio'], 'depositante' => $a['depositante'] ?? '', 'monto' => (float)$a['monto'], 'metodo' => $a['metodo'], 'referencia' => $a['referencia'], 'cuenta_id' => (int)$a['cuenta_id'], 'notas' => $a['notas'], 'archivo' => (bool)$a['archivo_adjunto']], JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>'><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-sm btn-outline-primary py-0 btn-editar-aporte" title="Editar aporte" data-aporte='<?= htmlspecialchars(json_encode(['id' => (int)$a['id'], 'fecha' => $a['fecha'], 'socio' => $a['socio'], 'depositante' => $a['depositante'] ?? '', 'monto' => (float)$a['monto'], 'metodo' => $a['metodo'], 'referencia' => $a['referencia'], 'cuenta_id' => (int)$a['cuenta_id'], 'notas' => $a['notas'], 'archivo' => (bool)$a['archivo_adjunto'], 'archivo_pdf' => (bool)preg_match('/\.pdf$/i', (string)$a['archivo_adjunto'])], JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>'><i class="bi bi-pencil"></i></button>
                                 <button class="btn btn-sm btn-outline-danger py-0 btn-anular" data-id="<?= (int)$a['id'] ?>" title="Anular"><i class="bi bi-slash-circle"></i></button></td></tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -214,6 +216,32 @@ require_once '../../includes/templates/header.php';
 </div>
 <?php endif; ?>
 
+<!-- Gestionar socios: nombre, correo, activar/desactivar y eliminar (solo los que no tienen nada) -->
+<div class="modal fade" id="modalSocios" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-people me-1"></i> Gestionar socios</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <p class="small text-muted mb-2">Al cambiar un nombre se actualizan también sus aportes. <strong>Desactivar</strong> lo quita de las listas sin perder su historial. <strong>Eliminar</strong> solo se puede si no tiene aportes, retiros ni préstamos.</p>
+            <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+                <thead><tr><th>Nombre</th><th>Correo</th><th class="text-center">Aportes</th><th class="text-center">Retiros</th><th class="text-center">Préstamos</th><th></th></tr></thead>
+                <tbody>
+                <?php foreach ($gestionSocios as $gs): $libre = !array_sum($gs['uso']); ?>
+                    <tr data-socio="<?= (int)$gs['id'] ?>" class="<?= $gs['activo'] ? '' : 'table-light text-muted' ?>">
+                        <td style="min-width:220px"><input class="form-control form-control-sm gs-nombre" value="<?= htmlspecialchars($gs['nombre']) ?>" maxlength="150"><?= $gs['activo'] ? '' : '<span class="badge text-bg-secondary mt-1">Desactivado</span>' ?></td>
+                        <td><input class="form-control form-control-sm gs-email" type="email" value="<?= htmlspecialchars((string)$gs['email']) ?>" maxlength="150" placeholder="correo@..."></td>
+                        <td class="text-center"><?= (int)$gs['uso']['aportes'] ?></td><td class="text-center"><?= (int)$gs['uso']['retiros'] ?></td><td class="text-center"><?= (int)$gs['uso']['prestamos'] ?></td>
+                        <td class="text-end text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary gs-guardar" title="Guardar nombre y correo"><i class="bi bi-check-lg"></i></button>
+                            <button class="btn btn-sm btn-outline-secondary gs-estado" data-activo="<?= $gs['activo'] ? 0 : 1 ?>" title="<?= $gs['activo'] ? 'Desactivar' : 'Activar' ?>"><i class="bi bi-<?= $gs['activo'] ? 'eye-slash' : 'eye' ?>"></i></button>
+                            <button class="btn btn-sm btn-outline-danger gs-eliminar" <?= $libre ? '' : 'disabled' ?> title="<?= $libre ? 'Eliminar (no tiene nada registrado)' : 'Tiene movimientos: desactívalo' ?>"><i class="bi bi-trash3"></i></button></td></tr>
+                <?php endforeach; ?>
+                <?php if (!$gestionSocios): ?><tr><td colspan="6" class="text-center text-muted py-3">Todavía no hay socios. Agrégalos con «Agregar socio».</td></tr><?php endif; ?>
+                </tbody></table></div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button></div>
+    </div></div>
+</div>
+
 <div class="modal fade" id="modalAporte" tabindex="-1">
     <div class="modal-dialog"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title"><i class="bi bi-box-arrow-in-down me-1"></i> <span id="apTitulo">Registrar aporte de socio</span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -241,7 +269,7 @@ require_once '../../includes/templates/header.php';
                         <div class="form-text">Si la fecha es anterior al saldo inicial de la cuenta, no se crea el depósito (ya está en ese saldo).</div></div>
                     <?php endif; ?>
                     <div class="col-12"><label class="form-label small">Notas</label><textarea class="form-control" name="notas" rows="2"></textarea></div>
-                    <div class="col-12" id="apQuitarWrap" hidden><div class="form-check"><input class="form-check-input" type="checkbox" name="quitar_comprobante" value="1" id="apQuitar"><label class="form-check-label small" for="apQuitar">Quitar el comprobante actual</label></div></div>
+                    <div class="col-12" id="apQuitarWrap" hidden><div class="small mb-1" id="apActual"></div><div class="form-check"><input class="form-check-input" type="checkbox" name="quitar_comprobante" value="1" id="apQuitar"><label class="form-check-label small" for="apQuitar">Quitar el comprobante actual</label></div></div>
                     <div class="col-12"><label class="form-label small">Comprobante <span class="text-muted">(opcional · JPG, PNG, PDF · máx 5 MB; si subís uno nuevo reemplaza al actual)</span></label><input type="file" class="form-control form-control-sm" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
                 </div>
             </form>
@@ -317,6 +345,22 @@ require_once '../../includes/templates/header.php';
             apSocio.value = o.value; apSocio.dispatchEvent(new Event('change'));
         } catch (err) { Swal.fire('No se pudo agregar', err.message, 'error'); apSocio.value = ''; }
     });
+    // Gestionar socios: guardar nombre/correo, activar/desactivar, eliminar
+    document.getElementById('modalSocios')?.addEventListener('click', async e => {
+        const tr = e.target.closest('tr[data-socio]'); const b = e.target.closest('button');
+        if (!tr || !b) return;
+        const fd = new FormData(); fd.append('id', tr.dataset.socio);
+        if (b.classList.contains('gs-guardar')) { fd.append('accion', 'socio_editar'); fd.append('nombre', tr.querySelector('.gs-nombre').value); fd.append('email', tr.querySelector('.gs-email').value); }
+        else if (b.classList.contains('gs-estado')) { fd.append('accion', 'socio_estado'); fd.append('activo', b.dataset.activo); }
+        else if (b.classList.contains('gs-eliminar')) {
+            const r = await Swal.fire({ icon: 'warning', title: '¿Eliminar este socio?', text: tr.querySelector('.gs-nombre').value, showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc2626' });
+            if (!r.isConfirmed) return;
+            fd.append('accion', 'socio_eliminar');
+        } else return;
+        try { const d = await enviar(fd); await Swal.fire({ icon: 'success', title: d.message, timer: 1400, showConfirmButton: false }); location.reload(); }
+        catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+    });
+
     // Editar un aporte: se abre el mismo formulario con sus datos
     const fAp = document.getElementById('formAporte'), mAp = document.getElementById('modalAporte');
     const modoAporte = a => {
@@ -326,6 +370,11 @@ require_once '../../includes/templates/header.php';
         document.getElementById('apTitulo').textContent = a ? 'Editar aporte de socio' : 'Registrar aporte de socio';
         document.getElementById('apBoton').textContent = a ? 'Guardar cambios' : 'Registrar aporte';
         document.getElementById('apQuitarWrap').hidden = !(a && a.archivo);
+        // Comprobante que ya tiene: miniatura (imágenes) o enlace (PDF); se abre en otra pestaña
+        document.getElementById('apActual').innerHTML = a && a.archivo
+            ? '<div class="text-muted mb-1">Comprobante actual:</div><a href="socio_archivo?id=' + a.id + '" target="_blank" title="Abrir el comprobante">'
+                + (a.archivo_pdf ? '<i class="bi bi-file-earmark-pdf text-danger fs-4 me-1"></i>Ver el PDF' : '<img src="socio_archivo?id=' + a.id + '" alt="Comprobante" style="max-height:130px;max-width:100%;border:1px solid #dee2e6;border-radius:6px">') + '</a>'
+            : '';
         if (!a) return;
         apSocio.value = a.socio; fAp.querySelector('[name=fecha]').value = a.fecha; fAp.querySelector('[name=monto]').value = a.monto.toFixed(2);
         fAp.querySelector('[name=metodo]').value = a.metodo; fAp.querySelector('[name=referencia]').value = a.referencia || '';

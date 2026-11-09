@@ -4,6 +4,7 @@
 //   POST accion=editar_aporte: id + los de aporte (+ quitar_comprobante) → corrige el aporte y su depósito en el banco
 //   POST accion=anular: id, motivo
 //   POST accion=socio:  nombre (agrega un socio a la empresa)
+//   POST accion=socio_editar: id, nombre, email · accion=socio_estado: id, activo (0/1) · accion=socio_eliminar: id (solo si no tiene nada)
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 require_once '../../../includes/socios.php';
@@ -23,6 +24,42 @@ try {
         if ($nombre === '') throw new Exception("Escribe el nombre del socio.");
         $pdo->prepare("INSERT INTO socios (cliente_id, nombre) VALUES (?, ?) ON DUPLICATE KEY UPDATE activo = 1")->execute([$cid, $nombre]);
         echo json_encode(['success' => true, 'message' => "Socio agregado: $nombre"], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // Gestión de socios: cambiar nombre/correo, desactivar o eliminar (solo si no tiene aportes, retiros ni préstamos)
+    if (in_array($accion, ['socio_editar', 'socio_estado', 'socio_eliminar'], true)) {
+        $sid = (int)($_POST['id'] ?? 0);
+        $st = $pdo->prepare("SELECT * FROM socios WHERE id = ? AND cliente_id = ?");
+        $st->execute([$sid, $cid]);
+        $so = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$so) throw new Exception("Socio no encontrado.");
+        if ($accion === 'socio_editar') {
+            $nombre = mb_substr(trim(preg_replace('/\s+/', ' ', (string)($_POST['nombre'] ?? ''))), 0, 150);
+            $email = mb_substr(trim((string)($_POST['email'] ?? '')), 0, 150) ?: null;
+            if ($nombre === '') throw new Exception("Escribe el nombre del socio.");
+            if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new Exception("El correo no es válido.");
+            $dup = $pdo->prepare("SELECT COUNT(*) FROM socios WHERE cliente_id = ? AND LOWER(nombre) = LOWER(?) AND id <> ?");
+            $dup->execute([$cid, $nombre, $sid]);
+            if ($dup->fetchColumn()) throw new Exception("Ya existe un socio con ese nombre.");
+            $pdo->beginTransaction();
+            $pdo->prepare("UPDATE socios SET nombre = ?, email = ? WHERE id = ?")->execute([$nombre, $email, $sid]);
+            if ($nombre !== $so['nombre']) {   // los aportes guardan el nombre: se actualizan junto con la descripción de su depósito
+                $pdo->prepare("UPDATE socios_aportes SET socio = ? WHERE cliente_id = ? AND socio = ?")->execute([$nombre, $cid, $so['nombre']]);
+                try { $pdo->prepare("UPDATE movimientos_bancarios SET descripcion = REPLACE(descripcion, ?, ?) WHERE cliente_id = ? AND descripcion LIKE ?")
+                    ->execute(['Aporte de socio: ' . $so['nombre'], 'Aporte de socio: ' . $nombre, $cid, 'Aporte de socio: ' . $so['nombre'] . '%']); } catch (PDOException $e) { /* sin movimientos */ }
+            }
+            $pdo->commit();
+            echo json_encode(['success' => true, 'message' => 'Socio actualizado.'], JSON_UNESCAPED_UNICODE);
+        } elseif ($accion === 'socio_estado') {
+            $pdo->prepare("UPDATE socios SET activo = ? WHERE id = ?")->execute([!empty($_POST['activo']) ? 1 : 0, $sid]);
+            echo json_encode(['success' => true, 'message' => !empty($_POST['activo']) ? 'Socio activado.' : 'Socio desactivado: ya no sale en las listas, pero su historial se conserva.'], JSON_UNESCAPED_UNICODE);
+        } else {
+            $uso = sociosUso($pdo, $cid, $so);
+            if (array_sum($uso)) throw new Exception("«{$so['nombre']}» tiene " . $uso['aportes'] . " aporte(s), " . $uso['retiros'] . " retiro(s) y " . $uso['prestamos'] . " préstamo(s): no se puede eliminar. Desactívalo para que no salga en las listas.");
+            $pdo->prepare("DELETE FROM socios WHERE id = ?")->execute([$sid]);
+            echo json_encode(['success' => true, 'message' => 'Socio eliminado.'], JSON_UNESCAPED_UNICODE);
+        }
         exit;
     }
 
