@@ -42,8 +42,22 @@ try {
             $dup = $pdo->prepare("SELECT COUNT(*) FROM socios WHERE cliente_id = ? AND LOWER(nombre) = LOWER(?) AND id <> ?");
             $dup->execute([$cid, $nombre, $sid]);
             if ($dup->fetchColumn()) throw new Exception("Ya existe un socio con ese nombre.");
+            // Datos completos del socio: solo se cambian los que llegan en la solicitud
+            $extra = []; $vals = [];
+            foreach (['identidad' => 30, 'telefono' => 40, 'notas' => 255] as $k => $max) {
+                if (array_key_exists($k, $_POST)) { $extra[] = "$k = ?"; $vals[] = mb_substr(trim((string)$_POST[$k]), 0, $max) ?: null; }
+            }
+            if (array_key_exists('participacion', $_POST)) {
+                $pt = trim((string)$_POST['participacion']);
+                if ($pt !== '' && (!is_numeric($pt) || (float)$pt < 0 || (float)$pt > 100)) throw new Exception("La participación debe ser un porcentaje entre 0 y 100.");
+                $extra[] = "participacion = ?"; $vals[] = $pt === '' ? null : round((float)$pt, 2);
+            }
+            if (array_key_exists('telefono', $_POST) && !empty($vals)) { /* el teléfono se guarda con formato +504 si es de Honduras */
+                require_once '../../../includes/functions.php';
+                $i = array_search('telefono = ?', $extra, true); if ($i !== false && $vals[$i] !== null) $vals[$i] = telefonoHN((string)$vals[$i]);
+            }
             $pdo->beginTransaction();
-            $pdo->prepare("UPDATE socios SET nombre = ?, email = ? WHERE id = ?")->execute([$nombre, $email, $sid]);
+            $pdo->prepare("UPDATE socios SET nombre = ?, email = ?" . ($extra ? ', ' . implode(', ', $extra) : '') . " WHERE id = ?")->execute(array_merge([$nombre, $email], $vals, [$sid]));
             if ($nombre !== $so['nombre']) {   // los aportes guardan el nombre: se actualizan junto con la descripción de su depósito
                 $pdo->prepare("UPDATE socios_aportes SET socio = ? WHERE cliente_id = ? AND socio = ?")->execute([$nombre, $cid, $so['nombre']]);
                 try { $pdo->prepare("UPDATE movimientos_bancarios SET descripcion = REPLACE(descripcion, ?, ?) WHERE cliente_id = ? AND descripcion LIKE ?")

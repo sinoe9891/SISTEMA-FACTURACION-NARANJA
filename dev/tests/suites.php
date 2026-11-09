@@ -216,6 +216,15 @@ suite('Gestionar socios: nombre, correo, desactivar y eliminar', function () {
         $e = $c->post('includes/socio_accion.php', ['accion' => 'socio_editar', 'id' => $id1, 'nombre' => $n2, 'email' => 'qa@example.com']);
         $desc = $pdo->query("SELECT descripcion FROM movimientos_bancarios WHERE cuenta_id=$cuenta AND anulado=0 LIMIT 1")->fetchColumn();
         check('cambiar el nombre actualiza sus aportes y la descripción de su depósito', ($e['json']['success'] ?? false) && (int)$pdo->query("SELECT COUNT(*) FROM socios_aportes WHERE cliente_id=2 AND socio='$n2'")->fetchColumn() === 1 && str_contains((string)$desc, $n2) && $pdo->query("SELECT email FROM socios WHERE id=$id1")->fetchColumn() === 'qa@example.com', $e['body']);
+        $f = $c->post('includes/socio_accion.php', ['accion' => 'socio_editar', 'id' => $id1, 'nombre' => $n2, 'email' => 'qa@example.com', 'identidad' => '0501-1990-00001', 'telefono' => '99998888', 'participacion' => '50', 'notas' => 'socio fundador']);
+        $dd = $pdo->query("SELECT * FROM socios WHERE id=$id1")->fetch(PDO::FETCH_ASSOC);
+        check('guarda identidad, teléfono (con +504), participación y notas', ($f['json']['success'] ?? false) && $dd['identidad'] === '0501-1990-00001' && $dd['telefono'] === '+504 9999-8888' && (float)$dd['participacion'] === 50.0 && $dd['notas'] === 'socio fundador', $f['body']);
+        $g = $c->post('includes/socio_accion.php', ['accion' => 'socio_editar', 'id' => $id1, 'nombre' => $n2, 'participacion' => '150']);
+        check('la participación debe estar entre 0 y 100', !($g['json']['success'] ?? true) && (float)$pdo->query("SELECT participacion FROM socios WHERE id=$id1")->fetchColumn() === 50.0);
+        $c->post('includes/socio_accion.php', ['accion' => 'socio_editar', 'id' => $id1, 'nombre' => $n2, 'email' => 'qa@example.com']);
+        check('si la solicitud no trae los datos nuevos, no se borran', $pdo->query("SELECT identidad FROM socios WHERE id=$id1")->fetchColumn() === '0501-1990-00001');
+        $pg3 = $c->get('socios');
+        check('la ventana muestra los datos del socio y el lápiz de editar', str_contains($pg3['body'], 'gs-editar') && str_contains($pg3['body'], 'ID 0501-1990-00001') && str_contains($pg3['body'], '50 %'));
         $d = $c->post('includes/socio_accion.php', ['accion' => 'socio_editar', 'id' => $id3, 'nombre' => $n2]);
         check('no deja repetir el nombre de otro socio', !($d['json']['success'] ?? true) && str_contains($d['body'], 'Ya existe'));
         $m = $c->post('includes/socio_accion.php', ['accion' => 'socio_editar', 'id' => $id3, 'nombre' => $n3, 'email' => 'no-es-correo']);

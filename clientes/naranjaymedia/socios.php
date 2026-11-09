@@ -221,17 +221,19 @@ require_once '../../includes/templates/header.php';
     <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title"><i class="bi bi-people me-1"></i> Gestionar socios</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
-            <p class="small text-muted mb-2">Al cambiar un nombre se actualizan también sus aportes. <strong>Desactivar</strong> lo quita de las listas sin perder su historial. <strong>Eliminar</strong> solo se puede si no tiene aportes, retiros ni préstamos.</p>
+            <p class="small text-muted mb-2">Con el lápiz editás todos sus datos; al cambiar el nombre se actualizan también sus aportes. <strong>Desactivar</strong> lo quita de las listas sin perder su historial. <strong>Eliminar</strong> solo se puede si no tiene aportes, retiros ni préstamos.</p>
             <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-                <thead><tr><th>Nombre</th><th>Correo</th><th class="text-center">Aportes</th><th class="text-center">Retiros</th><th class="text-center">Préstamos</th><th></th></tr></thead>
+                <thead><tr><th>Socio</th><th class="text-center">Part.</th><th class="text-center">Aportes</th><th class="text-center">Retiros</th><th class="text-center">Préstamos</th><th></th></tr></thead>
                 <tbody>
                 <?php foreach ($gestionSocios as $gs): $libre = !array_sum($gs['uso']); ?>
                     <tr data-socio="<?= (int)$gs['id'] ?>" class="<?= $gs['activo'] ? '' : 'table-light text-muted' ?>">
-                        <td style="min-width:220px"><input class="form-control form-control-sm gs-nombre" value="<?= htmlspecialchars($gs['nombre']) ?>" maxlength="150"><?= $gs['activo'] ? '' : '<span class="badge text-bg-secondary mt-1">Desactivado</span>' ?></td>
-                        <td><input class="form-control form-control-sm gs-email" type="email" value="<?= htmlspecialchars((string)$gs['email']) ?>" maxlength="150" placeholder="correo@..."></td>
+                        <td style="min-width:220px"><div class="fw-semibold gs-nombre-txt"><?= htmlspecialchars($gs['nombre']) ?></div>
+                            <div class="small text-muted"><?= htmlspecialchars(implode(' · ', array_filter([$gs['identidad'] ? 'ID ' . $gs['identidad'] : '', $gs['email'], $gs['telefono']]))) ?: 'Sin más datos' ?></div>
+                            <?= $gs['activo'] ? '' : '<span class="badge text-bg-secondary mt-1">Desactivado</span>' ?></td>
+                        <td class="text-center"><?= $gs['participacion'] !== null ? rtrim(rtrim(number_format((float)$gs['participacion'], 2), '0'), '.') . ' %' : '<span class="text-muted">—</span>' ?></td>
                         <td class="text-center"><?= (int)$gs['uso']['aportes'] ?></td><td class="text-center"><?= (int)$gs['uso']['retiros'] ?></td><td class="text-center"><?= (int)$gs['uso']['prestamos'] ?></td>
                         <td class="text-end text-nowrap">
-                            <button class="btn btn-sm btn-outline-primary gs-guardar" title="Guardar nombre y correo"><i class="bi bi-check-lg"></i></button>
+                            <button class="btn btn-sm btn-outline-primary gs-editar" title="Editar los datos del socio" data-socio='<?= htmlspecialchars(json_encode(['id' => (int)$gs['id'], 'nombre' => $gs['nombre'], 'email' => $gs['email'], 'identidad' => $gs['identidad'], 'telefono' => $gs['telefono'], 'participacion' => $gs['participacion'], 'notas' => $gs['notas']], JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>'><i class="bi bi-pencil"></i></button>
                             <button class="btn btn-sm btn-outline-secondary gs-estado" data-activo="<?= $gs['activo'] ? 0 : 1 ?>" title="<?= $gs['activo'] ? 'Desactivar' : 'Activar' ?>"><i class="bi bi-<?= $gs['activo'] ? 'eye-slash' : 'eye' ?>"></i></button>
                             <button class="btn btn-sm btn-outline-danger gs-eliminar" <?= $libre ? '' : 'disabled' ?> title="<?= $libre ? 'Eliminar (no tiene nada registrado)' : 'Tiene movimientos: desactívalo' ?>"><i class="bi bi-trash3"></i></button></td></tr>
                 <?php endforeach; ?>
@@ -350,10 +352,24 @@ require_once '../../includes/templates/header.php';
         const tr = e.target.closest('tr[data-socio]'); const b = e.target.closest('button');
         if (!tr || !b) return;
         const fd = new FormData(); fd.append('id', tr.dataset.socio);
-        if (b.classList.contains('gs-guardar')) { fd.append('accion', 'socio_editar'); fd.append('nombre', tr.querySelector('.gs-nombre').value); fd.append('email', tr.querySelector('.gs-email').value); }
+        if (b.classList.contains('gs-editar')) {
+            const s = JSON.parse(b.dataset.socio), v = x => String(x ?? '').replace(/"/g, '&quot;');
+            const r = await Swal.fire({ title: 'Editar socio', width: 520, showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', focusConfirm: false,
+                html: `<div class="text-start small"><div class="row g-2">
+                    <div class="col-12"><label class="form-label mb-0">Nombre completo *</label><input id="seNombre" class="form-control form-control-sm" maxlength="150" value="${v(s.nombre)}"></div>
+                    <div class="col-6"><label class="form-label mb-0">Identidad (DNI)</label><input id="seId" class="form-control form-control-sm" maxlength="30" value="${v(s.identidad)}" placeholder="0000-0000-00000"></div>
+                    <div class="col-6"><label class="form-label mb-0">Participación (%)</label><input id="sePart" type="number" min="0" max="100" step="0.01" class="form-control form-control-sm" value="${v(s.participacion)}" placeholder="Ej: 50"></div>
+                    <div class="col-6"><label class="form-label mb-0">Correo</label><input id="seEmail" type="email" class="form-control form-control-sm" maxlength="150" value="${v(s.email)}"></div>
+                    <div class="col-6"><label class="form-label mb-0">Teléfono</label><input id="seTel" class="form-control form-control-sm" maxlength="40" value="${v(s.telefono)}" placeholder="9999-8888"></div>
+                    <div class="col-12"><label class="form-label mb-0">Notas</label><input id="seNotas" class="form-control form-control-sm" maxlength="255" value="${v(s.notas)}"></div></div></div>`,
+                preConfirm: () => { const n = document.getElementById('seNombre').value.trim(); if (!n) { Swal.showValidationMessage('Escribí el nombre.'); return false; }
+                    return { nombre: n, identidad: document.getElementById('seId').value, participacion: document.getElementById('sePart').value, email: document.getElementById('seEmail').value, telefono: document.getElementById('seTel').value, notas: document.getElementById('seNotas').value }; } });
+            if (!r.isConfirmed) return;
+            fd.append('accion', 'socio_editar'); Object.entries(r.value).forEach(([k, x]) => fd.append(k, x));
+        }
         else if (b.classList.contains('gs-estado')) { fd.append('accion', 'socio_estado'); fd.append('activo', b.dataset.activo); }
         else if (b.classList.contains('gs-eliminar')) {
-            const r = await Swal.fire({ icon: 'warning', title: '¿Eliminar este socio?', text: tr.querySelector('.gs-nombre').value, showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc2626' });
+            const r = await Swal.fire({ icon: 'warning', title: '¿Eliminar este socio?', text: tr.querySelector('.gs-nombre-txt').textContent, showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc2626' });
             if (!r.isConfirmed) return;
             fd.append('accion', 'socio_eliminar');
         } else return;
