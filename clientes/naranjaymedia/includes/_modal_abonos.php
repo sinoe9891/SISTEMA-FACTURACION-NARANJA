@@ -69,6 +69,9 @@ $__abCuentas = bancosDisponible($pdo)
     const L = n => 'L ' + Number(n).toLocaleString('es-HN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const hoy = '<?= date('Y-m-d') ?>';
+    const puedeEditar = <?= $__abPuedeCobrar ? 'true' : 'false' ?>;
+    const CUENTAS = <?= json_encode(array_map(fn($c) => ['id' => (int)$c['id'], 'txt' => $c['banco'] . ' ' . $c['numero']], $__abCuentas), JSON_UNESCAPED_UNICODE) ?>;
+    const cobros = {};
     let cambio = false;
 
     async function cargar(id) {
@@ -79,6 +82,7 @@ $__abCuentas = bancosDisponible($pdo)
         document.getElementById('abTotal').textContent = L(f.total);
         document.getElementById('abAbonado').textContent = L(f.abonado);
         document.getElementById('abSaldo').textContent = L(f.saldo);
+        r.cobros.forEach(c => { cobros[c.id] = c; });
         document.getElementById('abLista').innerHTML = r.cobros.length ? r.cobros.map(c => `
             <tr class="${+c.anulado ? 'text-decoration-line-through text-muted' : ''}">
                 <td>${esc(c.fecha.split('-').reverse().join('/'))}</td>
@@ -86,7 +90,8 @@ $__abCuentas = bancosDisponible($pdo)
                 <td>${esc(c.referencia || '—')}${(c.archivos || []).length > 1 ? c.archivos.map((a, i) => ` <a href="cobro_archivo.php?id=${c.id}&a=${a.id}" target="_blank" title="${esc(a.nombre)}"><i class="bi bi-paperclip"></i>${i + 1}</a>`).join('') : (+c.con_comprobante ? ` <a href="cobro_archivo.php?id=${c.id}" target="_blank" title="Ver comprobante"><i class="bi bi-paperclip"></i></a>` : '')}</td>
                 <td class="text-end">${L(c.monto)}</td>
                 <td class="text-end">${+c.anulado ? '<small>' + esc(c.motivo_anulacion || 'Anulado') + '</small>'
-                    : (esAdmin ? `<button type="button" class="btn btn-link btn-sm p-0 text-danger ab-anular" data-id="${c.id}" title="Anular abono"><i class="bi bi-x-circle"></i></button>` : '')}</td>
+                    : (puedeEditar && +c.editable ? `<button type="button" class="btn btn-link btn-sm p-0 me-1 ab-editar" data-id="${c.id}" title="Editar abono (fecha, método, referencia, nota, cuenta, comprobantes)"><i class="bi bi-pencil-fill"></i></button>` : '')
+                        + (esAdmin ? `<button type="button" class="btn btn-link btn-sm p-0 text-danger ab-anular" data-id="${c.id}" title="Anular abono"><i class="bi bi-x-circle"></i></button>` : '')}</td>
             </tr>`).join('') : '<tr><td colspan="5" class="text-center text-muted">Sin abonos registrados.</td></tr>';
         if (form) {
             form.style.display = f.saldo > 0 ? '' : 'none';
@@ -121,6 +126,49 @@ $__abCuentas = bancosDisponible($pdo)
         } catch (err) {
             Swal.fire('Error', err.message, 'error');
         } finally { btn.disabled = false; }
+    });
+
+    // Editar un abono ya registrado (el monto no se cambia: si está mal, se anula y se registra de nuevo)
+    document.getElementById('abLista').addEventListener('click', async e => {
+        const eb = e.target.closest('.ab-editar');
+        if (!eb) return;
+        const c = cobros[eb.dataset.id];
+        if (!c) return;
+        const metodos = { transferencia: 'Transferencia', efectivo: 'Efectivo', cheque: 'Cheque', tarjeta: 'Tarjeta', otro: 'Otro' };
+        const arch = (c.archivos || []).length ? c.archivos : (+c.con_comprobante ? [{ id: 'principal', nombre: 'Comprobante' }] : []);
+        const r = await Swal.fire({
+            title: 'Editar abono · ' + L(c.monto), showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', width: 520,
+            html: `<div class="text-start small">
+                <div class="row g-2">
+                    <div class="col-6"><label class="form-label mb-0">Fecha</label><input type="date" id="ecFecha" class="form-control form-control-sm" value="${esc(c.fecha)}" max="${hoy}"></div>
+                    <div class="col-6"><label class="form-label mb-0">Método</label><select id="ecMetodo" class="form-select form-select-sm">${Object.entries(metodos).map(([k, t]) => `<option value="${k}" ${k === c.metodo ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+                    <div class="col-12"><label class="form-label mb-0">Referencia</label><input type="text" id="ecRef" class="form-control form-control-sm" maxlength="100" value="${esc(c.referencia || '')}" placeholder="N.º de transferencia"></div>
+                    ${CUENTAS.length ? `<div class="col-12"><label class="form-label mb-0">Depositado en</label><select id="ecCuenta" class="form-select form-select-sm"><option value="">— No registrar en banco —</option>${CUENTAS.map(x => `<option value="${x.id}" ${+x.id === +c.cuenta_id ? 'selected' : ''}>${esc(x.txt)}</option>`).join('')}</select></div>` : ''}
+                    <div class="col-12"><label class="form-label mb-0">Nota</label><input type="text" id="ecNotas" class="form-control form-control-sm" maxlength="255" value="${esc(c.notas || '')}"></div>
+                    <div class="col-12"><label class="form-label mb-0">Comprobantes</label>
+                        ${arch.map(a => `<div class="form-check"><input class="form-check-input ec-quitar" type="checkbox" value="${a.id}" id="ecq${a.id}"><label class="form-check-label" for="ecq${a.id}">Quitar · ${esc(a.nombre)}</label></div>`).join('') || '<div class="text-muted">Sin comprobantes.</div>'}
+                        <input type="file" id="ecArchivos" class="form-control form-control-sm mt-1" multiple accept="image/jpeg,image/png,image/webp,application/pdf">
+                        <div class="form-text">Agregá uno o varios (máx. 10, 5 MB cada uno).</div></div>
+                    <div class="col-12 text-muted">El monto no se cambia: si está mal, anulá el abono y registralo de nuevo.</div>
+                </div></div>`,
+            preConfirm: () => {
+                if (!document.getElementById('ecFecha').value) { Swal.showValidationMessage('Escribí la fecha del pago.'); return false; }
+                return { fecha: document.getElementById('ecFecha').value, metodo: document.getElementById('ecMetodo').value, ref: document.getElementById('ecRef').value,
+                    cuenta: document.getElementById('ecCuenta') ? document.getElementById('ecCuenta').value : null, notas: document.getElementById('ecNotas').value,
+                    quitar: [...document.querySelectorAll('.ec-quitar:checked')].map(i => i.value), archivos: [...document.getElementById('ecArchivos').files] };
+            }
+        });
+        if (!r.isConfirmed) return;
+        const fd = new FormData();
+        fd.append('accion', 'editar_cobro'); fd.append('id', c.id); fd.append('fecha', r.value.fecha); fd.append('metodo', r.value.metodo);
+        fd.append('referencia', r.value.ref); fd.append('notas', r.value.notas);
+        if (r.value.cuenta !== null) fd.append('cuenta_id', r.value.cuenta);
+        r.value.quitar.forEach(q => fd.append('quitar[]', q)); r.value.archivos.forEach(f => fd.append('comprobantes[]', f));
+        const d = await fetch(URL_CXC, { method: 'POST', body: fd, credentials: 'same-origin' }).then(x => x.json()).catch(() => ({ success: false, error: 'Error de conexión.' }));
+        if (!d.success) return Swal.fire('No se pudo editar', d.error, 'error');
+        cambio = true;
+        await cargar(document.getElementById('abFacturaId').value);
+        Swal.fire({ icon: 'success', title: d.message, timer: 1500, showConfirmButton: false });
     });
 
     document.getElementById('abLista').addEventListener('click', e => {

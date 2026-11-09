@@ -18,7 +18,7 @@ try {
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $f = cxcFactura($pdo, $cid, (int)($_GET['factura_id'] ?? 0));
         $conArchivo = (bool)$pdo->query("SHOW COLUMNS FROM cobros_factura LIKE 'archivo_adjunto'")->fetchColumn();
-        $stmt = $pdo->prepare("SELECT c.id, c.fecha, c.monto, c.metodo, c.referencia, c.anulado, c.motivo_anulacion," . ($conArchivo ? " c.archivo_adjunto IS NOT NULL AS con_comprobante," : " 0 AS con_comprobante,") . "
+        $stmt = $pdo->prepare("SELECT c.id, c.fecha, c.monto, c.metodo, c.referencia, c.notas, c.cuenta_id, c.anulado, c.motivo_anulacion," . ($conArchivo ? " c.archivo_adjunto IS NOT NULL AS con_comprobante," : " 0 AS con_comprobante,") . "
                 b.banco, b.numero AS cuenta_numero, u.nombre AS usuario
             FROM cobros_factura c
             LEFT JOIN cuentas_bancarias b ON b.id = c.cuenta_id
@@ -29,7 +29,11 @@ try {
             'cobros' => (function () use ($stmt, $pdo, $cid) {
                 $cobros = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 $arch = cxcArchivosDeCobros($pdo, $cid, array_column($cobros, 'id'));
-                foreach ($cobros as &$c) $c['archivos'] = $arch[(int)$c['id']] ?? [];
+                $deAnticipo = [];
+                if ($pdo->query("SHOW TABLES LIKE 'contratos_anticipos'")->fetchColumn() && $cobros) {
+                    $deAnticipo = array_map('intval', $pdo->query("SELECT cobro_id FROM contratos_anticipos WHERE cobro_id IN (" . implode(',', array_map('intval', array_column($cobros, 'id'))) . ")")->fetchAll(PDO::FETCH_COLUMN));
+                }
+                foreach ($cobros as &$c) { $c['archivos'] = $arch[(int)$c['id']] ?? []; $c['editable'] = !(int)$c['anulado'] && !in_array((int)$c['id'], $deAnticipo, true) ? 1 : 0; }
                 return $cobros;
             })()], JSON_UNESCAPED_UNICODE);
         exit;
@@ -65,6 +69,18 @@ try {
         }
         $pdo->commit();
         echo json_encode(['success' => true, 'cobros' => $hechos, 'message' => count($hechos) === 1 ? 'Cobro registrado.' : count($hechos) . ' facturas cobradas' . (!empty($_POST['cuenta_id']) ? ' y depositadas en el banco.' : '.')], JSON_UNESCAPED_UNICODE);
+    } elseif ($accion === 'editar_cobro') {
+        if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true)) throw new Exception("No tienes permiso para editar cobros.");
+        require_once __DIR__ . '/_gasto_adjuntos.php';
+        $nuevos = guardarAdjuntosGasto(adjuntosLista($_FILES), $cid);
+        try {
+            cxcEditarCobro($pdo, $cid, (int)USUARIO_ID, (int)($_POST['id'] ?? 0), $_POST, $nuevos, array_map('strval', (array)($_POST['quitar'] ?? [])));
+        } catch (Throwable $e) {
+            foreach ($nuevos as $a) @unlink(gastoAdjuntoDir() . $a[0]);
+            throw $e;
+        }
+        $pdo->commit();
+        echo json_encode(['success' => true, 'message' => 'Abono actualizado.'], JSON_UNESCAPED_UNICODE);
     } elseif ($accion === 'anular_cobro') {
         if (!in_array(USUARIO_ROL, ['admin', 'superadmin'], true)) throw new Exception("Solo un administrador puede anular cobros.");
         cxcAnularCobro($pdo, $cid, (int)($_POST['id'] ?? 0), (string)($_POST['motivo'] ?? ''));

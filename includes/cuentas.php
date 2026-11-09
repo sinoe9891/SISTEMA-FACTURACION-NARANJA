@@ -283,6 +283,93 @@ function cxcAnularCobro(PDO $pdo, int $cid, int $cobroId, string $motivo): void
     else $pdo->prepare("UPDATE facturas SET pagada = 0 WHERE id = ?")->execute([$c['factura_id']]);
 }
 
+/**
+ * Edita un abono ya registrado: fecha, método, referencia, notas, cuenta del banco y comprobantes.
+ * El monto NO se cambia (si está mal se anula y se registra de nuevo). Mantiene al día su entrada en el banco:
+ * mismo cambio de fecha, referencia y cuenta; con cuenta nueva la crea; sin cuenta la anula. Un depósito ya conciliado no se mueve.
+ * $nuevos = comprobantes nuevos [[archivo, nombre], …]; $quitar = ids de cobro_archivos a quitar (o 'principal' para el comprobante antiguo).
+ */
+function cxcEditarCobro(PDO $pdo, int $cid, int $usuario, int $cobroId, array $d, array $nuevos = [], array $quitar = []): void
+{
+    $st = $pdo->prepare("SELECT c.*, f.fecha_emision, f.correlativo FROM cobros_factura c JOIN facturas f ON f.id = c.factura_id WHERE c.id = ? AND c.cliente_id = ? FOR UPDATE");
+    $st->execute([$cobroId, $cid]);
+    $c = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$c) throw new Exception("Cobro no encontrado.");
+    if ((int)$c['anulado']) throw new Exception("Un abono anulado no se edita.");
+    if ($pdo->query("SHOW TABLES LIKE 'contratos_anticipos'")->fetchColumn()) {
+        $a = $pdo->prepare("SELECT COUNT(*) FROM contratos_anticipos WHERE cobro_id = ? AND cliente_id = ?");
+        $a->execute([$cobroId, $cid]);
+        if ($a->fetchColumn()) throw new Exception("Este abono viene de un pago anticipado del contrato: se edita desde el contrato.");
+    }
+    $fecha = bancoFecha((string)($d['fecha'] ?? ''));
+    if ($fecha < substr($c['fecha_emision'], 0, 10)) throw new Exception("La fecha del cobro no puede ser anterior a la factura.");
+    $metodo = $d['metodo'] ?? $c['metodo'];
+    if (!in_array($metodo, CXC_METODOS, true)) throw new Exception("Método de pago inválido.");
+    $ref = mb_substr(trim((string)($d['referencia'] ?? '')), 0, 100) ?: null;
+    $notas = mb_substr(trim((string)($d['notas'] ?? '')), 0, 255) ?: null;
+
+    // Entrada en el banco
+    $cuentaActual = $c['cuenta_id'] ? (int)$c['cuenta_id'] : null;
+    $cuentaNueva = array_key_exists('cuenta_id', $d) ? ((int)$d['cuenta_id'] ?: null) : $cuentaActual;
+    $movId = $c['movimiento_id'] ? (int)$c['movimiento_id'] : null;
+    if ($cuentaNueva && (!$movId || $cuentaNueva !== $cuentaActual)) {
+        if (!bancosDisponible($pdo)) throw new Exception("El módulo de bancos no está instalado.");
+        if (bancoCuenta($pdo, $cid, $cuentaNueva, true)['moneda'] !== 'HNL') throw new Exception("Las facturas son en lempiras: elige una cuenta en lempiras.");
+    }
+    if ($movId) {
+        $m = $pdo->prepare("SELECT * FROM movimientos_bancarios WHERE id = ? AND cliente_id = ?");
+        $m->execute([$movId, $cid]);
+        $mov = $m->fetch(PDO::FETCH_ASSOC);
+        if ($mov && (int)$mov['conciliado'] && ($fecha !== $mov['fecha'] || $ref !== ($mov['referencia'] ?: null) || $cuentaNueva !== (int)$mov['cuenta_id'])) {
+            throw new Exception("El depósito de este cobro ya está conciliado en el banco: quita la conciliación para cambiar su fecha, referencia o cuenta.");
+        }
+        if ($cuentaNueva === null) {
+            $pdo->prepare("UPDATE movimientos_bancarios SET anulado = 1 WHERE id = ?")->execute([$movId]);
+            $movId = null;
+        } else {
+            $pdo->prepare("UPDATE movimientos_bancarios SET cuenta_id = ?, fecha = ?, referencia = ? WHERE id = ?")->execute([$cuentaNueva, $fecha, $ref, $movId]);
+        }
+    } elseif ($cuentaNueva) {
+        $movId = bancoInsertarMovimiento($pdo, $cid, $cuentaNueva, [
+            'fecha' => $fecha, 'sentido' => 'entrada', 'tipo' => 'cobro_factura', 'monto' => (float)$c['monto'],
+            'descripcion' => mb_substr("Cobro factura {$c['correlativo']}", 0, 255), 'referencia' => $ref,
+            'factura_id' => (int)$c['factura_id'], 'usuario_id' => $usuario,
+        ]);
+    }
+    $pdo->prepare("UPDATE cobros_factura SET fecha = ?, metodo = ?, referencia = ?, notas = ?, cuenta_id = ?, movimiento_id = ? WHERE id = ?")
+        ->execute([$fecha, $metodo, $ref, $notas, $cuentaNueva, $movId, $cobroId]);
+
+    // Comprobantes: el antiguo (solo el principal del cobro) pasa a la tabla para poder quitarlo; se quitan y se agregan los pedidos
+    if ($quitar || $nuevos) {
+        try {
+            $q = $pdo->prepare("SELECT COUNT(*) FROM cobro_archivos WHERE cobro_id = ? AND cliente_id = ?");
+            $q->execute([$cobroId, $cid]);
+            if (!$q->fetchColumn() && $c['archivo_adjunto']) {
+                $pdo->prepare("INSERT INTO cobro_archivos (cliente_id, cobro_id, archivo, nombre, usuario_id) VALUES (?, ?, ?, ?, ?)")
+                    ->execute([$cid, $cobroId, $c['archivo_adjunto'], $c['archivo_nombre'] ?: $c['archivo_adjunto'], $usuario]);
+            }
+            $del = $pdo->prepare("DELETE FROM cobro_archivos WHERE id = ? AND cobro_id = ? AND cliente_id = ?");
+            foreach ($quitar as $qid) {
+                if ($qid === 'principal') $pdo->prepare("DELETE FROM cobro_archivos WHERE cobro_id = ? AND cliente_id = ? AND archivo = ?")->execute([$cobroId, $cid, $c['archivo_adjunto']]);
+                else $del->execute([(int)$qid, $cobroId, $cid]);
+            }
+            $ins = $pdo->prepare("INSERT INTO cobro_archivos (cliente_id, cobro_id, archivo, nombre, usuario_id) VALUES (?, ?, ?, ?, ?)");
+            foreach ($nuevos as [$arch, $nom]) $ins->execute([$cid, $cobroId, $arch, $nom, $usuario]);
+            // El primero que quede es el principal del cobro y de su entrada en el banco
+            $p = $pdo->prepare("SELECT archivo, nombre FROM cobro_archivos WHERE cobro_id = ? AND cliente_id = ? ORDER BY id LIMIT 1");
+            $p->execute([$cobroId, $cid]);
+            $pr = $p->fetch(PDO::FETCH_ASSOC) ?: ['archivo' => null, 'nombre' => null];
+            $pdo->prepare("UPDATE cobros_factura SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ?")->execute([$pr['archivo'], $pr['nombre'], $cobroId]);
+            if ($movId) {
+                try { $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ?")->execute([$pr['archivo'], $pr['nombre'], $movId]); }
+                catch (PDOException $e) { /* sin comprobante en movimientos */ }
+            }
+        } catch (PDOException $e) {
+            throw new Exception("No se pudieron actualizar los comprobantes (falta la tabla cobro_archivos).");
+        }
+    }
+}
+
 /** Gastos pendientes (cuentas por pagar) con días de atraso (negativo = aún no vence). */
 function cxpPendientes(PDO $pdo, int $cid): array
 {

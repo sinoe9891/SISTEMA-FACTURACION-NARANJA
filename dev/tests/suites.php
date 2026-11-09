@@ -198,6 +198,65 @@ suite('Cobros: uno o varios comprobantes', function () {
     }
 });
 
+suite('Cobros: editar un abono ya registrado', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $base = $pdo->query("SELECT * FROM facturas WHERE cliente_id = 2 AND estado = 'emitida' AND total > 5 LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if (!$base) { check('hay una factura para copiar', false); return; }
+    unset($base['id']); $base['correlativo'] = 'QA-' . bin2hex(random_bytes(5)); $base['pagada'] = 0; $base['estado_declarada'] = 0; $base['fecha_emision'] = date('Y-m-d', strtotime('-3 days')) . ' 10:00:00';
+    $pdo->prepare('INSERT INTO facturas (`' . implode('`,`', array_keys($base)) . '`) VALUES (' . implode(',', array_fill(0, count($base), '?')) . ')')->execute(array_values($base));
+    $fid = (int)$pdo->lastInsertId();
+    $pdo->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, titular, moneda, saldo_inicial, fecha_saldo_inicial, activa) VALUES (2,'QA','ahorro','QA-ED1','QA','HNL',0,'2020-01-01',1),(2,'QA','ahorro','QA-ED2','QA','HNL',0,'2020-01-01',1)");
+    $c1 = (int)$pdo->lastInsertId(); $c2 = $c1 + 1;
+    $cobId = 0; $archivos = [];
+    $hoy = date('Y-m-d'); $ayer = date('Y-m-d', strtotime('-1 day'));
+    try {
+        $r = $c->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => $fid, 'fecha' => $hoy, 'metodo' => 'transferencia', 'monto' => 1, 'referencia' => 'R-1', 'cuenta_id' => $c1,
+            'comprobantes[0]' => new CURLFile(archivoTemporal('png'), 'image/png', 'uno.png')]);
+        $cobId = (int)($r['json']['id'] ?? 0);
+        check('el cobro de partida se registra', $cobId > 0, $r['body']);
+        $cob = fn() => $pdo->query("SELECT * FROM cobros_factura WHERE id = $cobId")->fetch(PDO::FETCH_ASSOC);
+        $mov = fn() => ($m = (int)$cob()['movimiento_id']) ? $pdo->query("SELECT * FROM movimientos_bancarios WHERE id = $m")->fetch(PDO::FETCH_ASSOC) : null;
+        $e = $c->post('includes/cxc_accion.php', ['accion' => 'editar_cobro', 'id' => $cobId, 'fecha' => $ayer, 'metodo' => 'efectivo', 'referencia' => 'R-2', 'notas' => 'corregido', 'cuenta_id' => $c2, 'monto' => 999]);
+        $x = $cob(); $m = $mov();
+        check('edita fecha, método, referencia, nota y cuenta; el monto no cambia', ($e['json']['success'] ?? false) && $x['fecha'] === $ayer && $x['metodo'] === 'efectivo' && $x['referencia'] === 'R-2' && $x['notas'] === 'corregido' && (float)$x['monto'] === 1.0, $e['body']);
+        check('su entrada en el banco se mueve a la otra cuenta con la misma fecha y referencia', $m && (int)$m['cuenta_id'] === $c2 && $m['fecha'] === $ayer && $m['referencia'] === 'R-2' && (int)$m['anulado'] === 0);
+        $j = $c->get('includes/cxc_accion.php', ['factura_id' => $fid]);
+        check('la lista de abonos dice que se puede editar y trae su nota y cuenta', (int)($j['json']['cobros'][0]['editable'] ?? 0) === 1 && ($j['json']['cobros'][0]['notas'] ?? '') === 'corregido' && (int)($j['json']['cobros'][0]['cuenta_id'] ?? 0) === $c2);
+        // comprobantes: quitar el antiguo y agregar uno nuevo
+        $e = $c->post('includes/cxc_accion.php', ['accion' => 'editar_cobro', 'id' => $cobId, 'fecha' => $ayer, 'metodo' => 'efectivo', 'referencia' => 'R-2', 'cuenta_id' => $c2, 'quitar[0]' => 'principal',
+            'comprobantes[0]' => new CURLFile(archivoTemporal('png'), 'image/png', 'dos.png')]);
+        $x = $cob(); $archivos = $pdo->query("SELECT archivo, nombre FROM cobro_archivos WHERE cobro_id = $cobId")->fetchAll(PDO::FETCH_ASSOC);
+        check('quita el comprobante antiguo y agrega el nuevo (queda como principal también en el banco)', ($e['json']['success'] ?? false) && count($archivos) === 1 && $archivos[0]['nombre'] === 'dos.png' && $x['archivo_nombre'] === 'dos.png' && ($mov()['archivo_nombre'] ?? '') === 'dos.png', $e['body']);
+        // sin cuenta: se anula su entrada; con cuenta otra vez: se crea
+        $c->post('includes/cxc_accion.php', ['accion' => 'editar_cobro', 'id' => $cobId, 'fecha' => $ayer, 'metodo' => 'efectivo', 'referencia' => 'R-2', 'cuenta_id' => '']);
+        $x = $cob();
+        check('sin cuenta: el cobro ya no tiene entrada en el banco y la anterior queda anulada', $x['movimiento_id'] === null && $x['cuenta_id'] === null && (int)$pdo->query("SELECT COUNT(*) FROM movimientos_bancarios WHERE cuenta_id = $c2 AND anulado = 0")->fetchColumn() === 0);
+        $c->post('includes/cxc_accion.php', ['accion' => 'editar_cobro', 'id' => $cobId, 'fecha' => $hoy, 'metodo' => 'transferencia', 'referencia' => 'R-3', 'cuenta_id' => $c1]);
+        $m = $mov();
+        check('con cuenta otra vez: se crea la entrada por el mismo monto', $m && (int)$m['cuenta_id'] === $c1 && (float)$m['monto'] === 1.0 && $m['referencia'] === 'R-3' && $m['tipo'] === 'cobro_factura');
+        // conciliado: no se mueve
+        $pdo->exec("UPDATE movimientos_bancarios SET conciliado = 1 WHERE id = " . (int)$m['id']);
+        $e = $c->post('includes/cxc_accion.php', ['accion' => 'editar_cobro', 'id' => $cobId, 'fecha' => $hoy, 'metodo' => 'transferencia', 'referencia' => 'OTRA', 'cuenta_id' => $c1]);
+        check('un depósito conciliado no se cambia', !($e['json']['success'] ?? true) && str_contains($e['body'], 'conciliado') && $cob()['referencia'] === 'R-3');
+        $pdo->exec("UPDATE movimientos_bancarios SET conciliado = 0 WHERE id = " . (int)$m['id']);
+        $e = $c->post('includes/cxc_accion.php', ['accion' => 'editar_cobro', 'id' => $cobId, 'fecha' => date('Y-m-d', strtotime('-30 days')), 'metodo' => 'transferencia', 'referencia' => 'R-3', 'cuenta_id' => $c1]);
+        check('la fecha no puede ser anterior a la factura', !($e['json']['success'] ?? true));
+        $c->post('includes/cxc_accion.php', ['accion' => 'anular_cobro', 'id' => $cobId, 'motivo' => 'QA']);
+        $e = $c->post('includes/cxc_accion.php', ['accion' => 'editar_cobro', 'id' => $cobId, 'fecha' => $hoy, 'metodo' => 'efectivo', 'referencia' => 'X']);
+        check('un abono anulado no se edita', !($e['json']['success'] ?? true));
+        $pg = $c->get('cuentas_cobrar');
+        check('la ventana de abonos trae el lápiz para editar', str_contains($pg['body'], 'ab-editar') && str_contains($pg['body'], "editar_cobro"), errorPhp($pg['body']));
+    } finally {
+        foreach ($pdo->query("SELECT archivo FROM cobro_archivos WHERE cobro_id = $cobId")->fetchAll(PDO::FETCH_COLUMN) as $a) @unlink(__DIR__ . '/../../clientes/naranjaymedia/includes/uploads/gastos/' . basename((string)$a));
+        $pdo->exec("DELETE FROM cobro_archivos WHERE cobro_id = $cobId");
+        $pdo->exec("DELETE FROM cobros_factura WHERE factura_id = $fid");
+        $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id IN ($c1, $c2)");
+        $pdo->exec("DELETE FROM cuentas_bancarias WHERE id IN ($c1, $c2)");
+        $pdo->exec("DELETE FROM facturas WHERE id = $fid");
+    }
+});
+
 suite('Historial: grupo de CAI y CAI del grupo', function () {
     $c = login('qa.admin@local.test');
     $cont = fn($r) => substr_count($r['body'], '<tr data-ven=');
