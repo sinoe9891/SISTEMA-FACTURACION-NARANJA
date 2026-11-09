@@ -144,6 +144,13 @@ $pendientes_count  = count($pendientes_facts);
 // Lo pendiente es el saldo (total − abonos, incluidos los anticipos aplicados), igual que en Cuentas por cobrar
 require_once '../../includes/cuentas.php';
 $__abonos          = cxcAbonadoPorFactura($pdo, (int)$cliente_id);
+// Último cobro de cada factura (para decir «Pagada el dd/mm»)
+$__ultCobro = [];
+try {
+	$stUc = $pdo->prepare("SELECT factura_id, MAX(fecha) FROM cobros_factura WHERE cliente_id = ? AND anulado = 0 GROUP BY factura_id");
+	$stUc->execute([$cliente_id]);
+	$__ultCobro = $stUc->fetchAll(PDO::FETCH_KEY_PAIR);
+} catch (Throwable $e) { $__ultCobro = []; }
 $pendientes_monto  = array_sum(array_map(fn($f) => cxcSaldoDe((float)$f['total'], (float)($__abonos[$f['id']] ?? 0), false), $pendientes_facts));
 $total_monto       = array_sum(array_map(fn($f) => (float)$f['total'], array_filter($facturas, fn($f) => $f['estado'] === 'emitida')));
 $esAdmin           = in_array($datos['rol'], ['admin', 'superadmin']);
@@ -1722,8 +1729,14 @@ f.addEventListener('submit', e => { e.preventDefault(); aplicar(); });
 </button></div>
 <?php endif; ?>
 </td>
-							<td data-col="total" data-sort-val="<?= $f['total'] ?>" style="white-space:nowrap"><strong>L
-									<?= number_format($f['total'], 2) ?></strong></td>
+							<?php // Estado de pago explícito: pagada (verde), abonada (ámbar, con su saldo) o sin pagar
+							$__ab = (float)($__abonos[$f['id']] ?? 0); $__sd = cxcSaldoDe((float)$f['total'], $__ab, (int)$f['pagada'] === 1); ?>
+							<td data-col="total" data-sort-val="<?= $f['total'] ?>" style="white-space:nowrap"><span data-hl><strong>L <?= number_format($f['total'], 2) ?></strong></span>
+								<?php if ($f['estado'] === 'emitida'): ?>
+									<?php if ($__sd <= 0.004): ?><span class="badge text-bg-success d-block mt-1" style="width:max-content" title="Cobrada por completo"><i class="bi bi-check-circle-fill me-1"></i>Pagada<?= !empty($__ultCobro[$f['id']]) ? ' ' . date('d/m', strtotime($__ultCobro[$f['id']])) : '' ?></span>
+									<?php elseif ($__ab > 0): ?><span class="badge text-bg-warning d-block mt-1" style="width:max-content" title="Se han recibido L <?= number_format($__ab, 2) ?>; falta L <?= number_format($__sd, 2) ?>"><i class="bi bi-hourglass-split me-1"></i>Abonada · saldo L <?= number_format($__sd, 2) ?></span>
+									<?php else: ?><span class="badge text-bg-light border d-block mt-1" style="width:max-content" title="Todavía no se ha registrado ningún pago"><i class="bi bi-circle me-1"></i>Sin pagar</span><?php endif; ?>
+								<?php endif; ?></td>
 							<td>
 								<span class="st-badge <?= $estadoCls ?>">
 									<?= $f['estado'] === 'emitida' ? '<i class="bi bi-check-circle-fill"></i>' : ($f['estado'] === 'anulada' ? '<i class="bi bi-x-circle-fill"></i>' : '<i class="bi bi-pencil-fill"></i>') ?>

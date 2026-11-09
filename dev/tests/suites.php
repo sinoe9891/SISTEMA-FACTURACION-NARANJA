@@ -257,6 +257,35 @@ suite('Cobros: editar un abono ya registrado', function () {
     }
 });
 
+suite('Historial: estado de pago explícito (pagada, abonada, sin pagar)', function () {
+    $pdo = db();
+    $c = login('qa.admin@local.test');
+    $base = $pdo->query("SELECT * FROM facturas WHERE cliente_id = 2 AND estado = 'emitida' AND total > 5 LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if (!$base) { check('hay una factura para copiar', false); return; }
+    unset($base['id']); $base['correlativo'] = 'QA-' . bin2hex(random_bytes(5)); $base['pagada'] = 0; $base['estado_declarada'] = 0; $base['fecha_emision'] = date('Y-m-d') . ' 09:00:00';
+    $pdo->prepare('INSERT INTO facturas (`' . implode('`,`', array_keys($base)) . '`) VALUES (' . implode(',', array_fill(0, count($base), '?')) . ')')->execute(array_values($base));
+    $fid = (int)$pdo->lastInsertId(); $corr = $base['correlativo'];
+    $fila = function () use ($c, $corr) {
+        $b = $c->get('lista_facturas', ['cai_grupo' => 'todos'])['body'];
+        $i = strpos($b, $corr);
+        return $i === false ? '' : substr($b, $i, 3500);
+    };
+    try {
+        check('sin cobros: «Sin pagar»', str_contains($fila(), 'Sin pagar'));
+        $c->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => $fid, 'fecha' => date('Y-m-d'), 'metodo' => 'transferencia', 'monto' => 1, 'referencia' => 'QA-PG']);
+        check('con un abono parcial: «Abonada · saldo»', (bool)preg_match('/Abonada · saldo L [\d,]+\.\d\d/', $fila()));
+        $saldo = (float)$base['total'] - 1;
+        $c->post('includes/cxc_accion.php', ['accion' => 'cobrar', 'factura_id' => $fid, 'fecha' => date('Y-m-d'), 'metodo' => 'transferencia', 'monto' => $saldo, 'referencia' => 'QA-PG2']);
+        $f = $fila();
+        check('cobrada por completo: «Pagada» con la fecha y la factura queda pagada', str_contains($f, '>Pagada') || str_contains($f, 'Pagada ' . date('d/m')), substr($f, 0, 0));
+        check('y ya no dice «Sin pagar» ni «Abonada»', !str_contains($f, 'Sin pagar</span>') && !str_contains($f, 'Abonada · saldo') && (int)$pdo->query("SELECT pagada FROM facturas WHERE id = $fid")->fetchColumn() === 1);
+    } finally {
+        $pdo->exec("DELETE FROM cobros_factura WHERE factura_id = $fid");
+        $pdo->exec("DELETE FROM movimientos_bancarios WHERE factura_id = $fid");
+        $pdo->exec("DELETE FROM facturas WHERE id = $fid");
+    }
+});
+
 suite('Historial: grupo de CAI y CAI del grupo', function () {
     $c = login('qa.admin@local.test');
     $cont = fn($r) => substr_count($r['body'], '<tr data-ven=');
