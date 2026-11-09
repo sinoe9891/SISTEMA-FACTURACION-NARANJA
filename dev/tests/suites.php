@@ -279,6 +279,14 @@ suite('Historial: estado de pago explícito (pagada, abonada, sin pagar)', funct
         $f = $fila();
         check('cobrada por completo: «Pagada» con la fecha y la factura queda pagada', str_contains($f, '>Pagada') || str_contains($f, 'Pagada ' . date('d/m')), substr($f, 0, 0));
         check('y ya no dice «Sin pagar» ni «Abonada»', !str_contains($f, 'Sin pagar</span>') && !str_contains($f, 'Abonada · saldo') && (int)$pdo->query("SELECT pagada FROM facturas WHERE id = $fid")->fetchColumn() === 1);
+        // Pagos recibidos: cada pago dice el estado de su factura
+        $pr = fn() => $c->get('pagos_recibidos', ['desde' => date('Y-m-d'), 'hasta' => date('Y-m-d')])['body'];
+        $b = $pr(); $i = strpos($b, $corr);
+        check('Pagos recibidos: el pago de una factura cobrada por completo dice «Factura pagada»', $i !== false && str_contains(substr($b, $i, 900), 'Factura pagada'), errorPhp($b));
+        $pdo->exec("UPDATE cobros_factura SET anulado = 1, motivo_anulacion = 'QA' WHERE factura_id = $fid AND referencia = 'QA-PG2'");
+        $pdo->exec("UPDATE facturas SET pagada = 0 WHERE id = $fid");
+        $b = $pr(); $i = strpos($b, $corr);
+        check('Pagos recibidos: con solo un abono parcial dice «Factura abonada · saldo»', $i !== false && (bool)preg_match('/Factura abonada · saldo L [\d,]+\.\d\d/', substr($b, $i, 900)));
     } finally {
         $pdo->exec("DELETE FROM cobros_factura WHERE factura_id = $fid");
         $pdo->exec("DELETE FROM movimientos_bancarios WHERE factura_id = $fid");

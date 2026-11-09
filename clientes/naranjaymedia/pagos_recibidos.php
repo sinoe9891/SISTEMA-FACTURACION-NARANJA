@@ -104,7 +104,13 @@ require_once '../../includes/templates/header.php';
                         <td class="text-nowrap" data-sort="<?= $r['fecha'] ?>"><?= date('d/m/Y', strtotime($r['fecha'])) ?></td>
                         <td class="text-nowrap small"><i class="bi <?= $iconoTipo[$r['tipo']] ?> me-1 text-muted"></i><?= PAGO_RECIBIDO_TIPOS[$r['tipo']] ?></td>
                         <td class="text-nowrap small"><a href="<?= htmlspecialchars($r['documento_url']) ?>" target="_blank" class="font-monospace"><?= htmlspecialchars($r['documento']) ?></a>
-                            <?php if ($r['aplicado_a']): ?><div class="text-muted">aplicado a <?= htmlspecialchars(substr($r['aplicado_a'], -8)) ?></div><?php endif; ?></td>
+                            <?php if ($r['aplicado_a']): ?><div class="text-muted">aplicado a <?= htmlspecialchars(substr($r['aplicado_a'], -8)) ?></div><?php endif; ?>
+                            <?php // Estado de la factura a la que está ligado el pago (verde solo si está pagada)
+                            $fe = $r['factura_estado'] ?? null;
+                            if ($fe && !$anul): ?><div class="mt-1"><?php if ($fe === 'pagada'): ?><span class="badge text-bg-success"><i class="bi bi-check-circle-fill me-1"></i>Factura pagada</span>
+                                <?php elseif ($fe === 'abonada'): ?><span class="badge text-bg-warning" title="Falta L <?= number_format((float)$r['factura_saldo'], 2) ?>"><i class="bi bi-hourglass-split me-1"></i>Factura abonada · saldo L <?= number_format((float)$r['factura_saldo'], 2) ?></span>
+                                <?php elseif ($fe === 'sin_pagar'): ?><span class="badge text-bg-light border"><i class="bi bi-circle me-1"></i>Factura sin pagar</span>
+                                <?php else: ?><span class="badge text-bg-info" title="Pago adelantado: todavía no se aplica a ninguna factura"><i class="bi bi-hourglass me-1"></i>Sin aplicar a una factura</span><?php endif; ?></div><?php endif; ?></td>
                         <td><?= htmlspecialchars($r['cliente']) ?><?php if ($r['contrato']): ?><div class="small text-muted">Contrato #<?= (int)$r['contrato_id'] ?></div><?php endif; ?></td>
                         <td class="small"><?= PAGO_RECIBIDO_METODOS[$r['metodo']] ?? htmlspecialchars((string)$r['metodo']) ?><?php if ($r['referencia']): ?><div class="text-muted"><?= htmlspecialchars($r['referencia']) ?></div><?php endif; ?></td>
                         <td class="small"><?= $r['cuenta'] ? htmlspecialchars($r['cuenta']) . ((int)$r['conciliado'] ? ' <i class="bi bi-check2-all text-success" title="Conciliado"></i>' : '') : '<span class="text-muted">—</span>' ?></td>

@@ -60,6 +60,30 @@ function pagosRecibidosLista(PDO $pdo, int $cid, string $desde, string $hasta): 
     $st->execute([$cid, $desde, $hasta]);
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $out[] = $r + ['documento_url' => 'facturas_contrato?contrato_id=' . (int)$r['contrato_id'] . '#anticipos'];
 
+    // Estado de la factura a la que está ligado cada pago: pagada, abonada (con su saldo) o sin pagar
+    $fids = [];
+    foreach ($out as $r) { $fid = $r['tipo'] === 'factura' ? (int)$r['doc_id'] : (int)($r['factura_id'] ?? 0); if ($fid) $fids[$fid] = true; }
+    $facts = [];
+    if ($fids) {
+        $st = $pdo->prepare("SELECT id, total, pagada, estado FROM facturas WHERE cliente_id = ? AND id IN (" . implode(',', array_keys($fids)) . ")");
+        $st->execute([$cid]);
+        $facts = array_column($st->fetchAll(PDO::FETCH_ASSOC), null, 'id');
+    }
+    $abonos = $facts ? cxcAbonadoPorFactura($pdo, $cid) : [];
+    foreach ($out as &$r) {
+        $fid = $r['tipo'] === 'factura' ? (int)$r['doc_id'] : (int)($r['factura_id'] ?? 0);
+        $r['factura_estado'] = null; $r['factura_saldo'] = 0.0;
+        if ($fid && isset($facts[$fid]) && $facts[$fid]['estado'] === 'emitida') {
+            $ab = (float)($abonos[$fid] ?? 0);
+            $sd = cxcSaldoDe((float)$facts[$fid]['total'], $ab, (int)$facts[$fid]['pagada'] === 1);
+            $r['factura_saldo'] = $sd;
+            $r['factura_estado'] = $sd <= 0.004 ? 'pagada' : ($ab > 0 ? 'abonada' : 'sin_pagar');
+        } elseif ($r['tipo'] === 'anticipo' && !$fid) {
+            $r['factura_estado'] = 'sin_aplicar';
+        }
+    }
+    unset($r);
+
     usort($out, fn($a, $b) => [$b['fecha'], $b['tipo'], (int)$b['id']] <=> [$a['fecha'], $a['tipo'], (int)$a['id']]);
     return $out;
 }
