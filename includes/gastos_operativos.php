@@ -300,14 +300,14 @@ function gastosOpObtener(PDO $pdo, int $cid, int $id, ?array $permitidos): array
  */
 function gastosOpEstadoCobro(array $g, array $abonos): array
 {
-    $r = ['cobro' => null, 'factura' => null, 'saldo' => null, 'pago' => null];
+    $r = ['cobro' => null, 'factura' => null, 'factura_id' => null, 'saldo' => null, 'pago' => null];
     if ($g['estado'] !== 'aprobado' || ($g['pagador'] ?? 'empresa') === 'cliente') return $r;
     if (!empty($g['gasto_estado'])) $r['pago'] = $g['gasto_estado'] === 'pagado' ? 'pagado' : ($g['gasto_estado'] === 'pendiente' ? 'reembolsar' : null);
     if (!empty($g['gasto_cobrar_a']) || !empty($g['cobrado_factura_id'])) {
         if (empty($g['cobrado_factura_id']) || ($g['fact_estado'] ?? '') === 'anulada') { $r['cobro'] = 'sin_facturar'; return $r; }
         $ab = (float)($abonos[(int)$g['cobrado_factura_id']] ?? 0);
         $saldo = cxcSaldoDe((float)$g['fact_total'], $ab, (int)$g['fact_pagada'] === 1);
-        $r['factura'] = $g['fact_correlativo']; $r['saldo'] = $saldo;
+        $r['factura'] = $g['fact_correlativo']; $r['factura_id'] = (int)$g['cobrado_factura_id']; $r['saldo'] = $saldo;
         $r['cobro'] = $saldo <= 0.004 ? 'pagado' : ($ab > 0 ? 'abonado' : 'facturado');
     }
     return $r;
