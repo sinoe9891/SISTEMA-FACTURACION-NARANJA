@@ -1039,6 +1039,10 @@ $total  = count($gastos);
                                             class="bi bi-hourglass-split"></i>Pendiente</span>
                                 <?php else: ?><span class="estado-an"><i
                                             class="bi bi-x-circle-fill"></i>Anulado</span><?php endif; ?>
+                                <?php if ($est !== 'anulado'): ?>
+                                    <?php if (!empty($g['banco_salida'])): ?><div class="small text-muted mt-1" title="Cuenta bancaria de la que salió este pago"><i class="bi bi-bank me-1"></i><?= htmlspecialchars($g['banco_salida']) ?></div>
+                                    <?php elseif ($est === 'pagado' && ($g['metodo_pago'] ?? '') !== 'tarjeta' && ($g['metodo_pago'] ?? '') !== 'efectivo'): ?><div class="small text-warning-emphasis mt-1" title="Editá el gasto y elegí la cuenta en «Sale de la cuenta»"><i class="bi bi-bank me-1"></i>Sin cuenta bancaria</div><?php endif; ?>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <div class="gs-actions">
@@ -1261,6 +1265,9 @@ $total  = count($gastos);
                             <input type="hidden" name="cuenta_editar" id="g_cuenta_editar" value="">
                             <div id="g_cuenta_ya" class="small text-success mt-1" style="display:none"></div>
                             <small class="text-muted" style="font-size:.72rem">Si eliges una cuenta, el pago queda como salida en Bancos.</small>
+                        </div>
+                        <div class="col-md-6" id="grpCuentaAviso" style="display:none">
+                            <div class="small text-muted p-2 rounded" style="background:#f8fafc;border:1px solid #e2e8f0"><i class="bi bi-bank me-1"></i>La cuenta bancaria se elige cuando el estado es <strong>Pagado</strong>. Cambiá el estado para verla.</div>
                         </div>
                         <?php endif; ?>
 
@@ -1686,6 +1693,8 @@ $total  = count($gastos);
                 ? '<i class="bi bi-arrow-left-right me-1"></i>' + (selC.value ? 'La salida (y su Ley Poblacional) pasa de ' + ya.replace(/[<>&"]/g, '') + ' a la cuenta elegida.' : 'Se quita la salida de ' + ya.replace(/[<>&"]/g, '') + ' (y su Ley Poblacional).')
                 : '<i class="bi bi-bank me-1"></i>Salió de ' + ya.replace(/[<>&"]/g, '') + '. Si la cambiás, se mueve la salida.';
         }
+        const av = document.getElementById('grpCuentaAviso');
+        if (av) av.style.display = gc && document.getElementById('g_estado').value === 'pendiente' && m !== 'tarjeta' ? '' : 'none';
         // Info de anual
         const help = document.getElementById('frec_help');
         if (f === 'anual') {
