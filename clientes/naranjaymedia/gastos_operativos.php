@@ -177,7 +177,14 @@ require_once '../../includes/templates/header.php';
                         <td class="app-num"><?= number_format((float)$g['monto_lempiras'], 2) ?></td>
                         <td class="text-center"><?= (int)$g['archivos'] ? '<a href="#" class="go-ver text-decoration-none" data-id="' . (int)$g['id'] . '" title="Ver archivos"><i class="bi bi-paperclip"></i> ' . (int)$g['archivos'] . '</a>' : '<span class="badge bg-light text-danger border">Sin</span>' ?></td>
                         <td><span class="badge" style="background:<?= $eBg ?>;color:<?= $eFg ?>"><i class="bi <?= $eIco ?> me-1"></i><?= $eTxt ?></span>
-                            <?php if ($g['gasto_id']): ?><div class="small text-muted">Gastos N.º <?= (int)$g['gasto_id'] ?></div><?php endif; ?></td>
+                            <?php if ($g['gasto_id']): ?><div class="small text-muted">Gastos N.º <?= (int)$g['gasto_id'] ?></div><?php endif; ?>
+                            <?php $cb = $g['cobro'];
+                            if ($cb['pago'] === 'pagado'): ?><div class="small text-success"><i class="bi bi-check-circle me-1"></i>Gasto pagado</div>
+                            <?php elseif ($cb['pago'] === 'reembolsar'): ?><div class="small text-warning-emphasis"><i class="bi bi-hourglass-split me-1"></i>Falta reembolsar al colaborador</div><?php endif; ?>
+                            <?php if ($cb['cobro'] === 'pagado'): ?><div class="small text-success"><i class="bi bi-check-circle-fill me-1"></i>Cobrado: factura <?= $e(substr($cb['factura'], -8)) ?> pagada</div>
+                            <?php elseif ($cb['cobro'] === 'abonado'): ?><div class="small text-primary"><i class="bi bi-cash-coin me-1"></i>Factura <?= $e(substr($cb['factura'], -8)) ?> abonada · saldo L <?= number_format($cb['saldo'], 2) ?></div>
+                            <?php elseif ($cb['cobro'] === 'facturado'): ?><div class="small text-primary"><i class="bi bi-receipt me-1"></i>Facturado en <?= $e(substr($cb['factura'], -8)) ?> · sin pagar</div>
+                            <?php elseif ($cb['cobro'] === 'sin_facturar'): ?><div class="small text-muted"><i class="bi bi-clock me-1"></i>Por cobrar al cliente (sin facturar)</div><?php endif; ?></td>
                         <td class="text-end text-nowrap">
                             <button class="btn btn-sm btn-outline-primary go-ver" data-id="<?= (int)$g['id'] ?>" title="Ver, editar y adjuntar"><i class="bi bi-<?= $esAdmin || ($g['estado'] !== 'aprobado' && (int)$g['usuario_id'] === $uid) ? 'pencil' : 'eye' ?>"></i></button>
                             <?php if ($esAdmin && $g['estado'] === 'pendiente'): ?><button class="btn btn-sm btn-success go-revisar" data-id="<?= (int)$g['id'] ?>" data-tipo-cat="<?= (int)array_column($tipos, 'categoria_id', 'id')[$g['tipo_id']] ?>" data-desc="<?= $e(gastosOpCuentaTexto($g) . ' · ' . $g['descripcion'] . ' · ' . monedaFmt($g['monto'], $g['moneda'])) ?>" data-cobrar="<?= (int)$g['cobrar_cliente'] ?>" title="Aprobar o rechazar"><i class="bi bi-check2-square"></i></button><?php endif; ?>

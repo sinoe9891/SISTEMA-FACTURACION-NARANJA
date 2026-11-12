@@ -264,8 +264,12 @@ function gastosOpLista(PDO $pdo, int $cid, ?array $permitidos, array $f = []): a
     if (!empty($f['moneda']) && in_array($f['moneda'], ['HNL', 'USD'], true)) { $w[] = "g.moneda = ?"; $p[] = $f['moneda']; }
     $st = $pdo->prepare("SELECT g.*, cf.nombre AS cliente, t.nombre AS tipo, t.icono AS tipo_icono, t.es_pauta, u.nombre AS registrado_por, r.nombre AS revisado_por_nombre,
                                 CASE WHEN g.pagador='cliente' THEN CONCAT(g.tarjeta_cliente_alias, ' •••• ', g.tarjeta_cliente_ultimos) ELSE CONCAT(tj.banco, ' •••• ', tj.ultimos_digitos) END AS tarjeta, " . gastosOpSqlCuenta($pdo) . ",
-                                (SELECT COUNT(*) FROM gastos_op_archivos a WHERE a.gasto_op_id = g.id) AS archivos
+                                (SELECT COUNT(*) FROM gastos_op_archivos a WHERE a.gasto_op_id = g.id) AS archivos,
+                                gs.estado AS gasto_estado, gs.cobrado_factura_id, gs.cobrar_receptor_id AS gasto_cobrar_a,
+                                fc.correlativo AS fact_correlativo, fc.total AS fact_total, fc.pagada AS fact_pagada, fc.estado AS fact_estado
                          FROM gastos_operativos g
+                         LEFT JOIN gastos gs ON gs.id = g.gasto_id
+                         LEFT JOIN facturas fc ON fc.id = gs.cobrado_factura_id
                          JOIN clientes_factura cf ON cf.id = g.receptor_id
                          JOIN gastos_op_tipos t ON t.id = g.tipo_id
                          LEFT JOIN usuarios u ON u.id = g.usuario_id
@@ -274,6 +278,10 @@ function gastosOpLista(PDO $pdo, int $cid, ?array $permitidos, array $f = []): a
                          WHERE " . implode(' AND ', $w) . " ORDER BY g.fecha DESC, g.id DESC");
     $st->execute($p);
     $out = $st->fetchAll(PDO::FETCH_ASSOC);
+    require_once __DIR__ . '/cuentas.php';
+    $abon = cxcAbonadoPorFactura($pdo, $cid);
+    foreach ($out as &$g) $g['cobro'] = gastosOpEstadoCobro($g, $abon);
+    unset($g);
     if (!empty($f['sin_archivo'])) $out = array_values(array_filter($out, fn($g) => !(int)$g['archivos']));
     return $out;
 }
@@ -283,6 +291,26 @@ function gastosOpObtener(PDO $pdo, int $cid, int $id, ?array $permitidos): array
     $l = gastosOpListaPorId($pdo, $cid, $id);
     if (!$l || !gastosOpPuede($permitidos, (int)$l['receptor_id'], (int)($l['programa_id'] ?? 0) ?: null, (int)($l['contrato_id'] ?? 0) ?: null)) throw new Exception("Gasto no encontrado.");
     return $l;
+}
+
+/**
+ * Estado de pago de un gasto operativo aprobado: [cobro al cliente, pago del gasto].
+ * cobro: null (no se le cobra), 'sin_facturar', 'facturado' (factura sin pagar), 'abonado', 'pagado' (+ factura y saldo).
+ * pago: 'pagado' o 'reembolsar' (lo pagó el colaborador y falta devolverle) o null si aún no está aprobado.
+ */
+function gastosOpEstadoCobro(array $g, array $abonos): array
+{
+    $r = ['cobro' => null, 'factura' => null, 'saldo' => null, 'pago' => null];
+    if ($g['estado'] !== 'aprobado' || ($g['pagador'] ?? 'empresa') === 'cliente') return $r;
+    if (!empty($g['gasto_estado'])) $r['pago'] = $g['gasto_estado'] === 'pagado' ? 'pagado' : ($g['gasto_estado'] === 'pendiente' ? 'reembolsar' : null);
+    if (!empty($g['gasto_cobrar_a']) || !empty($g['cobrado_factura_id'])) {
+        if (empty($g['cobrado_factura_id']) || ($g['fact_estado'] ?? '') === 'anulada') { $r['cobro'] = 'sin_facturar'; return $r; }
+        $ab = (float)($abonos[(int)$g['cobrado_factura_id']] ?? 0);
+        $saldo = cxcSaldoDe((float)$g['fact_total'], $ab, (int)$g['fact_pagada'] === 1);
+        $r['factura'] = $g['fact_correlativo']; $r['saldo'] = $saldo;
+        $r['cobro'] = $saldo <= 0.004 ? 'pagado' : ($ab > 0 ? 'abonado' : 'facturado');
+    }
+    return $r;
 }
 
 /** Columnas con el programa y el contrato del gasto (para mostrar a qué se cargó). */
