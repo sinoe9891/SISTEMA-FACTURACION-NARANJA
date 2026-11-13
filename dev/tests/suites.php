@@ -3650,3 +3650,9 @@ require __DIR__ . "/comisiones.php";
 
 require __DIR__ . "/cotizacion_vincular.php";
 require __DIR__ . "/factura_gastos_cobrar_edicion.php";
+
+suite('Editar factura: borrar líneas', function () {
+    $src = file_get_contents(__DIR__ . '/../../clientes/naranjaymedia/editar_factura.php');
+    check('la plantilla oculta de línea nueva no se envía (si no, borrar la línea 1 daba «producto inválido»)', str_contains($src, "#producto-template input, #producto-template select, #producto-template textarea').forEach(el => el.disabled = true)"));
+    check('al borrar una línea se renumeran y la nueva toma el siguiente número', str_contains($src, 'renumerarLineas();') && str_contains($src, "const index = contenedor.querySelectorAll('.producto-item').length;"));
+});

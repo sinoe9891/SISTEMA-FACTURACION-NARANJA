@@ -635,6 +635,14 @@ require_once '../../includes/templates/header.php';
 		calcularTotalYLetra();
 	});
 
+	/* La plantilla oculta de una línea nueva no debe enviarse: si no, al borrar la línea 1 sus campos vacíos (productos[0]) pasaban como «Línea 1: producto inválido» */
+	document.querySelectorAll('#producto-template input, #producto-template select, #producto-template textarea').forEach(el => el.disabled = true);
+	/* Las líneas se numeran seguidas (0, 1, 2…) para que borrar una no deje huecos ni repita números */
+	function renumerarLineas() {
+		document.querySelectorAll('#productos-container .producto-item').forEach((it, i) =>
+			it.querySelectorAll('[name]').forEach(el => { el.name = el.name.replace(/^productos\[\d+\]/, `productos[${i}]`); }));
+	}
+
 	/* ── Agregar producto (desde template) ───────────────────────────────────── */
 	document.getElementById('agregar-producto').addEventListener('click', function() {
 		const contenedor = document.getElementById('productos-container');
@@ -644,8 +652,9 @@ require_once '../../includes/templates/header.php';
 		if (!baseItem) return;
 		const nuevo = baseItem.cloneNode(true);
 		delete nuevo.dataset.gc;   // la línea de un gasto por cobrar es solo la original
-		const index = contenedor.children.length;
+		const index = contenedor.querySelectorAll('.producto-item').length;
 		nuevo.querySelectorAll('input,select,textarea').forEach(el => {
+			el.disabled = false;
 			if (el.name?.includes('[cantidad]')) el.value = 1;
 			else if (el.name?.includes('[precio_unitario]') || el.name?.includes('[precio]')) el.value =
 				'0.00';
@@ -664,6 +673,7 @@ require_once '../../includes/templates/header.php';
 		if (e.target.closest('.remove-producto')) {
 			if (document.querySelectorAll('#productos-container .producto-item').length > 1) {
 				e.target.closest('.producto-item').remove();
+				renumerarLineas();
 				calcularTotalYLetra();
 			}
 		}
