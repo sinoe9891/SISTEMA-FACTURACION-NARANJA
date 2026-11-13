@@ -2193,6 +2193,7 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 </div>
+<div class="app-embed-capa" id="capaNomina"><iframe id="capaNominaFrame" title="Registrar movimiento del colaborador"></iframe></div>
 <script>
 (() => {
     const colabs = <?= json_encode($__regColabs, JSON_UNESCAPED_UNICODE) ?>;
@@ -2240,7 +2241,17 @@ $categorias = $stmtCats->fetchAll(PDO::FETCH_ASSOC);
     $ir.addEventListener('click', () => {
         if (!elegido) return;
         const tipo = document.querySelector('input[name=regTipo]:checked').value;
-        location.href = 'colaborador_ver?id=' + elegido.id + '&registrar=' + tipo;
+        // Se registra sin salir de la lista: la ficha del colaborador se abre en una capa y solo muestra su formulario
+        modal().hide();
+        const capa = document.getElementById('capaNomina'), fr = document.getElementById('capaNominaFrame');
+        fr.src = 'colaborador_ver?id=' + elegido.id + '&registrar=' + encodeURIComponent(tipo) + '&embed=1';
+        capa.classList.add('show');
+    });
+    window.addEventListener('message', e => {
+        if (e.origin !== location.origin || !e.data || !e.data.nominaEmbed) return;
+        document.getElementById('capaNomina').classList.remove('show');
+        document.getElementById('capaNominaFrame').src = 'about:blank';
+        location.reload();
     });
 })();
 </script>

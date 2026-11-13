@@ -236,7 +236,7 @@ $primerNombre = explode(' ', USUARIO_NOMBRE)[0];
 </head>
 
 
-<body class="app-body">
+<body class="app-body<?= isset($_GET['embed']) ? ' app-embed' : '' ?>">
 	<script>
 		// Restaurar el estado del sidebar en escritorio antes de pintar (evita parpadeo)
 		try {

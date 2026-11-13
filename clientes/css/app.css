@@ -1479,3 +1479,13 @@ body.app-login .app-login-wrap { flex: 1; min-height: 0; }
 		margin-left: 16px;
 	}
 }
+
+
+/* ─── Página dentro de una ventana (iframe) de otra: solo se ven sus formularios emergentes ─── */
+body.app-body.app-embed { padding: 0 !important; background: transparent !important; visibility: hidden; }
+body.app-embed .modal, body.app-embed .modal *, body.app-embed .swal2-container, body.app-embed .swal2-container * { visibility: visible; }
+body.app-embed .modal-backdrop { display: none !important; }
+html:has(body.app-embed) { background: transparent !important; }
+.app-embed-capa { position: fixed; inset: 0; z-index: 2050; background: rgba(15, 23, 42, .55); display: none; }
+.app-embed-capa.show { display: block; }
+.app-embed-capa iframe { width: 100%; height: 100%; border: 0; background: transparent; }

@@ -3541,6 +3541,18 @@ $tipos_btn_p = [
         if (q.get('registrar')) irYRegistrar(q.get('registrar'));
         else if (['pagos', 'prestamos', 'bonos', 'viaticos'].includes(h)) { setTab(h); document.getElementById('mainTabs')?.scrollIntoView({ block: 'start' }); }
     }
+    // Abierta dentro de la lista de Colaboradores (?embed=1): al terminar o cancelar, avisa para cerrar la ventana y refrescar la lista
+    if (window.parent !== window && new URLSearchParams(location.search).has('embed')) {
+        const avisar = t => window.parent.postMessage({ nominaEmbed: t }, location.origin);
+        let abrio = <?= !empty($_GET['registrar']) ? 'true' : 'false' ?>;   // la página ya quitó «registrar» de la dirección
+        document.querySelectorAll('.modal').forEach(m => {
+            m.addEventListener('shown.bs.modal', () => { abrio = true; });
+            m.addEventListener('hidden.bs.modal', () => setTimeout(() => {
+                if (!document.querySelector('.modal.show') && !(window.Swal && Swal.isVisible())) avisar('cerrado');
+            }, 700));
+        });
+        if (!abrio) avisar('listo');   // la página se recargó tras guardar
+    }
     document.getElementById('btnNuevoPrestamo2')?.addEventListener('click', () => abrirModalRegistrar('prestamo'));
     document.querySelectorAll('.btn-nuevo-bono').forEach(b => b.addEventListener('click', () => {
         setTab('bonos');
