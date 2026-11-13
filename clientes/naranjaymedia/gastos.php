@@ -605,6 +605,18 @@ $total  = count($gastos);
         border-color: rgba(124, 58, 237, .2);
     }
 
+    .btn-dup {
+        background: #e0f2fe;
+        color: #0369a1;
+        border-color: rgba(3, 105, 161, .2);
+    }
+
+    .btn-dup:hover {
+        background: #0369a1;
+        color: #fff;
+        transform: translateY(-1px);
+    }
+
     .btn-edit:hover {
         background: #7c3aed;
         color: #fff;
@@ -1064,6 +1076,9 @@ $total  = count($gastos);
                                     <button class="btn-a btn-edit btn-editar-gasto"
                                         data-gasto='<?= json_encode($g, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>'
                                         title="Editar"><i class="bi bi-pencil-fill"></i></button>
+                                    <button class="btn-a btn-dup btn-duplicar-gasto"
+                                        data-gasto='<?= json_encode($g, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>'
+                                        title="Duplicar: abre un gasto nuevo con estos datos para cambiar monto y comprobante"><i class="bi bi-copy"></i></button>
                                     <?php if ($est === 'pendiente'): ?><button class="btn-a btn-pay btn-pagar-gasto"
                                             data-id="<?= $g['id'] ?>" data-comp="<?= htmlspecialchars(empty($g['archivo_adjunto']) ? '' : ($g['archivo_nombre'] ?: 'comprobante')) ?>" title="Marcar pagado"><i
                                                 class="bi bi-check-lg"></i></button><?php endif; ?>
@@ -1377,6 +1392,7 @@ $total  = count($gastos);
                             </div>
                         </div>
 
+                        <div class="col-md-6"><label class="mf-label">Referencia <span class="text-muted fw-normal" style="text-transform:none;letter-spacing:0">(del banco o de la factura · opcional)</span></label><input type="text" name="factura_ref" id="g_ref" class="mf-input" maxlength="100" placeholder="Ej.: 03868926"><small class="text-muted" style="font-size:.72rem">Dos pagos con la misma fecha y referencia se cuentan como una sola transferencia para la Ley Poblacional.</small></div>
                         <div class="col-12"><label class="mf-label">Notas</label><textarea name="notas" id="g_notas"
                                 class="mf-input" rows="2" style="height:auto;resize:vertical;"
                                 maxlength="500"></textarea></div>
@@ -1758,12 +1774,14 @@ $total  = count($gastos);
     })();
 
     document.addEventListener('click', ev => {
-        const btn = ev.target.closest('.btn-editar-gasto');
+        const btn = ev.target.closest('.btn-editar-gasto, .btn-duplicar-gasto');
         if (!btn) return;
+        const dup = btn.classList.contains('btn-duplicar-gasto');
         (() => {
             const g = JSON.parse(btn.dataset.gasto);
-            document.getElementById('modalGastoTitulo').innerHTML =
-                '<i class="bi bi-pencil-square me-2"></i>Editar Gasto';
+            document.getElementById('modalGastoTitulo').innerHTML = dup
+                ? '<i class="bi bi-copy me-2"></i>Duplicar gasto (nuevo)'
+                : '<i class="bi bi-pencil-square me-2"></i>Editar Gasto';
             limpiarModalGasto();
             document.getElementById('g_id').value = g.id;
             document.getElementById('g_desc').value = g.descripcion || '';
@@ -1808,6 +1826,7 @@ $total  = count($gastos);
             if (g.dia_pago) document.getElementById('g_dia1').value = g.dia_pago;
             if (g.dia_pago_2) document.getElementById('g_dia2').value = g.dia_pago_2;
             if (g.fecha_vencimiento) document.getElementById('g_venc').value = g.fecha_vencimiento;
+            document.getElementById('g_ref').value = g.factura_ref || '';
             if (g.tipo === 'viaticos') {
                 document.getElementById('g_vdest').value = g.viatico_destino || '';
                 const sel = document.getElementById('g_vcolab');
@@ -1823,6 +1842,18 @@ $total  = count($gastos);
                 document.getElementById('g_vmotivo').value = g.viatico_motivo || '';
                 document.getElementById('g_vsalida').value = g.viatico_fecha_salida || '';
                 document.getElementById('g_vregreso').value = g.viatico_fecha_regreso || '';
+            }
+            if (dup) {   // Duplicar: es un gasto nuevo con los mismos datos; fecha de hoy y sin referencia ni comprobante (se cambian monto y comprobante)
+                document.getElementById('g_id').value = '';
+                document.getElementById('g_fecha').value = new Date().toISOString().slice(0, 10);
+                document.getElementById('g_ref').value = '';
+                document.getElementById('g_estado').value = g.estado === 'pendiente' ? 'pendiente' : 'pagado';   // un gasto anulado se duplica como pagado
+                const gcD = document.getElementById('grpCuentaGasto');
+                if (gcD) { gcD.dataset.ya = ''; gcD.dataset.yaId = ''; document.getElementById('g_cuenta_editar').value = ''; document.getElementById('g_cuenta').value = g.banco_salida_id || ''; }
+                document.getElementById('gsCompActual').style.display = 'none';
+                document.getElementById('gsZonaCompWrap').style.display = '';
+                document.getElementById('g_metodo').dispatchEvent(new Event('change'));
+                toggleCamposGasto();
             }
             new bootstrap.Modal(document.getElementById('modalGasto')).show();
         })();

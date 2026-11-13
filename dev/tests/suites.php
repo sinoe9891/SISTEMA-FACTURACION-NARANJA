@@ -2333,7 +2333,9 @@ suite('Gastos: filtros sin recargar', function () {
     preg_match('/<tr data-search="([^"]*)"/', $r['body'], $ds);
     $idUno = (int)db()->query("SELECT id FROM gastos WHERE cliente_id = 2 AND estado <> 'anulado' AND MONTH(fecha) = 3 AND YEAR(fecha) = 2026 ORDER BY fecha DESC, id DESC LIMIT 1")->fetchColumn();
     check('el buscador encuentra por número de gasto', str_contains($r['body'], '#' . $idUno . ' ' . $idUno . ' '), (string)$idUno);
-    check('los botones de cada fila escuchan en el documento', str_contains($r['body'], "ev.target.closest('.btn-editar-gasto')") && str_contains($r['body'], 'gsTabla.recargar()'));
+    check('los botones de cada fila escuchan en el documento', str_contains($r['body'], "ev.target.closest('.btn-editar-gasto, .btn-duplicar-gasto')") && str_contains($r['body'], 'gsTabla.recargar()'));
+    check('cada fila tiene el botón de duplicar y el formulario el campo de referencia', str_contains($r['body'], 'btn-duplicar-gasto') && str_contains($r['body'], 'name="factura_ref" id="g_ref"'));
+    check('al duplicar queda un gasto nuevo: sin id, con fecha de hoy, sin referencia ni comprobante', str_contains($r['body'], "document.getElementById('g_id').value = '';\n                document.getElementById('g_fecha').value = new Date()") && str_contains($r['body'], "document.getElementById('g_ref').value = '';"));
 });
 
 suite('Desglose del boucher y recibo', function () {
