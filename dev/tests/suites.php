@@ -123,17 +123,17 @@ suite('Saldo de facturas con abonos o anticipos aplicados', function () {
 
 suite('Sesión: cierre por inactividad con aviso', function () {
     require_once dirname(__DIR__, 2) . '/includes/sesion_inicio.php';
-    check('el límite es de 5 minutos', SESION_INACTIVIDAD_SEG === 300);
-    check('restante: recién iniciada, a la mitad y vencida', sesionSegundosRestantes(null) === 300 && sesionSegundosRestantes(1000, 1150) === 150 && sesionSegundosRestantes(1000, 1400) === 0);
+    check('el límite es de 10 minutos', SESION_INACTIVIDAD_SEG === 600);
+    check('restante: recién iniciada, a la mitad y vencida', sesionSegundosRestantes(null) === 600 && sesionSegundosRestantes(1000, 1150) === 450 && sesionSegundosRestantes(1000, 1700) === 0);
     $c = login('qa.admin@local.test');
     $r = $c->get('../../includes/api/sesion_estado.php');
     $d = json_decode($r['body'], true);
-    check('sesion_estado devuelve el tiempo restante', is_array($d) && ($d['restante'] ?? -1) > 240 && $d['restante'] <= 300, substr($r['body'], 0, 120));
+    check('sesion_estado devuelve el tiempo restante', is_array($d) && ($d['restante'] ?? -1) > 540 && $d['restante'] <= 600, substr($r['body'], 0, 120));
     $pg = $c->get('clientes');
     check('las páginas llevan el aviso de cierre', str_contains($pg['body'], 'window.SESION') && str_contains($pg['body'], 'Seguir conectado'));
     $anon = new Cliente('anon');
     $i = $anon->get('sesion_cerrada', ['m' => 'inactividad']);
-    check('sesion_cerrada (inactividad): página pública con el mensaje y el botón', $i['code'] === 200 && str_contains($i['body'], 'Tu sesión ha sido cerrada') && str_contains($i['body'], '5 minutos') && str_contains($i['body'], 'Iniciar sesión de nuevo') && str_contains($i['body'], 'app-login-logo'));
+    check('sesion_cerrada (inactividad): página pública con el mensaje y el botón', $i['code'] === 200 && str_contains($i['body'], 'Tu sesión ha sido cerrada') && str_contains($i['body'], '10 minutos') && str_contains($i['body'], 'Iniciar sesión de nuevo') && str_contains($i['body'], 'app-login-logo'));
     $o = $anon->get('sesion_cerrada', ['m' => 'salida']);
     check('sesion_cerrada (salida): mensaje de despedida', str_contains($o['body'], 'Cerraste tu sesión'));
     $l = login('qa.admin@local.test');

@@ -1,6 +1,6 @@
 <?php
 // Página pública a la que se llega al cerrar la sesión (a mano o por inactividad): mismo diseño y logo del inicio de sesión
-//   ?m=inactividad → cerrada por 5 minutos sin usar el sistema · ?m=salida → la persona cerró sesión · sin m → mensaje general
+//   ?m=inactividad → cerrada por 10 minutos sin usar el sistema · ?m=salida → la persona cerró sesión · sin m → mensaje general
 require_once '../../includes/sesion_inicio.php';
 require_once '../../includes/db.php';
 require_once '../../includes/version.php';

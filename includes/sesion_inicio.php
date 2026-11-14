@@ -3,8 +3,8 @@
  * sesion_inicio.php — Inicia la sesión PHP con cookies seguras.
  * Usar en vez de session_start() en todas las páginas (login, logout, session.php…).
  */
-// Segundos sin usar el sistema antes de cerrar la sesión (5 minutos) (el header avisa con una cuenta regresiva antes de que pase)
-const SESION_INACTIVIDAD_SEG = 300;
+// Segundos sin usar el sistema antes de cerrar la sesión (10 minutos) (el header avisa con una cuenta regresiva antes de que pase)
+const SESION_INACTIVIDAD_SEG = 600;
 
 /** Segundos que le quedan a la sesión según su última actividad (null = recién iniciada). */
 function sesionSegundosRestantes(?int $ultimaActividad, ?int $ahora = null): int
