@@ -901,6 +901,15 @@ suite('Editar factura', function () {
     $f = db()->query("SELECT total, isv_18, monto_letras FROM facturas WHERE id=$fid")->fetch(PDO::FETCH_ASSOC);
     check('edición con ISV 18 %: total = 236.00', abs((float)$f['total'] - 236) < 0.01, json_encode($f));
     check('…y el monto en letras incluye el 18 %', stripos($f['monto_letras'], 'doscientos treinta y seis') !== false, $f['monto_letras']);
+    $t = db()->query("SELECT gravado_total, exento_total, importe_exonerado, importe_gravado_18 FROM facturas WHERE id=$fid")->fetch(PDO::FETCH_ASSOC);
+    check('…el desglose queda gravado 200 / exento 0 / exonerado 0', abs($t['gravado_total'] - 200) < 0.01 && $t['exento_total'] == 0 && $t['importe_exonerado'] == 0 && abs($t['importe_gravado_18'] - 200) < 0.01, json_encode($t));
+    // Exonerada: el importe exonerado y el exento siguen al total (antes quedaba el exento viejo, p. ej. 40,022.76 con total 22,039.56)
+    $c->post('guardar_factura_editada.php', array_merge($form, ['exonerado' => 1, 'orden_compra_exenta' => 'OC1', 'constancia_exoneracion' => 'R1']));
+    $t = db()->query("SELECT total, gravado_total, exento_total, importe_exonerado FROM facturas WHERE id=$fid")->fetch(PDO::FETCH_ASSOC);
+    check('edición exonerada: total 200, exento 200, exonerado 200, gravado 0', abs($t['total'] - 200) < 0.01 && abs($t['exento_total'] - 200) < 0.01 && abs($t['importe_exonerado'] - 200) < 0.01 && $t['gravado_total'] == 0, json_encode($t));
+    $c->post('guardar_factura_editada.php', array_merge($form, ['exonerado' => 1, 'orden_compra_exenta' => 'OC1', 'constancia_exoneracion' => 'R1', 'productos[0][cantidad]' => 1]));
+    $t = db()->query("SELECT total, exento_total, importe_exonerado FROM facturas WHERE id=$fid")->fetch(PDO::FETCH_ASSOC);
+    check('al bajar el monto de una exonerada, el exento baja con ella (100)', abs($t['total'] - 100) < 0.01 && abs($t['exento_total'] - 100) < 0.01 && abs($t['importe_exonerado'] - 100) < 0.01, json_encode($t));
 
     // Restaurar la factura original
     db()->exec("DELETE FROM factura_items_receptor WHERE factura_id=$fid");

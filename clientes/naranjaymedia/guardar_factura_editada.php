@@ -176,6 +176,8 @@ try {
 	$subtotal = 0;
 	$importe_gravado_15 = 0;
 	$importe_gravado_18 = 0;
+	$exento_total = 0;       // igual que al generar: lo exonerado también cuenta como exento
+	$importe_exonerado = 0;
 	$isv_15 = 0;
 	$isv_18 = 0;
 	$gravado_total = 0;
@@ -202,7 +204,10 @@ try {
 		$isv15_item = 0;
 		$isv18_item = 0;
 
-		if (!$exonerado) {
+		if ($exonerado) {
+			$importe_exonerado += $subtotal_item;
+			$exento_total += $subtotal_item;
+		} else {
 			if ($tipo_isv === 15) {
 				$isv15_item = round($subtotal_item * 0.15, 2);
 				$isv_15 += $isv15_item;
@@ -211,6 +216,8 @@ try {
 				$isv18_item = round($subtotal_item * 0.18, 2);
 				$isv_18 += $isv18_item;
 				$importe_gravado_18 += $subtotal_item;
+			} else {
+				$exento_total += $subtotal_item;
 			}
 		}
 
@@ -258,6 +265,8 @@ try {
         total                = ?,
         monto_letras         = ?,
         gravado_total        = ?,
+        exento_total         = ?,
+        importe_exonerado    = ?,
         importe_gravado_15   = ?,
         importe_gravado_18   = ?,
         estado               = ?,
@@ -285,6 +294,8 @@ try {
 		$total,
 		$monto_letras,
 		$gravado_total,
+		round($exento_total, 2),
+		round($importe_exonerado, 2),
 		$importe_gravado_15,
 		$importe_gravado_18,
 		$estado,
