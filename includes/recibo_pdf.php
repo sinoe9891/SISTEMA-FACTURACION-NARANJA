@@ -151,8 +151,9 @@ function reciboRender(PDO $pdo, int $cid, array $r): string
         table.d td { padding: 7px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
         table.d td.k { width: 26%; color: #64748b; }
         .firma { margin-top: 60px; width: 46%; text-align: center; }
-        .firma .caja { height: 64px; }
-        .firma .caja img { max-height: 60px; max-width: 220px; }
+        .firma table.caja { width: 100%; border-collapse: collapse; }
+        .firma table.caja td { height: 83px; vertical-align: bottom; text-align: center; padding: 0; }
+        .firma table.caja img { max-height: 78px; max-width: 286px; margin-bottom: -7px; }
         .firma .linea { border-top: 1px solid #334155; padding-top: 5px; font-size: 10.5px; }
         .pie { position: fixed; bottom: -10px; left: 0; right: 0; font-size: 9px; color: #94a3b8; text-align: center; }
     </style></head><body>
@@ -181,7 +182,7 @@ function reciboRender(PDO $pdo, int $cid, array $r): string
     </table>
 
     ' . ('<div class="firma">
-        <div class="caja">' . (!empty($firm['firma_b64']) ? '<img src="' . $firm['firma_b64'] . '">' : '') . '</div>
+        <table class="caja"><tr><td>' . (!empty($firm['firma_b64']) ? '<img src="' . $firm['firma_b64'] . '">' : '') . '</td></tr></table>
         <div class="linea">' . ($aviso ? 'Emitido por' : 'Recibido por') . ($firm['nombre'] ? '<br><strong>' . $e($firm['nombre']) . '</strong>' : '') . ($firm['cargo'] ? '<br>' . $e($firm['cargo']) : '') . '<br>' . $e($empresa) . '</div>
     </div>') . '
 
