@@ -125,7 +125,7 @@ try {
             $contratoPrograma = array_map('intval', $st->fetchAll(PDO::FETCH_KEY_PAIR));
         }
         // Recibos (contratos sin factura) y pagos del plan aún no cobrados, de los contratos de este cliente
-        $recibos = $plan = [];
+        $recibos = $plan = $contratosCli = [];
         if (cobrosExtrasDisponible($pdo)) {
             $st = $pdo->prepare("SELECT r.id, r.numero_recibo, r.fecha_emision AS fecha, r.monto, r.concepto, r.contrato_id FROM contratos_recibos r
                                  WHERE r.cliente_id = ? AND r.receptor_id = ? AND r.estado = 'emitido' AND r.fecha_emision >= DATE_SUB(CURDATE(), INTERVAL 24 MONTH) ORDER BY r.fecha_emision DESC, r.id DESC");
@@ -139,6 +139,10 @@ try {
                 $st->execute([$cid, $rid]);
                 $recibos = array_merge($recibos, $st->fetchAll(PDO::FETCH_ASSOC));
             }
+            // Contratos del cliente (para filtrar los recibos: por defecto solo los del contrato activo)
+            $st = $pdo->prepare("SELECT id, nombre_contrato AS nombre, estado FROM contratos WHERE cliente_id = ? AND receptor_id = ?");
+            $st->execute([$cid, $rid]);
+            $contratosCli = $st->fetchAll(PDO::FETCH_ASSOC);
             $st = $pdo->prepare("SELECT id, nombre_contrato FROM contratos WHERE cliente_id = ? AND receptor_id = ? AND estado IN ('activo','vencido')");
             $st->execute([$cid, $rid]);
             foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $ct) {
@@ -155,7 +159,7 @@ try {
             [$bg, $fg, $txt] = docSemaforo($d);
             return ['id' => (int)$d['id'], 'nombre' => $d['nombre'], 'vence' => $d['fecha_vencimiento'], 'estado' => $d['estado'], 'defecto' => (int)$d['adjuntar_por_defecto'], 'bg' => $bg, 'fg' => $fg, 'txt' => $txt];
         }, docsLista($pdo, $cid));
-        echo json_encode(['success' => true, 'cliente' => $cli, 'facturas' => $facturas, 'recibos' => $recibos, 'plan' => $plan, 'contactos' => $contactos, 'contrato_programa' => (object)$contratoPrograma, 'documentos' => $documentos], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['success' => true, 'cliente' => $cli, 'facturas' => $facturas, 'recibos' => $recibos, 'plan' => $plan, 'contratos' => $contratosCli, 'contactos' => $contactos, 'contrato_programa' => (object)$contratoPrograma, 'documentos' => $documentos], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

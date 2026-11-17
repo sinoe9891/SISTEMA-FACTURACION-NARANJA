@@ -147,14 +147,15 @@ require_once '../../includes/templates/header.php';
                 </div>
                 <?php if ($extras): ?>
                 <div class="col-12" data-bloque="recibos" hidden>
-                    <label class="form-label">2. Recibos a adjuntar (PDF) *</label>
+                    <label class="form-label d-flex justify-content-between align-items-center">2. Recibos a adjuntar (PDF) *
+                        <span class="small fw-normal" id="recFiltro" hidden><a href="#" id="selRecTodos"></a></span></label>
                     <div class="border rounded" style="max-height:260px;overflow:auto">
                         <table class="table app-table mb-0">
-                            <thead><tr><th style="width:1%"></th><th>Recibo</th><th>Fecha</th><th>Concepto</th><th class="app-num">Monto</th></tr></thead>
-                            <tbody id="cRecibos"><tr><td colspan="5" class="text-center text-muted py-3">Selecciona un cliente.</td></tr></tbody>
+                            <thead><tr><th style="width:1%"></th><th>Recibo</th><th>Fecha</th><th>Contrato</th><th>Concepto</th><th class="app-num">Monto</th></tr></thead>
+                            <tbody id="cRecibos"><tr><td colspan="6" class="text-center text-muted py-3">Selecciona un cliente.</td></tr></tbody>
                         </table>
                     </div>
-                    <div class="form-text">Recibos de los contratos sin factura de este cliente. Se adjuntan en PDF.</div>
+                    <div class="form-text">Recibos de los contratos sin factura de este cliente. Por defecto se ven los del contrato activo; los de contratos anteriores se muestran con «Mostrar de otros contratos». Se adjuntan en PDF.</div>
                 </div>
                 <div class="col-12" data-bloque="plan" hidden>
                     <label class="form-label d-flex justify-content-between align-items-center">2. Pagos del plan a recordar *
@@ -529,6 +530,22 @@ require_once '../../includes/templates/header.php';
     document.getElementById('selConSaldo')?.addEventListener('click', e => { e.preventDefault(); marcar(i => Number(i.dataset.saldo) > 0); });
     document.getElementById('selNinguna')?.addEventListener('click', e => { e.preventDefault(); marcar(() => false); });
 
+    // Recibos de otros contratos / años anteriores: ocultos hasta pedirlos (los marcados nunca se ocultan)
+    function aplicarFiltroRecibos(todos) {
+        const filas = [...$rec.querySelectorAll('tr[data-fuera]')], fuera = filas.filter(f => f.dataset.fuera === '1');
+        filas.forEach(f => f.hidden = !todos && f.dataset.fuera === '1');
+        const caja = document.getElementById('recFiltro'), a = document.getElementById('selRecTodos');
+        caja.hidden = !fuera.length;
+        a.dataset.todos = todos ? '1' : '0';
+        a.textContent = todos ? 'Ocultar los de otros contratos' : 'Mostrar de otros contratos (' + fuera.length + ')';
+        if (!todos && filas.length && filas.length === fuera.length) {   // el contrato en curso no tiene recibos: avisar en la tabla
+            const aviso = document.createElement('tr'); aviso.className = 'aviso-sin-recibos';
+            aviso.innerHTML = '<td colspan="6" class="text-center text-muted py-3">El contrato en curso aún no tiene recibos.</td>';
+            $rec.prepend(aviso);
+        } else $rec.querySelector('.aviso-sin-recibos')?.remove();
+    }
+    document.getElementById('selRecTodos')?.addEventListener('click', e => { e.preventDefault(); aplicarFiltroRecibos(e.target.dataset.todos !== '1'); });
+
     async function cargarFacturas() {
         if (!$cli.value) return;
         $tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Cargando…</td></tr>';
@@ -546,11 +563,20 @@ require_once '../../includes/templates/header.php';
                 <td class="app-num">${L(f.total)}</td><td class="app-num ${f.saldo > 0 ? 'text-danger fw-semibold' : 'text-success'}">${f.saldo > 0 ? L(f.saldo) : 'Pagada'}</td></tr>`).join('')
                 : '<tr><td colspan="6" class="text-center text-muted py-3">Este cliente no tiene facturas en los últimos 24 meses.</td></tr>';
             const SEM = { vencido: ['#fee2e2', '#991b1b'], facturado: ['#dbeafe', '#1e40af'] };
-            if ($rec) $rec.innerHTML = (d.recibos || []).length ? d.recibos.map(r => `<tr>
+            // Recibos: por defecto solo los del contrato en curso (el abierto desde su ficha o, si no, los contratos activos); el resto, a un clic
+            const ctxContrato = pre.contrato || 0, activos = new Set((d.contratos || []).filter(c => c.estado === 'activo').map(c => +c.id));
+            const enContexto = r => ctxContrato ? +r.contrato_id === +ctxContrato : (activos.size ? activos.has(+r.contrato_id) : true);
+            const nombreContrato = new Map((d.contratos || []).map(c => [+c.id, c.nombre]));
+            if ($rec) {
+                $rec.innerHTML = (d.recibos || []).length ? d.recibos.map(r => `<tr data-fuera="${enContexto(r) || pre.recibos.includes(+r.id) || pre.anticipos.includes(+r.id) ? 0 : 1}">
                 <td><input class="form-check-input" type="checkbox" name="${r.anticipo ? 'anticipo_ids[]' : 'recibo_ids[]'}" value="${r.id}" data-ant="${r.anticipo ? 1 : 0}" ${(r.anticipo ? pre.anticipos : pre.recibos).includes(+r.id) ? 'checked' : ''}></td>
                 <td class="font-monospace small"><a href="recibo_pdf?${r.anticipo ? 'anticipo' : 'id'}=${r.id}" target="_blank">${r.anticipo ? r.numero_recibo : String(r.numero_recibo).padStart(5, '0')}</a>${r.anticipo ? '<div class="text-muted" style="font-size:.7rem">Anticipo</div>' : ''}</td>
-                <td class="small text-nowrap">${r.fecha.split('-').reverse().join('/')}</td><td class="small">${esc(r.concepto)}</td><td class="app-num">${L(r.monto)}</td></tr>`).join('')
-                : '<tr><td colspan="5" class="text-center text-muted py-3">Este cliente no tiene recibos.</td></tr>';
+                <td class="small text-nowrap">${r.fecha.split('-').reverse().join('/')}</td>
+                <td class="small"><a href="facturas_contrato?contrato_id=${r.contrato_id}" target="_blank" title="${esc(nombreContrato.get(+r.contrato_id) || '')}">#${r.contrato_id}</a></td>
+                <td class="small">${esc(r.concepto)}</td><td class="app-num">${L(r.monto)}</td></tr>`).join('')
+                : '<tr><td colspan="6" class="text-center text-muted py-3">Este cliente no tiene recibos.</td></tr>';
+                aplicarFiltroRecibos(false);
+            }
             if ($plan) $plan.innerHTML = (d.plan || []).length ? d.plan.map(l => {
                 const dd = -l.dias, txt = l.estado === 'facturado' ? 'Facturado, por cobrar' : (l.dias > 0 ? `Vencido hace ${l.dias} d` : (dd === 0 ? 'Vence hoy' : `En ${dd} d`));
                 const [bg, fg] = SEM[l.estado] || (dd <= 3 ? ['#ffedd5', '#9a3412'] : dd <= 7 ? ['#fef9c3', '#854d0e'] : ['#f1f5f9', '#475569']);

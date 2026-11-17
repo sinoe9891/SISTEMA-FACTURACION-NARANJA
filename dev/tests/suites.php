@@ -2702,6 +2702,10 @@ suite('Recibos con banco, PDF, recordatorios del plan y envío de recibos por co
     $g = $c->get('cobro_accion.php', ['facturas' => $rid]);
     check('Cobros por correo lista los recibos y los pagos pendientes del plan del cliente', in_array($rec1, array_map('intval', array_column($g['json']['recibos'] ?? [], 'id')), true)
         && count(array_intersect(array_map('intval', $lin), array_column($g['json']['plan'] ?? [], 'id'))) === 2, substr($g['body'], 0, 300));
+    check('la lista trae los contratos del cliente y cada recibo su contrato (para ver solo el contrato en curso)', in_array($ctr, array_map('intval', array_column($g['json']['contratos'] ?? [], 'id')), true)
+        && isset(($g['json']['recibos'][0] ?? [])['contrato_id']), substr($g['body'], 0, 300));
+    $pgc = $c->get('nuevo_cobro', ['receptor_id' => $rid, 'tipo' => 'envio_recibo']);
+    check('el formulario filtra los recibos por contrato (con «Mostrar de otros contratos»)', sinErroresPhp($pgc['body']) && str_contains($pgc['body'], 'id="selRecTodos"') && str_contains($pgc['body'], '<th>Contrato</th>'), errorPhp($pgc['body']));
     $m = $c->post('cobro_accion.php', ['accion' => 'generar_mensaje', 'receptor_id' => $rid, 'tipo' => 'recordatorio_pago', 'ids[0]' => $lin[0], 'ids[1]' => $lin[1]]);
     check('el recordatorio separa vencidos y próximos, con saludo y total', ($m['json']['success'] ?? false) && str_contains($m['json']['mensaje_html'], 'Buen día, equipo de')
         && str_contains($m['json']['mensaje_html'], 'Pagos vencidos') && str_contains($m['json']['mensaje_html'], 'Próximos pagos') && str_contains($m['json']['mensaje_html'], '3,000.00'), substr($m['body'], 0, 300));
