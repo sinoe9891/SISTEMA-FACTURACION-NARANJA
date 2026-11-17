@@ -1,5 +1,5 @@
 <?php
-// Recibo de cobro en PDF: ?id=<recibo_id> (contratos sin factura) o ?anticipo=<id> (pago anticipado) [&descargar=1]
+// Recibo de cobro en PDF: ?plan=<pago del plan> (aviso de cobro) · ?id=<recibo_id> (contratos sin factura) o ?anticipo=<id> (pago anticipado) [&descargar=1]
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/recibo_pdf.php';
@@ -7,7 +7,11 @@ require_once '../../includes/recibo_pdf.php';
 try {
     if (in_array(USUARIO_ROL, ['nomina'], true)) throw new Exception("No autorizado.");
     $cid = (int)cliente_actual();
-    if (isset($_GET['anticipo'])) {   // recibo de un pago anticipado (?anticipo=<id>)
+    if (isset($_GET['plan'])) {   // aviso de cobro de un pago del plan (?plan=<id>)
+        $id = (int)$_GET['plan'];
+        $pdf = avisoCobroPdf($pdo, $cid, $id);
+        $archivo = avisoCobroArchivo(['plan_id' => $id]);
+    } elseif (isset($_GET['anticipo'])) {   // recibo de un pago anticipado (?anticipo=<id>)
         $id = (int)$_GET['anticipo'];
         $pdf = anticipoPdf($pdo, $cid, $id);
         $archivo = anticipoArchivo(anticipoDatos($pdo, $cid, $id));

@@ -66,6 +66,39 @@ function anticipoPdf(PDO $pdo, int $cid, int $anticipoId): string
         'pie' => 'Pago anticipado: no es una factura. La factura se emitirá al cierre y este pago se aplicará como abono.']);
 }
 
+/** Aviso de cobro de un pago del plan (todavía sin cobrar): lo que el cliente debe pagar, para qué fecha y adónde. No es factura ni recibo. */
+function avisoCobroDatos(PDO $pdo, int $cid, int $planId): array
+{
+    require_once __DIR__ . '/contrato_plan.php';
+    $st = $pdo->prepare("
+        SELECT p.contrato_id, cf.nombre AS cliente, cf.rtn AS cliente_rtn, c.nombre_contrato, c.id AS contrato
+        FROM contratos_plan p
+        JOIN contratos c ON c.id = p.contrato_id AND c.cliente_id = p.cliente_id
+        JOIN clientes_factura cf ON cf.id = c.receptor_id AND cf.cliente_id = c.cliente_id
+        WHERE p.id = ? AND p.cliente_id = ?");
+    $st->execute([$planId, $cid]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$r) throw new Exception("Pago del plan no encontrado.");
+    $linea = null;
+    foreach (planLineas($pdo, $cid, (int)$r['contrato_id']) as $l) if ((int)$l['id'] === $planId) $linea = $l;
+    if (!$linea) throw new Exception("Pago del plan no encontrado.");
+    if ($linea['estado'] === 'pagado') throw new Exception("Este pago ya está cobrado: no necesita aviso de cobro.");
+    return $r + ['plan_id' => $planId, 'linea' => $linea, 'concepto' => $linea['concepto'], 'monto' => (float)$linea['total'],
+        'fecha_emision' => date('Y-m-d'), 'periodo_mes' => null, 'metodo_pago' => '', 'notas' => '', 'estado' => 'emitido'];
+}
+
+function avisoCobroArchivo(array $a): string
+{
+    return 'aviso_de_cobro_' . str_pad((string)$a['plan_id'], 5, '0', STR_PAD_LEFT) . '.pdf';
+}
+
+function avisoCobroPdf(PDO $pdo, int $cid, int $planId): string
+{
+    $r = avisoCobroDatos($pdo, $cid, $planId);
+    return reciboRender($pdo, $cid, $r + ['titulo' => 'AVISO DE COBRO', 'num' => str_pad((string)$planId, 5, '0', STR_PAD_LEFT), 'aviso' => true,
+        'pie' => 'Este aviso no es una factura ni un recibo; es el detalle del pago pendiente. Si ya realizó el pago, haga caso omiso.']);
+}
+
 /** Arma el PDF de un recibo con los datos ya resueltos (titulo, num, pie, cliente, monto, concepto…). */
 function reciboRender(PDO $pdo, int $cid, array $r): string
 {
@@ -91,6 +124,16 @@ function reciboRender(PDO $pdo, int $cid, array $r): string
     $num = $r['num'];
     $empresa = $emp['nombre'] ?? '';
     $fila = fn($k, $v) => $v === '' ? '' : '<tr><td class="k">' . $k . '</td><td>' . $v . '</td></tr>';
+    $aviso = !empty($r['aviso']);
+    $cuentasHtml = '';
+    if ($aviso) {
+        $stC = $pdo->prepare("SELECT * FROM configuracion_cuentas_pago WHERE cliente_id = ? AND activo = 1 ORDER BY orden, id");
+        $stC->execute([$cid]);
+        foreach ($stC->fetchAll(PDO::FETCH_ASSOC) as $c)
+            $cuentasHtml .= '<div><strong>' . $e($c['banco']) . '</strong> · ' . (!empty($c['tipo_cuenta']) ? $e($c['tipo_cuenta']) . ' ' : '') . $e($c['numero_cuenta']) . ' · a nombre de ' . $e($c['titular']) . '</div>';
+    }
+    $lin = $r['linea'] ?? null;
+    $fPago = $lin && !empty($lin['fecha']) ? (int)substr($lin['fecha'], 8, 2) . ' de ' . $MES[(int)substr($lin['fecha'], 5, 2)] . ' de ' . substr($lin['fecha'], 0, 4) : '';
 
     $html = '<!doctype html><html><head><meta charset="utf-8"><style>
         @page { margin: 36px 42px; }
@@ -122,7 +165,7 @@ function reciboRender(PDO $pdo, int $cid, array $r): string
         <td class="tit"><h1>' . $e($r['titulo']) . '</h1><div class="n">N.º ' . $num . '</div><div style="margin-top:6px">' . $e($fecha) . '</div></td>
     </tr></table>
 
-    <div class="monto"><div>Recibimos de <strong>' . $e($r['cliente']) . '</strong>' . ($r['cliente_rtn'] ? ' (RTN ' . $e($r['cliente_rtn']) . ')' : '') . ' la cantidad de:</div>
+    <div class="monto"><div>' . ($aviso ? 'Se solicita a <strong>' : 'Recibimos de <strong>') . $e($r['cliente']) . '</strong>' . ($r['cliente_rtn'] ? ' (RTN ' . $e($r['cliente_rtn']) . ')' : '') . ($aviso ? ' el pago de:' : ' la cantidad de:') . '</div>
         <div class="v">L ' . number_format((float)$r['monto'], 2) . '</div>
         <div class="l">' . $e(numeroALetras((float)$r['monto'])) . '</div></div>
 
@@ -130,17 +173,19 @@ function reciboRender(PDO $pdo, int $cid, array $r): string
         . $fila('Concepto', $e($r['concepto']))
         . $fila('Período', $e($periodo))
         . $fila('Contrato', '#' . (int)$r['contrato'] . ' · ' . $e($r['nombre_contrato']))
-        . $fila('Forma de pago', $e($metodos[$r['metodo_pago']] ?? $r['metodo_pago']))
+        . ($aviso ? $fila('Fecha de pago', $e($fPago) . ($lin && $lin['estado'] === 'vencido' ? ' <strong style="color:#b91c1c">(vencido: ' . (int)$lin['dias'] . ' día' . ((int)$lin['dias'] === 1 ? '' : 's') . ' de atraso)</strong>' : ''))
+            . ($lin && (float)$lin['isv'] > 0 ? $fila('Valor sin ISV', 'L ' . number_format((float)$lin['monto'], 2)) . $fila('ISV 15 %', 'L ' . number_format((float)$lin['isv'], 2)) : '')
+            . $fila('Formas de pago', $cuentasHtml) : $fila('Forma de pago', $e($metodos[$r['metodo_pago']] ?? $r['metodo_pago'])))
         . $fila('Notas', $e($r['notas'] ?? ''))
         . ($r['estado'] === 'anulado' ? $fila('Estado', '<strong style="color:#b91c1c">ANULADO</strong>') : '') . '
     </table>
 
-    <div class="firma">
+    ' . ($aviso ? '' : '<div class="firma">
         <div class="caja">' . (!empty($firm['firma_b64']) ? '<img src="' . $firm['firma_b64'] . '">' : '') . '</div>
         <div class="linea">Recibido por' . ($firm['nombre'] ? '<br><strong>' . $e($firm['nombre']) . '</strong>' : '') . ($firm['cargo'] ? '<br>' . $e($firm['cargo']) : '') . '<br>' . $e($empresa) . '</div>
-    </div>
+    </div>') . '
 
-    <div class="pie">' . $e($r['pie']) . ' Recibo N.º ' . $num . ' · ' . $e($empresa) . '</div>
+    <div class="pie">' . $e($r['pie']) . ($aviso ? ' Aviso N.º ' : ' Recibo N.º ') . $num . ' · ' . $e($empresa) . '</div>
     </body></html>';
 
     $opt = new \Dompdf\Options();

@@ -993,6 +993,9 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                             <div class="small text-muted mt-1"><i class="bi bi-envelope<?= $rc['estado'] === 'enviado' ? '-check' : '' ?> me-1"></i><?= $rc['estado'] === 'enviado' ? 'Recordado ' . date('d/m', strtotime($rc['enviado_en'] ?: $rc['programado_para'])) : 'Recordatorio programado ' . date('d/m', strtotime($rc['programado_para'])) ?></div>
                                         <?php endif; ?></td>
                                     <td class="text-end text-nowrap">
+                                        <?php if (in_array($l['estado'], ['pendiente', 'vencido'], true)): ?>
+                                            <a href="recibo_pdf?plan=<?= (int)$l['id'] ?>" target="_blank" class="btn btn-sm btn-outline-secondary me-1" title="Ver el aviso de cobro de este pago en PDF (para enviarlo al cliente)"><i class="bi bi-file-earmark-pdf"></i></a>
+                                        <?php endif; ?>
                                         <?php if ($puedePlan && !$l['vinculado']): ?>
                                             <div class="btn-group">
                                                 <button class="btn btn-sm btn-outline-primary btn-plan-cobrar" data-id="<?= (int)$l['id'] ?>" data-concepto="<?= htmlspecialchars($l['concepto']) ?>" data-total="<?= (float)$l['total'] ?>">

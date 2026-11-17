@@ -170,6 +170,26 @@ suite('Sesión: al abrir un enlace sin sesión, el login devuelve a esa página'
     check('«Iniciar sesión de nuevo» conserva la página', str_contains($i['body'], 'volver=' . rawurlencode($destino)));
 });
 
+suite('Plan de pagos: aviso de cobro en PDF', function () {
+    $c = login('qa.admin@local.test');
+    $ccic = login('qa.ccic@local.test', 3);
+    $pid = (int)db()->query("SELECT id FROM contratos_plan WHERE cliente_id=2 AND recibo_id IS NULL AND factura_id IS NULL AND anticipo_id IS NULL ORDER BY id DESC LIMIT 1")->fetchColumn();
+    check('hay un pago pendiente de prueba', $pid > 0);
+    $r = $c->get('recibo_pdf', ['plan' => $pid]);
+    check('el pago pendiente genera un PDF de aviso de cobro', $r['code'] === 200 && str_starts_with($r['body'], '%PDF') && str_contains($r['head'], 'aviso_de_cobro_'), $r['code'] . ' ' . substr($r['body'], 0, 80));
+    $r = $ccic->get('recibo_pdf', ['plan' => $pid]);
+    check('otra empresa NO puede ver el aviso', $r['code'] === 404 && !str_starts_with($r['body'], '%PDF'));
+    db()->exec("INSERT INTO contratos_recibos (cliente_id, contrato_id, receptor_id, numero_recibo, fecha_emision, monto, concepto, metodo_pago, estado) SELECT cliente_id, contrato_id, (SELECT receptor_id FROM contratos WHERE id = contratos_plan.contrato_id), 99999, CURDATE(), total, 'QA', 'efectivo', 'emitido' FROM contratos_plan WHERE id = $pid");
+    $rid = (int)db()->lastInsertId();
+    db()->exec("UPDATE contratos_plan SET recibo_id = $rid WHERE id = $pid");
+    $r = $c->get('recibo_pdf', ['plan' => $pid]);
+    check('un pago ya cobrado no genera aviso', $r['code'] === 404 && str_contains($r['body'], 'ya está cobrado'), $r['body']);
+    db()->exec("UPDATE contratos_plan SET recibo_id = NULL WHERE id = $pid");
+    db()->exec("DELETE FROM contratos_recibos WHERE id = $rid");
+    $pg = $c->get('facturas_contrato', ['contrato_id' => (int)db()->query("SELECT contrato_id FROM contratos_plan WHERE id=$pid")->fetchColumn()]);
+    check('en el plan, cada pago pendiente tiene el botón del aviso', str_contains($pg['body'], 'recibo_pdf?plan=' . $pid), errorPhp($pg['body']));
+});
+
 suite('Teléfono de clientes con formato +504', function () {
     require_once dirname(__DIR__, 2) . '/includes/functions.php';
     check('8 dígitos', telefonoHN('22024060') === '+504 2202-4060');
