@@ -15,7 +15,13 @@ if (!isset($_SESSION['usuario_id'])) {
         echo json_encode(['error' => 'No autenticado']);
         exit;
     }
-    header("Location: /");
+    // Página abierta sin sesión (p. ej. el enlace de un correo): al login de la empresa, que devuelve aquí al entrar
+    $__login = preg_match('#^(.*?/clientes/[^/]+/)#', parse_url($uri, PHP_URL_PATH) ?? '', $__m0) ? $__m0[1] : null;
+    if ($__login && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && destinoVolverValido($uri, $__login)) {
+        header('Location: ' . $__login . '?volver=' . rawurlencode($uri));
+    } else {
+        header("Location: " . ($__login ?: '/'));
+    }
     exit;
 }
 
@@ -32,7 +38,8 @@ if (isset($_SESSION['ultima_actividad']) && sesionSegundosRestantes((int)$_SESSI
         exit;
     }
     // A la página «Tu sesión ha sido cerrada» de la empresa (/clientes/<empresa>/); fuera de ella, al inicio
-    header('Location: ' . (preg_match('#^(.*?/clientes/[^/]+/)#', parse_url($uri, PHP_URL_PATH) ?? '', $__m) ? $__m[1] . 'sesion_cerrada?m=inactividad' : '/'));
+    header('Location: ' . (preg_match('#^(.*?/clientes/[^/]+/)#', parse_url($uri, PHP_URL_PATH) ?? '', $__m) ? $__m[1] . 'sesion_cerrada?m=inactividad'
+        . (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && destinoVolverValido($uri, $__m[1]) ? '&volver=' . rawurlencode($uri) : '') : '/'));
     exit;
 }
 if (!(basename($_SERVER['SCRIPT_NAME'] ?? '') === 'sesion_estado.php' && empty($_GET['renovar']))) {

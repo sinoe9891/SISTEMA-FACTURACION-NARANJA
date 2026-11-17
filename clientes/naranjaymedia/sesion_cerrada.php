@@ -50,7 +50,7 @@ header('Cache-Control: no-store');
             <div class="mb-3" style="font-size:2.6rem;line-height:1;color:var(--bs-primary,#1e40af)"><i class="bi <?= $icono ?>"></i></div>
             <h2 class="h5 fw-bold mb-2"><?= htmlspecialchars($titulo) ?></h2>
             <p class="text-muted mb-4"><?= htmlspecialchars($texto) ?></p>
-            <a href="./" class="btn btn-primary w-100 py-2"><i class="bi bi-box-arrow-in-right me-1"></i> Iniciar sesión de nuevo</a>
+            <a href="./<?= ($__v = destinoVolverValido($_GET['volver'] ?? null, carpetaLoginActual())) ? '?volver=' . rawurlencode($__v) : '' ?>" class="btn btn-primary w-100 py-2"><i class="bi bi-box-arrow-in-right me-1"></i> Iniciar sesión de nuevo</a>
         </div>
         <p class="app-login-pie">© <?= date('Y') ?> · <?= APP_NOMBRE ?> v<?= APP_VERSION ?> · Naranja &amp; Media</p>
     </main>

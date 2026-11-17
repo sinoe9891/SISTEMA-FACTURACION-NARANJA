@@ -141,6 +141,35 @@ suite('Sesión: cierre por inactividad con aviso', function () {
     check('cerrar sesión lleva a la página de sesión cerrada', str_contains((string)($r['loc'] ?? ''), 'sesion_cerrada?m=salida'), (string)($r['loc'] ?? ''));
 });
 
+suite('Sesión: al abrir un enlace sin sesión, el login devuelve a esa página', function () {
+    require_once dirname(__DIR__, 2) . '/includes/sesion_inicio.php';
+    $car = '/clientes/naranjaymedia/';
+    check('acepta una página de la empresa con filtros', destinoVolverValido($car . 'contratos?estado=activo', $car) === $car . 'contratos?estado=activo');
+    check('rechaza otros sitios y rutas raras', destinoVolverValido('https://malo.com/x', $car) === null && destinoVolverValido('//malo.com/x', $car) === null
+        && destinoVolverValido('/\\malo.com', $car) === null && destinoVolverValido($car . '../../etc/passwd', $car) === null
+        && destinoVolverValido('/clientes/ccic/contratos', $car) === null && destinoVolverValido($car . "contratos\r\nSet-Cookie: x=1", $car) === null);
+    check('no vuelve al propio login ni a sesión cerrada', destinoVolverValido($car, $car) === null && destinoVolverValido($car . 'sesion_cerrada?m=salida', $car) === null && destinoVolverValido($car . 'logout', $car) === null);
+    $anon = new Cliente('anon');
+    $r = $anon->get('contratos', ['estado' => 'activo']);
+    check('sin sesión, la página lleva al login con ?volver=', str_contains($r['loc'], 'volver=') && str_contains($r['loc'], rawurlencode('contratos?estado=activo')), $r['loc']);
+    $r = $anon->get('../../includes/api/sesion_estado.php');
+    check('las rutas de API siguen respondiendo 401 (no redirigen)', $r['code'] === 401, $r['code'] . ' ' . $r['loc']);
+    $c = new Cliente('volver');
+    $destino = parse_url(BASE, PHP_URL_PATH) . 'lista_facturas?q=201';   // la ruta real de las pruebas (con su prefijo)
+    $r = $c->post('index.php?volver=' . rawurlencode($destino), ['correo' => 'qa.admin@local.test', 'clave' => QA_PASS]);
+    if (str_contains($r['loc'], 'seleccionar_establecimiento')) {   // varias sucursales: el destino se conserva mientras elige
+        $form = $c->get('seleccionar_establecimiento');
+        preg_match('/name="_csrf" value="([a-f0-9]+)"/', $form['body'], $m);
+        $r = $c->post('seleccionar_establecimiento', ['establecimiento_id' => 1, '_csrf' => $m[1] ?? '']);
+    }
+    check('al iniciar sesión (y elegir sucursal, si hay varias) vuelve a la página que se quería abrir', $r['loc'] === $destino, $r['loc']);
+    $c2 = new Cliente('volver2');
+    $r = $c2->post('index.php?volver=' . rawurlencode('https://malo.com/robo'), ['correo' => 'qa.admin@local.test', 'clave' => QA_PASS]);
+    check('un destino de otro sitio se ignora: va al dashboard', !str_contains($r['loc'], 'malo.com') && (str_contains($r['loc'], 'dashboard') || str_contains($r['loc'], 'seleccionar')), $r['loc']);
+    $i = $anon->get('sesion_cerrada', ['m' => 'inactividad', 'volver' => $destino]);
+    check('«Iniciar sesión de nuevo» conserva la página', str_contains($i['body'], 'volver=' . rawurlencode($destino)));
+});
+
 suite('Teléfono de clientes con formato +504', function () {
     require_once dirname(__DIR__, 2) . '/includes/functions.php';
     check('8 dígitos', telefonoHN('22024060') === '+504 2202-4060');

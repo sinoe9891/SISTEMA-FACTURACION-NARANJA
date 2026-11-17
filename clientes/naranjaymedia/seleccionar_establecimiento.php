@@ -59,7 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (in_array($elegido, $permitidos, true)) {
         $_SESSION['establecimiento_activo'] = $elegido;
         unset($_SESSION['establecimientos'], $_SESSION['__cache_establecimiento']);
-        header("Location: ./dashboard");
+        $volver = destinoVolverValido($_SESSION['volver_tras_login'] ?? null, carpetaLoginActual());
+        unset($_SESSION['volver_tras_login']);
+        header("Location: " . ($volver ?: "./dashboard"));
         exit;
     }
     // Establecimiento no permitido: cerrar sesión por seguridad

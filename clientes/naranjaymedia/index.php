@@ -6,8 +6,11 @@ require_once '../../includes/intentos.php';
 require_once '../../includes/tasa_cambio.php';
 require_once '../../includes/version.php';
 
+// Página a la que volver al entrar (enlaces de correos, o la que se tenía abierta al cerrarse la sesión)
+$volverTras = destinoVolverValido($_GET['volver'] ?? null, carpetaLoginActual());
+
 if (isset($_SESSION['usuario_id'])) {
-    header('Location: ./dashboard');
+    header('Location: ' . ($volverTras ?: './dashboard'));
     exit;
 }
 
@@ -131,6 +134,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare("UPDATE usuarios SET clave = ? WHERE id = ?")->execute([password_hash($clave, PASSWORD_DEFAULT), $usuario['id']]);
             }
 
+            if ($volverTras) $_SESSION['volver_tras_login'] = $volverTras; else unset($_SESSION['volver_tras_login']);
+
             if (($usuario['rol'] ?? '') === 'superadmin') {
                 header("Location: ./seleccionar_cliente");
                 exit;
@@ -149,7 +154,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (count($establecimientos) === 1) {
                 $_SESSION['establecimiento_activo'] = (int)$establecimientos[0];
-                header("Location: ./dashboard");
+                unset($_SESSION['volver_tras_login']);
+                header("Location: " . ($volverTras ?: "./dashboard"));
                 exit;
             } elseif (count($establecimientos) > 1) {
                 $_SESSION['establecimientos'] = $establecimientos;
