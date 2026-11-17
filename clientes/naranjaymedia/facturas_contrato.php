@@ -976,12 +976,24 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                     <span class="badge rounded-pill" style="background:#fef9c3;color:#854d0e">Por cobrar L <?= number_format($planRes['pendiente'] - $planRes['vencido'], 2) ?></span>
                     <?php if ($isvApartar > 0): ?><span class="badge rounded-pill" style="background:#ede9fe;color:#5b21b6" title="ISV incluido en pagos anticipados sin factura: se declara al emitir la factura">ISV por apartar L <?= number_format($isvApartar, 2) ?></span><?php endif; ?>
                 </div>
+                <?php if ($puedeCorreo): ?>
+                <div id="planBarra" class="px-3 py-2 d-flex flex-wrap align-items-center gap-2 small" style="background:#eff6ff;border-bottom:1px solid #bfdbfe" hidden>
+                    <strong id="planSelN"></strong>
+                    <a id="planEnviar" class="btn btn-sm btn-primary" href="#"><i class="bi bi-envelope-paper me-1"></i>Enviar por correo</a>
+                    <a id="planVerAviso" class="btn btn-sm btn-outline-secondary" href="#" target="_blank" hidden><i class="bi bi-file-earmark-pdf me-1"></i>Ver aviso de cobro</a>
+                    <a href="#" id="planSelQuitar" class="ms-auto text-muted">Quitar selección</a>
+                </div>
+                <?php endif; ?>
                 <div class="table-responsive">
                     <table class="fc-table" data-ordenar>
-                        <thead><tr><th class="app-n">#</th><th>Fecha de pago</th><th>Concepto</th><th class="text-end">Monto</th><?php if ($planRes['isv'] > 0): ?><th class="text-end">ISV</th><?php endif; ?><th class="text-end">Total</th><th>Estado</th><th class="text-end"></th></tr></thead>
+                        <thead><tr><?php if ($puedeCorreo): ?><th class="no-orden" style="width:1%"><input type="checkbox" class="form-check-input" id="planSelTodos" title="Marcar todos los que se pueden enviar"></th><?php endif; ?><th class="app-n">#</th><th>Fecha de pago</th><th>Concepto</th><th class="text-end">Monto</th><?php if ($planRes['isv'] > 0): ?><th class="text-end">ISV</th><?php endif; ?><th class="text-end">Total</th><th>Estado</th><th class="text-end"></th></tr></thead>
                         <tbody>
                             <?php foreach ($plan as $i => $l): [$bg, $fg, $ico, $txt] = $semaforo($l); ?>
                                 <tr>
+                                    <?php if ($puedeCorreo): $selRecibo = $l['estado'] === 'pagado' && $esRecibo && !empty($l['recibo_id']) ? (int)$l['recibo_id'] : 0;
+                                          $selOk = in_array($l['estado'], ['pendiente', 'vencido'], true) || $selRecibo; ?>
+                                        <td><?php if ($selOk): ?><input type="checkbox" class="form-check-input plan-sel" data-id="<?= (int)$l['id'] ?>" data-recibo="<?= $selRecibo ?>" aria-label="Marcar este pago"><?php endif; ?></td>
+                                    <?php endif; ?>
                                     <td class="app-n"><?= $i + 1 ?></td>
                                     <td class="text-nowrap fw-semibold" data-sort="<?= htmlspecialchars($l['fecha'] ?? '') ?>"><?= $fCorta($l['fecha']) ?></td>
                                     <td><?= htmlspecialchars($l['concepto']) ?><?= $l['tipo'] !== 'cuota' && stripos($l['concepto'], PLAN_TIPOS[$l['tipo']]) !== 0 ? ' <span class="badge" style="background:#f1f5f9;color:#475569">' . PLAN_TIPOS[$l['tipo']] . '</span>' : '' ?>
@@ -1014,7 +1026,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
-                        <tfoot><tr><td colspan="3" class="text-end text-muted">Total del contrato</td><td class="text-end">L <?= number_format($planRes['monto'], 2) ?></td><?php if ($planRes['isv'] > 0): ?><td class="text-end">L <?= number_format($planRes['isv'], 2) ?></td><?php endif; ?><td class="text-end fw-bold">L <?= number_format($planRes['total'], 2) ?></td><td colspan="2"></td></tr></tfoot>
+                        <tfoot><tr><td colspan="<?= $puedeCorreo ? 4 : 3 ?>" class="text-end text-muted">Total del contrato</td><td class="text-end">L <?= number_format($planRes['monto'], 2) ?></td><?php if ($planRes['isv'] > 0): ?><td class="text-end">L <?= number_format($planRes['isv'], 2) ?></td><?php endif; ?><td class="text-end fw-bold">L <?= number_format($planRes['total'], 2) ?></td><td colspan="2"></td></tr></tfoot>
                     </table>
                 </div>
             <?php endif; ?>
@@ -1400,6 +1412,28 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
 </div>
 
 <script>
+// Plan de pagos: marcar uno, varios o todos y enviarlos por correo (aviso de cobro, o recibo si ya se cobró)
+(() => {
+    const barra = document.getElementById('planBarra');
+    if (!barra) return;
+    const cajas = () => [...document.querySelectorAll('.plan-sel')], marcadas = () => cajas().filter(c => c.checked);
+    const base = 'nuevo_cobro?receptor_id=<?= (int)$contrato['receptor_id'] ?>&contrato_id=<?= (int)$contrato['id'] ?>';
+    function actualizar() {
+        const m = marcadas(), pend = m.filter(c => !+c.dataset.recibo), recs = m.filter(c => +c.dataset.recibo);
+        barra.hidden = !m.length;
+        document.getElementById('planSelN').textContent = m.length + (m.length === 1 ? ' pago marcado' : ' pagos marcados');
+        const tipo = recs.length ? 'recibo_y_pendientes' : 'recordatorio_pago';
+        document.getElementById('planEnviar').href = base + '&tipo=' + tipo + (pend.length ? '&plan=' + pend.map(c => c.dataset.id).join(',') : '&plan=0') + (recs.length ? '&recibos=' + recs.map(c => c.dataset.recibo).join(',') : '');
+        const ver = document.getElementById('planVerAviso');
+        ver.hidden = !(m.length === 1 && pend.length === 1);
+        if (!ver.hidden) ver.href = 'recibo_pdf?plan=' + pend[0].dataset.id;
+        const todos = document.getElementById('planSelTodos'); if (todos) { todos.checked = cajas().length && m.length === cajas().length; todos.indeterminate = m.length > 0 && m.length < cajas().length; }
+    }
+    document.addEventListener('change', e => { if (e.target.classList?.contains('plan-sel')) actualizar(); });
+    document.getElementById('planSelTodos')?.addEventListener('change', e => { cajas().forEach(c => c.checked = e.target.checked); actualizar(); });
+    document.getElementById('planSelQuitar')?.addEventListener('click', e => { e.preventDefault(); cajas().forEach(c => c.checked = false); actualizar(); });
+})();
+
 // Quién firma los recibos de este contrato
 document.getElementById('selFirmaRecibo')?.addEventListener('change', async e => {
     const fd = new FormData(); fd.append('contrato_id', <?= (int)$contrato['id'] ?>); fd.append('firma', e.target.value);

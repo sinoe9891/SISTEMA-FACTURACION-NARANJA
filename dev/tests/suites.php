@@ -188,6 +188,8 @@ suite('Plan de pagos: aviso de cobro en PDF', function () {
     db()->exec("DELETE FROM contratos_recibos WHERE id = $rid");
     $pg = $c->get('facturas_contrato', ['contrato_id' => (int)db()->query("SELECT contrato_id FROM contratos_plan WHERE id=$pid")->fetchColumn()]);
     check('en el plan, cada pago pendiente tiene el botón del aviso', str_contains($pg['body'], 'recibo_pdf?plan=' . $pid), errorPhp($pg['body']));
+    check('en el plan se pueden marcar pagos y enviarlos por correo (casilla por pago, marcar todos y barra de envío)', str_contains($pg['body'], 'class="form-check-input plan-sel" data-id="' . $pid . '"')
+        && str_contains($pg['body'], 'id="planSelTodos"') && str_contains($pg['body'], 'id="planEnviar"') && str_contains($pg['body'], "'&tipo=' + tipo"), errorPhp($pg['body']));
 });
 
 suite('Recibos: quién firma (predeterminado y por contrato)', function () {
