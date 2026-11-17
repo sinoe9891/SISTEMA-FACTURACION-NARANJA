@@ -165,7 +165,7 @@ require_once '../../includes/templates/header.php';
                             <tbody id="cPlan"><tr><td colspan="6" class="text-center text-muted py-3">Selecciona un cliente.</td></tr></tbody>
                         </table>
                     </div>
-                    <div class="form-text">Pagos pendientes del plan de pagos de sus contratos (con recibo o con factura). El recordatorio no lleva adjuntos.</div>
+                    <div class="form-text">Pagos pendientes del plan de pagos de sus contratos (con recibo o con factura). El recordatorio adjunta el aviso de cobro en PDF de cada pago pendiente (los ya cobrados se omiten).</div>
                 </div>
                 <?php endif; ?>
                 <div class="col-12" data-bloque-docs hidden>
@@ -410,7 +410,7 @@ require_once '../../includes/templates/header.php';
     const AYUDA = { envio_factura: 'Factura nueva: el asunto y el mensaje la presentan con sus conceptos.',
         saldo_pendiente: 'Cobro: lista las facturas con saldo, lo abonado y el total pendiente.',
         factura_y_saldo: 'La factura nueva (aún no enviada) con sus conceptos y, además, las otras facturas con saldo y sus abonos, con el total.',
-        recordatorio_pago: 'Recordatorio de los pagos del plan de pagos (sin adjuntos de facturas).', envio_recibo: 'Recibos de pago en PDF (contratos sin factura).' };
+        recordatorio_pago: 'Recordatorio de los pagos del plan de pagos, con el aviso de cobro en PDF de cada uno.', envio_recibo: 'Recibos de pago en PDF (contratos sin factura).' };
     function mostrarBloque() {
         document.querySelectorAll('[data-bloque]').forEach(b => b.hidden = b.dataset.bloque !== bloque());
         document.querySelectorAll('#cTipoTabs [data-tipo]').forEach(t => { const on = t.dataset.tipo === $tipo.value; t.classList.toggle('active', on); t.classList.toggle('border-primary', on); });
@@ -699,7 +699,7 @@ require_once '../../includes/templates/header.php';
                 + fila('Asunto', esc((+c.prueba ? '[PRUEBA] ' : '') + c.asunto)) + fila('Estado', esc(estadosTxt[c.estado] || c.estado) + (c.error ? `<div class="text-danger">${esc(c.error)}</div>` : ''))
                 + fila('Programado', fmt(c.programado_para)) + fila('Enviado', fmt(c.enviado_en)) + fila('Creado', fmt(c.creado_en));
             document.getElementById('vAdjuntos').innerHTML = d.adjuntos.length ? d.adjuntos.map(a => a.existe
-                ? `<a class="btn btn-sm btn-outline-secondary me-1 mb-1" target="_blank" href="cobro_accion.php?pdf=${c.id}&${a.recibo_id ? 'recibo=' + a.recibo_id : (a.anticipo_id ? 'anticipo=' + a.anticipo_id : (a.documento_id ? 'documento=' + a.documento_id : 'factura=' + a.factura_id))}"><i class="bi ${a.documento_id ? 'bi-paperclip text-primary' : 'bi-file-earmark-pdf text-danger'}"></i> ${esc(a.etiqueta)}</a>`
+                ? `<a class="btn btn-sm btn-outline-secondary me-1 mb-1" target="_blank" href="cobro_accion.php?pdf=${c.id}&${a.recibo_id ? 'recibo=' + a.recibo_id : (a.anticipo_id ? 'anticipo=' + a.anticipo_id : (a.documento_id ? 'documento=' + a.documento_id : (a.factura_id ? 'factura=' + a.factura_id : 'aviso=' + parseInt(a.correlativo, 10))))}"><i class="bi ${a.documento_id ? 'bi-paperclip text-primary' : 'bi-file-earmark-pdf text-danger'}"></i> ${esc(a.etiqueta)}</a>`
                 : `<span class="badge text-bg-light border me-1">${esc(a.etiqueta)} (no disponible)</span>`).join('') : '<span class="text-muted small">Sin adjuntos.</span>';
             document.getElementById('vEnvios').innerHTML = d.envios.length ? '<ul class="list-unstyled small mb-0">' + d.envios.map(e =>
                 `<li class="mb-1"><i class="bi ${e.estado === 'enviado' ? 'bi-check-circle text-success' : 'bi-x-circle text-danger'}"></i> ${fmt(e.creado_en)} → ${esc(e.destinatario)}${e.error ? `<div class="text-danger">${esc(e.error)}</div>` : ''}</li>`).join('') + '</ul>'

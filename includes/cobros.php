@@ -187,12 +187,26 @@ function cobroAdjuntos(PDO $pdo, int $cid, int $cobroId): array
         $st->execute([$cobroId]);
         $out = array_merge($out, $st->fetchAll(PDO::FETCH_ASSOC));
     }
+    if (cobrosExtrasDisponible($pdo)) {   // avisos de cobro (recordatorio de pago): un PDF por pago del plan, guardado en la carpeta del cobro
+        $st = $pdo->prepare("SELECT plan_id FROM cobros_programados_plan WHERE cobro_id = ? ORDER BY plan_id");
+        $st->execute([$cobroId]);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $pid) {
+            $archivo = cobroAvisoArchivo((int)$pid);
+            if (!is_file(cobroDir($cid, $cobroId) . $archivo)) continue;
+            $out[] = ['factura_id' => null, 'recibo_id' => null, 'archivo' => $archivo, 'correlativo' => str_pad((string)$pid, 5, '0', STR_PAD_LEFT), 'etiqueta' => 'aviso de cobro ' . str_pad((string)$pid, 5, '0', STR_PAD_LEFT)];
+        }
+    }
     if (cobroDocumentosDisponible($pdo)) {
         $st = $pdo->prepare("SELECT NULL AS factura_id, NULL AS recibo_id, x.documento_id, x.archivo, x.nombre AS correlativo, x.nombre AS etiqueta FROM cobros_programados_documentos x WHERE x.cobro_id = ? ORDER BY x.id");
         $st->execute([$cobroId]);
         $out = array_merge($out, $st->fetchAll(PDO::FETCH_ASSOC));
     }
     return array_map(fn($a) => $a + ['existe' => is_file(cobroDir($cid, $cobroId) . $a['archivo'])], $out);
+}
+
+function cobroAvisoArchivo(int $planId): string
+{
+    return 'aviso_de_cobro_' . str_pad((string)$planId, 5, '0', STR_PAD_LEFT) . '.pdf';
 }
 
 function cobroDocumentosDisponible(PDO $pdo): bool
@@ -375,6 +389,15 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
     if ($planIds) {
         $insP = $pdo->prepare("INSERT INTO cobros_programados_plan (cobro_id, plan_id) VALUES (?, ?)");
         foreach ($planIds as $pid) $insP->execute([$id, $pid]);
+        // Recordatorio de pago: se adjunta el aviso de cobro en PDF de cada pago que sigue pendiente (los ya cobrados se omiten)
+        if ($tipo === 'recordatorio_pago') {
+            require_once __DIR__ . '/recibo_pdf.php';
+            foreach ($planIds as $pid) {
+                try { $pdf = avisoCobroPdf($pdo, $cid, (int)$pid); } catch (Throwable $e) { continue; }
+                if (strncmp($pdf, '%PDF', 4) !== 0) throw new Exception("No se pudo generar el aviso de cobro del pago #$pid.");
+                file_put_contents($dir . cobroAvisoArchivo((int)$pid), $pdf);
+            }
+        }
     }
     return $id;
 }
@@ -605,6 +628,7 @@ function cobroDuplicar(PDO $pdo, int $cid, int $uid, int $id, string $para, stri
             $insR->execute([$nuevo, $a['recibo_id'], $a['archivo']]);
         }
         $pdo->prepare("INSERT INTO cobros_programados_plan (cobro_id, plan_id) SELECT ?, plan_id FROM cobros_programados_plan WHERE cobro_id = ?")->execute([$nuevo, $id]);
+        foreach (glob(cobroDir($cid, $id) . 'aviso_de_cobro_*.pdf') ?: [] as $aviso) copy($aviso, $dir . basename($aviso));
     }
     if (cobroAnticiposDisponible($pdo)) {
         $st = $pdo->prepare("SELECT anticipo_id, archivo FROM cobros_programados_anticipos WHERE cobro_id = ?");

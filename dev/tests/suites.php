@@ -2675,8 +2675,10 @@ suite('Recibos con banco, PDF, recordatorios del plan y envío de recibos por co
     $r = $c->post('cobro_accion.php', ['accion' => 'crear', 'modo' => 'prueba', 'para_prueba' => 'yo@ejemplo.test', 'receptor_id' => $rid, 'tipo' => 'recordatorio_pago',
         'asunto' => $m['json']['asunto'] ?? 'Recordatorio', 'mensaje_html' => $m['json']['mensaje_html'] ?? 'Hola', 'plan_ids[0]' => $lin[0], 'plan_ids[1]' => $lin[1]]);
     $ult = glob("$dir/*.eml") ?: []; sort($ult);
-    check('envía el recordatorio de prueba, sin adjuntos', ($r['json']['success'] ?? false) && count($ult) === $antes + 1 && !str_contains(file_get_contents(end($ult)), 'application/pdf'), $r['body']);
+    check('envía el recordatorio de prueba con el aviso de cobro en PDF de cada pago', ($r['json']['success'] ?? false) && count($ult) === $antes + 1 && substr_count(file_get_contents(end($ult)), 'Content-Type: application/pdf') === 2 && str_contains(file_get_contents(end($ult)), 'aviso_de_cobro_'), $r['body']);
     $cobroRec = (int)($r['json']['id'] ?? 0);
+    $vr = $c->get('cobro_accion.php', ['ver' => $cobroRec]);
+    check('el detalle lista los avisos y se pueden abrir', count($vr['json']['adjuntos'] ?? []) === 2 && str_starts_with($c->get('cobro_accion.php', ['pdf' => $cobroRec, 'aviso' => (int)$lin[0]])['body'], '%PDF'), substr($vr['body'], 0, 300));
     check('el recordatorio queda ligado a sus pagos del plan', (int)$f("SELECT COUNT(*) FROM cobros_programados_plan WHERE cobro_id = $cobroRec") === 2);
 
     $m2 = $c->post('cobro_accion.php', ['accion' => 'generar_mensaje', 'receptor_id' => $rid, 'tipo' => 'envio_recibo', 'ids[0]' => $rec1]);

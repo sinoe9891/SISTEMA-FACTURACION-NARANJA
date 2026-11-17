@@ -50,7 +50,10 @@ try {
     }
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['pdf'])) {
         $cobro = cobroObtener($pdo, $cid, (int)$_GET['pdf']);
-        if (isset($_GET['recibo'])) {
+        if (isset($_GET['aviso'])) {   // aviso de cobro de un pago del plan (recordatorio): el PDF está en la carpeta del cobro
+            $st = $pdo->prepare("SELECT CONCAT('aviso_de_cobro_', LPAD(plan_id, 5, '0'), '.pdf') FROM cobros_programados_plan WHERE cobro_id = ? AND plan_id = ?");
+            $st->execute([$cobro['id'], (int)$_GET['aviso']]);
+        } elseif (isset($_GET['recibo'])) {
             $st = $pdo->prepare("SELECT archivo FROM cobros_programados_recibos WHERE cobro_id = ? AND recibo_id = ?");
             $st->execute([$cobro['id'], (int)$_GET['recibo']]);
         } elseif (isset($_GET['documento'])) {
