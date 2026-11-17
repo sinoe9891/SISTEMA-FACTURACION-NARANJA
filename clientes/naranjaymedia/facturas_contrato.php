@@ -6,6 +6,7 @@ require_once '../../includes/functions.php';
 require_once '../../includes/cuentas.php';
 require_once '../../includes/anticipos.php';
 require_once '../../includes/contrato_plan.php';
+require_once '../../includes/firmantes.php';
 require_once '../../includes/templates/header.php';
 
 $cliente_id  = (int)(USUARIO_ROL === 'superadmin'
@@ -1111,6 +1112,13 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
     <div class="fc-card">
         <div class="fc-card-hdr">
             <span class="fc-card-title"><i class="bi bi-receipt-cutoff text-success"></i> Recibos emitidos</span>
+            <?php if ($puedePlan && firmaRecibosDisponible($pdo)): $fRec = firmantesLista($pdo, $cliente_id); $predRol = firmaRecibosPredeterminada($pdo, $cliente_id); ?>
+                <label class="small text-muted d-flex align-items-center gap-1 mb-0 ms-auto me-2" title="Quién firma los recibos de este contrato">Firma los recibos:
+                    <select class="form-select form-select-sm" id="selFirmaRecibo" style="width:auto">
+                        <option value="">Predeterminado (<?= htmlspecialchars($fRec[$predRol]['nombre'] ?: FIRMANTES_ROLES[$predRol]) ?>)</option>
+                        <?php foreach (FIRMANTES_RECIBO_ROLES as $rolF => $tF): ?><option value="<?= $rolF ?>" <?= ($contrato['firma_recibo'] ?? '') === $rolF ? 'selected' : '' ?>><?= htmlspecialchars(($fRec[$rolF]['nombre'] ?: $tF) . ($fRec[$rolF]['cargo'] ? ' · ' . $fRec[$rolF]['cargo'] : '')) ?></option><?php endforeach; ?>
+                    </select></label>
+            <?php endif; ?>
             <span style="background:var(--brand-lt);color:var(--brand);border-radius:20px;padding:.15rem .65rem;font-size:.78rem;font-weight:700">
                 <?= count($recibos) ?> recibo<?= count($recibos) !== 1 ? 's' : '' ?></span>
         </div>
@@ -1392,6 +1400,15 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
 </div>
 
 <script>
+// Quién firma los recibos de este contrato
+document.getElementById('selFirmaRecibo')?.addEventListener('change', async e => {
+    const fd = new FormData(); fd.append('contrato_id', <?= (int)$contrato['id'] ?>); fd.append('firma', e.target.value);
+    try {
+        const d = await fetch('includes/contrato_firma_recibo.php', { method: 'POST', body: fd }).then(r => r.json());
+        if (!d.success) throw new Error(d.error);
+        Swal.fire({ icon: 'success', title: 'Guardado', text: d.message, timer: 1800, showConfirmButton: false });
+    } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+});
     const CONTRATO_FC = {
         id: <?= $contrato_id ?>,
         receptor_id: <?= (int)$contrato['receptor_id'] ?>,

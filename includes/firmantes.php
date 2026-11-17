@@ -36,3 +36,39 @@ function firmantesParaPdf(PDO $pdo, int $cid, string $uploads): array
     }
     return $out;
 }
+
+/** Roles que pueden firmar los recibos (la persona se elige en Configuración → Firmas y, si se quiere, por contrato). */
+const FIRMANTES_RECIBO_ROLES = ['vobo' => 'Vo.Bo.', 'autorizado' => 'Autorizado por'];
+
+function firmaRecibosDisponible(PDO $pdo): bool
+{
+    static $ok = null;
+    return $ok ??= firmantesDisponible($pdo) && (bool)$pdo->query("SHOW COLUMNS FROM documento_firmantes LIKE 'firma_recibos'")->fetchColumn()
+        && (bool)$pdo->query("SHOW COLUMNS FROM contratos LIKE 'firma_recibo'")->fetchColumn();
+}
+
+/** Rol que firma los recibos por defecto: el marcado en Firmas de documentos; si ninguno, el Vo.Bo. (representante legal). */
+function firmaRecibosPredeterminada(PDO $pdo, int $cid): string
+{
+    if (!firmaRecibosDisponible($pdo)) return 'vobo';
+    $st = $pdo->prepare("SELECT rol FROM documento_firmantes WHERE cliente_id = ? AND firma_recibos = 1 AND rol IN ('vobo','autorizado') LIMIT 1");
+    $st->execute([$cid]);
+    return (string)($st->fetchColumn() ?: 'vobo');
+}
+
+/** Rol que firma el recibo de un contrato: el elegido en el contrato o, si no, el predeterminado; si ese no tiene datos, el otro. */
+function firmaReciboRol(PDO $pdo, int $cid, ?int $contratoId = null): string
+{
+    $rol = null;
+    if ($contratoId && firmaRecibosDisponible($pdo)) {
+        $st = $pdo->prepare("SELECT firma_recibo FROM contratos WHERE id = ? AND cliente_id = ?");
+        $st->execute([$contratoId, $cid]);
+        $v = (string)$st->fetchColumn();
+        if (isset(FIRMANTES_RECIBO_ROLES[$v])) $rol = $v;
+    }
+    $rol ??= firmaRecibosPredeterminada($pdo, $cid);
+    $f = firmantesLista($pdo, $cid);
+    $otro = $rol === 'vobo' ? 'autorizado' : 'vobo';
+    if ($f[$rol]['nombre'] === '' && !$f[$rol]['firma'] && ($f[$otro]['nombre'] !== '' || $f[$otro]['firma'])) return $otro;
+    return $rol;
+}

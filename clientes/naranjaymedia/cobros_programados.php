@@ -122,14 +122,14 @@ require_once '../../includes/templates/header.php';
                     </select></div>
                 <div class="col-md-6"><label class="form-label">Tipo de mensaje</label>
                     <select class="form-select d-none" name="tipo" id="cTipo">
-                        <?php foreach (COBRO_TIPOS as $k => $t): if (!$extras && in_array($k, ['recordatorio_pago', 'envio_recibo'], true)) continue; ?><option value="<?= $k ?>" <?= $preTipo === $k ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?>
+                        <?php foreach (COBRO_TIPOS as $k => $t): if (!$extras && in_array($k, ['recordatorio_pago', 'envio_recibo', 'recibo_y_pendientes'], true)) continue; ?><option value="<?= $k ?>" <?= $preTipo === $k ? 'selected' : '' ?>><?= $t ?></option><?php endforeach; ?>
                     </select>
                     <div class="small text-muted" id="cTipoAyuda"></div></div>
                 <!-- Tipo de mensaje en pestañas: el asunto y el mensaje dicen si es una factura, un cobro o la factura con el saldo pendiente -->
                 <div class="col-12">
                     <ul class="nav nav-pills flex-wrap gap-1 small" id="cTipoTabs">
-                        <?php $iconos = ['envio_factura' => 'bi-receipt', 'saldo_pendiente' => 'bi-cash-coin', 'factura_y_saldo' => 'bi-receipt-cutoff', 'recordatorio_pago' => 'bi-calendar2-check', 'envio_recibo' => 'bi-file-earmark-text'];
-                        foreach (COBRO_TIPOS as $k => $t): if (!$extras && in_array($k, ['recordatorio_pago', 'envio_recibo'], true)) continue; ?>
+                        <?php $iconos = ['envio_factura' => 'bi-receipt', 'saldo_pendiente' => 'bi-cash-coin', 'factura_y_saldo' => 'bi-receipt-cutoff', 'recordatorio_pago' => 'bi-calendar2-check', 'envio_recibo' => 'bi-file-earmark-text', 'recibo_y_pendientes' => 'bi-file-earmark-check'];
+                        foreach (COBRO_TIPOS as $k => $t): if (!$extras && in_array($k, ['recordatorio_pago', 'envio_recibo', 'recibo_y_pendientes'], true)) continue; ?>
                             <li class="nav-item"><button type="button" class="nav-link py-1 px-3 border" data-tipo="<?= $k ?>"><i class="bi <?= $iconos[$k] ?? 'bi-envelope' ?> me-1"></i><?= $t ?></button></li>
                         <?php endforeach; ?>
                     </ul>
@@ -405,14 +405,16 @@ require_once '../../includes/templates/header.php';
     let pre = <?= json_encode(['ids' => $preFacturas, 'contrato' => $preContrato, 'recibos' => $preRecibos, 'plan' => $prePlan, 'anticipos' => $preAnticipos]) ?>;   // preselección del acceso directo (solo la primera carga)
     const $tipo = document.getElementById('cTipo'), $rec = document.getElementById('cRecibos'), $plan = document.getElementById('cPlan');
     // Qué lista usa cada tipo: facturas (saldo/envío), recibos o pagos del plan
-    const bloque = () => ({ envio_recibo: 'recibos', recordatorio_pago: 'plan' }[$tipo.value] || 'facturas');
+    const bloque = () => ({ envio_recibo: 'recibos', recordatorio_pago: 'plan', recibo_y_pendientes: 'recibos' }[$tipo.value] || 'facturas');
+    const esCombo = () => $tipo.value === 'recibo_y_pendientes';   // recibos ya emitidos + pagos pendientes del plan
     const tablaActiva = () => ({ facturas: $tb, recibos: $rec, plan: $plan }[bloque()]);
     const AYUDA = { envio_factura: 'Factura nueva: el asunto y el mensaje la presentan con sus conceptos.',
         saldo_pendiente: 'Cobro: lista las facturas con saldo, lo abonado y el total pendiente.',
         factura_y_saldo: 'La factura nueva (aún no enviada) con sus conceptos y, además, las otras facturas con saldo y sus abonos, con el total.',
-        recordatorio_pago: 'Recordatorio de los pagos del plan de pagos, con el aviso de cobro en PDF de cada uno.', envio_recibo: 'Recibos de pago en PDF (contratos sin factura).' };
+        recordatorio_pago: 'Recordatorio de los pagos del plan de pagos, con el aviso de cobro en PDF de cada uno.', envio_recibo: 'Recibos de pago en PDF (contratos sin factura).',
+        recibo_y_pendientes: 'Contratos con recibo: adjunta los recibos de lo ya pagado y el aviso de cobro de cada pago pendiente, con el total que falta.' };
     function mostrarBloque() {
-        document.querySelectorAll('[data-bloque]').forEach(b => b.hidden = b.dataset.bloque !== bloque());
+        document.querySelectorAll('[data-bloque]').forEach(b => b.hidden = !(b.dataset.bloque === bloque() || (esCombo() && b.dataset.bloque === 'plan')));
         document.querySelectorAll('#cTipoTabs [data-tipo]').forEach(t => { const on = t.dataset.tipo === $tipo.value; t.classList.toggle('active', on); t.classList.toggle('border-primary', on); });
         document.getElementById('cTipoAyuda').textContent = AYUDA[$tipo.value] || '';
     }
@@ -475,7 +477,7 @@ require_once '../../includes/templates/header.php';
     });
     const docsMarcados = () => [...document.querySelectorAll('#cDocs input:checked')].map(i => i.value);
     const marcarInicial = f => pre.ids.length ? pre.ids.includes(+f.id) : (pre.contrato ? f.contrato_id == pre.contrato && f.saldo > 0 : f.saldo > 0);
-    const seleccionadas = () => [...(tablaActiva() || $tb).querySelectorAll('input[type=checkbox]:checked')].map(i => i.value);
+    const seleccionadas = () => [...(tablaActiva() || $tb).querySelectorAll('input[type=checkbox]:checked'), ...(esCombo() && $plan ? $plan.querySelectorAll('input[type=checkbox]:checked') : [])].map(i => i.value);
     // Fecha de envío: si las facturas marcadas ya tienen fecha de pago se programa ese mismo día a las 8:00 a. m.
     // (si ya venció alguna o la hora ya pasó, mañana a las 8:00). Si la persona cambia la fecha a mano, ya no se toca.
     const $fecha = document.getElementById('cFecha'), $fechaAyuda = document.getElementById('cFechaAyuda');
@@ -558,6 +560,15 @@ require_once '../../includes/templates/header.php';
                 <td class="small"><a href="facturas_contrato?contrato_id=${l.contrato_id}" target="_blank">#${l.contrato_id}</a></td>
                 <td class="app-num">${L(l.total)}</td><td><span class="badge rounded-pill" style="background:${bg};color:${fg}">${txt}</span></td></tr>`;
             }).join('') : '<tr><td colspan="6" class="text-center text-muted py-3">Este cliente no tiene pagos pendientes en un plan de pagos.</td></tr>';
+            // Cliente que se cobra con recibos (sin facturas): se propone «Recibos + pagos pendientes» en vez de los tipos de factura
+            const conRecibos = (d.recibos || []).length || (d.plan || []).length;
+            if (!d.facturas.length && conRecibos && $tipo.value !== 'recibo_y_pendientes' && bloque() === 'facturas') {
+                if (!<?= json_encode($preTipo !== '') ?>) {
+                    $tipo.value = 'recibo_y_pendientes';
+                    if ($plan) $plan.querySelectorAll('input[type=checkbox]').forEach(i => i.checked = +i.dataset.dias > -30 && !pre.recibos.length);
+                    mostrarBloque();
+                } else document.getElementById('cTipoAyuda').textContent = 'Este cliente se cobra con recibos (no tiene facturas): usa «Recibos + pagos pendientes», «Recordatorio de pago» o «Envío de recibos».';
+            }
             docs = d.documentos || [];
             pintarDocs(true);
             pre = { ids: [], contrato: 0, recibos: [], plan: [], anticipos: [] };
@@ -572,10 +583,11 @@ require_once '../../includes/templates/header.php';
     async function generar() {
         const ids = seleccionadas().map(Number);
         if (bloque() !== 'facturas') {
-            if (!ids.length) return Swal.fire('Falta seleccionar', bloque() === 'recibos' ? 'Marca al menos un recibo.' : 'Marca al menos un pago del plan.', 'info');
+            if (!ids.length) return Swal.fire('Falta seleccionar', esCombo() ? 'Marca al menos un recibo o un pago pendiente.' : bloque() === 'recibos' ? 'Marca al menos un recibo.' : 'Marca al menos un pago del plan.', 'info');
             const fd = new FormData();
             fd.append('accion', 'generar_mensaje'); fd.append('receptor_id', $cli.value); fd.append('tipo', $tipo.value);
             [...tablaActiva().querySelectorAll('input[type=checkbox]:checked')].forEach(i => fd.append(i.dataset.ant === '1' ? 'anticipo_ids[]' : 'ids[]', i.value));
+            if (esCombo()) [...$plan.querySelectorAll('input[type=checkbox]:checked')].forEach(i => fd.append('plan_ids[]', i.value));
             const r = await fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer).catch(err => (Swal.fire('Error', err.message, 'error'), null));
             if (!r) return;
             document.getElementById('cAsunto').value = r.asunto || '';
@@ -596,8 +608,8 @@ require_once '../../includes/templates/header.php';
     document.getElementById('btnGenerar')?.addEventListener('click', e => { e.preventDefault(); generar(); });
     $tipo?.addEventListener('change', () => { mostrarBloque(); if (seleccionadas().length) generar(); });
     if (form) mostrarBloque();
-    $rec?.addEventListener('change', () => generar());
-    $plan?.addEventListener('change', () => seleccionadas().length && generar());
+    $rec?.addEventListener('change', () => seleccionadas().length && generar());
+    $plan?.addEventListener('change', () => seleccionadas().length && generar());   // (también en «Recibos + pagos pendientes»)
     const marcarPlan = fn => { $plan.querySelectorAll('input[type=checkbox]').forEach(i => i.checked = fn(+i.dataset.dias)); if (seleccionadas().length) generar(); };
     document.getElementById('selPlanVencidos')?.addEventListener('click', e => { e.preventDefault(); marcarPlan(d => d > -30); });
     document.getElementById('selPlanNinguno')?.addEventListener('click', e => { e.preventDefault(); marcarPlan(() => false); });
@@ -608,7 +620,7 @@ require_once '../../includes/templates/header.php';
         fd.append('modo', modo);
         fd.append('mensaje_html', getMensaje('cMensaje'));
         if (modo === 'prueba') fd.append('para_prueba', document.getElementById('cParaPrueba').value);
-        if (!fd.get('receptor_id') || !seleccionadas().length) return Swal.fire('Faltan datos', 'Elige el cliente y al menos ' + ({ facturas: 'una factura', recibos: 'un recibo', plan: 'un pago del plan' }[bloque()]) + '.', 'info');
+        if (!fd.get('receptor_id') || !seleccionadas().length) return Swal.fire('Faltan datos', 'Elige el cliente y al menos ' + (esCombo() ? 'un recibo o un pago pendiente' : { facturas: 'una factura', recibos: 'un recibo', plan: 'un pago del plan' }[bloque()]) + '.', 'info');
         if (modo === 'ahora') {
             const nd = docsMarcados().length;
             const ok = await Swal.fire({ title: '¿Enviar ahora al cliente?', text: 'Se enviará a ' + fd.get('para') + ' con ' + seleccionadas().length + ' ' + ({ facturas: 'factura(s) adjunta(s)', recibos: 'recibo(s) adjunto(s)', plan: 'pago(s) del plan' }[bloque()]) + (nd ? ' y ' + nd + ' documento(s) de la empresa' : '') + '.', icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar' });
@@ -654,7 +666,7 @@ require_once '../../includes/templates/header.php';
     });
 
     // ── Vista previa del correo (redacción y edición) ──
-    async function previa({ para, cc, asunto, html, receptor, ids, recibos, anticipos, documentos, tipo, cobroId }) {
+    async function previa({ para, cc, asunto, html, receptor, ids, recibos, anticipos, plan, documentos, tipo, cobroId }) {
         const fd = new FormData();
         fd.append('tipo', tipo || '');
         if (cobroId) fd.append('cobro_id', cobroId);
@@ -662,12 +674,13 @@ require_once '../../includes/templates/header.php';
         (ids || []).forEach(i => fd.append('factura_ids[]', i));
         (recibos || []).forEach(i => fd.append('recibo_ids[]', i));
         (anticipos || []).forEach(i => fd.append('anticipo_ids[]', i));
+        (plan || []).forEach(i => fd.append('plan_ids[]', i));
         (documentos || []).forEach(i => fd.append('documento_ids[]', i));
         try {
             const d = await fetch('cobro_accion.php', { method: 'POST', body: fd }).then(leer);
             const fila = (k, v) => `<dt class="col-sm-2 text-muted fw-normal">${k}</dt><dd class="col-sm-10 mb-1">${v || '<span class="text-muted">—</span>'}</dd>`;
             document.getElementById('pDatos').innerHTML = fila('Para', esc(para)) + fila('CC', esc(cc)) + fila('Asunto', '<strong>' + esc(asunto) + '</strong>')
-                + fila('Adjuntos', d.adjuntos.length ? d.adjuntos.map(n => `<span class="badge text-bg-light border me-1"><i class="bi ${/^(factura|recibo) /.test(n) ? 'bi-file-earmark-pdf text-danger' : 'bi-paperclip text-primary'}"></i> ${esc(n)}</span>`).join('') : '');
+                + fila('Adjuntos', d.adjuntos.length ? d.adjuntos.map(n => `<span class="badge text-bg-light border me-1"><i class="bi ${/^(factura|recibo|aviso) /.test(n) ? 'bi-file-earmark-pdf text-danger' : 'bi-paperclip text-primary'}"></i> ${esc(n)}</span>`).join('') : '');
             document.getElementById('pHtml').srcdoc = d.html;
             bootstrap.Modal.getOrCreateInstance(document.getElementById('mPrevia')).show();
         } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
@@ -676,6 +689,7 @@ require_once '../../includes/templates/header.php';
         para: document.getElementById('cPara').value, cc: document.getElementById('cCc').value, asunto: document.getElementById('cAsunto').value,
         tipo: $tipo.value, html: getMensaje('cMensaje'), receptor: $cli.value, ids: bloque() === 'facturas' ? seleccionadas() : [], documentos: docsMarcados(),
         recibos: bloque() === 'recibos' ? [...$rec.querySelectorAll('input[data-ant="0"]:checked')].map(i => i.value) : [],
+        plan: bloque() === 'plan' || esCombo() ? [...$plan.querySelectorAll('input:checked')].map(i => i.value) : [],
         anticipos: bloque() === 'recibos' ? [...$rec.querySelectorAll('input[data-ant="1"]:checked')].map(i => i.value) : [],
     }));
     let editando = null;   // cobro abierto en «Editar» (para la vista previa)

@@ -32,7 +32,7 @@ require_once '../../includes/templates/config_tabs.php';
 <div class="app-page-header">
     <div>
         <h1 class="app-page-title"><i class="bi bi-pen me-2"></i>Firmas de documentos</h1>
-        <p class="app-page-sub">Nombre, cargo y firma de quienes firman los bouchers y recibos de pago. Aplica a todos los documentos, también a los de pagos anteriores.</p>
+        <p class="app-page-sub">Nombre, cargo y firma de quienes firman los bouchers y recibos de pago. Aplica a todos los documentos, también a los de pagos anteriores. Más abajo se elige quién firma los recibos.</p>
     </div>
 </div>
 
@@ -64,6 +64,19 @@ require_once '../../includes/templates/config_tabs.php';
             </div>
         <?php endforeach; ?>
     </div>
+    <?php if (firmaRecibosDisponible($pdo)): $firmaRec = firmaRecibosPredeterminada($pdo, $cid); ?>
+    <div class="app-card mt-3" id="firmaRecibosCard">
+        <div class="app-card-header"><span><i class="bi bi-receipt me-1"></i> Quién firma los recibos</span><span class="small text-muted fw-normal">Por defecto firma el representante legal (Vo.Bo.). En cada contrato se puede elegir a otra persona.</span></div>
+        <div class="app-card-body d-flex flex-wrap gap-3">
+            <?php foreach (FIRMANTES_RECIBO_ROLES as $rol => $titulo): $f = $firmantes[$rol]; ?>
+                <label class="border rounded px-3 py-2 d-flex align-items-center gap-2" style="cursor:pointer">
+                    <input class="form-check-input m-0 f-recibos" type="radio" name="firma_recibos" value="<?= $rol ?>" <?= $firmaRec === $rol ? 'checked' : '' ?>>
+                    <span><strong><?= htmlspecialchars($f['nombre'] ?: 'Sin nombre') ?></strong><br><span class="small text-muted"><?= htmlspecialchars($f['cargo'] ?: $titulo) ?> · <?= $titulo ?></span></span>
+                </label>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
     <?php if ($sello !== null): ?>
     <div class="app-card mt-3" id="selloCard">
         <div class="app-card-header"><span><i class="bi bi-patch-check me-1"></i> Sello de la empresa</span><span class="small text-muted fw-normal">Se pone junto a la firma en los documentos que elijas.</span></div>
@@ -117,6 +130,10 @@ require_once '../../includes/templates/config_tabs.php';
         if (document.getElementById('selloFact').checked) fd.append('facturas', '1');
         if (document.getElementById('selloCot').checked) fd.append('cotizaciones', '1');
         enviar(fd).then(() => Swal.fire({ icon: 'success', title: 'Guardado', timer: 1000, showConfirmButton: false })).catch(error);
+    }));
+    document.querySelectorAll('.f-recibos').forEach(r => r.addEventListener('change', () => {
+        const fd = new FormData(); fd.append('accion', 'recibos_defecto'); fd.append('rol', r.value);
+        enviar(fd).then(d => Swal.fire({ icon: 'success', title: 'Guardado', text: d.message, timer: 1600, showConfirmButton: false })).catch(error);
     }));
     document.querySelectorAll('.f-firmante').forEach(form => {
         const rol = form.dataset.rol;

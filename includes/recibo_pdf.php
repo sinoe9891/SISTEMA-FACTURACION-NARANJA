@@ -3,7 +3,7 @@
  * recibo_pdf.php — PDF del recibo de cobro de un contrato «sin factura» (dompdf).
  *   reciboPdf($pdo, $cid, $reciboId)     → bytes del PDF (para descargar o adjuntar al correo)
  *   reciboArchivo($recibo)               → nombre del archivo: recibo_00012.pdf
- * Firma: «Recibido por» = firmante «Autorizado por» de Configuración → Firmas de documentos.
+ * Firma: «Recibido por» = quien se elige en Configuración → Firmas de documentos (por defecto el Vo.Bo., representante legal) o en el contrato.
  */
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/firmantes.php';
@@ -116,7 +116,7 @@ function reciboRender(PDO $pdo, int $cid, array $r): string
     $local = __DIR__ . '/../clientes/css/logo-correo.png';
     if (!$logo && is_file($local)) $logo = 'data:image/png;base64,' . base64_encode(file_get_contents($local));
 
-    $firm = firmantesParaPdf($pdo, $cid, __DIR__ . '/../clientes/naranjaymedia/includes/uploads')['autorizado'] ?? ['nombre' => '', 'cargo' => '', 'firma_b64' => ''];
+    $firm = firmantesParaPdf($pdo, $cid, __DIR__ . '/../clientes/naranjaymedia/includes/uploads')[firmaReciboRol($pdo, $cid, isset($r['contrato']) ? (int)$r['contrato'] : null)] ?? ['nombre' => '', 'cargo' => '', 'firma_b64' => ''];
     $MES = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
     $fecha = (int)substr($r['fecha_emision'], 8, 2) . ' de ' . $MES[(int)substr($r['fecha_emision'], 5, 2)] . ' de ' . substr($r['fecha_emision'], 0, 4);
     $periodo = $r['periodo_mes'] ? ucfirst($MES[(int)$r['periodo_mes']]) . ' ' . (int)$r['periodo_anio'] : '';

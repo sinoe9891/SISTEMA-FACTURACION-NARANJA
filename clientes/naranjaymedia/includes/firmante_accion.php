@@ -1,7 +1,7 @@
 <?php
 // clientes/naranjaymedia/includes/firmante_accion.php — Firmantes de los documentos de pago (solo administradores).
 //   GET  ?firma=<rol>                         → imagen de la firma (vista previa)
-//   POST accion=guardar rol, nombre, cargo     · accion=subir rol, firma (PNG/JPG)  · accion=quitar rol
+//   POST accion=guardar rol, nombre, cargo     · accion=subir rol, firma (PNG/JPG)  · accion=quitar rol  · accion=recibos_defecto rol (quién firma los recibos)
 //   Sello de la empresa: GET ?sello=1 (imagen) · POST accion=sello_subir sello · sello_quitar · sello_uso facturas=0|1 cotizaciones=0|1
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
@@ -101,6 +101,13 @@ try {
             $guardar(['firma' => $rel]);
             if ($actual['firma'] && is_file(FIRMANTE_DIR . $actual['firma'])) @unlink(FIRMANTE_DIR . $actual['firma']);
             echo json_encode(['success' => true, 'message' => 'Firma guardada.'], JSON_UNESCAPED_UNICODE);
+            break;
+        case 'recibos_defecto':   // quién firma los recibos por defecto (rol = autorizado | vobo)
+            if (!isset(FIRMANTES_RECIBO_ROLES[$rol])) throw new Exception("Ese firmante no firma recibos.");
+            if (!firmaRecibosDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-11-17_firma_recibos.sql.");
+            $pdo->prepare("UPDATE documento_firmantes SET firma_recibos = 0 WHERE cliente_id = ?")->execute([$cid]);
+            $guardar(['firma_recibos' => 1]);
+            echo json_encode(['success' => true, 'message' => 'Los recibos los firma ' . (($actual['nombre'] ?? '') ?: FIRMANTES_ROLES[$rol]) . '.'], JSON_UNESCAPED_UNICODE);
             break;
         case 'quitar':
             $guardar(['firma' => null]);

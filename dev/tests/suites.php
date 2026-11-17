@@ -190,6 +190,41 @@ suite('Plan de pagos: aviso de cobro en PDF', function () {
     check('en el plan, cada pago pendiente tiene el botón del aviso', str_contains($pg['body'], 'recibo_pdf?plan=' . $pid), errorPhp($pg['body']));
 });
 
+suite('Recibos: quién firma (predeterminado y por contrato)', function () {
+    require_once dirname(__DIR__, 2) . '/includes/firmantes.php';
+    $c = login('qa.admin@local.test');
+    $ccic = login('qa.ccic@local.test', 3);
+    $pdo = db();
+    $guardados = $pdo->query("SELECT * FROM documento_firmantes WHERE cliente_id = 2")->fetchAll(PDO::FETCH_ASSOC);
+    $pdo->exec("DELETE FROM documento_firmantes WHERE cliente_id = 2");
+    $pdo->exec("INSERT INTO documento_firmantes (cliente_id, rol, nombre, cargo) VALUES (2, 'autorizado', 'QA Maria', 'Gerente Administrativo'), (2, 'vobo', 'QA Danny', 'Representante legal')");
+    $ctr = (int)$pdo->query("SELECT id FROM contratos WHERE cliente_id = 2 AND tipo_contrato = 'sin_factura' LIMIT 1")->fetchColumn();
+    $pdo->exec("UPDATE contratos SET firma_recibo = NULL WHERE id = $ctr");
+    check('hay un contrato con recibos de prueba', $ctr > 0);
+    check('por defecto firma el representante legal (Vo.Bo.)', firmaReciboRol($pdo, 2, $ctr) === 'vobo' && firmaRecibosPredeterminada($pdo, 2) === 'vobo');
+    $r = $c->post('includes/firmante_accion.php', ['accion' => 'recibos_defecto', 'rol' => 'autorizado']);
+    check('en Configuración se puede elegir que firme otra persona', ($r['json']['success'] ?? false) && firmaRecibosPredeterminada($pdo, 2) === 'autorizado' && firmaReciboRol($pdo, 2, $ctr) === 'autorizado', $r['body']);
+    $r = $c->post('includes/contrato_firma_recibo.php', ['contrato_id' => $ctr, 'firma' => 'vobo']);
+    check('un contrato puede tener su propio firmante', ($r['json']['success'] ?? false) && firmaReciboRol($pdo, 2, $ctr) === 'vobo' && str_contains($r['json']['message'], 'QA Danny'), $r['body']);
+    $r = $c->post('includes/contrato_firma_recibo.php', ['contrato_id' => $ctr, 'firma' => '']);
+    check('«Predeterminado» vuelve al de Configuración', ($r['json']['success'] ?? false) && firmaReciboRol($pdo, 2, $ctr) === 'autorizado');
+    $r = $c->post('includes/contrato_firma_recibo.php', ['contrato_id' => $ctr, 'firma' => 'elaborado']);
+    check('rechaza un firmante que no firma recibos', !($r['json']['success'] ?? true));
+    $r = $ccic->post('includes/contrato_firma_recibo.php', ['contrato_id' => $ctr, 'firma' => 'vobo']);
+    check('otra empresa NO puede cambiar el firmante de este contrato', !($r['json']['success'] ?? true) && (string)$pdo->query("SELECT firma_recibo FROM contratos WHERE id=$ctr")->fetchColumn() === '', $r['body']);
+    $pdo->exec("DELETE FROM documento_firmantes WHERE cliente_id = 2 AND rol = 'autorizado'");
+    $pdo->exec("UPDATE documento_firmantes SET firma_recibos = 0 WHERE cliente_id = 2");
+    check('si el firmante elegido no tiene datos, firma el otro', firmaReciboRol($pdo, 2, $ctr) === 'vobo');
+    $pg = $c->get('configuracion_firmas');
+    check('Configuración → Firmas muestra quién firma los recibos', sinErroresPhp($pg['body']) && str_contains($pg['body'], 'Quién firma los recibos'), errorPhp($pg['body']));
+    $pg = $c->get('facturas_contrato', ['contrato_id' => $ctr]);
+    check('el contrato muestra el selector «Firma los recibos»', sinErroresPhp($pg['body']) && str_contains($pg['body'], 'id="selFirmaRecibo"'), errorPhp($pg['body']));
+    // Restaurar firmantes y contrato
+    $pdo->exec("DELETE FROM documento_firmantes WHERE cliente_id = 2");
+    foreach ($guardados as $g) { $ins = $pdo->prepare("INSERT INTO documento_firmantes (" . implode(',', array_keys($g)) . ") VALUES (" . rtrim(str_repeat('?,', count($g)), ',') . ")"); $ins->execute(array_values($g)); }
+    $pdo->exec("UPDATE contratos SET firma_recibo = NULL WHERE id = $ctr");
+});
+
 suite('Teléfono de clientes con formato +504', function () {
     require_once dirname(__DIR__, 2) . '/includes/functions.php';
     check('8 dígitos', telefonoHN('22024060') === '+504 2202-4060');
@@ -2680,6 +2715,23 @@ suite('Recibos con banco, PDF, recordatorios del plan y envío de recibos por co
     $vr = $c->get('cobro_accion.php', ['ver' => $cobroRec]);
     check('el detalle lista los avisos y se pueden abrir', count($vr['json']['adjuntos'] ?? []) === 2 && str_starts_with($c->get('cobro_accion.php', ['pdf' => $cobroRec, 'aviso' => (int)$lin[0]])['body'], '%PDF'), substr($vr['body'], 0, 300));
     check('el recordatorio queda ligado a sus pagos del plan', (int)$f("SELECT COUNT(*) FROM cobros_programados_plan WHERE cobro_id = $cobroRec") === 2);
+
+    // «Recibos + pagos pendientes»: el recibo de lo pagado (adjunto) y el aviso de cobro de cada pago pendiente
+    $mc = $c->post('cobro_accion.php', ['accion' => 'generar_mensaje', 'receptor_id' => $rid, 'tipo' => 'recibo_y_pendientes', 'ids[0]' => $rec1, 'plan_ids[0]' => $lin[0], 'plan_ids[1]' => $lin[1]]);
+    check('«Recibos + pagos pendientes»: el mensaje trae el recibo, los pagos pendientes y el total que falta', ($mc['json']['success'] ?? false) && str_contains($mc['json']['mensaje_html'], 'Recibo N.°')
+        && str_contains($mc['json']['mensaje_html'], 'Pagos vencidos') && str_contains($mc['json']['mensaje_html'], 'Total pendiente: L <strong>3,000.00'), substr($mc['body'], 0, 400));
+    $mc2 = $c->post('cobro_accion.php', ['accion' => 'generar_mensaje', 'receptor_id' => $rid, 'tipo' => 'recibo_y_pendientes', 'plan_ids[0]' => $lin[0]]);
+    check('…también con solo pagos pendientes (sin recibos)', ($mc2['json']['success'] ?? false), substr($mc2['body'], 0, 200));
+    $r = $c->post('cobro_accion.php', ['accion' => 'crear', 'modo' => 'prueba', 'para_prueba' => 'yo@ejemplo.test', 'receptor_id' => $rid, 'tipo' => 'recibo_y_pendientes',
+        'asunto' => $mc['json']['asunto'] ?? 'X', 'mensaje_html' => $mc['json']['mensaje_html'] ?? 'Hola', 'recibo_ids[0]' => $rec1, 'plan_ids[0]' => $lin[0], 'plan_ids[1]' => $lin[1]]);
+    $ult = glob("$dir/*.eml") ?: []; sort($ult); $eml = file_get_contents(end($ult));
+    check('el correo lleva 3 PDF: el recibo y el aviso de cobro de cada pago pendiente', ($r['json']['success'] ?? false) && substr_count($eml, 'Content-Type: application/pdf') === 3 && str_contains($eml, 'aviso_de_cobro_') && str_contains($eml, 'recibo_'), $r['body']);
+    $r = $c->post('cobro_accion.php', ['accion' => 'crear', 'modo' => 'prueba', 'para_prueba' => 'yo@ejemplo.test', 'receptor_id' => $rid, 'tipo' => 'recibo_y_pendientes', 'asunto' => 'X', 'mensaje_html' => 'Hola']);
+    check('no se envía «Recibos + pagos pendientes» sin elegir nada', !($r['json']['success'] ?? true));
+    $pv = $c->post('cobro_accion.php', ['accion' => 'previsualizar', 'receptor_id' => $rid, 'tipo' => 'recibo_y_pendientes', 'recibo_ids[0]' => $rec1, 'plan_ids[0]' => $lin[0], 'mensaje_html' => 'Hola', 'asunto' => 'X']);
+    check('la vista previa lista el recibo y el aviso como adjuntos', in_array('aviso de cobro ' . str_pad((string)$lin[0], 5, '0', STR_PAD_LEFT), $pv['json']['adjuntos'] ?? [], true) && count($pv['json']['adjuntos'] ?? []) === 2, substr($pv['body'], 0, 300));
+    $pg = $c->get('nuevo_cobro', ['receptor_id' => $rid, 'tipo' => 'recibo_y_pendientes']);
+    check('la página ofrece «Recibos + pagos pendientes»', sinErroresPhp($pg['body']) && str_contains($pg['body'], 'value="recibo_y_pendientes" selected') && str_contains($pg['body'], 'Recibos + pagos pendientes'), errorPhp($pg['body']));
 
     $m2 = $c->post('cobro_accion.php', ['accion' => 'generar_mensaje', 'receptor_id' => $rid, 'tipo' => 'envio_recibo', 'ids[0]' => $rec1]);
     $r = $c->post('cobro_accion.php', ['accion' => 'crear', 'modo' => 'prueba', 'para_prueba' => 'yo@ejemplo.test', 'receptor_id' => $rid, 'tipo' => 'envio_recibo',

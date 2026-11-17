@@ -211,7 +211,7 @@ try {
             break;
 
         case 'generar_mensaje':
-            echo json_encode(['success' => true] + cobroMensajeGenerar($pdo, $cid, (int)($_POST['receptor_id'] ?? 0), (string)($_POST['tipo'] ?? ''), (array)($_POST['ids'] ?? []), (array)($_POST['anticipo_ids'] ?? [])), JSON_UNESCAPED_UNICODE);
+            echo json_encode(['success' => true] + cobroMensajeGenerar($pdo, $cid, (int)($_POST['receptor_id'] ?? 0), (string)($_POST['tipo'] ?? ''), (array)($_POST['ids'] ?? []), (array)($_POST['anticipo_ids'] ?? []), (array)($_POST['plan_ids'] ?? [])), JSON_UNESCAPED_UNICODE);
             break;
 
         case 'previsualizar':
@@ -229,6 +229,13 @@ try {
                 $st = $pdo->prepare("SELECT CONCAT('recibo ', LPAD(numero_recibo, 5, '0')) FROM contratos_recibos WHERE cliente_id = ? AND receptor_id = ? AND id IN (" . implode(',', array_fill(0, count($rids), '?')) . ") ORDER BY numero_recibo");
                 $st->execute([$cid, $rid, ...$rids]);
                 $nums = array_merge($nums, $st->fetchAll(PDO::FETCH_COLUMN));
+            }
+            // Recordatorio (y «Recibos + pagos pendientes»): se adjunta el aviso de cobro de cada pago del plan
+            $pids = array_values(array_filter(array_map('intval', (array)($_POST['plan_ids'] ?? []))));
+            if ($pids && in_array((string)($_POST['tipo'] ?? ''), ['recordatorio_pago', 'recibo_y_pendientes'], true)) {
+                $st = $pdo->prepare("SELECT p.id FROM contratos_plan p JOIN contratos c ON c.id = p.contrato_id AND c.cliente_id = p.cliente_id WHERE p.cliente_id = ? AND c.receptor_id = ? AND p.id IN (" . implode(',', array_fill(0, count($pids), '?')) . ") ORDER BY p.id");
+                $st->execute([$cid, $rid, ...$pids]);
+                foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $pid) $nums[] = 'aviso de cobro ' . str_pad((string)$pid, 5, '0', STR_PAD_LEFT);
             }
             $documentos = [];
             $tipo = (string)($_POST['tipo'] ?? '');

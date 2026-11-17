@@ -14,7 +14,8 @@
 require_once __DIR__ . '/correo.php';
 
 const COBRO_TIPOS = ['envio_factura' => 'Envío de factura', 'saldo_pendiente' => 'Cobro de saldo pendiente', 'factura_y_saldo' => 'Factura + saldo pendiente',
-                     'recordatorio_pago' => 'Recordatorio de pago (plan de pagos)', 'envio_recibo' => 'Envío de recibos'];
+                     'recordatorio_pago' => 'Recordatorio de pago (plan de pagos)', 'envio_recibo' => 'Envío de recibos',
+                     'recibo_y_pendientes' => 'Recibos + pagos pendientes'];
 /** Tipos que adjuntan facturas */
 const COBRO_TIPOS_FACTURA = ['envio_factura', 'saldo_pendiente', 'factura_y_saldo'];
 
@@ -43,6 +44,11 @@ const COBRO_PLANTILLAS_EXTRA = [
         'asunto' => 'Recordatorio de pago - {{cliente_nombre}}',
         'contenido' => "{{saludo}}\n\nEspero se encuentren muy bien.\n\nLes compartimos el detalle de los pagos de su plan:\n\n{{detalle_facturas}}\n\nTotal: L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos su apoyo. Quedamos atentos a su confirmación.\n\nSaludos cordiales,",
     ],
+    // Contratos con recibo: el recibo de lo ya pagado (adjunto) y el aviso de cobro de lo que sigue pendiente
+    'recibo_y_pendientes' => [
+        'asunto' => 'Recibo de pago y pagos pendientes - {{cliente_nombre}}',
+        'contenido' => "{{saludo}}\n\nEspero se encuentren muy bien.\n\nMuchas gracias por su pago. Adjunto {{detalle_recibos}}\n\nAsimismo, les recordamos los pagos pendientes de su plan:\n\n{{detalle_pendientes}}\n\nTotal pendiente: L {{total}}.\n\n{{cuentas_pago}}\n\nAgradecemos su apoyo. Quedamos atentos a cualquier consulta.\n\nSaludos cordiales,",
+    ],
     'envio_recibo' => [
         'asunto' => 'Recibo de pago - {{cliente_nombre}}',
         'contenido' => "{{saludo}}\n\nMuchas gracias por su pago.\n\nAdjunto {{detalle_facturas}}\n\nQuedamos atentos a cualquier consulta.\n\nSaludos cordiales,",
@@ -53,12 +59,17 @@ const COBRO_PLANTILLAS_EXTRA = [
  * Asunto y mensaje (HTML) de un recordatorio del plan o de un envío de recibos, con la plantilla de la empresa
  * (o la de COBRO_PLANTILLAS_EXTRA). Mismo saludo y cuentas de pago que los cobros de facturas.
  */
-function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $ids, array $antIds = []): array
+function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $ids, array $antIds = [], array $planIds = []): array
 {
     if (!isset(COBRO_PLANTILLAS_EXTRA[$tipo])) throw new Exception("Tipo de mensaje inválido.");
-    $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
-    $antIds = $tipo === 'envio_recibo' ? array_values(array_unique(array_filter(array_map('intval', $antIds)))) : [];
-    if (!$ids && !$antIds) throw new Exception($tipo === 'envio_recibo' ? "Selecciona al menos un recibo." : "Selecciona al menos un pago del plan.");
+    $limpiar = fn($a) => array_values(array_unique(array_filter(array_map('intval', $a))));
+    $combo = $tipo === 'recibo_y_pendientes';   // recibos (ids) + pagos pendientes del plan (planIds)
+    $ids = $limpiar($ids);
+    $antIds = $tipo === 'envio_recibo' || $combo ? $limpiar($antIds) : [];
+    $pIds = $combo ? $limpiar($planIds) : ($tipo === 'recordatorio_pago' ? $ids : []);   // pagos del plan
+    if ($tipo !== 'recordatorio_pago' && !$ids && !$antIds && (!$combo || !$pIds)) throw new Exception($combo ? "Selecciona al menos un recibo o un pago pendiente." : "Selecciona al menos un recibo.");
+    if ($tipo === 'recordatorio_pago' && !$pIds) throw new Exception("Selecciona al menos un pago del plan.");
+    $totalRec = 0.0; $detalleRec = $detallePlan = '';
     $st = $pdo->prepare("SELECT nombre, nombre_comercial FROM clientes_factura WHERE id = ? AND cliente_id = ?");
     $st->execute([$rid, $cid]);
     $cf = $st->fetch(PDO::FETCH_ASSOC);
@@ -72,7 +83,7 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
     $total = 0.0;
     $lineas = [];
     $saludoA = trim((string)$cf['nombre_comercial']) ?: $cliente;   // el saludo usa el nombre comercial si lo tiene; en recordatorios de contratos de un mismo programa (p. ej. PROGRESE), al equipo del programa
-    if ($tipo === 'envio_recibo') {
+    if ($tipo === 'envio_recibo' || $combo) {
         $filas = [];
         if ($ids) {
             $st = $pdo->prepare("SELECT numero_recibo, fecha_emision, monto, concepto FROM contratos_recibos WHERE id IN ($in) AND cliente_id = ? AND receptor_id = ? AND estado = 'emitido' ORDER BY numero_recibo");
@@ -81,7 +92,7 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
             if (count($filas) !== count($ids)) throw new Exception("Algún recibo no pertenece a este cliente.");
         }
         foreach ($filas as $r) {
-            $total += (float)$r['monto'];
+            $totalRec += (float)$r['monto'];
             $lineas[] = '- Recibo N.° ' . $b(str_pad((string)$r['numero_recibo'], 5, '0', STR_PAD_LEFT)) . ' del ' . $h($fecha($r['fecha_emision'])) . ': ' . $b('L ' . number_format((float)$r['monto'], 2)) . ' · ' . $h($r['concepto']);
         }
         if ($antIds) {
@@ -92,18 +103,23 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
             $fa = $st->fetchAll(PDO::FETCH_ASSOC);
             if (count($fa) !== count($antIds)) throw new Exception("Algún pago anticipado no pertenece a este cliente.");
             foreach ($fa as $a) {
-                $total += (float)$a['monto'];
+                $totalRec += (float)$a['monto'];
                 $lineas[] = '- Recibo de anticipo N.° ' . $b('A-' . str_pad((string)$a['id'], 5, '0', STR_PAD_LEFT)) . ' del ' . $h($fecha($a['fecha'])) . ': ' . $b('L ' . number_format((float)$a['monto'], 2)) . ($a['concepto'] ? ' · ' . $h($a['concepto']) : '');
             }
         }
-        $detalle = (count($lineas) === 1 ? 'el recibo de su pago:' : 'los recibos de sus pagos:') . "\n\n" . implode("\n", $lineas);
-    } else {
+        if ($lineas) $detalleRec = (count($lineas) === 1 ? 'el recibo de su pago:' : 'los recibos de sus pagos:') . "\n\n" . implode("\n", $lineas);
+        $detalle = $detalleRec;
+        if ($tipo === 'envio_recibo') $total += $totalRec;
+        $lineas = [];
+    }
+    if ($pIds) {
         require_once __DIR__ . '/contrato_plan.php';
-        $st = $pdo->prepare("SELECT p.id, p.contrato_id FROM contratos_plan p JOIN contratos c ON c.id = p.contrato_id AND c.cliente_id = p.cliente_id WHERE p.id IN ($in) AND p.cliente_id = ? AND c.receptor_id = ?");
-        $st->execute([...$ids, $cid, $rid]);
+        $inP = implode(',', array_fill(0, count($pIds), '?'));
+        $st = $pdo->prepare("SELECT p.id, p.contrato_id FROM contratos_plan p JOIN contratos c ON c.id = p.contrato_id AND c.cliente_id = p.cliente_id WHERE p.id IN ($inP) AND p.cliente_id = ? AND c.receptor_id = ?");
+        $st->execute([...$pIds, $cid, $rid]);
         $porContrato = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $porContrato[(int)$r['contrato_id']][] = (int)$r['id'];
-        if (array_sum(array_map('count', $porContrato)) !== count($ids)) throw new Exception("Algún pago del plan no es de un contrato de este cliente.");
+        if (array_sum(array_map('count', $porContrato)) !== count($pIds)) throw new Exception("Algún pago del plan no es de un contrato de este cliente.");
         require_once __DIR__ . '/programas.php';
         if (programasDisponible($pdo) && $porContrato) {
             $st = $pdo->prepare("SELECT DISTINCT COALESCE(pg.nombre, '') FROM contratos c LEFT JOIN programas pg ON pg.id = c.programa_id WHERE c.id IN (" . implode(',', array_map('intval', array_keys($porContrato))) . ")");
@@ -115,14 +131,15 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
         foreach ($porContrato as $ctId => $sel) {
             foreach (planLineas($pdo, $cid, $ctId) as $l) {
                 if (!in_array((int)$l['id'], $sel, true)) continue;
-                $total += (float)$l['total'];
+                $total += (float)$l['total'];   // en «Recibos + pagos pendientes» el total es lo pendiente
                 $txt = $b($l['fecha'] ? $fecha($l['fecha']) : 'Fecha por definir') . ' — ' . $h($l['concepto']) . ': ' . $b('L ' . number_format((float)$l['total'], 2));
                 if ($l['estado'] === 'vencido') $vencidos[] = '- ' . $txt . ' (vencido)';
                 else $proximos[] = '- ' . $txt . ($l['estado'] === 'pagado' ? ' (pagado, gracias)' : '');
             }
         }
-        $detalle = ($vencidos ? '<strong>Pagos vencidos:</strong>' . "\n" . implode("\n", $vencidos) . ($proximos ? "\n\n" : '') : '')
+        $detallePlan = ($vencidos ? '<strong>Pagos vencidos:</strong>' . "\n" . implode("\n", $vencidos) . ($proximos ? "\n\n" : '') : '')
                  . ($proximos ? '<strong>Próximos pagos:</strong>' . "\n" . implode("\n", $proximos) : '');
+        $detalle = $combo && $detalleRec ? $detalleRec . "\n\n" . $detallePlan : $detallePlan;
     }
 
     $st = $pdo->prepare("SELECT * FROM configuracion_cuentas_pago WHERE cliente_id = ? AND activo = 1 ORDER BY orden, id");
@@ -140,6 +157,7 @@ function cobroMensajeGenerar(PDO $pdo, int $cid, int $rid, string $tipo, array $
     $MESU = array_map('ucfirst', $MES);
     if ($saludoA !== $cliente) $cliente = $saludoA . ' · ' . $cliente;
     $rep = ['{{saludo}}' => $b('Buen día, equipo de ' . $saludoA . ':'), '{{cliente_nombre}}' => $h($cliente), '{{detalle_facturas}}' => $detalle,
+            '{{detalle_recibos}}' => $detalleRec, '{{detalle_pendientes}}' => $detallePlan,
             '{{total}}' => $b(number_format($total, 2)), '{{cuentas_pago}}' => $cuentasTxt, '{{mes_actual}}' => $MESU[(int)date('n')], '{{anio_actual}}' => date('Y')];
     $html = nl2br(strtr(htmlspecialchars(cobroPlantillaEquipo((string)$pl['contenido']), ENT_QUOTES, 'UTF-8'), $rep), false);
     $asunto = strtr((string)$pl['asunto'], ['{{cliente_nombre}}' => $cliente, '{{mes_actual}}' => $MESU[(int)date('n')], '{{anio_actual}}' => date('Y'), '{{total}}' => number_format($total, 2)]);
@@ -269,13 +287,16 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
 
     $tipo = isset(COBRO_TIPOS[$d['tipo'] ?? '']) ? $d['tipo'] : 'saldo_pendiente';
     $lista = fn($k) => array_values(array_unique(array_filter(array_map('intval', (array)($d[$k] ?? [])))));
-    $ids = $tipo === 'envio_recibo' || $tipo === 'recordatorio_pago' ? [] : $lista('factura_ids');
-    $recIds = $tipo === 'envio_recibo' ? $lista('recibo_ids') : [];
-    $antIds = $tipo === 'envio_recibo' && cobroAnticiposDisponible($pdo) ? $lista('anticipo_ids') : [];
-    $planIds = $tipo === 'recordatorio_pago' ? $lista('plan_ids') : [];
+    $conRecibos = in_array($tipo, ['envio_recibo', 'recibo_y_pendientes'], true);
+    $conPlan = in_array($tipo, ['recordatorio_pago', 'recibo_y_pendientes'], true);
+    $ids = $conRecibos || $conPlan ? [] : $lista('factura_ids');
+    $recIds = $conRecibos ? $lista('recibo_ids') : [];
+    $antIds = $conRecibos && cobroAnticiposDisponible($pdo) ? $lista('anticipo_ids') : [];
+    $planIds = $conPlan ? $lista('plan_ids') : [];
     if (($recIds || $planIds) && !cobrosExtrasDisponible($pdo)) throw new Exception("Falta instalar sql/migraciones/2026-10-07_cobros_plan_recibos.sql.");
     if ($tipo === 'envio_recibo' && !$recIds && !$antIds) throw new Exception("Selecciona al menos un recibo.");
     if ($tipo === 'recordatorio_pago' && !$planIds) throw new Exception("Selecciona al menos un pago del plan.");
+    if ($tipo === 'recibo_y_pendientes' && !$recIds && !$antIds && !$planIds) throw new Exception("Selecciona al menos un recibo o un pago pendiente.");
     if (in_array($tipo, COBRO_TIPOS_FACTURA, true) && !$ids) throw new Exception("Selecciona al menos una factura.");
     if (count($ids) + count($recIds) + count($antIds) > 30) throw new Exception("Máximo 30 documentos por cobro.");
     if ($antIds) {
@@ -390,7 +411,7 @@ function cobroCrear(PDO $pdo, int $cid, int $uid, array $d, callable $renderPdf,
         $insP = $pdo->prepare("INSERT INTO cobros_programados_plan (cobro_id, plan_id) VALUES (?, ?)");
         foreach ($planIds as $pid) $insP->execute([$id, $pid]);
         // Recordatorio de pago: se adjunta el aviso de cobro en PDF de cada pago que sigue pendiente (los ya cobrados se omiten)
-        if ($tipo === 'recordatorio_pago') {
+        if ($conPlan) {
             require_once __DIR__ . '/recibo_pdf.php';
             foreach ($planIds as $pid) {
                 try { $pdf = avisoCobroPdf($pdo, $cid, (int)$pid); } catch (Throwable $e) { continue; }
@@ -416,7 +437,7 @@ function cobroMensajeDocumentos(string $mensaje, array $documentos, string $tipo
     ]);
     $mensaje = preg_replace('~<p\b[^>]*>\s*' . $auto . '\s*</p>|' . $auto . '(?:\s*<br\s*/?>){0,2}~isu', '', $mensaje);
     $documentos = array_values(array_unique(array_filter(array_map('strval', $documentos))));
-    if (!$documentos || !in_array($tipo, [...COBRO_TIPOS_FACTURA, 'recordatorio_pago'], true)) return $mensaje;
+    if (!$documentos || !in_array($tipo, [...COBRO_TIPOS_FACTURA, 'recordatorio_pago', 'recibo_y_pendientes'], true)) return $mensaje;
     $nombres = array_map(fn($nombre) => '<strong>' . htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8') . '</strong>', $documentos);
     $ultimo = array_pop($nombres);
     $lista = $nombres ? implode(', ', $nombres) . ' y ' . $ultimo : $ultimo;
