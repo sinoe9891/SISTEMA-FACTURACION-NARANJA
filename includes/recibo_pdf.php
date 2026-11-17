@@ -180,9 +180,9 @@ function reciboRender(PDO $pdo, int $cid, array $r): string
         . ($r['estado'] === 'anulado' ? $fila('Estado', '<strong style="color:#b91c1c">ANULADO</strong>') : '') . '
     </table>
 
-    ' . ($aviso ? '' : '<div class="firma">
+    ' . ('<div class="firma">
         <div class="caja">' . (!empty($firm['firma_b64']) ? '<img src="' . $firm['firma_b64'] . '">' : '') . '</div>
-        <div class="linea">Recibido por' . ($firm['nombre'] ? '<br><strong>' . $e($firm['nombre']) . '</strong>' : '') . ($firm['cargo'] ? '<br>' . $e($firm['cargo']) : '') . '<br>' . $e($empresa) . '</div>
+        <div class="linea">' . ($aviso ? 'Emitido por' : 'Recibido por') . ($firm['nombre'] ? '<br><strong>' . $e($firm['nombre']) . '</strong>' : '') . ($firm['cargo'] ? '<br>' . $e($firm['cargo']) : '') . '<br>' . $e($empresa) . '</div>
     </div>') . '
 
     <div class="pie">' . $e($r['pie']) . ($aviso ? ' Aviso N.º ' : ' Recibo N.º ') . $num . ' · ' . $e($empresa) . '</div>
