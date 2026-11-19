@@ -23,6 +23,8 @@ try {
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $g = gastosOpObtener($pdo, $cid, (int)($_GET['ver'] ?? 0), $permitidos);
+        // La factura, el saldo y el cobro de la empresa al cliente no son para el colaborador
+        if (!gastosOpEsAdmin($rol)) foreach (['fact_correlativo', 'fact_total', 'fact_pagada', 'fact_estado', 'cobrado_factura_id', 'gasto_cobrar_a', 'gasto_estado', 'gasto_id'] as $k) unset($g[$k]);
         $g['puede_editar'] = gastosOpEsAdmin($rol) || ($g['estado'] !== 'aprobado' && (int)$g['usuario_id'] === $uid);   // el administrador también corrige uno aprobado
         echo json_encode(['success' => true, 'gasto' => $g, 'archivos' => array_map(fn($a) => [
             'id' => (int)$a['id'], 'tipo' => $a['tipo'], 'nombre' => $a['nombre'], 'subido_por' => $a['subido_por'], 'fecha' => date('d/m/Y H:i', strtotime($a['creado_en'])),

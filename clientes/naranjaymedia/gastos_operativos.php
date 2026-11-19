@@ -177,10 +177,10 @@ require_once '../../includes/templates/header.php';
                         <td class="app-num"><?= number_format((float)$g['monto_lempiras'], 2) ?></td>
                         <td class="text-center"><?= (int)$g['archivos'] ? '<a href="#" class="go-ver text-decoration-none" data-id="' . (int)$g['id'] . '" title="Ver archivos"><i class="bi bi-paperclip"></i> ' . (int)$g['archivos'] . '</a>' : '<span class="badge bg-light text-danger border">Sin</span>' ?></td>
                         <td><span class="badge" style="background:<?= $eBg ?>;color:<?= $eFg ?>"><i class="bi <?= $eIco ?> me-1"></i><?= $eTxt ?></span>
-                            <?php if ($g['gasto_id']): ?><div class="small text-muted">Gastos N.º <?= (int)$g['gasto_id'] ?></div><?php endif; ?>
+                            <?php if ($esAdmin && $g['gasto_id']): ?><div class="small text-muted">Gastos N.º <?= (int)$g['gasto_id'] ?></div><?php endif; ?>
                             <?php $cb = $g['cobro'];
                             $fl = $cb['factura'] ? '<a href="ver_factura?id=' . (int)$cb['factura_id'] . '" target="_blank" rel="noopener" class="fw-semibold" title="Ver la factura">' . $e(substr($cb['factura'], -8)) . ' <i class="bi bi-box-arrow-up-right small"></i></a>' : '';
-                            if ($cb['pago'] || $cb['cobro']): ?><div class="small mt-1 pt-1 border-top">
+                            if ($esAdmin && ($cb['pago'] || $cb['cobro'])): ?><div class="small mt-1 pt-1 border-top">   <?php /* el cobro y las facturas de la empresa solo los ve el administrador */ ?>
                             <?php if ($cb['pago'] === 'pagado'): ?><div class="text-muted"><i class="bi bi-bank me-1"></i><strong>Lo que pagamos:</strong> ya pagado</div>
                             <?php elseif ($cb['pago'] === 'reembolsar'): ?><div class="text-warning-emphasis"><i class="bi bi-hourglass-split me-1"></i><strong>Lo que pagamos:</strong> falta reembolsar al colaborador</div><?php endif; ?>
                             <?php if ($cb['cobro'] === 'pagado'): ?><div class="text-success"><i class="bi bi-check-circle-fill me-1"></i><strong>Cobro al cliente:</strong> pagado · factura <?= $fl ?></div>
@@ -473,7 +473,7 @@ require_once '../../includes/templates/header.php';
             if (g.tipo_id && ![...fg.tipo_id.options].some(o => o.value == g.tipo_id)) { const o = new Option(g.tipo, g.tipo_id); o.dataset.pauta = g.es_pauta; fg.tipo_id.add(o, fg.tipo_id.options[1]); fg.tipo_id.value = String(g.tipo_id); }
             editable = g.puede_editar;
             document.getElementById('gTitulo').textContent = (<?= $pautaCliente ? "'Campaña #'" : "'Gasto #'" ?>) + g.id + ' · ' + (g.contrato || (g.cliente + (g.programa ? ' → ' + g.programa : '')));
-            const est = { pendiente: ['warning', 'Por revisar'], aprobado: ['success', 'Aprobado' + (g.revisado_por_nombre ? ' por ' + g.revisado_por_nombre : '') + (g.gasto_id ? ' · Gastos N.º ' + g.gasto_id : '')], rechazado: ['danger', 'Rechazado: ' + (g.motivo_rechazo || '') + ' — corrígelo y guárdalo para enviarlo otra vez'] }[g.estado];
+            const est = { pendiente: ['warning', 'Por revisar'], aprobado: ['success', 'Aprobado' + (g.revisado_por_nombre ? ' por ' + g.revisado_por_nombre : '') + (ES_ADMIN && g.gasto_id ? ' · Gastos N.º ' + g.gasto_id : '')], rechazado: ['danger', 'Rechazado: ' + (g.motivo_rechazo || '') + ' — corrígelo y guárdalo para enviarlo otra vez'] }[g.estado];
             document.getElementById('gAviso').innerHTML = `<div class="alert alert-${est[0]} py-2 small">${esc(est[1])}${g.registrado_por ? ' · Registrado por ' + esc(g.registrado_por) : ''}</div>`;
             pintarArchivos(d.archivos, true);
             document.getElementById('gBitacora').innerHTML = d.bitacora.map(b => `<li>${esc(b.fecha)} · ${esc(b.usuario || '')}: ${esc(b.accion)}${b.detalle ? ' — ' + esc(b.detalle) : ''}</li>`).join('');

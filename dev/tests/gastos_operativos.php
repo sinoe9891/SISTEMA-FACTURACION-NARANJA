@@ -79,6 +79,13 @@ suite('Gastos operativos: rol con clientes asignados, comprobantes, aprobación 
     $gs = $pdo->query("SELECT * FROM gastos WHERE id = $gasto")->fetch(PDO::FETCH_ASSOC);
     check('al aprobarlo se registra en Gastos (L 1,300, pagado con tarjeta, para cobrárselo al cliente, con el comprobante)', $gs && (float)$gs['monto'] === 1300.0 && $gs['estado'] === 'pagado'
         && $gs['metodo_pago'] === 'tarjeta' && (int)$gs['cobrar_receptor_id'] === 1 && $gs['archivo_adjunto'], $r['body']);
+    // El cobro al cliente, la factura y el N.º de Gastos son de la empresa: el operativo no los ve (ni en la lista ni en el detalle)
+    $lOp = $op->get('gastos_operativos');
+    $lAd = $adm->get('gastos_operativos');
+    check('el operativo no ve «Cobro al cliente», «Lo que pagamos» ni el N.º de Gastos', !str_contains($lOp['body'], 'Cobro al cliente') && !str_contains($lOp['body'], 'Lo que pagamos') && !str_contains($lOp['body'], '<div class="small text-muted">Gastos N.º') && sinErroresPhp($lOp['body']), errorPhp($lOp['body']));
+    check('el administrador sí los ve', str_contains($lAd['body'], 'Cobro al cliente') && str_contains($lAd['body'], 'Lo que pagamos'));
+    $dOp = $op->get('includes/gasto_operativo_accion.php', ['ver' => $gid]);
+    check('el detalle del operativo no trae datos de factura ni de Gastos', ($dOp['json']['success'] ?? false) && !array_intersect(['fact_correlativo', 'cobrado_factura_id', 'gasto_id', 'gasto_estado'], array_keys($dOp['json']['gasto'])), $dOp['body']);
     $r = $op->post('includes/gasto_operativo_accion.php', $base + ['id' => $gid, 'pauta_inicio' => date('Y-m-d'), 'pauta_fin' => date('Y-m-d')]);
     check('aprobado, el operativo ya no lo edita', !($r['json']['success'] ?? true));
     $r = $op->post('includes/gasto_operativo_accion.php', ['accion' => 'eliminar', 'id' => $gid]);
