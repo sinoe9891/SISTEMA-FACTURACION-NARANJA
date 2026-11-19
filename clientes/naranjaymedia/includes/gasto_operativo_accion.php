@@ -47,6 +47,7 @@ try {
         case 'guardar':
             $nuevo = !$id;
             $id = gastosOpGuardar($pdo, $cid, $uid, $rol, $_POST, $permitidos, $id);
+            if (gastosOpEsAdmin($rol)) $pdo->prepare("UPDATE gastos_operativos SET edicion_solicitud = NULL, edicion_solicitada_en = NULL, edicion_solicitada_por = NULL WHERE id = ? AND edicion_solicitud IS NOT NULL")->execute([$id]);   // lo corrigió el administrador
             foreach ($subidos as $s) gastosOpArchivoAgregar($pdo, $cid, $uid, $id, $s, (string)($_POST['archivo_tipo'] ?? 'comprobante'));
             $msg = $nuevo ? 'Gasto registrado: queda por revisar.' : 'Gasto actualizado.';
             $extra['id'] = $id;
@@ -77,6 +78,14 @@ try {
         case 'reabrir':
             gastosOpReabrir($pdo, $cid, $uid, $rol, $id);
             $msg = 'El gasto volvió a «Por revisar».';
+            break;
+        case 'solicitar_edicion':
+            gastosOpSolicitarEdicion($pdo, $cid, $uid, $rol, $id, (string)($_POST['nota'] ?? ''), $permitidos);
+            $msg = 'Solicitud enviada: el administrador la verá con tu nota.';
+            break;
+        case 'edicion_atendida':
+            gastosOpDescartarSolicitud($pdo, $cid, $uid, $rol, $id, (string)($_POST['nota'] ?? ''));
+            $msg = 'Solicitud atendida.';
             break;
         case 'tipo_crear':   // alta rápida desde el gasto (también el colaborador)
             $extra['tipo'] = gastosOpTipoCrear($pdo, $cid, (string)($_POST['nombre'] ?? ''), !empty($_POST['es_pauta']));

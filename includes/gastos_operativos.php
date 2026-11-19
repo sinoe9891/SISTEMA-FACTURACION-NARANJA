@@ -655,8 +655,30 @@ function gastosOpReabrir(PDO $pdo, int $cid, int $uid, string $rol, int $id): vo
             $det .= ' · se anuló el gasto N.º ' . $g['gasto_id'];
         } else $det .= ' · se desligó del gasto N.º ' . $g['gasto_id'];
     }
-    $pdo->prepare("UPDATE gastos_operativos SET estado = 'pendiente', revisado_por = NULL, revisado_en = NULL, gasto_id = NULL WHERE id = ?")->execute([$id]);
+    $pdo->prepare("UPDATE gastos_operativos SET estado = 'pendiente', revisado_por = NULL, revisado_en = NULL, gasto_id = NULL, edicion_solicitud = NULL, edicion_solicitada_en = NULL, edicion_solicitada_por = NULL WHERE id = ?")->execute([$id]);
     gastosOpLog($pdo, $id, $uid, 'reabierto', $det);
+}
+
+/** El colaborador pide editar un gasto ya aprobado (no puede hacerlo él): queda la nota para el administrador. */
+function gastosOpSolicitarEdicion(PDO $pdo, int $cid, int $uid, string $rol, int $id, string $nota, ?array $permitidos): void
+{
+    $g = gastosOpObtener($pdo, $cid, $id, $permitidos);
+    if ($g['estado'] !== 'aprobado') throw new Exception("Solo se pide edición de un gasto aprobado: los demás los editás vos.");
+    if (gastosOpEsAdmin($rol)) throw new Exception("El administrador lo edita directamente.");
+    $nota = trim(preg_replace('/\s+/u', ' ', $nota));
+    if (mb_strlen($nota) < 5) throw new Exception("Escribí qué hay que corregir (monto, fecha, tipo…).");
+    $pdo->prepare("UPDATE gastos_operativos SET edicion_solicitud = ?, edicion_solicitada_en = NOW(), edicion_solicitada_por = ? WHERE id = ?")->execute([mb_substr($nota, 0, 500), $uid, $id]);
+    gastosOpLog($pdo, $id, $uid, 'pidió edición', $nota);
+}
+
+/** El administrador atiende o descarta la solicitud de edición (opcionalmente con una nota para el colaborador). */
+function gastosOpDescartarSolicitud(PDO $pdo, int $cid, int $uid, string $rol, int $id, string $nota = ''): void
+{
+    if (!gastosOpEsAdmin($rol)) throw new Exception("Solo un administrador atiende las solicitudes.");
+    $g = gastosOpObtener($pdo, $cid, $id, null);
+    if (empty($g['edicion_solicitud'])) throw new Exception("Este gasto no tiene una solicitud de edición.");
+    $pdo->prepare("UPDATE gastos_operativos SET edicion_solicitud = NULL, edicion_solicitada_en = NULL, edicion_solicitada_por = NULL WHERE id = ?")->execute([$id]);
+    gastosOpLog($pdo, $id, $uid, 'atendió la solicitud de edición', trim($nota) !== '' ? trim($nota) : null);
 }
 
 function gastosOpProveedorId(PDO $pdo, int $id, ?int $provId): void

@@ -86,6 +86,22 @@ suite('Gastos operativos: rol con clientes asignados, comprobantes, aprobación 
     check('el administrador sí los ve', str_contains($lAd['body'], 'Cobro al cliente') && str_contains($lAd['body'], 'Lo que pagamos'));
     $dOp = $op->get('includes/gasto_operativo_accion.php', ['ver' => $gid]);
     check('el detalle del operativo no trae datos de factura ni de Gastos', ($dOp['json']['success'] ?? false) && !array_intersect(['fact_correlativo', 'cobrado_factura_id', 'gasto_id', 'gasto_estado'], array_keys($dOp['json']['gasto'])), $dOp['body']);
+    // Solicitud de edición de un gasto aprobado, con nota
+    $r = $op->post('includes/gasto_operativo_accion.php', ['accion' => 'solicitar_edicion', 'id' => $gid, 'nota' => 'ok']);
+    check('la solicitud sin una nota real se rechaza', ($r['json']['success'] ?? true) === false, $r['body']);
+    $r = $op->post('includes/gasto_operativo_accion.php', ['accion' => 'solicitar_edicion', 'id' => $gid, 'nota' => 'El monto correcto es L 1,250.00, no L 1,300.00']);
+    check('el operativo pide editar un gasto aprobado con su nota', ($r['json']['success'] ?? false) === true, $r['body']);
+    $dOp2 = $op->get('includes/gasto_operativo_accion.php', ['ver' => $gid]);
+    check('el detalle trae la solicitud y queda en el historial', str_contains((string)($dOp2['json']['gasto']['edicion_solicitud'] ?? ''), 'L 1,250.00') && str_contains(json_encode($dOp2['json']['bitacora'] ?? [], JSON_UNESCAPED_UNICODE), 'pidió edición'), $dOp2['body']);
+    $lAd2 = $adm->get('gastos_operativos');
+    check('el administrador ve «Edición solicitada» con la nota en la lista', str_contains($lAd2['body'], 'Edición solicitada') && str_contains($lAd2['body'], 'L 1,250.00'));
+    $r = $adm->post('includes/gasto_operativo_accion.php', ['accion' => 'solicitar_edicion', 'id' => $gid, 'nota' => 'El administrador no la necesita']);
+    check('el administrador no pide edición (edita directo)', ($r['json']['success'] ?? true) === false);
+    $r = $op->post('includes/gasto_operativo_accion.php', ['accion' => 'edicion_atendida', 'id' => $gid]);
+    check('el operativo no marca atendida la solicitud', ($r['json']['success'] ?? true) === false);
+    $r = $adm->post('includes/gasto_operativo_accion.php', ['accion' => 'edicion_atendida', 'id' => $gid, 'nota' => 'Corregido']);
+    check('el administrador la marca atendida y desaparece', ($r['json']['success'] ?? false) && $pdo->query("SELECT edicion_solicitud FROM gastos_operativos WHERE id = $gid")->fetchColumn() === null, $r['body']);
+    $op->post('includes/gasto_operativo_accion.php', ['accion' => 'solicitar_edicion', 'id' => $gid, 'nota' => 'Otra corrección de prueba']);
     $r = $op->post('includes/gasto_operativo_accion.php', $base + ['id' => $gid, 'pauta_inicio' => date('Y-m-d'), 'pauta_fin' => date('Y-m-d')]);
     check('aprobado, el operativo ya no lo edita', !($r['json']['success'] ?? true));
     $r = $op->post('includes/gasto_operativo_accion.php', ['accion' => 'eliminar', 'id' => $gid]);

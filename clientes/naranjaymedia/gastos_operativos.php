@@ -178,6 +178,7 @@ require_once '../../includes/templates/header.php';
                         <td class="text-center"><?= (int)$g['archivos'] ? '<a href="#" class="go-ver text-decoration-none" data-id="' . (int)$g['id'] . '" title="Ver archivos"><i class="bi bi-paperclip"></i> ' . (int)$g['archivos'] . '</a>' : '<span class="badge bg-light text-danger border">Sin</span>' ?></td>
                         <td><span class="badge" style="background:<?= $eBg ?>;color:<?= $eFg ?>"><i class="bi <?= $eIco ?> me-1"></i><?= $eTxt ?></span>
                             <?php if ($esAdmin && $g['gasto_id']): ?><div class="small text-muted">Gastos N.º <?= (int)$g['gasto_id'] ?></div><?php endif; ?>
+                            <?php if (!empty($g['edicion_solicitud']) && $g['estado'] === 'aprobado'): ?><div class="mt-1"><span class="badge text-bg-warning" title="<?= $e($g['edicion_solicitud']) ?>"><i class="bi bi-pencil-square me-1"></i>Edición solicitada</span><div class="small text-muted fst-italic"><?= $e(mb_strimwidth($g['edicion_solicitud'], 0, 80, '…')) ?></div></div><?php endif; ?>
                             <?php $cb = $g['cobro'];
                             $fl = $cb['factura'] ? '<a href="ver_factura?id=' . (int)$cb['factura_id'] . '" target="_blank" rel="noopener" class="fw-semibold" title="Ver la factura">' . $e(substr($cb['factura'], -8)) . ' <i class="bi bi-box-arrow-up-right small"></i></a>' : '';
                             if ($esAdmin && ($cb['pago'] || $cb['cobro'])): ?><div class="small mt-1 pt-1 border-top">   <?php /* el cobro y las facturas de la empresa solo los ve el administrador */ ?>
@@ -267,6 +268,8 @@ require_once '../../includes/templates/header.php';
         </div>
         <div class="modal-footer">
             <button type="button" class="btn btn-outline-danger me-auto" id="gEliminar" hidden><i class="bi bi-trash3 me-1"></i> Eliminar</button>
+            <button type="button" class="btn btn-outline-warning" id="gSolicitar" hidden><i class="bi bi-pencil-square me-1"></i> Solicitar edición</button>
+            <?php if ($esAdmin): ?><button type="button" class="btn btn-outline-success" id="gAtendida" hidden><i class="bi bi-check2 me-1"></i> Marcar solicitud atendida</button><?php endif; ?>
             <?php if ($esAdmin): ?><button type="button" class="btn btn-outline-warning" id="gReabrir" hidden><i class="bi bi-arrow-counterclockwise me-1"></i> Regresar a revisión</button><?php endif; ?>
             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
             <button class="btn btn-primary" id="gGuardar"><i class="bi bi-floppy me-1"></i> Guardar</button>
@@ -481,6 +484,10 @@ require_once '../../includes/templates/header.php';
             document.getElementById('gEliminar').hidden = !editable || g.estado === 'aprobado';   // un aprobado se regresa a revisión antes de eliminarlo
             if (editable && g.estado === 'aprobado') document.getElementById('gAviso').insertAdjacentHTML('beforeend', `<div class="alert alert-info py-2 small"><i class="bi bi-pencil me-1"></i>Puedes corregirlo: sigue aprobado${g.gasto_id ? ' y el gasto N.º ' + g.gasto_id + ' de Gastos se actualiza solo' : ''}.</div>`);
             const re = document.getElementById('gReabrir'); if (re) re.hidden = g.estado !== 'aprobado';
+            // Solicitud de edición: el colaborador la pide con una nota; el administrador la ve y la atiende
+            if (g.edicion_solicitud) document.getElementById('gAviso').insertAdjacentHTML('beforeend', `<div class="alert alert-warning py-2 small"><i class="bi bi-pencil-square me-1"></i><strong>Edición solicitada${g.edicion_solicitada_en ? ' el ' + esc(g.edicion_solicitada_en.slice(0, 10).split('-').reverse().join('/')) : ''}:</strong> ${esc(g.edicion_solicitud)}${ES_ADMIN ? '' : '<br>El administrador la atenderá.'}</div>`);
+            document.getElementById('gSolicitar').hidden = ES_ADMIN || g.estado !== 'aprobado' || !!g.edicion_solicitud;
+            const at = document.getElementById('gAtendida'); if (at) at.hidden = !g.edicion_solicitud;
         } else {
             document.getElementById('gTitulo').textContent = <?= json_encode($pautaCliente ? 'Registrar pauta del cliente' : 'Registrar gasto') ?>;
             fg.fecha.value = new Date().toLocaleDateString('en-CA');
@@ -491,6 +498,7 @@ require_once '../../includes/templates/header.php';
             pintarArchivos([], true);
             document.getElementById('gEliminar').hidden = true;
             const re = document.getElementById('gReabrir'); if (re) re.hidden = true;
+            document.getElementById('gSolicitar').hidden = true; const at = document.getElementById('gAtendida'); if (at) at.hidden = true;
         }
         campos.disabled = !editable;
         document.getElementById('gGuardar').innerHTML = editable ? '<i class="bi bi-floppy me-1"></i> Guardar' : '<i class="bi bi-upload me-1"></i> Subir archivos';
@@ -529,6 +537,19 @@ require_once '../../includes/templates/header.php';
         if (!(await Swal.fire({ icon: 'warning', title: '¿Eliminar este gasto?', text: 'Se borran también sus archivos.', showCancelButton: true, confirmButtonText: 'Sí, eliminar', cancelButtonText: 'No', confirmButtonColor: '#dc3545' })).isConfirmed) return;
         const fd = new FormData(); fd.append('accion', 'eliminar'); fd.append('id', fg.id.value);
         try { const d = await post(fd); m.hide(); Swal.fire({ icon: 'success', title: d.message, timer: 1200, showConfirmButton: false }); cargar(location.pathname + location.search); } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+    });
+    document.getElementById('gSolicitar')?.addEventListener('click', async () => {
+        const r = await Swal.fire({ icon: 'question', title: 'Solicitar edición', input: 'textarea', inputLabel: '¿Qué hay que corregir?', inputPlaceholder: 'Ej.: el monto correcto es L 238.00, no L 230.00', showCancelButton: true, confirmButtonText: 'Enviar solicitud', cancelButtonText: 'Cancelar',
+            inputValidator: v => (v || '').trim().length < 5 ? 'Escribí qué hay que corregir.' : null });
+        if (!r.isConfirmed) return;
+        const fd = new FormData(); fd.append('accion', 'solicitar_edicion'); fd.append('id', fg.id.value); fd.append('nota', r.value);
+        try { const d = await post(fd); m.hide(); Swal.fire({ icon: 'success', title: d.message, timer: 1800, showConfirmButton: false }); cargar(location.pathname + location.search); } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
+    });
+    document.getElementById('gAtendida')?.addEventListener('click', async () => {
+        const r = await Swal.fire({ icon: 'question', title: 'Marcar la solicitud como atendida', input: 'text', inputLabel: 'Nota para quien la pidió (opcional)', showCancelButton: true, confirmButtonText: 'Marcar atendida', cancelButtonText: 'Cancelar' });
+        if (!r.isConfirmed) return;
+        const fd = new FormData(); fd.append('accion', 'edicion_atendida'); fd.append('id', fg.id.value); fd.append('nota', r.value || '');
+        try { const d = await post(fd); m.hide(); Swal.fire({ icon: 'success', title: d.message, timer: 1300, showConfirmButton: false }); cargar(location.pathname + location.search); } catch (err) { Swal.fire('No se pudo', err.message, 'error'); }
     });
     document.getElementById('gReabrir')?.addEventListener('click', async () => {
         if (!(await Swal.fire({ icon: 'question', title: '¿Regresarlo a revisión?', text: 'Si al aprobarlo se creó un gasto en Gastos, ese gasto se anula.', showCancelButton: true, confirmButtonText: 'Sí', cancelButtonText: 'No' })).isConfirmed) return;
