@@ -145,6 +145,15 @@ $solo_prestamos = array_filter($prestamos, fn($p) => in_array($p['tipo'], ['pres
 $solo_bonos     = array_filter($prestamos, fn($p) => $p['tipo'] === 'bono');
 $solo_viaticos  = array_filter($prestamos, fn($p) => $p['tipo'] === 'viatico');
 
+// Botones del comprobante de un movimiento (adelanto, bono, viático, multa, préstamo): ver el adjunto y adjuntar/reemplazar
+$comprobanteBtns = function (array $pr): string {
+    $h = '';
+    if (!empty($pr['archivo_adjunto']))
+        $h .= '<a href="prestamo_comprobante.php?id=' . (int)$pr['id'] . '" target="_blank" class="btn btn-sm btn-outline-success no-print" title="Ver comprobante" onclick="event.stopPropagation()"><i class="bi bi-paperclip"></i></a>';
+    $h .= '<button type="button" class="btn btn-sm btn-outline-secondary btn-subir-comp no-print" data-id="' . (int)$pr['id'] . '" title="' . (!empty($pr['archivo_adjunto']) ? 'Reemplazar comprobante' : 'Adjuntar comprobante') . '" onclick="event.stopPropagation()"><i class="bi bi-' . (!empty($pr['archivo_adjunto']) ? 'arrow-repeat' : 'cloud-upload') . '"></i></button>';
+    return $h;
+};
+
 $bonos_pendientes   = array_filter($solo_bonos,    fn($p) => $p['estado'] === 'activo');
 $viaticos_pendientes = array_filter($solo_viaticos, fn($p) => $p['estado'] === 'activo');
 $total_bonos_pend   = array_sum(array_column($bonos_pendientes, 'monto_total'));
@@ -2226,6 +2235,7 @@ $tipos_btn_p = [
                                     <!-- Acciones -->
                                     <?php if ($pr['estado'] === 'activo'): ?>
                                         <div class="d-flex gap-2 flex-wrap no-print">
+                                            <?= $comprobanteBtns($pr) ?>
                                             <button class="btn btn-sm btn-outline-primary btn-editar-prestamo"
                                                 data-prestamo-id="<?= $pr['id'] ?>" data-tipo="<?= $pr['tipo'] ?>"
                                                 data-descripcion="<?= htmlspecialchars($pr['descripcion']) ?>"
@@ -2246,6 +2256,9 @@ $tipos_btn_p = [
                                                 <i class="bi bi-trash me-1"></i>Eliminar
                                             </button>
                                         </div>
+                                    <?php endif; ?>
+                                    <?php if ($pr['estado'] !== 'activo'): ?>
+                                        <div class="d-flex gap-2 flex-wrap no-print"><?= $comprobanteBtns($pr) ?></div>
                                     <?php endif; ?>
                                     <?php if ($pr['notas']): ?>
                                         <div class="mt-2 p-2 rounded-2"
@@ -2337,6 +2350,7 @@ $tipos_btn_p = [
                                     <span class="badge bg-<?= $ec2['color'] ?>"
                                         style="font-size:.7rem"><?= $ec2['label'] ?></span>
                                 </div>
+                                <div class="d-flex gap-1 no-print"><?= $comprobanteBtns($pr) ?></div>
                                 <?php if ($pr['estado'] === 'activo'): ?>
                                     <div class="d-flex gap-1 no-print">
                                         <button class="btn btn-sm btn-outline-danger btn-cancelar-prestamo"
@@ -2431,6 +2445,7 @@ $tipos_btn_p = [
                                     <span class="badge"
                                         style="background:<?= $ec3['bg'] ?>;color:<?= $ec3['color'] ?>;border:1px solid <?= $ec3['border'] ?>;font-size:.7rem"><?= $ec3['label'] ?></span>
                                 </div>
+                                <div class="d-flex gap-1 no-print"><?= $comprobanteBtns($pr) ?></div>
                                 <?php if ($pr['estado'] === 'activo'): ?>
                                     <div class="d-flex gap-1 no-print">
                                         <button class="btn btn-sm btn-outline-danger btn-cancelar-prestamo"
@@ -3044,6 +3059,9 @@ $tipos_btn_p = [
                                 junto con la próxima nómina. No genera cuotas de descuento.
                             </div>
                         </div>
+                        <div class="col-12"><label class="mf-label">Comprobante <span class="text-muted fw-normal"
+                                    style="text-transform:none;letter-spacing:0">(opcional · foto o PDF, hasta 5 MB)</span></label>
+                            <input type="file" name="comprobante" class="form-control form-control-sm" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
                         <div class="col-12"><label class="mf-label">Notas <span class="text-muted fw-normal"
                                     style="text-transform:none;letter-spacing:0">(opcional)</span></label><textarea
                                 name="notas" class="mf-input" rows="2" maxlength="500"
@@ -3623,7 +3641,7 @@ $tipos_btn_p = [
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Guardando…';
         fetch('includes/prestamo_guardar.php', {
                 method: 'POST',
-                body: new URLSearchParams(new FormData(document.getElementById('formPrestamo')))
+                body: new FormData(document.getElementById('formPrestamo'))
             })
             .then(r => r.json()).then(d => {
                 if (d.success) {
@@ -3797,6 +3815,28 @@ $tipos_btn_p = [
         },
         activo: null
     };
+    // Adjuntar o reemplazar el comprobante de un movimiento ya registrado
+    (function() {
+        const inp = Object.assign(document.createElement('input'), { type: 'file', accept: '.jpg,.jpeg,.png,.webp,.pdf' });
+        let movId = 0;
+        document.addEventListener('click', e => {
+            const b = e.target.closest('.btn-subir-comp');
+            if (!b) return;
+            movId = b.dataset.id;
+            inp.value = '';
+            inp.click();
+        });
+        inp.addEventListener('change', () => {
+            if (!inp.files[0] || !movId) return;
+            const fd = new FormData();
+            fd.append('id', movId);
+            fd.append('comprobante', inp.files[0]);
+            fetch('prestamo_comprobante.php', { method: 'POST', body: fd }).then(r => r.json()).then(d => {
+                if (d.success) location.reload();
+                else Swal.fire({ icon: 'error', title: 'No se pudo adjuntar', text: d.error });
+            }).catch(() => Swal.fire({ icon: 'error', title: 'Error de conexión' }));
+        });
+    })();
     document.addEventListener('click', e => {
         const btn = e.target.closest('.btn-editar-prestamo');
         if (!btn) return;

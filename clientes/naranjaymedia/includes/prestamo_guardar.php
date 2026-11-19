@@ -2,6 +2,7 @@
 // clientes/naranjaymedia/includes/prestamo_guardar.php
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
+require_once __DIR__ . '/prestamo_comprobante_lib.php';
 
 header('Content-Type: application/json');
 // Solo administradores y el rol Nómina manejan colaboradores, pagos y préstamos
@@ -77,6 +78,7 @@ switch ($tipo) {
 $monto_cuota = ($num_cuotas > 0) ? round($monto_total / $num_cuotas, 2) : 0;
 
 try {
+    $comp = prestamoComprobanteSubir($colaborador_id);   // opcional
     $pdo->beginTransaction();
 
     $stmtIns = $pdo->prepare("
@@ -105,6 +107,7 @@ try {
         $notas
     ]);
     $prestamo_id = (int)$pdo->lastInsertId();
+    if ($comp) $pdo->prepare("UPDATE colaborador_prestamos SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ?")->execute([$comp[0], $comp[1], $prestamo_id]);
 
     // «Sale de la cuenta»: el préstamo o adelanto sale del banco (queda como cuenta por cobrar al colaborador)
     $cuentaSalida = filter_input(INPUT_POST, 'cuenta_id', FILTER_VALIDATE_INT) ?: null;

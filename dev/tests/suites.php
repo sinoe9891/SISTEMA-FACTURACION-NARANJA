@@ -3774,3 +3774,44 @@ suite('Editar factura: borrar líneas', function () {
     check('la plantilla oculta de línea nueva no se envía (si no, borrar la línea 1 daba «producto inválido»)', str_contains($src, "#producto-template input, #producto-template select, #producto-template textarea').forEach(el => el.disabled = true)"));
     check('al borrar una línea se renumeran y la nueva toma el siguiente número', str_contains($src, 'renumerarLineas();') && str_contains($src, "const index = contenedor.querySelectorAll('.producto-item').length;"));
 });
+
+suite('Colaboradores: comprobante en adelantos, bonos, viáticos, multas y préstamos', function () use ($pdo) {
+    $c = login('qa.admin@local.test');
+    $colab = (int)$pdo->query("SELECT id FROM colaboradores WHERE cliente_id = 2 AND activo = 1 ORDER BY id LIMIT 1")->fetchColumn();
+    check('hay un colaborador de prueba', $colab > 0);
+    if (!$colab) return;
+    $tmp = tempnam(sys_get_temp_dir(), 'cmp') . '.pdf';
+    file_put_contents($tmp, "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
+    $ids = [];
+    foreach (['bono' => 'QA bono con comprobante', 'viatico' => 'QA viático con comprobante', 'adelanto' => 'QA adelanto con comprobante'] as $tipo => $desc) {
+        $r = $c->post('includes/prestamo_guardar.php', ['colaborador_id' => $colab, 'tipo' => $tipo, 'monto_total' => 100, 'descripcion' => $desc, 'fecha' => date('Y-m-d'), 'comprobante' => new CURLFile($tmp, 'application/pdf', 'boucher.pdf')]);
+        $id = (int)($r['json']['prestamo_id'] ?? 0);
+        $ids[$tipo] = $id;
+        check("$tipo: se registra con el comprobante adjunto", ($r['json']['success'] ?? false) === true && $id > 0, $r['body']);
+        $f = $pdo->query("SELECT archivo_adjunto, archivo_nombre FROM colaborador_prestamos WHERE id = $id")->fetch(PDO::FETCH_ASSOC);
+        check("$tipo: la ruta y el nombre quedan guardados", !empty($f['archivo_adjunto']) && $f['archivo_nombre'] === 'boucher.pdf', json_encode($f));
+        $v = $c->get('prestamo_comprobante', ['id' => $id]);
+        check("$tipo: el comprobante se abre", $v['code'] === 200 && str_starts_with($v['body'], '%PDF'), (string)$v['code']);
+    }
+    $r = $c->post('includes/prestamo_guardar.php', ['colaborador_id' => $colab, 'tipo' => 'multa', 'monto_total' => 50, 'descripcion' => 'QA multa sin comprobante', 'fecha' => date('Y-m-d')]);
+    $ids['multa'] = (int)($r['json']['prestamo_id'] ?? 0);
+    check('sin comprobante también se registra (es opcional)', ($r['json']['success'] ?? false) === true, $r['body']);
+    check('sin comprobante, abrirlo da 404', $c->get('prestamo_comprobante', ['id' => $ids['multa']])['code'] === 404);
+    $r = $c->post('prestamo_comprobante.php', ['id' => $ids['multa'], 'comprobante' => new CURLFile($tmp, 'application/pdf', 'tarde.pdf')]);
+    check('se puede adjuntar después de registrar', ($r['json']['success'] ?? false) === true && $c->get('prestamo_comprobante', ['id' => $ids['multa']])['code'] === 200, $r['body']);
+    $txt = tempnam(sys_get_temp_dir(), 'cmp') . '.txt';
+    file_put_contents($txt, 'no soy un comprobante');
+    $r = $c->post('prestamo_comprobante.php', ['id' => $ids['bono'], 'comprobante' => new CURLFile($txt, 'text/plain', 'nota.txt')]);
+    check('rechaza archivos que no son foto ni PDF', ($r['json']['success'] ?? true) === false, $r['body']);
+    $ficha = $c->get('colaborador_ver', ['id' => $colab]);
+    check('la ficha muestra el clip y el botón de adjuntar', substr_count($ficha['body'], 'prestamo_comprobante.php?id=') >= 4 && str_contains($ficha['body'], 'btn-subir-comp') && sinErroresPhp($ficha['body']), errorPhp($ficha['body']));
+    $anon = new Cliente('anon');
+    check('sin sesión no se ve el comprobante', $anon->get('prestamo_comprobante', ['id' => $ids['bono']])['code'] !== 200);
+    foreach ($ids as $id) if ($id) {
+        $f = $pdo->query("SELECT archivo_adjunto FROM colaborador_prestamos WHERE id = $id")->fetchColumn();
+        if ($f && is_file(UPLOADS . '/comprobantes_nomina/' . $f)) @unlink(UPLOADS . '/comprobantes_nomina/' . $f);
+        $pdo->exec("DELETE FROM colaborador_prestamo_cuotas WHERE prestamo_id = $id");
+        $pdo->exec("DELETE FROM colaborador_prestamos WHERE id = $id");
+    }
+    @unlink($tmp); @unlink($txt);
+});
