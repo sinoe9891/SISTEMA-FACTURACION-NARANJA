@@ -3847,3 +3847,36 @@ suite('Gastos mensuales: editar solo este pago o este y los siguientes (recalcul
     $src = file_get_contents(__DIR__ . '/../../clientes/naranjaymedia/gastos.php');
     check('el formulario ofrece «Este y los siguientes pagos pendientes de la serie»', str_contains($src, 'name="aplicar_serie"') && str_contains($src, 'id="grpSerie"'));
 });
+
+suite('Colaboradores: aviso por correo al registrar bono, viático, adelanto, préstamo o multa', function () use ($pdo) {
+    require_once __DIR__ . '/../../includes/correo_movimientos.php';
+    $c = login('qa.admin@local.test');
+    $col = $pdo->query("SELECT id, email FROM colaboradores WHERE cliente_id = 2 AND activo = 1 ORDER BY id LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $pdo->prepare("UPDATE colaboradores SET email = 'colaborador@ejemplo.test' WHERE id = ?")->execute([$col['id']]);
+    $c->post('includes/correo_accion.php', ['accion' => 'guardar', 'host' => '127.0.0.1', 'puerto' => 2525, 'seguridad' => 'ninguna', 'usuario' => 'qa', 'clave' => 'clave-de-prueba', 'remitente_email' => 'facturacion@ejemplo.test', 'remitente_nombre' => 'Naranja & Media', 'responder_a' => 'admin@ejemplo.test', 'activo' => 1]);
+    $ids = [];
+    $dir = __DIR__ . '/../qa/correos';
+    $antes = count(glob("$dir/*.eml") ?: []);
+    foreach (['bono' => 'Bono por meta', 'viatico' => 'Viático a SPS', 'adelanto' => 'Adelanto de sueldo', 'prestamo' => 'Préstamo personal', 'multa' => 'Descuento por daño'] as $tipo => $desc) {
+        $d = ['colaborador_id' => $col['id'], 'tipo' => $tipo, 'monto_total' => 500, 'descripcion' => $desc, 'fecha' => date('Y-m-d'), 'fecha_primera_cuota' => date('Y-m-d', strtotime('+10 days')), 'num_cuotas' => $tipo === 'prestamo' ? 2 : 1, 'descuento_auto' => 1, 'enviar_correo' => 1];
+        $r = $c->post('includes/prestamo_guardar.php', $d);
+        $ids[] = (int)($r['json']['prestamo_id'] ?? 0);
+        check("$tipo: se registra y avisa por correo", ($r['json']['success'] ?? false) && ($r['json']['correo']['enviado'] ?? false) === true, $r['body']);
+    }
+    check('el servidor SMTP recibió los 5 avisos', count(glob("$dir/*.eml") ?: []) === $antes + 5);
+    // Sin la casilla no se envía
+    $r = $c->post('includes/prestamo_guardar.php', ['colaborador_id' => $col['id'], 'tipo' => 'bono', 'monto_total' => 50, 'descripcion' => 'QA sin aviso', 'fecha' => date('Y-m-d')]);
+    $ids[] = (int)($r['json']['prestamo_id'] ?? 0);
+    check('sin la casilla, no se envía correo', ($r['json']['success'] ?? false) && ($r['json']['correo'] ?? null) === null, $r['body']);
+    // Plantillas por tipo
+    $m = ['tipo' => 'bono', 'descripcion' => 'Meta', 'fecha' => '2026-11-18', 'monto_total' => 500, 'num_cuotas' => 0, 'descuento_auto' => 0, 'notas' => '', 'monto_cuota' => 0, 'frecuencia_cuota' => 'mensual'];
+    [$as, $html] = correoMovimientoPlantilla($m, ['nombre' => 'Ana'], ['alias' => 'Naranja'], false);
+    check('plantilla del bono: reconocimiento y próxima nómina', str_contains($html, 'Felicidades') && str_contains($html, 'próxima nómina') && str_contains($as, 'Naranja'));
+    $m['tipo'] = 'adelanto'; $m['descuento_auto'] = 1; $m['primera_cuota'] = '2026-11-30';
+    [, $html] = correoMovimientoPlantilla($m, ['nombre' => 'Ana'], ['alias' => 'Naranja'], false);
+    check('plantilla del adelanto: fecha de descuento y descuento automático', str_contains($html, '30/11/2026') && str_contains($html, 'automáticamente'));
+    foreach ($ids as $i) if ($i) { $pdo->exec("DELETE FROM colaborador_prestamo_cuotas WHERE prestamo_id = $i"); $pdo->exec("DELETE FROM colaborador_prestamos WHERE id = $i"); }
+    $pdo->prepare("UPDATE colaboradores SET email = ? WHERE id = ?")->execute([$col['email'], $col['id']]);
+    $src = file_get_contents(__DIR__ . '/../../clientes/naranjaymedia/colaborador_ver.php');
+    check('el formulario trae la casilla de aviso y la fecha «Se descuenta el»', str_contains($src, 'prestEnviarCorreo') && str_contains($src, 'Se descuenta el'));
+});

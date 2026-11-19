@@ -174,6 +174,17 @@ try {
         'multa'    => 'Multa/Descuento',
     ];
 
+    // Aviso por correo al colaborador (opcional). Si falla, el movimiento queda registrado igual.
+    $correo = null;
+    if (!empty($_POST['enviar_correo'])) {
+        require_once __DIR__ . '/../../../includes/correo_movimientos.php';
+        try {
+            $correo = ['enviado' => true, 'mensaje' => 'Aviso enviado a: ' . correoNotificarMovimiento($pdo, $cliente_id, $prestamo_id, (int)USUARIO_ID)];
+        } catch (Throwable $e) {
+            $correo = ['enviado' => false, 'mensaje' => 'No se envió el aviso por correo: ' . $e->getMessage()];
+        }
+    }
+
     $msg = ($etiquetas[$tipo] ?? ucfirst($tipo)) . ' registrado correctamente.';
     if ($num_cuotas > 0) $msg .= " Se generaron {$num_cuotas} cuota(s).";
     if ($tipo === 'viatico') $msg .= " Se liquidará al procesar la nómina.";
@@ -182,7 +193,8 @@ try {
     echo json_encode([
         'success'     => true,
         'prestamo_id' => $prestamo_id,
-        'message'     => $msg,
+        'message'     => $msg . ($correo ? '<br><small>' . htmlspecialchars($correo['mensaje']) . '</small>' : ''),
+        'correo'      => $correo,
     ]);
 } catch (Exception $e) {
     $pdo->rollBack();

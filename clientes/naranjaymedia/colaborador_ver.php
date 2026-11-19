@@ -2999,9 +2999,9 @@ $tipos_btn_p = [
                                 placeholder="Ej: Viático para visita cliente SPS"></div>
                         <div class="col-md-4"><label class="mf-label">Fecha *</label><input type="date" name="fecha"
                                 class="mf-input" value="<?= date('Y-m-d') ?>"></div>
-                        <div class="col-md-4" id="grp_fecha_primera_cuota"><label class="mf-label">Fecha 1ª cuota
+                        <div class="col-md-4" id="grp_fecha_primera_cuota"><label class="mf-label" id="lblFecha1cuota">Fecha 1ª cuota
                                 *</label><input type="date" name="fecha_primera_cuota" id="prest_fecha1cuota"
-                                class="mf-input" value="<?= date('Y-m-d') ?>"><small class="text-muted"
+                                class="mf-input" value="<?= date('Y-m-d') ?>"><small class="text-muted" id="hintFecha1cuota"
                                 style="font-size:.72rem">Desde aquí se calculan las cuotas</small></div>
                         <div class="col-md-5"><label class="mf-label">Monto Total *</label>
                             <div class="input-group"><span class="input-group-text">L</span><input type="number"
@@ -3062,6 +3062,14 @@ $tipos_btn_p = [
                         <div class="col-12"><label class="mf-label">Comprobante <span class="text-muted fw-normal"
                                     style="text-transform:none;letter-spacing:0">(opcional · foto o PDF, hasta 5 MB)</span></label>
                             <input type="file" name="comprobante" class="form-control form-control-sm" accept=".jpg,.jpeg,.png,.webp,.pdf"></div>
+                        <?php if (!empty($correoActivo)): $__emailOk = filter_var(trim((string)($col['email'] ?? '')), FILTER_VALIDATE_EMAIL); ?>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="enviar_correo" value="1" id="prestEnviarCorreo" <?= $__emailOk ? 'checked' : 'disabled' ?>>
+                                <label class="form-check-label small" for="prestEnviarCorreo"><i class="bi bi-envelope-check me-1 text-primary"></i>Avisar por correo al colaborador<?= $__emailOk ? ' (<span class="text-muted">' . htmlspecialchars($col['email']) . '</span>, con el comprobante adjunto si lo hay)' : ' <span class="text-muted">— no tiene un correo válido registrado</span>' ?></label>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                         <div class="col-12"><label class="mf-label">Notas <span class="text-muted fw-normal"
                                     style="text-transform:none;letter-spacing:0">(opcional)</span></label><textarea
                                 name="notas" class="mf-input" rows="2" maxlength="500"
@@ -3515,6 +3523,7 @@ $tipos_btn_p = [
     /* ══ NUEVO PRÉSTAMO / BONO / VIÁTICO ═══════════════════════════════════════ */
     function abrirModalRegistrar(tipoDefault) {
         document.getElementById('formPrestamo').reset();
+        delete document.getElementById('prest_fecha1cuota').dataset.tocada;
         selectTipoCard('new', tipoDefault);
         actualizarTipoUI(tipoDefault);
         calcularCuota();
@@ -3581,12 +3590,32 @@ $tipos_btn_p = [
         abrirModalRegistrar('viatico');
     }));
 
+    // Próximo día de pago del colaborador (mensual: su día de pago; quincenal: el siguiente de sus dos días)
+    function proximoDiaPago() {
+        const dias = <?= json_encode(array_values(array_filter([(int)($col['dia_pago'] ?? 0), $tipo_pago === 'quincenal' ? (int)($col['dia_pago_2'] ?? 0) : 0]))) ?>;
+        const hoy = new Date(), pad = n => String(n).padStart(2, '0');
+        const f = (a, m, d) => a + '-' + pad(m + 1) + '-' + pad(Math.min(d, new Date(a, m + 1, 0).getDate()));
+        if (!dias.length) return f(hoy.getFullYear(), hoy.getMonth(), 31);   // sin día configurado: fin de mes
+        for (const d of dias.sort((x, y) => x - y)) {
+            const c = f(hoy.getFullYear(), hoy.getMonth(), d);
+            if (c >= hoy.getFullYear() + '-' + pad(hoy.getMonth() + 1) + '-' + pad(hoy.getDate())) return c;
+        }
+        return f(hoy.getFullYear(), hoy.getMonth() + 1, dias[0]);
+    }
+    document.getElementById('prest_fecha1cuota').addEventListener('input', function() { this.dataset.tocada = '1'; });
     function actualizarTipoUI(t) {
         document.getElementById('grp_num_cuotas').style.display = t === 'prestamo' ? '' : 'none';
         document.getElementById('grp_frecuencia').style.display = t === 'prestamo' ? '' : 'none';
         document.getElementById('grp_preview_cuota').style.display = t === 'prestamo' ? '' : 'none';
         document.getElementById('grp_fecha_primera_cuota').style.display = ['prestamo', 'adelanto', 'multa'].includes(t) ?
             '' : 'none';
+        // Adelanto y multa: es la fecha en que se descuenta (por defecto, el próximo día de pago del colaborador)
+        const unico = ['adelanto', 'multa'].includes(t), f1 = document.getElementById('prest_fecha1cuota');
+        document.getElementById('lblFecha1cuota').textContent = unico ? 'Se descuenta el' : 'Fecha 1ª cuota *';
+        document.getElementById('hintFecha1cuota').textContent = unico
+            ? 'Próximo día de pago. Con «descontar automáticamente» se resta en la nómina que se registre.'
+            : 'Desde aquí se calculan las cuotas';
+        if (!f1.dataset.tocada) f1.value = unico ? proximoDiaPago() : new Date().toLocaleDateString('en-CA');
         document.getElementById('grp_auto').style.display = ['bono', 'viatico'].includes(t) ? 'none' : '';
         const grpCta = document.getElementById('grp_cuenta_salida');   // solo préstamos y adelantos salen del banco al registrarlos
         if (grpCta) grpCta.style.display = ['prestamo', 'adelanto'].includes(t) ? '' : 'none';
