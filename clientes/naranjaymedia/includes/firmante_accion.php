@@ -2,7 +2,7 @@
 // clientes/naranjaymedia/includes/firmante_accion.php — Firmantes de los documentos de pago (solo administradores).
 //   GET  ?firma=<rol>                         → imagen de la firma (vista previa)
 //   POST accion=guardar rol, nombre, cargo     · accion=subir rol, firma (PNG/JPG)  · accion=quitar rol  · accion=recibos_defecto rol (quién firma los recibos)
-//   Sello de la empresa: GET ?sello=1 (imagen) · POST accion=sello_subir sello · sello_quitar · sello_uso facturas=0|1 cotizaciones=0|1
+//   Sello de la empresa: GET ?sello=1 (imagen) · POST accion=sello_subir sello · sello_quitar · sello_uso facturas=0|1 cotizaciones=0|1 recibos=0|1
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 require_once '../../../includes/firmantes.php';
@@ -58,6 +58,8 @@ try {
                 break;
             case 'sello_uso':
                 $pdo->prepare("UPDATE clientes_saas SET sello_facturas = ?, sello_cotizaciones = ? WHERE id = ?")->execute([empty($_POST['facturas']) ? 0 : 1, empty($_POST['cotizaciones']) ? 0 : 1, $cid]);
+                if ($pdo->query("SHOW COLUMNS FROM clientes_saas LIKE 'sello_recibos'")->fetchColumn())
+                    $pdo->prepare("UPDATE clientes_saas SET sello_recibos = ? WHERE id = ?")->execute([empty($_POST['recibos']) ? 0 : 1, $cid]);
                 echo json_encode(['success' => true, 'message' => 'Guardado.'], JSON_UNESCAPED_UNICODE);
                 break;
             default:

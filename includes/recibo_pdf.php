@@ -117,6 +117,15 @@ function reciboRender(PDO $pdo, int $cid, array $r): string
     if (!$logo && is_file($local)) $logo = 'data:image/png;base64,' . base64_encode(file_get_contents($local));
 
     $firm = firmantesParaPdf($pdo, $cid, __DIR__ . '/../clientes/naranjaymedia/includes/uploads')[firmaReciboRol($pdo, $cid, isset($r['contrato']) ? (int)$r['contrato'] : null)] ?? ['nombre' => '', 'cargo' => '', 'firma_b64' => ''];
+    // Sello de la empresa (Configuración → Firmas), si se eligió ponerlo en los recibos
+    $sello = '';
+    try {
+        $stSl = $pdo->prepare("SELECT sello, sello_recibos FROM clientes_saas WHERE id = ?");
+        $stSl->execute([$cid]);
+        $rSl = $stSl->fetch(PDO::FETCH_ASSOC);
+        $rutaSl = $rSl && $rSl['sello'] && (int)$rSl['sello_recibos'] ? realpath(__DIR__ . '/../clientes/naranjaymedia/includes/uploads/firmas/' . $rSl['sello']) : false;
+        if ($rutaSl && is_file($rutaSl)) $sello = 'data:' . ((new finfo(FILEINFO_MIME_TYPE))->file($rutaSl) ?: 'image/png') . ';base64,' . base64_encode(file_get_contents($rutaSl));
+    } catch (Throwable $e) { $sello = ''; }   // sin la migración del sello
     $MES = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
     $fecha = (int)substr($r['fecha_emision'], 8, 2) . ' de ' . $MES[(int)substr($r['fecha_emision'], 5, 2)] . ' de ' . substr($r['fecha_emision'], 0, 4);
     $periodo = $r['periodo_mes'] ? ucfirst($MES[(int)$r['periodo_mes']]) . ' ' . (int)$r['periodo_anio'] : '';
@@ -150,10 +159,11 @@ function reciboRender(PDO $pdo, int $cid, array $r): string
         table.d { width: 100%; border-collapse: collapse; margin-top: 14px; }
         table.d td { padding: 7px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
         table.d td.k { width: 26%; color: #64748b; }
-        .firma { margin-top: 60px; width: 46%; text-align: center; }
+        .firma { margin-top: 60px; width: 46%; text-align: center; position: relative; }
+        .firma .sello { position: absolute; right: -55px; top: -12px; height: 104px; }
         .firma table.caja { width: 100%; border-collapse: collapse; }
         .firma table.caja td { height: 83px; vertical-align: bottom; text-align: center; padding: 0; }
-        .firma table.caja img { max-height: 78px; max-width: 286px; margin-bottom: -7px; }
+        .firma table.caja img { max-height: 78px; max-width: 286px; margin-bottom: -14px; }
         .firma .linea { border-top: 1px solid #334155; padding-top: 5px; font-size: 10.5px; }
         .pie { position: fixed; bottom: -10px; left: 0; right: 0; font-size: 9px; color: #94a3b8; text-align: center; }
     </style></head><body>
@@ -182,7 +192,7 @@ function reciboRender(PDO $pdo, int $cid, array $r): string
     </table>
 
     ' . ('<div class="firma">
-        <table class="caja"><tr><td>' . (!empty($firm['firma_b64']) ? '<img src="' . $firm['firma_b64'] . '">' : '') . '</td></tr></table>
+        ' . ($sello ? '<img class="sello" src="' . $sello . '">' : '') . '<table class="caja"><tr><td>' . (!empty($firm['firma_b64']) ? '<img src="' . $firm['firma_b64'] . '">' : '') . '</td></tr></table>
         <div class="linea">' . ($aviso ? 'Emitido por' : 'Recibido por') . ($firm['nombre'] ? '<br><strong>' . $e($firm['nombre']) . '</strong>' : '') . ($firm['cargo'] ? '<br>' . $e($firm['cargo']) : '') . '<br>' . $e($empresa) . '</div>
     </div>') . '
 

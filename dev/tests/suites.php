@@ -3917,3 +3917,27 @@ suite('Contratos: crear un servicio nuevo desde crear o editar contrato', functi
     $js = file_get_contents(__DIR__ . '/../../clientes/js/contrato-servicio-nuevo.js');
     check('el script pide primero elegir el cliente', str_contains($js, 'primero elegilo'));
 });
+
+suite('Recibos y avisos: sello de la empresa', function () use ($pdo) {
+    $c = login('qa.admin@local.test');
+    $pg = $c->get('configuracion_firmas');
+    check('Firmas ofrece «Ponerlo en los recibos y avisos de cobro»', str_contains($pg['body'], 'id="selloRec"') && sinErroresPhp($pg['body']), errorPhp($pg['body']));
+    $r = $c->post('includes/firmante_accion.php', ['accion' => 'sello_uso', 'recibos' => '1']);
+    check('se enciende el sello en recibos', ($r['json']['success'] ?? false) && (int)$pdo->query("SELECT sello_recibos FROM clientes_saas WHERE id = 2")->fetchColumn() === 1, $r['body']);
+    // PDF con sello: se pone uno de prueba y se genera el recibo de anticipo
+    $orig = $pdo->query("SELECT sello FROM clientes_saas WHERE id = 2")->fetchColumn();
+    $dir = UPLOADS . '/firmas/2';
+    @mkdir($dir, 0775, true);
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+    file_put_contents("$dir/sello_qa_recibo.png", $png);
+    $pdo->exec("UPDATE clientes_saas SET sello = '2/sello_qa_recibo.png', sello_recibos = 1 WHERE id = 2");
+    require_once __DIR__ . '/../../includes/recibo_pdf.php';
+    $ant = (int)$pdo->query("SELECT id FROM contratos_anticipos WHERE cliente_id = 2 AND anulado = 0 ORDER BY id DESC LIMIT 1")->fetchColumn();
+    if ($ant) check('el recibo de anticipo se genera con el sello encendido', strlen(reciboRender($pdo, 2, anticipoDatos($pdo, 2, $ant))) > 1000);
+    $src = file_get_contents(__DIR__ . '/../../includes/recibo_pdf.php');
+    check('el recibo pone el sello cuando está encendido y la firma va más abajo', str_contains($src, "class=\"sello\"") && str_contains($src, 'margin-bottom: -14px') && str_contains($src, 'sello_recibos'));
+    $c->post('includes/firmante_accion.php', ['accion' => 'sello_uso']);   // apagado
+    check('apagado, el sello no sale en los recibos', (int)$pdo->query("SELECT sello_recibos FROM clientes_saas WHERE id = 2")->fetchColumn() === 0);
+    $pdo->prepare("UPDATE clientes_saas SET sello = ?, sello_recibos = 1 WHERE id = 2")->execute([$orig ?: null]);
+    @unlink("$dir/sello_qa_recibo.png");
+});

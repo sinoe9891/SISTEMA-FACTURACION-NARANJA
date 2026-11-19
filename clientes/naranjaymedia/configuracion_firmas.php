@@ -14,7 +14,7 @@ $firmantes = $instalada ? firmantesLista($pdo, $cid) : [];
 // Sello de la empresa (para facturas y cotizaciones)
 $sello = null;
 try {
-    $stS = $pdo->prepare("SELECT sello, sello_facturas, sello_cotizaciones FROM clientes_saas WHERE id = ?");
+    $stS = $pdo->prepare("SELECT sello, sello_facturas, sello_cotizaciones, COALESCE(sello_recibos, 0) AS sello_recibos FROM clientes_saas WHERE id = ?");
     $stS->execute([$cid]);
     $sello = $stS->fetch(PDO::FETCH_ASSOC) ?: null;
 } catch (Throwable $e) {
@@ -96,6 +96,8 @@ require_once '../../includes/templates/config_tabs.php';
                     <label class="form-check-label" for="selloFact">Ponerlo en las facturas</label></div>
                 <div class="form-check form-switch"><input class="form-check-input sello-uso" type="checkbox" role="switch" id="selloCot" name="cotizaciones" <?= (int)$sello['sello_cotizaciones'] ? 'checked' : '' ?> style="cursor:pointer">
                     <label class="form-check-label" for="selloCot">Ponerlo en las cotizaciones</label></div>
+                <div class="form-check form-switch"><input class="form-check-input sello-uso" type="checkbox" role="switch" id="selloRec" name="recibos" <?= (int)$sello['sello_recibos'] ? 'checked' : '' ?> style="cursor:pointer">
+                    <label class="form-check-label" for="selloRec">Ponerlo en los recibos y avisos de cobro</label></div>
             </div>
         </div>
     </div>
@@ -129,6 +131,7 @@ require_once '../../includes/templates/config_tabs.php';
         const fd = new FormData(); fd.append('accion', 'sello_uso');
         if (document.getElementById('selloFact').checked) fd.append('facturas', '1');
         if (document.getElementById('selloCot').checked) fd.append('cotizaciones', '1');
+        if (document.getElementById('selloRec')?.checked) fd.append('recibos', '1');
         enviar(fd).then(() => Swal.fire({ icon: 'success', title: 'Guardado', timer: 1000, showConfirmButton: false })).catch(error);
     }));
     document.querySelectorAll('.f-recibos').forEach(r => r.addEventListener('change', () => {
