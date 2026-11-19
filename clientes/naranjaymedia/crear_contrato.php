@@ -707,9 +707,14 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                         <i class="bi bi-box-seam text-success"></i>
                         Servicios del Contrato
                     </span>
+                    <span class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btnServicioNuevo" disabled title="Crea un servicio y lo asigna al cliente del contrato">
+                        <i class="bi bi-stars me-1"></i>Crear servicio nuevo
+                    </button>
                     <button type="button" class="btn btn-sm btn-outline-success" id="btnAgregarSvc" disabled>
                         <i class="bi bi-plus-lg me-1"></i>Agregar servicio
                     </button>
+                    </span>
                 </div>
                 <div class="cc-card-body">
                     <div id="aviso-sin-cliente" class="aviso-cliente">
@@ -987,7 +992,7 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
             document.getElementById('contenedor-svc').classList.add('d-none');
             document.getElementById('resumen-total').classList.add('d-none');
             document.getElementById('aviso-sin-cliente').classList.remove('d-none');
-            document.getElementById('btnAgregarSvc').disabled = true;
+            document.getElementById('btnAgregarSvc').disabled = true; document.getElementById('btnServicioNuevo').disabled = true;
         }
         // Bloques condicionales
         document.getElementById('bloque-rotativos').classList.toggle('d-none', tipo !== 'rotativo');
@@ -1042,7 +1047,7 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                 document.getElementById('aviso-sin-cliente').classList.add('d-none');
                 document.getElementById('contenedor-svc').classList.remove('d-none');
                 document.getElementById('resumen-total').classList.remove('d-none');
-                document.getElementById('btnAgregarSvc').disabled = false;
+                document.getElementById('btnAgregarSvc').disabled = false; document.getElementById('btnServicioNuevo').disabled = false;
                 if (document.querySelectorAll('#contenedor-svc .svc-item').length === 0) {
                     if (prods.length === 0) {
                         document.getElementById('contenedor-svc').innerHTML =
@@ -1070,7 +1075,7 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
         document.getElementById('contenedor-svc').classList.add('d-none');
         document.getElementById('aviso-sin-cliente').classList.remove('d-none');
         document.getElementById('resumen-total').classList.add('d-none');
-        document.getElementById('btnAgregarSvc').disabled = true;
+        document.getElementById('btnAgregarSvc').disabled = true; document.getElementById('btnServicioNuevo').disabled = true;
         productos = [];
         svcIndex = 0;
         recalcTotal();
@@ -1095,7 +1100,7 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                 document.getElementById('aviso-sin-cliente').classList.add('d-none');
                 document.getElementById('contenedor-svc').classList.remove('d-none');
                 document.getElementById('resumen-total').classList.remove('d-none');
-                document.getElementById('btnAgregarSvc').disabled = false;
+                document.getElementById('btnAgregarSvc').disabled = false; document.getElementById('btnServicioNuevo').disabled = false;
                 if (prods.length === 0) {
                     document.getElementById('contenedor-svc').innerHTML =
                         '<div class="text-center py-3 text-muted" style="font-size:.85rem">' +
@@ -1107,6 +1112,21 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
                 }
                 recalcTotal();
             }).catch(() => Swal.fire('Error', 'No se pudieron cargar los servicios.', 'error'));
+    });
+
+    /* ══ CREAR SERVICIO NUEVO (se asigna al cliente del contrato) ═══ */
+    document.getElementById('btnServicioNuevo').addEventListener('click', async () => {
+        const rid = document.getElementById('receptor_id').value || document.querySelector('#contenedor-rotativos .rot-item select')?.value || '';
+        const prod = await crearServicioContrato(rid);
+        if (!prod) return;
+        productos.push(prod);
+        document.getElementById('contenedor-svc').classList.remove('d-none');
+        document.getElementById('aviso-sin-cliente').classList.add('d-none');
+        agregarServicio();
+        const filas = document.querySelectorAll('#contenedor-svc .svc-item');
+        const sel = filas[filas.length - 1].querySelector('.sel-svc');
+        sel.value = String(prod.id);
+        sel.dispatchEvent(new Event('change'));
     });
 
     /* ══ AGREGAR SERVICIO ══════════════════════════════════════════ */
@@ -1425,5 +1445,6 @@ $clientes_lista = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
     actualizarPreviewCobros();
 </script>
 
+<script src="../../clientes/js/contrato-servicio-nuevo.js?v=<?= @filemtime(__DIR__ . '/../js/contrato-servicio-nuevo.js') ?>"></script>
 <script src="../../clientes/js/plan-pagos.js?v=<?= @filemtime(__DIR__ . '/../js/plan-pagos.js') ?>"></script>
 <?php require_once '../../includes/templates/footer.php'; ?>

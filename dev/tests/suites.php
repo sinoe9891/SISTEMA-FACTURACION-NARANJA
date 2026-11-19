@@ -3889,3 +3889,31 @@ suite('Establecimiento: con una sola sucursal se entra directo', function () {
     $r = $m->get('seleccionar_establecimiento');
     check('con varios establecimientos sigue mostrando la lista para elegir', $r['code'] === 200 && str_contains($r['body'], 'app-select-item'), (string)$r['code']);
 });
+
+suite('Contratos: crear un servicio nuevo desde crear o editar contrato', function () use ($pdo) {
+    $c = login('qa.admin@local.test');
+    $rec = (int)$pdo->query("SELECT id FROM clientes_factura WHERE cliente_id = 2 ORDER BY id LIMIT 1")->fetchColumn();
+    $r = $c->post('includes/producto_contrato_crear.php', ['receptor_id' => $rec, 'nombre' => 'QA servicio nuevo del contrato', 'descripcion' => '', 'precio' => '1500.50', 'tipo_isv' => '15']);
+    $id = (int)($r['json']['producto']['id'] ?? 0);
+    check('se crea el servicio', ($r['json']['success'] ?? false) && $id > 0, $r['body']);
+    $p = $pdo->query("SELECT receptores_id, cliente_id, precio, tipo_isv, tipo, descripcion FROM productos_clientes WHERE id = $id")->fetch(PDO::FETCH_ASSOC);
+    check('queda asignado al cliente del contrato, con su precio e ISV', $p && (int)$p['receptores_id'] === $rec && (int)$p['cliente_id'] === 2 && (float)$p['precio'] === 1500.5 && $p['tipo_isv'] === '15' && $p['tipo'] === 'servicio' && $p['descripcion'] === 'QA servicio nuevo del contrato', json_encode($p));
+    $l = $c->get('../../includes/api/productos_por_receptor.php', ['receptor_id' => $rec]);
+    check('aparece en la lista de servicios de ese cliente', in_array($id, array_map('intval', array_column($l['json'] ?? [], 'id')), true));
+    $r = $c->post('includes/producto_contrato_crear.php', ['receptor_id' => 99999999, 'nombre' => 'QA x', 'precio' => '10', 'tipo_isv' => '15']);
+    check('con un cliente que no es de la empresa se rechaza', ($r['json']['success'] ?? true) === false);
+    $r = $c->post('includes/producto_contrato_crear.php', ['receptor_id' => $rec, 'nombre' => 'QA x', 'precio' => '0', 'tipo_isv' => '15']);
+    check('sin precio se rechaza', ($r['json']['success'] ?? true) === false);
+    $r = $c->post('includes/producto_contrato_crear.php', ['receptor_id' => $rec, 'nombre' => '', 'precio' => '10', 'tipo_isv' => '15']);
+    check('sin nombre se rechaza', ($r['json']['success'] ?? true) === false);
+    $lector = login('qa.nomina@local.test');
+    $r = $lector->post('includes/producto_contrato_crear.php', ['receptor_id' => $rec, 'nombre' => 'QA x', 'precio' => '10', 'tipo_isv' => '15']);
+    check('un rol sin permiso de facturar no crea servicios', ($r['json']['success'] ?? true) === false);
+    $pdo->exec("DELETE FROM productos_clientes WHERE id = $id");
+    foreach (['crear_contrato', 'editar_contrato'] as $pg) {
+        $q = $c->get($pg, $pg === 'editar_contrato' ? ['id' => (int)$pdo->query("SELECT id FROM contratos WHERE cliente_id = 2 ORDER BY id LIMIT 1")->fetchColumn()] : []);
+        check("$pg: tiene el botón «Crear servicio nuevo» y su script", str_contains($q['body'], 'id="btnServicioNuevo"') && str_contains($q['body'], 'contrato-servicio-nuevo.js') && sinErroresPhp($q['body']), errorPhp($q['body']));
+    }
+    $js = file_get_contents(__DIR__ . '/../../clientes/js/contrato-servicio-nuevo.js');
+    check('el script pide primero elegir el cliente', str_contains($js, 'primero elegilo'));
+});

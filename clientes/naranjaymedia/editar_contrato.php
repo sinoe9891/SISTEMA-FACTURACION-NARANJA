@@ -748,9 +748,14 @@ require_once '../../includes/templates/header.php';
                     <i class="bi bi-box-seam text-success"></i>
                     Servicios del Contrato
                 </span>
+                <span class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btnServicioNuevo" title="Crea un servicio y lo asigna al cliente del contrato">
+                    <i class="bi bi-stars me-1"></i>Crear servicio nuevo
+                </button>
                 <button type="button" class="btn btn-sm btn-outline-success" id="btnAgregarSvc">
                     <i class="bi bi-plus-lg me-1"></i>Agregar servicio
                 </button>
+                </span>
             </div>
             <div class="ec-card-body">
                 <div id="contenedor-svc">
@@ -1127,6 +1132,19 @@ require_once '../../includes/templates/header.php';
         cargarProductosPorReceptor(this.value, false);
     });
 
+    /* ── Crear servicio nuevo (se asigna al cliente del contrato) ────── */
+    document.getElementById('btnServicioNuevo').addEventListener('click', async () => {
+        const rid = document.getElementById('receptor_id').value || document.querySelector('#contenedor-rotativos .rot-item select')?.value || '';
+        const prod = await crearServicioContrato(rid);
+        if (!prod) return;
+        productos.push(prod);
+        agregarSvc();
+        const filas = document.querySelectorAll('#contenedor-svc .svc-item');
+        const sel = filas[filas.length - 1].querySelector('.sel-svc');
+        sel.value = String(prod.id);
+        sel.dispatchEvent(new Event('change'));
+    });
+
     /* ── Agregar servicio ────────────────────────────────────────────── */
     document.getElementById('btnAgregarSvc').addEventListener('click', agregarSvc);
 
@@ -1392,6 +1410,7 @@ require_once '../../includes/templates/header.php';
 </script>
 
 <?php if ($hayPlan): ?>
+<script src="../../clientes/js/contrato-servicio-nuevo.js?v=<?= @filemtime(__DIR__ . '/../js/contrato-servicio-nuevo.js') ?>"></script>
 <script src="../../clientes/js/plan-pagos.js?v=<?= @filemtime(__DIR__ . '/../js/plan-pagos.js') ?>"></script>
 <script>
     // Plan de pagos del contrato (opcional)
