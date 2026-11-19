@@ -3880,3 +3880,12 @@ suite('Colaboradores: aviso por correo al registrar bono, viático, adelanto, pr
     $src = file_get_contents(__DIR__ . '/../../clientes/naranjaymedia/colaborador_ver.php');
     check('el formulario trae la casilla de aviso y la fecha «Se descuenta el»', str_contains($src, 'prestEnviarCorreo') && str_contains($src, 'Se descuenta el'));
 });
+
+suite('Establecimiento: con una sola sucursal se entra directo', function () {
+    $c = login('qa.facturador@local.test');   // un solo establecimiento asignado
+    $r = $c->get('seleccionar_establecimiento');
+    check('con un solo establecimiento no pide elegir: redirige al sistema', $r['code'] === 302 && !str_contains($r['loc'], 'seleccionar_establecimiento'), $r['code'] . ' ' . $r['loc']);
+    $m = login('qa.admin@local.test');   // dos establecimientos: sí elige
+    $r = $m->get('seleccionar_establecimiento');
+    check('con varios establecimientos sigue mostrando la lista para elegir', $r['code'] === 200 && str_contains($r['body'], 'app-select-item'), (string)$r['code']);
+});

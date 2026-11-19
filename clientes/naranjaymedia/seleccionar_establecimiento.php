@@ -53,6 +53,16 @@ if (!$establecimientos && !$esSuper && $cliente_id) {
 }
 $permitidos = array_map('intval', array_column($establecimientos, 'establecimiento_id'));
 
+// Con un solo establecimiento no hay nada que elegir: entra directo (al abrir la página sin POST)
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && count($permitidos) === 1) {
+    $_SESSION['establecimiento_activo'] = $permitidos[0];
+    unset($_SESSION['establecimientos'], $_SESSION['__cache_establecimiento']);
+    $volver = destinoVolverValido($_SESSION['volver_tras_login'] ?? null, carpetaLoginActual());
+    unset($_SESSION['volver_tras_login']);
+    header("Location: " . ($volver ?: "./dashboard"));
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verificar();
     $elegido = (int)($_POST['establecimiento_id'] ?? 0);
