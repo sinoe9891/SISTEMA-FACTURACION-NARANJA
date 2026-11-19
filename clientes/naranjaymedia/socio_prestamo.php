@@ -18,7 +18,7 @@ try {
 $p = $det['prestamo'];
 $esAdmin = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);
 $abierto = $p['estado'] === 'activo' || $p['estado'] === 'pagado';
-$cuentasHnl = bancosDisponible($pdo) ? array_values(array_filter(bancoCuentas($pdo, $cid, true), fn($c) => $c['moneda'] === 'HNL')) : [];
+$cuentasHnl = bancosDisponible($pdo) ? array_values(array_filter(bancoCuentas($pdo, $cid, true), fn($c) => $c['moneda'] === spMoneda($p))) : [];   // cuentas de la moneda del préstamo
 $avisos = [];
 try {
     $ids = array_merge([$id], array_map(fn($c) => (int)$c['id'], $det['cuotas']));
@@ -29,7 +29,7 @@ try {
     $avisos = [];
 }
 $archivos = spArchivos($pdo, $cid, $id);   // comprobantes del préstamo y de cada pago
-$L = fn($v) => 'L ' . number_format((float)$v, 2);
+$L = fn($v) => spFmt($v, spMoneda($p));
 $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
 $listaArch = function (array $lista, bool $quitar) use ($e): string {
     if (!$lista) return '<span class="text-muted">Sin comprobantes.</span>';
@@ -246,7 +246,7 @@ require_once '../../includes/templates/header.php';
     const fe = document.getElementById('fEditar');
     if (fe) {
         const me = new bootstrap.Modal(document.getElementById('mEditar'));
-        const L = n => 'L ' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const L = n => '<?= spMoneda($p) === 'USD' ? 'US$ ' : 'L ' ?>' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const vista = async () => {
             const q = new URLSearchParams({ calcular: 1, monto: fe.monto.value, num_cuotas: fe.num_cuotas.value, frecuencia: fe.frecuencia.value, primera_cuota: fe.primera_cuota.value });
             const d = await fetch(ACC + '?' + q).then(r => r.json()).catch(() => null);

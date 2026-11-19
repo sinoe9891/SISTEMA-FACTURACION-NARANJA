@@ -173,3 +173,53 @@ suite('Cobrar varias facturas a la vez: entran al banco (cada una a su cuenta)',
     $pdo->exec("DELETE FROM cuentas_bancarias WHERE id IN ($c1, $c2)");
     foreach ($antes as $fid => $pg) $pdo->exec("UPDATE facturas SET pagada = " . (int)$pg . " WHERE id = " . (int)$fid);
 });
+
+suite('Préstamos a socios en dólares', function () {
+    $pdo = db();
+    require_once __DIR__ . '/../../includes/socios_prestamos.php';
+    check('formato por moneda', spFmt(140, 'USD') === 'US$ 140.00' && spFmt(1000.5, 'HNL') === 'L 1,000.50' && spMoneda(['moneda' => 'USD']) === 'USD' && spMoneda([]) === 'HNL');
+    $c = login('qa.admin@local.test');
+    $soc = (int)$pdo->query("SELECT id FROM socios WHERE cliente_id = 2 AND activo = 1 ORDER BY id LIMIT 1")->fetchColumn();
+    $pdo->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, titular, moneda, saldo_inicial, fecha_saldo_inicial, activa) VALUES (2, 'QA Banco', 'ahorro', 'QA-USD-1', 'QA', 'USD', 500, '2020-01-01', 1)");
+    $usd = (int)$pdo->lastInsertId();
+    $pdo->exec("INSERT INTO cuentas_bancarias (cliente_id, banco, tipo, numero, titular, moneda, saldo_inicial, fecha_saldo_inicial, activa) VALUES (2, 'QA Banco', 'ahorro', 'QA-HNL-1', 'QA', 'HNL', 5000, '2020-01-01', 1)");
+    $hnl = (int)$pdo->lastInsertId();
+    $hoy = date('Y-m-d');
+    $base = ['accion' => 'crear', 'socio_id' => $soc, 'descripcion' => 'QA préstamo en dólares', 'monto' => 140, 'fecha' => $hoy, 'num_cuotas' => 2, 'frecuencia' => 'mensual', 'primera_cuota' => date('Y-m-d', strtotime('+5 days')), 'tasa_cambio' => '27.0000'];
+    $r = $c->post('includes/socio_prestamo_accion.php', $base + ['cuenta_id' => $usd]);
+    $id = (int)($r['json']['id'] ?? 0);
+    check('se crea un préstamo en dólares desde la cuenta en US$', ($r['json']['success'] ?? false) && $id > 0, $r['body']);
+    $p = $pdo->query("SELECT moneda, tasa_cambio, movimiento_id, monto FROM socios_prestamos WHERE id = $id")->fetch(PDO::FETCH_ASSOC);
+    check('queda en USD con su tasa', $p && $p['moneda'] === 'USD' && (float)$p['tasa_cambio'] === 27.0 && (float)$p['monto'] === 140.0, json_encode($p));
+    $m = $pdo->query("SELECT cuenta_id, sentido, monto, tasa_cambio FROM movimientos_bancarios WHERE id = " . (int)$p['movimiento_id'])->fetch(PDO::FETCH_ASSOC);
+    check('la salida del banco es de US$ 140 en la cuenta en dólares', $m && (int)$m['cuenta_id'] === $usd && $m['sentido'] === 'salida' && (float)$m['monto'] === 140.0, json_encode($m));
+    // Pago en dólares, y no se mezcla con una cuenta en lempiras
+    $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'pagar', 'id' => $id, 'monto' => 70, 'fecha' => $hoy, 'metodo' => 'transferencia', 'cuenta_id' => $hnl]);
+    check('un pago en dólares no entra a una cuenta en lempiras', ($r['json']['success'] ?? true) === false && str_contains($r['body'], 'lempiras'), $r['body']);
+    $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'pagar', 'id' => $id, 'monto' => 70, 'fecha' => $hoy, 'metodo' => 'transferencia', 'cuenta_id' => $usd]);
+    check('el pago de US$ 70 entra a la cuenta en dólares', ($r['json']['success'] ?? false) === true, $r['body']);
+    $det = spDetalle($pdo, 2, $id);
+    check('saldo y cuotas en dólares', abs($det['saldo'] - 70) < 0.01 && $det['cuotas'][0]['estado'] === 'pagada', json_encode([$det['saldo'], $det['cuotas'][0]['estado']]));
+    $r = $c->post('includes/socio_prestamo_accion.php', ['accion' => 'pagar', 'id' => $id, 'monto' => 71, 'fecha' => $hoy, 'metodo' => 'transferencia']);
+    check('el mensaje de sobrepago usa US$', str_contains($r['body'], 'US$'), $r['body']);
+    // Balance: el saldo en dólares se valora en lempiras a la tasa del día
+    $tasa = tasaValoracion($pdo, date('Y-m-d'));
+    if ($tasa > 0) {
+        $sin = spSaldoAlCorte($pdo, 2, date('Y-m-d'));
+        $pdo->exec("UPDATE socios_prestamos SET estado = 'anulado' WHERE id = $id");
+        $sin0 = spSaldoAlCorte($pdo, 2, date('Y-m-d'));
+        $pdo->exec("UPDATE socios_prestamos SET estado = 'activo' WHERE id = $id");
+        check('el Balance suma el saldo de US$ 70 en lempiras a la tasa del día', abs(($sin - $sin0) - 70 * $tasa) < 0.05, "$sin - $sin0 vs " . 70 * $tasa);
+    }
+    $pg = $c->get('socio_prestamo', ['id' => $id]);
+    check('la página del préstamo muestra US$ y sin errores', str_contains($pg['body'], 'US$') && sinErroresPhp($pg['body']), errorPhp($pg['body']));
+    $ls = $c->get('socios');
+    check('Socios: el formulario ofrece dólares y la lista muestra US$', str_contains($ls['body'], 'id="spMoneda"') && str_contains($ls['body'], 'US$ 140.00') && sinErroresPhp($ls['body']), errorPhp($ls['body']));
+    // Limpieza
+    foreach ($pdo->query("SELECT movimiento_id FROM socios_prestamo_pagos WHERE prestamo_id = $id AND movimiento_id IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN) as $mv) $pdo->exec("DELETE FROM movimientos_bancarios WHERE id = " . (int)$mv);
+    $pdo->exec("DELETE FROM movimientos_bancarios WHERE id = " . (int)$p['movimiento_id']);
+    $pdo->exec("DELETE FROM movimientos_bancarios WHERE cuenta_id IN ($usd, $hnl)");
+    foreach (['socios_prestamo_pagos', 'socios_prestamo_cuotas'] as $t) $pdo->exec("DELETE FROM $t WHERE prestamo_id = $id");
+    $pdo->exec("DELETE FROM socios_prestamos WHERE id = $id");
+    $pdo->exec("DELETE FROM cuentas_bancarias WHERE id IN ($usd, $hnl)");
+});

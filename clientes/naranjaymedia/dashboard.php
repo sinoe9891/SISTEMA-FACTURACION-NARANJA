@@ -590,9 +590,9 @@ unset($__v);
                             <tbody>
                                 <?php foreach ($prestamos_socios_alertas as $a): $pp = $a['prestamo']; $cc = $a['cuota']; $avisoP = max(3, (int)$pp['aviso_dias']); ?>
                                     <tr><td><span class="fw-semibold"><?= htmlspecialchars($pp['socio']) ?></span><?php if (!empty($pp['deudor_nombre'])): ?> <span class="small text-muted">· a nombre de <?= htmlspecialchars($pp['deudor_nombre']) ?></span><?php endif; ?>
-                                            <div class="small text-muted"><?= htmlspecialchars($pp['descripcion']) ?> · saldo L <?= number_format($a['saldo'], 2) ?></div></td>
+                                            <div class="small text-muted"><?= htmlspecialchars($pp['descripcion']) ?> · saldo <?= spFmt($a['saldo'], spMoneda($pp)) ?></div></td>
                                         <td class="text-center"><?= (int)$cc['numero'] ?>/<?= (int)$pp['num_cuotas'] ?></td>
-                                        <td class="text-end fw-semibold">L <?= number_format($cc['pendiente'], 2) ?></td>
+                                        <td class="text-end fw-semibold"><?= spFmt($cc['pendiente'], spMoneda($pp)) ?></td>
                                         <td class="text-center small"><?= date('d/m/Y', strtotime($cc['fecha'])) ?><div><span class="badge <?= $cc['estado'] === 'vencida' ? 'bg-danger' : ($cc['dias'] <= $avisoP ? 'bg-warning text-dark' : 'bg-light text-secondary border') ?>"><?= $cc['estado'] === 'vencida' ? 'Vencida hace ' . abs($cc['dias']) . 'd' : ($cc['dias'] === 0 ? '¡Hoy!' : 'en ' . $cc['dias'] . 'd') ?></span></div></td>
                                         <td class="text-center text-nowrap"><a href="socio_prestamo?id=<?= (int)$pp['id'] ?>" class="btn btn-sm btn-outline-primary" title="Ver el préstamo"><i class="bi bi-eye"></i></a>
                                             <a href="socio_prestamo?id=<?= (int)$pp['id'] ?>&pagar=1" class="btn btn-sm btn-success" title="Registrar el pago de esta cuota"><i class="bi bi-cash me-1"></i>Pago</a></td></tr>

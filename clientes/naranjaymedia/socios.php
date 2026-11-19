@@ -34,11 +34,14 @@ $anios = [];
 foreach (array_merge($instalado ? sociosAportes($pdo, $cid) : [], sociosRetiros($pdo, $cid)) as $x) $anios[(int)substr($x['fecha'], 0, 4)] = true;
 krsort($anios);
 $cuentasHnl = bancosDisponible($pdo) ? array_values(array_filter(bancoCuentas($pdo, $cid, true), fn($c) => $c['moneda'] === 'HNL')) : [];
+$cuentasPrest = bancosDisponible($pdo) ? bancoCuentas($pdo, $cid, true) : [];   // préstamos: en lempiras o en dólares, según la cuenta
 // Préstamos a socios (todos los años: lo que importa es el saldo)
 $spInstalado = spDisponible($pdo);
 $prestamos = $spInstalado ? spLista($pdo, $cid) : [];
-$spSaldo = array_sum(array_map(fn($x) => $x['saldo'], $prestamos));
-$spVencido = array_sum(array_map(fn($x) => $x['vencido_monto'], $prestamos));
+$spTasaUsd = tasaValoracion($pdo);   // los préstamos en dólares suman en lempiras a la tasa del día
+$spALempiras = fn($x, $v) => (float)$v * (spMoneda($x['prestamo']) === 'USD' ? $spTasaUsd : 1);
+$spSaldo = array_sum(array_map(fn($x) => $spALempiras($x, $x['saldo']), $prestamos));
+$spVencido = array_sum(array_map(fn($x) => $spALempiras($x, $x['vencido_monto']), $prestamos));
 $sociosSel = $spInstalado ? (function () use ($pdo, $cid) { $st = $pdo->prepare("SELECT id, nombre, email FROM socios WHERE cliente_id = ? AND activo = 1 ORDER BY id"); $st->execute([$cid]); return $st->fetchAll(PDO::FETCH_ASSOC); })() : [];
 $sociosAporte = (function () use ($pdo, $cid) { $st = $pdo->prepare("SELECT id, nombre FROM socios WHERE cliente_id = ? AND activo = 1 ORDER BY id"); $st->execute([$cid]); return $st->fetchAll(PDO::FETCH_ASSOC); })();
 $gestionSocios = (function () use ($pdo, $cid) { $st = $pdo->prepare("SELECT * FROM socios WHERE cliente_id = ? ORDER BY activo DESC, id"); $st->execute([$cid]); $l = $st->fetchAll(PDO::FETCH_ASSOC); foreach ($l as &$x) $x['uso'] = sociosUso($pdo, $cid, $x); return $l; })();
@@ -156,12 +159,12 @@ require_once '../../includes/templates/header.php';
                         <tr data-fila><td class="app-n"></td>
                             <td class="text-nowrap" data-sort="<?= $p['fecha'] ?>"><?= date('d/m/Y', strtotime($p['fecha'])) ?></td>
                             <td><?= htmlspecialchars($p['socio']) ?><?php if (!empty($p['deudor_nombre'])): ?><div class="small text-muted"><i class="bi bi-envelope me-1"></i>a nombre de <?= htmlspecialchars($p['deudor_nombre']) ?></div><?php endif; ?></td>
-                            <td><?= htmlspecialchars($p['descripcion']) ?><div class="small text-muted"><?= (int)$p['num_cuotas'] ?> cuotas <?= $p['frecuencia'] === 'quincenal' ? 'quincenales' : 'mensuales' ?> de <?= $L($x['cuotas'][0]['monto'] ?? 0) ?></div></td>
-                            <td class="app-num"><?= number_format((float)$p['monto'], 2) ?></td>
-                            <td class="app-num text-success"><?= number_format($x['pagado'], 2) ?></td>
-                            <td class="app-num fw-semibold"><?= number_format($x['saldo'], 2) ?></td>
-                            <td class="text-nowrap small" data-sort="<?= $px['fecha'] ?? '9999' ?>"><?php if ($x['vencidas']): ?><span class="badge" style="background:#fee2e2;color:#991b1b"><?= $x['vencidas'] ?> vencida<?= $x['vencidas'] === 1 ? '' : 's' ?> · <?= $L($x['vencido_monto']) ?></span>
-                                <?php elseif ($px): ?><?= date('d/m/Y', strtotime($px['fecha'])) ?> · <?= $L($px['pendiente']) ?><div class="text-muted"><?= $px['dias'] === 0 ? 'hoy' : 'en ' . $px['dias'] . ' d' ?></div><?php else: ?>—<?php endif; ?></td>
+                            <td><?= htmlspecialchars($p['descripcion']) ?><div class="small text-muted"><?= (int)$p['num_cuotas'] ?> cuotas <?= $p['frecuencia'] === 'quincenal' ? 'quincenales' : 'mensuales' ?> de <?= spFmt($x['cuotas'][0]['monto'] ?? 0, spMoneda($p)) ?></div></td>
+                            <td class="app-num"><?= spFmt($p['monto'], spMoneda($p)) ?></td>
+                            <td class="app-num text-success"><?= spFmt($x['pagado'], spMoneda($p)) ?></td>
+                            <td class="app-num fw-semibold"><?= spFmt($x['saldo'], spMoneda($p)) ?></td>
+                            <td class="text-nowrap small" data-sort="<?= $px['fecha'] ?? '9999' ?>"><?php if ($x['vencidas']): ?><span class="badge" style="background:#fee2e2;color:#991b1b"><?= $x['vencidas'] ?> vencida<?= $x['vencidas'] === 1 ? '' : 's' ?> · <?= spFmt($x['vencido_monto'], spMoneda($p)) ?></span>
+                                <?php elseif ($px): ?><?= date('d/m/Y', strtotime($px['fecha'])) ?> · <?= spFmt($px['pendiente'], spMoneda($p)) ?><div class="text-muted"><?= $px['dias'] === 0 ? 'hoy' : 'en ' . $px['dias'] . ' d' ?></div><?php else: ?>—<?php endif; ?></td>
                             <td><span class="badge" style="background:<?= $eBg ?>;color:<?= $eFg ?>"><?= $eTxt ?></span></td>
                             <td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary py-0" href="socio_prestamo?id=<?= (int)$p['id'] ?>" title="Ver cuotas y registrar pagos"><i class="bi bi-list-check"></i></a>
                                 <a class="btn btn-sm btn-outline-danger py-0" href="socio_prestamo_pdf?id=<?= (int)$p['id'] ?>" target="_blank" title="PDF de control"><i class="bi bi-file-earmark-pdf"></i></a></td></tr>
@@ -184,16 +187,20 @@ require_once '../../includes/templates/header.php';
                     <select class="form-select" name="socio_id" id="spSocio" required><option value="">— Elegir —</option>
                         <?php foreach ($sociosSel as $so): ?><option value="<?= (int)$so['id'] ?>" data-email="<?= htmlspecialchars((string)$so['email']) ?>"><?= htmlspecialchars($so['nombre']) ?></option><?php endforeach; ?></select></div>
                 <div class="col-md-6"><label class="form-label small">Concepto <span class="text-danger">*</span></label><input class="form-control" name="descripcion" maxlength="255" required placeholder="Ej.: Pago de matrícula vehicular"></div>
-                <div class="col-6 col-md-3"><label class="form-label small">Monto (L) <span class="text-danger">*</span></label><input type="number" class="form-control" name="monto" step="0.01" min="0.01" required></div>
+                <div class="col-6 col-md-3"><label class="form-label small">Monto (<span id="spMonedaTxt">L</span>) <span class="text-danger">*</span></label><input type="number" class="form-control" name="monto" step="0.01" min="0.01" required></div>
                 <div class="col-6 col-md-3"><label class="form-label small">Fecha del préstamo</label><input type="date" class="form-control" name="fecha" value="<?= date('Y-m-d') ?>" required></div>
                 <div class="col-6 col-md-2"><label class="form-label small">Cuotas</label><input type="number" class="form-control" name="num_cuotas" min="1" max="120" value="12" required></div>
                 <div class="col-6 col-md-2"><label class="form-label small">Frecuencia</label><select class="form-select" name="frecuencia"><option value="quincenal">Quincenal (15 y fin de mes)</option><option value="mensual">Mensual</option></select></div>
                 <div class="col-md-2"><label class="form-label small">1.ª cuota</label><input type="date" class="form-control" name="primera_cuota" required></div>
                 <div class="col-12"><div class="border rounded-3 p-2 small" id="spVista" style="max-height:200px;overflow:auto;background:#f8fafc">Escribe el monto, las cuotas y la fecha de la primera para ver el calendario.</div></div>
-                <?php if ($cuentasHnl): ?>
-                <div class="col-md-6"><label class="form-label small">Sale de la cuenta</label>
-                    <select class="form-select" name="cuenta_id"><option value="">— No registrar en banco —</option>
-                        <?php foreach ($cuentasHnl as $cb): ?><option value="<?= (int)$cb['id'] ?>"><?= htmlspecialchars($cb['banco'] . ' ' . $cb['numero']) ?></option><?php endforeach; ?></select></div>
+                <div class="col-6 col-md-3"><label class="form-label small">Moneda</label>
+                    <select class="form-select" name="moneda" id="spMoneda"><option value="HNL">Lempiras (L)</option><option value="USD">Dólares (US$)</option></select></div>
+                <div class="col-6 col-md-3 d-none" id="spGrpTasa"><label class="form-label small">Tasa (L por US$)</label>
+                    <input type="number" class="form-control" name="tasa_cambio" id="spTasa" step="0.0001" min="1" value="<?= $spTasaUsd ? number_format($spTasaUsd, 4, '.', '') : '' ?>"></div>
+                <?php if ($cuentasPrest): ?>
+                <div class="col-md-6"><label class="form-label small">Sale de la cuenta <span class="text-muted">(define la moneda del préstamo)</span></label>
+                    <select class="form-select" name="cuenta_id" id="spCuenta"><option value="">— No registrar en banco —</option>
+                        <?php foreach ($cuentasPrest as $cb): ?><option value="<?= (int)$cb['id'] ?>" data-moneda="<?= $cb['moneda'] === 'USD' ? 'USD' : 'HNL' ?>"><?= htmlspecialchars($cb['banco'] . ' ' . $cb['numero'] . ($cb['moneda'] === 'USD' ? ' (US$)' : '')) ?></option><?php endforeach; ?></select></div>
                 <?php endif; ?>
                 <div class="col-md-6"><label class="form-label small">Referencia de la transferencia</label><input class="form-control" name="referencia" maxlength="80"></div>
                 <div class="col-12"><label class="form-label small">Depositado en <span class="text-muted">(cuenta de quien recibe el préstamo; sale en el correo y el PDF como «Entró a la cuenta …»)</span></label><input class="form-control" name="cuenta_destino" maxlength="150" placeholder="Ej.: BAC 742474391"></div>
@@ -292,7 +299,23 @@ require_once '../../includes/templates/header.php';
     // Préstamos a socios: calendario de cuotas en vivo y alta
     const fp = document.getElementById('formPrestamo');
     if (fp) {
-        const L = n => 'L ' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const usd = () => fp.moneda.value === 'USD';
+        const L = n => (usd() ? 'US$ ' : 'L ') + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        // Moneda: la de la cuenta elegida; en dólares se pide la tasa
+        const aplicaMoneda = () => {
+            document.getElementById('spMonedaTxt').textContent = usd() ? 'US$' : 'L';
+            document.getElementById('spGrpTasa').classList.toggle('d-none', !usd());
+        };
+        document.getElementById('spCuenta')?.addEventListener('change', function() {
+            const m = this.selectedOptions[0]?.dataset.moneda;
+            if (m) { fp.moneda.value = m; fp.moneda.disabled = false; }
+            aplicaMoneda();
+        });
+        fp.moneda.addEventListener('change', () => {
+            const c = document.getElementById('spCuenta');
+            if (c && c.selectedOptions[0]?.dataset.moneda && c.selectedOptions[0].dataset.moneda !== fp.moneda.value) c.value = '';   // la cuenta debe ser de la misma moneda
+            aplicaMoneda();
+        });
         const sugerir = () => {   // 1.ª cuota sugerida: el siguiente 15 o fin de mes después del préstamo
             if (fp.primera_cuota.value) return;
             const d = new Date(fp.fecha.value + 'T12:00:00'), ult = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();

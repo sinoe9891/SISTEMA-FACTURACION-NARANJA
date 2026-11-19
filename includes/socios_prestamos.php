@@ -8,6 +8,7 @@
  * Requiere sql/migraciones/2026-10-26_socios_prestamos.sql.
  */
 require_once __DIR__ . '/bancos.php';
+require_once __DIR__ . '/tasa_cambio.php';
 
 const SP_ESTADOS = [
     'activo' => ['Activo', '#dbeafe', '#1e40af'],
@@ -92,6 +93,33 @@ function spSubir(?array $f, int $cid, string $prefijo): ?array
     return [$archivo, mb_substr(basename((string)$f['name']), 0, 255)];
 }
 
+/** Moneda del préstamo: 'USD' o 'HNL' (los anteriores a la migración son en lempiras). */
+function spMoneda(array $p): string
+{
+    return ($p['moneda'] ?? 'HNL') === 'USD' ? 'USD' : 'HNL';
+}
+
+/** Monto con su símbolo: «L 1,000.00» o «US$ 140.00». */
+function spFmt($v, string $moneda = 'HNL'): string
+{
+    return ($moneda === 'USD' ? 'US$ ' : 'L ') . number_format((float)$v, 2);
+}
+
+/**
+ * Movimiento del banco de un préstamo o de un pago: la cuenta tiene que ser de la misma moneda del préstamo.
+ * Salida = el préstamo sale del banco; entrada = el socio devuelve. En dólares guarda también la tasa.
+ */
+function spBancoMov(PDO $pdo, int $cid, int $uid, int $cuentaId, string $sentido, string $fecha, float $monto, ?string $ref, string $desc, string $moneda, ?float $tasa): ?int
+{
+    $cuenta = bancoCuenta($pdo, $cid, $cuentaId, true);
+    if ($cuenta['moneda'] !== $moneda) throw new Exception("La cuenta " . $cuenta['banco'] . ' ' . $cuenta['numero'] . " es en " . ($cuenta['moneda'] === 'USD' ? 'dólares' : 'lempiras') . ' y el préstamo es en ' . ($moneda === 'USD' ? 'dólares' : 'lempiras') . ".");
+    if (!empty($cuenta['fecha_saldo_inicial']) && $fecha < $cuenta['fecha_saldo_inicial']) return null;
+    return bancoInsertarMovimiento($pdo, $cid, $cuentaId, [
+        'fecha' => $fecha, 'sentido' => $sentido, 'tipo' => $sentido === 'salida' ? 'prestamo_socio' : 'deposito', 'monto' => $monto,
+        'descripcion' => mb_substr($desc, 0, 255), 'referencia' => $ref, 'tasa_cambio' => $moneda === 'USD' ? $tasa : null, 'usuario_id' => $uid,
+    ]);
+}
+
 function spDir(): string
 {
     return __DIR__ . '/../clientes/naranjaymedia/includes/uploads/gastos/';
@@ -115,6 +143,14 @@ function spCrear(PDO $pdo, int $cid, int $uid, array $d, ?array $archivo = null)
     $correo = spCorreos((string)($d['aviso_correo'] ?? '') ?: (string)($socio['email'] ?? ''));
     $cc = spCorreos((string)($d['aviso_cc'] ?? ''));
     $cuenta = (int)($d['cuenta_id'] ?? 0) ?: null;
+    // Moneda: la de la cuenta de donde sale; sin cuenta, la que se elija (lempiras por defecto)
+    $moneda = ($d['moneda'] ?? 'HNL') === 'USD' ? 'USD' : 'HNL';
+    if ($cuenta) $moneda = bancoCuenta($pdo, $cid, $cuenta, true)['moneda'] === 'USD' ? 'USD' : 'HNL';
+    $tasa = null;
+    if ($moneda === 'USD') {
+        $tasa = round((float)str_replace(',', '', (string)($d['tasa_cambio'] ?? 0)), 4) ?: round(tasaValoracion($pdo, $fecha), 4);
+        if ($tasa < 1 || $tasa > 1000) throw new Exception("Escribe la tasa de cambio (lempiras por dólar) para registrar el préstamo en dólares.");
+    }
     $ref = mb_substr(trim((string)($d['referencia'] ?? '')), 0, 80) ?: null;
     $deudor = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($d['deudor_nombre'] ?? ''))), 0, 150) ?: null;
     $pdo->prepare("INSERT INTO socios_prestamos (cliente_id, socio_id, descripcion, monto, fecha, num_cuotas, frecuencia, primera_cuota, referencia, archivo_adjunto, archivo_nombre,
@@ -122,12 +158,13 @@ function spCrear(PDO $pdo, int $cid, int $uid, array $d, ?array $archivo = null)
         ->execute([$cid, (int)$socio['id'], $desc, $monto, $fecha, $n, $frec, $primera, $ref, $archivo[0] ?? null, $archivo[1] ?? null,
             !empty($d['avisar']) ? 1 : 0, max(0, min(30, (int)($d['aviso_dias'] ?? 3))), $correo ?: null, $cc ?: null, trim((string)($d['notas'] ?? '')) ?: null, $uid]);
     $id = (int)$pdo->lastInsertId();
+    if ($moneda === 'USD') $pdo->prepare("UPDATE socios_prestamos SET moneda = 'USD', tasa_cambio = ? WHERE id = ?")->execute([$tasa, $id]);
     if ($deudor) $pdo->prepare("UPDATE socios_prestamos SET deudor_nombre = ? WHERE id = ?")->execute([$deudor, $id]);
     if ($dest = mb_substr(trim((string)($d['cuenta_destino'] ?? '')), 0, 150)) $pdo->prepare("UPDATE socios_prestamos SET cuenta_destino = ? WHERE id = ?")->execute([$dest, $id]);
     $ins = $pdo->prepare("INSERT INTO socios_prestamo_cuotas (prestamo_id, numero, fecha, monto) VALUES (?, ?, ?, ?)");
     foreach (spCalcularCuotas($monto, $n, $frec, $primera) as $c) $ins->execute([$id, $c['numero'], $c['fecha'], $c['monto']]);
     if ($cuenta) {
-        $mov = bancoSalidaPago($pdo, $cid, $cuenta, $fecha, $monto, 'Préstamo a socio: ' . $socio['nombre'] . ' · ' . $desc, $ref, $uid, null, 'prestamo_socio');
+        $mov = spBancoMov($pdo, $cid, $uid, $cuenta, 'salida', $fecha, $monto, $ref, 'Préstamo a socio: ' . $socio['nombre'] . ' · ' . $desc, $moneda, $tasa);
         $pdo->prepare("UPDATE socios_prestamos SET cuenta_id = ?, movimiento_id = ? WHERE id = ?")->execute([$cuenta, $mov, $id]);
         if ($mov && $archivo) $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ?")->execute([$archivo[0], $archivo[1], $mov]);
     }
@@ -212,13 +249,13 @@ function spPagar(PDO $pdo, int $cid, int $uid, int $id, array $d, ?array $archiv
     if ($p['estado'] !== 'activo') throw new Exception("El préstamo no está activo.");
     $monto = round((float)str_replace(',', '', (string)($d['monto'] ?? 0)), 2);
     if ($monto <= 0) throw new Exception("El monto del pago debe ser mayor que 0.");
-    if ($monto > $det['saldo'] + 0.004) throw new Exception("El pago (L " . number_format($monto, 2) . ") es mayor que el saldo (L " . number_format($det['saldo'], 2) . "). Si es más, registra el excedente como aporte.");
+    if ($monto > $det['saldo'] + 0.004) throw new Exception("El pago (" . spFmt($monto, spMoneda($p)) . ") es mayor que el saldo (" . spFmt($det['saldo'], spMoneda($p)) . "). Si es más, registra el excedente como aporte.");
     $fecha = bancoFecha((string)($d['fecha'] ?? ''));
     if ($fecha < $p['fecha']) throw new Exception("El pago no puede ser antes del préstamo.");
     $metodo = isset(SP_METODOS[$d['metodo'] ?? '']) ? $d['metodo'] : 'transferencia';
     $ref = mb_substr(trim((string)($d['referencia'] ?? '')), 0, 80) ?: null;
     $cuenta = (int)($d['cuenta_id'] ?? 0) ?: null;
-    $mov = $cuenta ? bancoDepositoCobro($pdo, $cid, $cuenta, $fecha, $monto, 'Pago de préstamo de socio: ' . $p['socio'] . ' (#' . $id . ')', $ref, $uid) : null;
+    $mov = $cuenta ? spBancoMov($pdo, $cid, $uid, $cuenta, 'entrada', $fecha, $monto, $ref, 'Pago de préstamo de socio: ' . $p['socio'] . ' (#' . $id . ')', spMoneda($p), (float)($p['tasa_cambio'] ?? 0) ?: null) : null;
     if ($mov && $archivo) $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ?")->execute([$archivo[0], $archivo[1], $mov]);
     $pdo->prepare("INSERT INTO socios_prestamo_pagos (prestamo_id, cliente_id, fecha, monto, metodo, referencia, cuenta_id, movimiento_id, archivo_adjunto, archivo_nombre, notas, usuario_id)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -247,7 +284,7 @@ function spAnularPago(PDO $pdo, int $cid, int $pagoId, string $motivo): void
  * Ajusta el movimiento del banco ligado a un préstamo o a un pago: lo crea, lo mueve de cuenta, cambia fecha/monto/referencia
  * o lo anula si ya no hay cuenta. Uno conciliado con el estado de cuenta no cambia de cuenta, fecha ni monto. Devuelve el id.
  */
-function spMovimiento(PDO $pdo, int $cid, int $uid, ?int $movId, ?int $cuenta, string $sentido, string $fecha, float $monto, ?string $ref, string $desc): ?int
+function spMovimiento(PDO $pdo, int $cid, int $uid, ?int $movId, ?int $cuenta, string $sentido, string $fecha, float $monto, ?string $ref, string $desc, string $moneda = 'HNL', ?float $tasa = null): ?int
 {
     if ($movId) {
         $st = $pdo->prepare("SELECT * FROM movimientos_bancarios WHERE id = ? AND cliente_id = ?");
@@ -258,7 +295,10 @@ function spMovimiento(PDO $pdo, int $cid, int $uid, ?int $movId, ?int $cuenta, s
             $cambia = (int)$m['cuenta_id'] !== (int)$cuenta || $m['fecha'] !== $fecha || abs((float)$m['monto'] - $monto) > 0.004;
             if ($cambia && (int)$m['conciliado']) throw new Exception("El movimiento del banco ya está conciliado: quita la conciliación en Bancos para cambiar la cuenta, la fecha o el monto.");
             if (!$cuenta) { bancoAnularMovimiento($pdo, $cid, $movId); return null; }
-            if ($cambia) bancoCuenta($pdo, $cid, $cuenta, (int)$m['cuenta_id'] !== $cuenta);
+            if ($cambia) {
+                $ct = bancoCuenta($pdo, $cid, $cuenta, (int)$m['cuenta_id'] !== $cuenta);
+                if ($ct['moneda'] !== $moneda) throw new Exception("La cuenta " . $ct['banco'] . ' ' . $ct['numero'] . " no es en " . ($moneda === 'USD' ? 'dólares' : 'lempiras') . ", como el préstamo.");
+            }
             $pdo->prepare("UPDATE movimientos_bancarios SET cuenta_id = ?, fecha = ?, monto = ?, referencia = ?, descripcion = ? WHERE id = ?")
                 ->execute([$cuenta, $fecha, $monto, $ref, mb_substr($desc, 0, 255), $movId]);
             if ($sentido === 'salida') {   // la Ley Poblacional se recalcula en las dos cuentas
@@ -269,9 +309,7 @@ function spMovimiento(PDO $pdo, int $cid, int $uid, ?int $movId, ?int $cuenta, s
         }
     }
     if (!$cuenta) return null;
-    return $sentido === 'salida'
-        ? bancoSalidaPago($pdo, $cid, $cuenta, $fecha, $monto, $desc, $ref, $uid, null, 'prestamo_socio')
-        : bancoDepositoCobro($pdo, $cid, $cuenta, $fecha, $monto, $desc, $ref, $uid);
+    return spBancoMov($pdo, $cid, $uid, $cuenta, $sentido, $fecha, $monto, $ref, $desc, $moneda, $tasa);
 }
 
 /**
@@ -290,13 +328,13 @@ function spEditarPago(PDO $pdo, int $cid, int $uid, int $pagoId, array $d, ?arra
     $monto = round((float)str_replace(',', '', (string)($d['monto'] ?? $g['monto'])), 2);
     if ($monto <= 0) throw new Exception("El monto debe ser mayor que 0.");
     $maximo = $det['saldo'] + (float)$g['monto'];
-    if ($monto > $maximo + 0.004) throw new Exception("El pago no puede pasar del saldo (L " . number_format($maximo, 2) . ").");
+    if ($monto > $maximo + 0.004) throw new Exception("El pago no puede pasar del saldo (" . spFmt($maximo, spMoneda($p)) . ").");
     $fecha = bancoFecha((string)($d['fecha'] ?? $g['fecha']));
     if ($fecha < $p['fecha']) throw new Exception("El pago no puede ser antes del préstamo.");
     $metodo = isset(SP_METODOS[$d['metodo'] ?? '']) ? $d['metodo'] : $g['metodo'];
     $ref = mb_substr(trim((string)($d['referencia'] ?? '')), 0, 80) ?: null;
     $cuenta = (int)($d['cuenta_id'] ?? 0) ?: null;
-    $mov = spMovimiento($pdo, $cid, $uid, (int)$g['movimiento_id'] ?: null, $cuenta, 'entrada', $fecha, $monto, $ref, 'Pago de préstamo de socio: ' . $p['socio'] . ' (#' . $p['id'] . ')');
+    $mov = spMovimiento($pdo, $cid, $uid, (int)$g['movimiento_id'] ?: null, $cuenta, 'entrada', $fecha, $monto, $ref, 'Pago de préstamo de socio: ' . $p['socio'] . ' (#' . $p['id'] . ')', spMoneda($p), (float)($p['tasa_cambio'] ?? 0) ?: null);
     $sets = "fecha = ?, monto = ?, metodo = ?, referencia = ?, cuenta_id = ?, movimiento_id = ?, notas = ?";
     $vals = [$fecha, $monto, $metodo, $ref, $cuenta, $mov, mb_substr(trim((string)($d['notas'] ?? '')), 0, 255) ?: null];
     if ($archivo) { $sets .= ", archivo_adjunto = ?, archivo_nombre = ?"; array_push($vals, $archivo[0], $archivo[1]); }
@@ -319,7 +357,7 @@ function spEditar(PDO $pdo, int $cid, int $uid, int $id, array $d, ?array $archi
     if ($desc === '') throw new Exception("Escribe para qué es el préstamo.");
     $monto = round((float)str_replace(',', '', (string)($d['monto'] ?? $p['monto'])), 2);
     if ($monto <= 0) throw new Exception("El monto debe ser mayor que 0.");
-    if ($monto < $det['pagado'] - 0.004) throw new Exception("El monto no puede ser menor que lo ya pagado (L " . number_format($det['pagado'], 2) . ").");
+    if ($monto < $det['pagado'] - 0.004) throw new Exception("El monto no puede ser menor que lo ya pagado (" . spFmt($det['pagado'], spMoneda($p)) . ").");
     $n = (int)($d['num_cuotas'] ?? $p['num_cuotas']);
     if ($n < 1 || $n > 120) throw new Exception("Las cuotas deben ser entre 1 y 120.");
     $frec = ($d['frecuencia'] ?? $p['frecuencia']) === 'mensual' ? 'mensual' : 'quincenal';
@@ -329,7 +367,7 @@ function spEditar(PDO $pdo, int $cid, int $uid, int $id, array $d, ?array $archi
     foreach ($det['pagos'] as $g) if (!(int)$g['anulado'] && $g['fecha'] < $fecha) throw new Exception("Hay pagos antes de esa fecha del préstamo.");
     $ref = mb_substr(trim((string)($d['referencia'] ?? '')), 0, 80) ?: null;
     $cuenta = array_key_exists('cuenta_id', $d) ? ((int)$d['cuenta_id'] ?: null) : ((int)$p['cuenta_id'] ?: null);
-    $mov = spMovimiento($pdo, $cid, $uid, (int)$p['movimiento_id'] ?: null, $cuenta, 'salida', $fecha, $monto, $ref, 'Préstamo a socio: ' . $p['socio'] . ' · ' . $desc);
+    $mov = spMovimiento($pdo, $cid, $uid, (int)$p['movimiento_id'] ?: null, $cuenta, 'salida', $fecha, $monto, $ref, 'Préstamo a socio: ' . $p['socio'] . ' · ' . $desc, spMoneda($p), (float)($p['tasa_cambio'] ?? 0) ?: null);
     $sets = "descripcion = ?, monto = ?, fecha = ?, num_cuotas = ?, frecuencia = ?, primera_cuota = ?, referencia = ?, cuenta_id = ?, movimiento_id = ?, notas = ?, cuenta_destino = ?";
     $vals = [$desc, $monto, $fecha, $n, $frec, $primera, $ref, $cuenta, $mov, trim((string)($d['notas'] ?? $p['notas'])) ?: null,
         mb_substr(trim((string)($d['cuenta_destino'] ?? $p['cuenta_destino'] ?? '')), 0, 150) ?: null];
@@ -363,10 +401,14 @@ function spCondonar(PDO $pdo, int $cid, int $uid, int $id, string $motivo, strin
     $det = spDetalle($pdo, $cid, $id);
     $p = $det['prestamo'];
     if ($p['estado'] !== 'activo' || $det['saldo'] <= 0) throw new Exception("No hay saldo por pasar a retiro.");
+    // En dólares el retiro se registra en lempiras (los gastos van en L) a la tasa del préstamo
+    $mon = spMoneda($p);
+    $factor = $mon === 'USD' ? ((float)($p['tasa_cambio'] ?? 0) ?: tasaValoracion($pdo, $fecha)) : 1.0;
+    if ($factor <= 0) throw new Exception("No hay tasa de cambio para pasar el saldo en dólares a lempiras.");
     $pdo->prepare("INSERT INTO gastos (cliente_id, descripcion, monto, fecha, frecuencia, tipo, naturaleza, metodo_pago, notas, estado, usuario_id, socio_id)
                    VALUES (?, ?, ?, ?, 'unico', 'variable', 'retiro', 'otro', ?, 'pagado', ?, ?)")
-        ->execute([$cid, mb_substr('Retiro de socio: saldo del préstamo #' . $id . ' · ' . $p['descripcion'], 0, 300), $det['saldo'], $fecha,
-            'El socio no devolverá el saldo del préstamo #' . $id . ' (L ' . number_format((float)$p['monto'], 2) . '). Motivo: ' . $motivo . '. No sale del banco: el dinero ya había salido al prestarlo.', $uid, (int)$p['socio_id']]);
+        ->execute([$cid, mb_substr('Retiro de socio: saldo del préstamo #' . $id . ' · ' . $p['descripcion'], 0, 300), round($det['saldo'] * $factor, 2), $fecha,
+            'El socio no devolverá el saldo del préstamo #' . $id . ' (' . spFmt($p['monto'], $mon) . ($mon === 'USD' ? ', saldo ' . spFmt($det['saldo'], $mon) . ' a tasa ' . $factor : '') . '). Motivo: ' . $motivo . '. No sale del banco: el dinero ya había salido al prestarlo.', $uid, (int)$p['socio_id']]);
     $gid = (int)$pdo->lastInsertId();
     $pdo->prepare("UPDATE socios_prestamos SET estado = 'condonado', condonado_monto = ?, condonado_gasto_id = ?, cerrado_en = ?, notas = CONCAT(COALESCE(notas, ''), ?) WHERE id = ?")
         ->execute([$det['saldo'], $gid, $fecha, ' | Saldo pasado a retiro el ' . date('d/m/Y', strtotime($fecha)) . ': ' . $motivo, $id]);
@@ -417,14 +459,15 @@ function spCorreos(string $txt): string
 function spSaldoAlCorte(PDO $pdo, int $cid, string $corte): float
 {
     if (!spDisponible($pdo)) return 0.0;
-    $st = $pdo->prepare("SELECT p.id, p.monto, p.estado, p.condonado_monto, p.cerrado_en,
+    $st = $pdo->prepare("SELECT p.id, p.monto, p.estado, p.condonado_monto, p.cerrado_en, p.moneda,
                                 COALESCE((SELECT SUM(g.monto) FROM socios_prestamo_pagos g WHERE g.prestamo_id = p.id AND g.anulado = 0 AND g.fecha <= ?), 0) AS pagado
                          FROM socios_prestamos p WHERE p.cliente_id = ? AND p.estado <> 'anulado' AND p.fecha <= ?");
     $st->execute([$corte, $cid, $corte]);
     $t = 0.0;
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $p) {
         $cond = $p['estado'] === 'condonado' && $p['cerrado_en'] && $p['cerrado_en'] <= $corte ? (float)$p['condonado_monto'] : 0.0;
-        $t += max(0, (float)$p['monto'] - (float)$p['pagado'] - $cond);
+        // Los préstamos en dólares se valoran en lempiras a la tasa del corte
+        $t += max(0, (float)$p['monto'] - (float)$p['pagado'] - $cond) * (($p['moneda'] ?? 'HNL') === 'USD' ? tasaValoracion($pdo, $corte) : 1);
     }
     return round($t, 2);
 }
@@ -436,9 +479,9 @@ function spSaldoAlCorte(PDO $pdo, int $cid, string $corte): float
 function spCuentasPagoHtml(PDO $pdo, int $cid, array $p, bool $paraCorreo = true): string
 {
     try {
-        $st = $pdo->prepare("SELECT id, banco, tipo, numero, titular FROM cuentas_bancarias WHERE cliente_id = ? AND moneda = 'HNL'"
+        $st = $pdo->prepare("SELECT id, banco, tipo, numero, titular FROM cuentas_bancarias WHERE cliente_id = ? AND moneda = ?"
             . ((int)$p['cuenta_id'] ? " AND id = ?" : " AND activa = 1 AND ? = 0") . " ORDER BY tipo = 'ahorro' DESC, id");
-        $st->execute([$cid, (int)$p['cuenta_id']]);
+        $st->execute([$cid, spMoneda($p), (int)$p['cuenta_id']]);
         $cs = $st->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $e) { return ''; }
     if (!$cs) return '';
@@ -481,7 +524,7 @@ function spHtmlControl(PDO $pdo, int $cid, array $det, bool $paraCorreo = false)
 {
     $p = $det['prestamo'];
     $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
-    $L = fn($v) => 'L ' . number_format((float)$v, 2);
+    $L = fn($v) => spFmt($v, spMoneda($p));
     $filas = '';
     foreach ($det['cuotas'] as $i => $c) {
         [$txt, $bg, $fg] = SP_CUOTA_ESTADOS[$c['estado']];
@@ -529,7 +572,7 @@ function spPdf(PDO $pdo, int $cid, int $id): string
     $st->execute([$cid]);
     $emp = $st->fetch(PDO::FETCH_ASSOC) ?: [];
     $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
-    $L = fn($v) => 'L ' . number_format((float)$v, 2);
+    $L = fn($v) => spFmt($v, spMoneda($p));
     $logo = cotizacionLogoB64($emp);
     $alias = ($emp['alias'] ?? '') ?: ($emp['nombre'] ?? '');
     $pagos = '';
@@ -599,7 +642,7 @@ function spEnviarAviso(PDO $pdo, int $cid, int $id, string $motivo, ?array $cuot
     $cc = implode(', ', array_unique(array_diff(array_merge(correoLista((string)($p['aviso_cc'] ?? '')), correoLista((string)($cfg['responder_a'] ?? ''))), correoLista($para))));
     $cuota ??= $det['proxima'];
     $e = fn($t) => htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8');
-    $L = fn($v) => 'L ' . number_format((float)$v, 2);
+    $L = fn($v) => spFmt($v, spMoneda($p));
     $nombre = explode(' ', trim(spNombreVisible($p)))[0];
     if ($motivo === 'bienvenida') {
         $c1 = $det['cuotas'][0] ?? null;
