@@ -234,6 +234,22 @@ try {
             $pdo->prepare("UPDATE gastos SET cobrar_desde = ?, cobrar_aviso_dias = ? WHERE id IN (?) AND cliente_id = ? AND cobrar_receptor_id IS NOT NULL")->execute([$cDesde, $cAviso, $gasto_id, $cid]);
         }
 
+        // «Este y los siguientes»: serie mensual, se aplican los cambios a los pagos pendientes posteriores y se
+        // recalcula su fecha con el día de pago (los ya pagados y los anteriores no se tocan)
+        $serieActualizados = 0;
+        if (!empty($_POST['aplicar_serie']) && $grupoId && $frecuencia === 'mensual' && $dia_pago) {
+            $stSer = $pdo->prepare("SELECT id, fecha FROM gastos WHERE gasto_grupo_id = ? AND cliente_id = ? AND estado = 'pendiente' AND id <> ? AND fecha > ?");
+            $stSer->execute([$grupoId, $cid, $gasto_id, $gastoActual['fecha']]);
+            $updSer = $pdo->prepare("UPDATE gastos SET categoria_id=?, descripcion=?, monto=?, frecuencia=?, dia_pago=?, fecha_vencimiento=?, tipo=?,
+                    metodo_pago=?, tarjeta_id=?, proveedor=?, fecha=? WHERE id=? AND cliente_id=?");
+            foreach ($stSer->fetchAll(PDO::FETCH_ASSOC) as $o) {
+                $f = new DateTime($o['fecha']);
+                $f->setDate((int)$f->format('Y'), (int)$f->format('n'), min($dia_pago, (int)$f->format('t')));
+                $updSer->execute([$categoria_id, $descripcion, $monto, $frecuencia, $dia_pago, $fecha_venc, $tipo, $metodo_pago, $tarjeta_id, $proveedor, $f->format('Y-m-d'), $o['id'], $cid]);
+                $serieActualizados++;
+            }
+        }
+
         // Si pasó de pendiente a pagado y es recurrente, programar el período siguiente
         // (con los datos ya editados: monto, día de pago, vencimiento, etc.)
         if ($estado === 'pagado') {
@@ -259,6 +275,7 @@ try {
         }
         $pdo->commit();
         $mensaje = 'Gasto actualizado correctamente.';
+        if ($serieActualizados) $mensaje .= ' También se actualizaron y recalcularon ' . $serieActualizados . ' pago(s) pendiente(s) siguiente(s) de la serie.';
     }
 
     // Si se reemplazó el comprobante, borrar el anterior si ya nadie lo usa

@@ -1298,6 +1298,15 @@ $total  = count($gastos);
                                 class="mf-input">
                             <div class="form-text">Para recurrentes: hasta cuándo aplica.</div>
                         </div>
+                        <!-- Gasto mensual con serie: editar solo este pago o este y los siguientes pendientes (recalcula sus fechas) -->
+                        <div class="col-12" id="grpSerie" style="display:none">
+                            <div class="rounded-3 p-3" style="background:#fff7ed;border:1.5px solid #fed7aa">
+                                <div class="fw-semibold small mb-2"><i class="bi bi-arrow-repeat me-1 text-warning"></i>¿A cuáles pagos aplicar los cambios?</div>
+                                <div class="form-check mb-1"><input class="form-check-input" type="radio" name="aplicar_serie" id="g_serie0" value="0" checked><label class="form-check-label" for="g_serie0">Solo este pago</label></div>
+                                <div class="form-check"><input class="form-check-input" type="radio" name="aplicar_serie" id="g_serie1" value="1"><label class="form-check-label" for="g_serie1">Este y los siguientes pagos pendientes de la serie</label></div>
+                                <div class="form-text">Se aplican el monto, descripción, categoría, proveedor, forma de pago y <strong>día de pago</strong>, y se recalcula la fecha de cada pago pendiente posterior (los ya pagados no cambian).</div>
+                            </div>
+                        </div>
 
                         <!-- Panel Viáticos -->
                         <div class="col-12" id="panelViaticos" style="display:none">
@@ -1738,10 +1747,19 @@ $total  = count($gastos);
     }
     document.getElementById('g_cobrar')?.addEventListener('change', gsCobroAviso);
 
+    // Si se cambia el día de pago aplicando a la serie, la fecha de este pago pasa a ese día del mismo mes
+    document.getElementById('g_dia1').addEventListener('change', () => {
+        if (!document.getElementById('g_serie1').checked) return;
+        const f = document.getElementById('g_fecha').value, d = parseInt(document.getElementById('g_dia1').value, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(f) || !d) return;
+        const [a, m] = f.split('-').map(Number), ult = new Date(a, m, 0).getDate();
+        document.getElementById('g_fecha').value = f.slice(0, 8) + String(Math.min(d, ult)).padStart(2, '0');
+    });
     function limpiarModalGasto() {
         const gcNu = document.getElementById('grpCuentaGasto');
         if (gcNu) { gcNu.dataset.ya = ''; gcNu.dataset.yaId = ''; document.getElementById('g_cuenta_editar').value = ''; }
         document.getElementById('formGasto').reset();
+        document.getElementById('grpSerie').style.display = 'none';
         document.getElementById('g_id').value = '';
         document.getElementById('g_fecha').value = new Date().toISOString().slice(0, 10);
         document.getElementById('g_nat').disabled = false;
@@ -1823,6 +1841,7 @@ $total  = count($gastos);
                 const url = 'gasto_archivo?id=' + encodeURIComponent(g.id);
                 gsMostrarActual(g.archivo_adjunto, g.archivo_nombre || g.archivo_adjunto, url);
             }
+            document.getElementById('grpSerie').style.display = (!dup && g.gasto_grupo_id && g.frecuencia === 'mensual') ? '' : 'none';
             if (g.dia_pago) document.getElementById('g_dia1').value = g.dia_pago;
             if (g.dia_pago_2) document.getElementById('g_dia2').value = g.dia_pago_2;
             if (g.fecha_vencimiento) document.getElementById('g_venc').value = g.fecha_vencimiento;

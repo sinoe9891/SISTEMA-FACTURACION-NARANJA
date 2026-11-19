@@ -3815,3 +3815,35 @@ suite('Colaboradores: comprobante en adelantos, bonos, viáticos, multas y prés
     }
     @unlink($tmp); @unlink($txt);
 });
+
+suite('Gastos mensuales: editar solo este pago o este y los siguientes (recalcula fechas)', function () use ($pdo) {
+    $c = login('qa.admin@local.test');
+    $ins = $pdo->prepare("INSERT INTO gastos (cliente_id,descripcion,monto,fecha,frecuencia,dia_pago,gasto_grupo_id,fecha_vencimiento,tipo,metodo_pago,estado) VALUES (2,'QA serie seguro',2000,?,'mensual',30,?,'2028-12-30','fijo','transferencia',?)");
+    $ids = [];
+    foreach ([['2027-01-30', 'pagado'], ['2027-02-28', 'pendiente'], ['2027-03-30', 'pendiente'], ['2027-04-30', 'pendiente']] as [$f, $e]) {
+        $ins->execute([$f, $ids[0] ?? 0, $e]);
+        $ids[] = (int)$pdo->lastInsertId();
+        if (count($ids) === 1) $pdo->exec("UPDATE gastos SET gasto_grupo_id = {$ids[0]} WHERE id = {$ids[0]}");
+    }
+    $campos = fn($fecha, $serie) => ['gasto_id' => $ids[1], 'descripcion' => 'QA serie seguro', 'monto' => 2100, 'fecha' => $fecha, 'frecuencia' => 'mensual', 'dia_pago' => 20, 'tipo' => 'fijo', 'metodo_pago' => 'transferencia', 'estado' => 'pendiente', 'fecha_vencimiento' => '2028-12-30', 'aplicar_serie' => $serie];
+    $fechas = fn() => array_map(fn($i) => $pdo->query("SELECT CONCAT(fecha,' ',monto,' d',dia_pago) FROM gastos WHERE id = $i")->fetchColumn(), $ids);
+    // Solo este: los demás no cambian
+    $r = $c->post('includes/gasto_actualizar.php', $campos('2027-02-20', '0'));
+    $f = $fechas();
+    check('«solo este»: cambia solo el pago editado', ($r['json']['success'] ?? false) && $f[1] === '2027-02-20 2100.00 d20' && $f[2] === '2027-03-30 2000.00 d30' && $f[3] === '2027-04-30 2000.00 d30', json_encode($f) . $r['body']);
+    // Este y los siguientes: recalcula fechas y datos de los pendientes posteriores; el pagado y el anterior no
+    $r = $c->post('includes/gasto_actualizar.php', $campos('2027-02-20', '1'));
+    $f = $fechas();
+    check('«este y los siguientes»: los pendientes posteriores toman el día 20 y el monto nuevo', $f[2] === '2027-03-20 2100.00 d20' && $f[3] === '2027-04-20 2100.00 d20', json_encode($f));
+    check('el pago ya pagado de antes no se toca', $f[0] === '2027-01-30 2000.00 d30', $f[0]);
+    check('el mensaje dice cuántos se recalcularon', str_contains($r['json']['message'] ?? '', '2 pago(s)'), $r['body']);
+    // Febrero: día 31 se ajusta al último del mes
+    $x = $campos('2027-02-28', '1'); $x['dia_pago'] = 31;
+    $c->post('includes/gasto_actualizar.php', $x);
+    $f = $fechas();
+    check('día 31: se ajusta al último día de cada mes', $f[2] === '2027-03-31 2100.00 d31' && $f[3] === '2027-04-30 2100.00 d31', json_encode($f));
+    $pdo->exec("DELETE FROM gastos WHERE id IN (" . implode(',', $ids) . ")");
+    // La pantalla ofrece la opción
+    $src = file_get_contents(__DIR__ . '/../../clientes/naranjaymedia/gastos.php');
+    check('el formulario ofrece «Este y los siguientes pagos pendientes de la serie»', str_contains($src, 'name="aplicar_serie"') && str_contains($src, 'id="grpSerie"'));
+});
