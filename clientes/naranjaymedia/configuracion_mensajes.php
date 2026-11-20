@@ -44,6 +44,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$pdo->prepare("INSERT INTO configuracion_cuentas_pago (cliente_id, banco, tipo_cuenta, numero_cuenta, titular, orden) VALUES (?, ?, ?, ?, ?, ?)")
 				->execute([$cliente_id, $banco, $tipo_cuenta, $numero_cuenta, $titular, $orden]);
 			$mensaje = 'Cuenta agregada.';
+		} elseif ($accion === 'editar_cuenta') {
+			$id = (int)($_POST['id'] ?? 0);
+			$banco = trim($_POST['banco'] ?? '');
+			$tipo_cuenta = trim($_POST['tipo_cuenta'] ?? '');
+			$numero_cuenta = trim($_POST['numero_cuenta'] ?? '');
+			$titular = trim($_POST['titular'] ?? '');
+			if ($banco === '' || $numero_cuenta === '' || $titular === '') {
+				throw new Exception('Banco, número de cuenta y titular son obligatorios.');
+			}
+			$pdo->prepare("UPDATE configuracion_cuentas_pago SET banco = ?, tipo_cuenta = ?, numero_cuenta = ?, titular = ? WHERE id = ? AND cliente_id = ?")
+				->execute([$banco, $tipo_cuenta, $numero_cuenta, $titular, $id, $cliente_id]);
+			$mensaje = 'Cuenta modificada.';
 		} elseif ($accion === 'eliminar_cuenta') {
 			$id = (int)($_POST['id'] ?? 0);
 			$pdo->prepare("DELETE FROM configuracion_cuentas_pago WHERE id = ? AND cliente_id = ?")->execute([$id, $cliente_id]);
@@ -330,6 +342,11 @@ require_once '../../includes/templates/config_tabs.php';
 								</span>
 							</td>
 							<td style="white-space:nowrap;">
+								<button type="button" class="cm-btn btn-editar-cuenta" style="padding:.35rem .7rem;" title="Editar"
+									data-id="<?= (int)$c['id'] ?>" data-banco="<?= htmlspecialchars($c['banco'], ENT_QUOTES) ?>"
+									data-tipo="<?= htmlspecialchars($c['tipo_cuenta'] ?? '', ENT_QUOTES) ?>"
+									data-numero="<?= htmlspecialchars($c['numero_cuenta'], ENT_QUOTES) ?>"
+									data-titular="<?= htmlspecialchars($c['titular'], ENT_QUOTES) ?>"><i class="bi bi-pencil-fill"></i></button>
 								<form method="POST" style="display:inline;">
 									<input type="hidden" name="accion" value="toggle_cuenta">
 									<input type="hidden" name="id" value="<?= $c['id'] ?>">
@@ -360,29 +377,58 @@ require_once '../../includes/templates/config_tabs.php';
 
 			<hr>
 
-			<form method="POST" class="row g-2 align-items-end">
-				<input type="hidden" name="accion" value="agregar_cuenta">
+			<form method="POST" class="row g-2 align-items-end" id="formCuenta">
+				<input type="hidden" name="accion" value="agregar_cuenta" id="cuentaAccion">
+				<input type="hidden" name="id" value="" id="cuentaId">
+				<div class="col-12 d-none" id="cuentaEditando" style="font-size:.85rem;color:var(--text-muted);">
+					<i class="bi bi-pencil-fill"></i> Editando una cuenta.
+					<a href="#" id="cuentaCancelar">Cancelar</a>
+				</div>
 				<div class="col-md-3">
 					<label class="form-label" style="font-size:.8rem;">Banco</label>
-					<input type="text" name="banco" class="cm-input" placeholder="Ej: Banpaís" required>
+					<input type="text" name="banco" id="cuentaBanco" class="cm-input" placeholder="Ej: Banpaís" required>
 				</div>
 				<div class="col-md-2">
 					<label class="form-label" style="font-size:.8rem;">Tipo</label>
-					<input type="text" name="tipo_cuenta" class="cm-input" placeholder="Ahorros / Corriente">
+					<input type="text" name="tipo_cuenta" id="cuentaTipo" class="cm-input" placeholder="Ahorros / Corriente">
 				</div>
 				<div class="col-md-3">
 					<label class="form-label" style="font-size:.8rem;">N.° Cuenta</label>
-					<input type="text" name="numero_cuenta" class="cm-input" placeholder="000 000 000 000" required>
+					<input type="text" name="numero_cuenta" id="cuentaNumero" class="cm-input" placeholder="000 000 000 000" required>
 				</div>
 				<div class="col-md-3">
 					<label class="form-label" style="font-size:.8rem;">Titular</label>
-					<input type="text" name="titular" class="cm-input" placeholder="Nombre del titular" required>
+					<input type="text" name="titular" id="cuentaTitular" class="cm-input" placeholder="Nombre del titular" required>
 				</div>
 				<div class="col-md-1">
 					<button type="submit" class="cm-btn" style="width:100%;justify-content:center;"><i
-							class="bi bi-plus-lg"></i></button>
+							class="bi bi-plus-lg" id="cuentaIcono"></i></button>
 				</div>
 			</form>
+			<script>
+			(function () {
+				var f = document.getElementById('formCuenta');
+				function modo(editar) {
+					document.getElementById('cuentaAccion').value = editar ? 'editar_cuenta' : 'agregar_cuenta';
+					document.getElementById('cuentaEditando').classList.toggle('d-none', !editar);
+					document.getElementById('cuentaIcono').className = editar ? 'bi bi-check-lg' : 'bi bi-plus-lg';
+					if (!editar) { f.reset(); document.getElementById('cuentaId').value = ''; }
+				}
+				document.querySelectorAll('.btn-editar-cuenta').forEach(function (b) {
+					b.addEventListener('click', function () {
+						document.getElementById('cuentaId').value = b.dataset.id;
+						document.getElementById('cuentaBanco').value = b.dataset.banco;
+						document.getElementById('cuentaTipo').value = b.dataset.tipo;
+						document.getElementById('cuentaNumero').value = b.dataset.numero;
+						document.getElementById('cuentaTitular').value = b.dataset.titular;
+						modo(true);
+						f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+						document.getElementById('cuentaBanco').focus();
+					});
+				});
+				document.getElementById('cuentaCancelar').addEventListener('click', function (e) { e.preventDefault(); modo(false); });
+			})();
+			</script>
 		</div>
 	</div>
 
