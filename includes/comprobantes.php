@@ -4,9 +4,9 @@
  * Los archivos se guardan como los de gastos (includes/uploads/gastos); aquí solo se liga el archivo con el registro.
  * Ver: comprobante_archivo.php (ver), includes/comprobante_accion.php (adjuntar, cambiar, quitar).
  */
-const COMPROBANTE_TABLAS = ['cheque' => 'cheques', 'prestamo' => 'prestamos_recibidos', 'activo' => 'activos_fijos'];
+const COMPROBANTE_TABLAS = ['cheque' => 'cheques', 'prestamo' => 'prestamos_recibidos', 'activo' => 'activos_fijos', 'gasto' => 'gastos'];
 /** Quién puede adjuntar, cambiar o quitar el comprobante (el mismo rol que administra ese registro). */
-const COMPROBANTE_ROLES = ['cheque' => ['admin', 'superadmin', 'nomina'], 'prestamo' => ['admin', 'superadmin'], 'activo' => ['admin', 'superadmin']];
+const COMPROBANTE_ROLES = ['cheque' => ['admin', 'superadmin', 'nomina'], 'prestamo' => ['admin', 'superadmin'], 'activo' => ['admin', 'superadmin'], 'gasto' => ['admin', 'superadmin', 'nomina']];
 
 function comprobanteDisponible(PDO $pdo): bool
 {
@@ -42,12 +42,21 @@ function comprobanteAsignar(PDO $pdo, int $cid, string $tipo, int $id, ?array $a
     elseif ($quitar) $pdo->prepare("UPDATE $t SET archivo_adjunto = NULL, archivo_nombre = NULL WHERE id = ? AND cliente_id = ?")->execute([$id, $cid]);
 }
 
-/** Botones de una fila: ver el comprobante (vista previa) y adjuntar / cambiar / quitar. */
-function comprobanteBotonesFila(string $tipo, int $id, bool $tiene, bool $puede): string
+/**
+ * Botones de una fila: ver el comprobante (vista previa) y adjuntar / cambiar / quitar.
+ * $detalle: texto extra para el título (p. ej. de qué pago es). $alerta: si falta, el botón sale en ámbar.
+ */
+function comprobanteBotonesFila(string $tipo, int $id, bool $tiene, bool $puede, string $detalle = '', bool $alerta = false): string
 {
     $h = '';
-    if ($tiene) $h .= '<a href="comprobante_archivo?tipo=' . $tipo . '&id=' . $id . '" target="_blank" class="btn btn-sm btn-outline-success" title="Ver el comprobante"><i class="bi bi-paperclip"></i></a> ';
-    if ($puede) $h .= '<button type="button" class="btn btn-sm btn-outline-secondary btn-comp" data-tipo="' . $tipo . '" data-id="' . $id . '" data-tiene="' . ($tiene ? 1 : 0) . '" title="'
-        . ($tiene ? 'Cambiar o quitar el comprobante' : 'Adjuntar un comprobante (opcional)') . '"><i class="bi bi-' . ($tiene ? 'pencil-square' : 'cloud-upload') . '"></i></button> ';
+    $ver = $tipo === 'gasto' ? 'gasto_archivo?id=' . $id : 'comprobante_archivo?tipo=' . $tipo . '&id=' . $id;   // los gastos ya tienen su propio visor
+    $sufijo = $detalle !== '' ? ' (' . htmlspecialchars($detalle, ENT_QUOTES) . ')' : '';
+    if ($tiene) $h .= '<a href="' . $ver . '" target="_blank" class="btn btn-sm btn-outline-success" title="Ver el comprobante' . $sufijo . '"><i class="bi bi-paperclip"></i></a> ';
+    if ($puede) {
+        $cls = !$tiene && $alerta ? 'btn-outline-warning' : 'btn-outline-secondary';
+        $titulo = $tiene ? 'Cambiar o quitar el comprobante' . $sufijo : ($alerta ? 'Falta el comprobante' . $sufijo . ': clic para adjuntarlo' : 'Adjuntar un comprobante (opcional)' . $sufijo);
+        $h .= '<button type="button" class="btn btn-sm ' . $cls . ' btn-comp" data-tipo="' . $tipo . '" data-id="' . $id . '" data-tiene="' . ($tiene ? 1 : 0) . '" title="' . $titulo . '"><i class="bi bi-'
+            . ($tiene ? 'pencil-square' : ($alerta ? 'exclamation-triangle' : 'cloud-upload')) . '"></i></button> ';
+    }
     return $h;
 }

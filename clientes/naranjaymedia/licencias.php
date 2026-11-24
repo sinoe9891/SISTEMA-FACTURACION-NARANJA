@@ -4,6 +4,7 @@ $titulo = 'Licencias';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/licencias.php';
+require_once '../../includes/comprobantes.php';
 
 if (!permisoPuede($pdo, 'licencias')) {
     header('Location: dashboard');
@@ -16,6 +17,14 @@ if ($instalado) {
     catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('licencias.php: ' . $e->getMessage()); }
 }
 $lista = $instalado ? licenciasLista($pdo, $cid) : [];
+// Comprobante de la última renovación pagada de cada licencia (el pago con tarjeta queda en Gastos: ahí está el archivo)
+$ultPago = [];
+$puedeComp = comprobanteDisponible($pdo) && comprobantePuede('gasto', (string)USUARIO_ROL);
+if ($instalado) {
+    $st = $pdo->prepare("SELECT licencia_id, id, fecha, archivo_adjunto IS NOT NULL AS tiene FROM gastos WHERE cliente_id = ? AND licencia_id IS NOT NULL AND estado = 'pagado' ORDER BY fecha DESC, id DESC");
+    $st->execute([$cid]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $g) $ultPago[(int)$g['licencia_id']] ??= $g;
+}
 // Empresas de un mismo contrato rotativo (p. ej. Texaco): la licencia se le cobra a cualquiera de ellas
 require_once '../../includes/gastos_cobrar.php';
 $gruposLic = gastosGruposReceptores($pdo, (int)$cid);
@@ -145,6 +154,7 @@ require_once '../../includes/templates/header.php';
                             <?php endif; ?></td>
                         <td class="text-nowrap"><?= date('d/m/Y', strtotime($l['proxima_renovacion'])) ?><?php if ($act): ?> <span class="sem-pill sem-<?= $sem ?>"><?= $txt ?></span><?php endif; ?></td>
                         <td class="text-end text-nowrap">
+                            <?php if ($up = $ultPago[(int)$l['id']] ?? null): ?><?= comprobanteBotonesFila('gasto', (int)$up['id'], (bool)$up['tiene'], $puedeComp, 'renovación pagada el ' . date('d/m/Y', strtotime($up['fecha'])), true) ?><?php endif; ?>
                             <button class="btn btn-sm btn-outline-secondary py-0 btn-editar" data-l='<?= htmlspecialchars(json_encode($l, JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>' title="Editar"><i class="bi bi-pencil"></i></button>
                             <button class="btn btn-sm <?= $act ? 'btn-outline-danger' : 'btn-outline-success' ?> py-0 btn-activa" data-id="<?= (int)$l['id'] ?>" data-activa="<?= $act ? 0 : 1 ?>" title="<?= $act ? 'Desactivar (ya no se renueva)' : 'Activar' ?>"><i class="bi <?= $act ? 'bi-pause-circle' : 'bi-play-circle' ?>"></i></button>
                         </td>
@@ -281,4 +291,5 @@ require_once '../../includes/templates/header.php';
 })();
 </script>
 
+<?php if ($instalado && $puedeComp && $ultPago): require __DIR__ . '/../../includes/templates/_comprobante_modal.php'; endif; ?>
 <?php require_once '../../includes/templates/footer.php'; ?>
