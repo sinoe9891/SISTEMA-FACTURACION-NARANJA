@@ -2712,6 +2712,18 @@ suite('Recibos con banco, PDF, recordatorios del plan y envío de recibos por co
         check('un pago anticipado guarda su comprobante', $ant3 && $f("SELECT archivo_adjunto FROM contratos_anticipos WHERE id = $ant3") && $c->get('pago_recibido_archivo', ['tipo' => 'anticipo', 'id' => $ant3])['code'] === 200, $r['body']);
         if ($ant3) $pdo->exec("UPDATE contratos_anticipos SET anulado = 1, motivo_anulacion = 'QA' WHERE id = $ant3");
     }
+    // Adjuntar, cambiar y quitar el comprobante de un recibo ya emitido, sin tocar lo demás
+    $fechaRec4 = $f("SELECT fecha_emision FROM contratos_recibos WHERE id = $rec4");
+    $r = $c->post('includes/pago_recibido_accion.php', ['accion' => 'comprobante', 'tipo' => 'recibo', 'id' => $rec4, 'comprobante' => new CURLFile(archivoTemporal('png'), 'image/png', 'tarde.png')]);
+    check('se adjunta el comprobante a un recibo ya emitido sin cambiar su fecha ni su monto', !empty($r['json']['success']) && $f("SELECT archivo_adjunto FROM contratos_recibos WHERE id = $rec4") && $f("SELECT fecha_emision FROM contratos_recibos WHERE id = $rec4") === $fechaRec4 && (float)$f("SELECT monto FROM contratos_recibos WHERE id = $rec4") == 60, $r['body']);
+    $r = $c->post('includes/pago_recibido_accion.php', ['accion' => 'comprobante', 'tipo' => 'recibo', 'id' => $rec4]);
+    check('adjuntar sin elegir archivo avisa', empty($r['json']['success']), $r['body']);
+    $r = $c->post('includes/pago_recibido_accion.php', ['accion' => 'comprobante', 'tipo' => 'recibo', 'id' => $rec3, 'quitar_comprobante' => 1]);
+    check('se quita el comprobante (también del depósito del banco)', !empty($r['json']['success']) && $f("SELECT archivo_adjunto FROM contratos_recibos WHERE id = $rec3") === null && $f("SELECT archivo_adjunto FROM movimientos_bancarios WHERE id = $mov3") === null, $r['body']);
+    $o = login('qa.ccic@local.test');
+    check('otra empresa no puede tocar el comprobante', empty($o->post('includes/pago_recibido_accion.php', ['accion' => 'comprobante', 'tipo' => 'recibo', 'id' => $rec4, 'quitar_comprobante' => 1])['json']['success']) && $f("SELECT archivo_adjunto FROM contratos_recibos WHERE id = $rec4") !== null);
+    $pg = $c->get('facturas_contrato', ['contrato_id' => $ctr]);
+    check('la ficha del contrato ofrece ver y adjuntar el comprobante de cada recibo', str_contains($pg['body'], 'btn-comp') && str_contains($pg['body'], 'pago_recibido_archivo?tipo=recibo'), '');
     $pdo->exec("DELETE FROM contratos_recibos WHERE id IN ($rec3, $rec4)");
 
     // PDF del recibo

@@ -64,6 +64,16 @@ $variasEmpresas = count($porEmpresa) > 1;
 $hayAbonos = cxcDisponible($pdo);
 $puedeCobrar = in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true);
 $puedeCorreo = permisoPuede($pdo, 'cobros_programados');   // «Cobros por correo» es solo de administradores
+// Comprobante de un recibo o pago anticipado: ver (con vista previa) y adjuntar / cambiar / quitar
+$puedeAdjuntar = in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true);
+function comprobanteBotones(string $tipo, int $id, bool $tiene, bool $puede, bool $enlace = false): string
+{
+    $cls = $enlace ? 'btn btn-link btn-sm p-0 me-2 ' : 'btn btn-sm ';
+    $h = '';
+    if ($tiene) $h .= '<a href="pago_recibido_archivo?tipo=' . $tipo . '&id=' . $id . '" target="_blank" class="' . $cls . ($enlace ? 'text-success' : 'btn-outline-success') . '" title="Ver el comprobante"><i class="bi bi-paperclip"></i></a> ';
+    if ($puede) $h .= '<button type="button" class="' . $cls . ($enlace ? 'text-secondary' : 'btn-outline-secondary') . ' btn-comp" data-tipo="' . $tipo . '" data-id="' . $id . '" data-tiene="' . ($tiene ? 1 : 0) . '" title="' . ($tiene ? 'Cambiar o quitar el comprobante' : 'Adjuntar un comprobante (opcional)') . '"><i class="bi bi-' . ($tiene ? 'pencil-square' : 'cloud-upload') . '"></i></button> ';
+    return $h;
+}
 $abonadoPor = [];
 if ($hayAbonos && $facturas) {
     $ids = array_map('intval', array_column($facturas, 'id'));
@@ -1096,7 +1106,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 <td class="small"><?= htmlspecialchars($a['referencia'] ?? '') ?: '—' ?></td>
                                 <td class="text-end fw-semibold text-nowrap">L <?= number_format((float)$a['monto'], 2) ?></td>
                                 <td class="text-center small"><?= $a['factura_id'] ? '<a href="ver_factura?id=' . (int)$a['factura_id'] . '" target="_blank" class="font-monospace">' . htmlspecialchars($a['correlativo']) . '</a>' : ((int)$a['anulado'] ? '' : '<span class="badge" style="background:#fef3c7;color:#92400e">Sin factura</span>') ?></td>
-                                <td class="text-end text-nowrap"><?php if (!(int)$a['anulado']): ?><a href="recibo_pdf?anticipo=<?= (int)$a['id'] ?>" target="_blank" class="btn btn-link btn-sm p-0 me-2 text-secondary" title="Recibo de anticipo en PDF"><i class="bi bi-file-earmark-pdf"></i></a><?php if ($puedeCorreo): ?><a href="nuevo_cobro?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&anticipos=<?= (int)$a['id'] ?>" class="btn btn-link btn-sm p-0 me-2 text-secondary" title="Enviar el recibo por correo (ahora o programado)"><i class="bi bi-send"></i></a><?php endif; ?><?php endif; ?><?php if (!(int)$a['anulado'] && !$a['factura_id'] && in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?><button class="btn btn-link btn-sm p-0 text-danger btn-anular-anticipo" data-id="<?= (int)$a['id'] ?>" title="Anular"><i class="bi bi-x-circle"></i></button><?php endif; ?></td>
+                                <td class="text-end text-nowrap"><?php if (!(int)$a['anulado']): ?><a href="recibo_pdf?anticipo=<?= (int)$a['id'] ?>" target="_blank" class="btn btn-link btn-sm p-0 me-2 text-secondary" title="Recibo de anticipo en PDF"><i class="bi bi-file-earmark-pdf"></i></a><?= comprobanteBotones('anticipo', (int)$a['id'], !empty($a['archivo_adjunto']), $puedeAdjuntar, true) ?><?php if ($puedeCorreo): ?><a href="nuevo_cobro?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&anticipos=<?= (int)$a['id'] ?>" class="btn btn-link btn-sm p-0 me-2 text-secondary" title="Enviar el recibo por correo (ahora o programado)"><i class="bi bi-send"></i></a><?php endif; ?><?php endif; ?><?php if (!(int)$a['anulado'] && !$a['factura_id'] && in_array(USUARIO_ROL, ['admin', 'superadmin'], true)): ?><button class="btn btn-link btn-sm p-0 text-danger btn-anular-anticipo" data-id="<?= (int)$a['id'] ?>" title="Anular"><i class="bi bi-x-circle"></i></button><?php endif; ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -1154,6 +1164,7 @@ $estadoIco = ['activo' => '✅', 'pausado' => '⏸', 'cancelado' => '❌', 'venc
                                 <td class="small"><?= htmlspecialchars(ucfirst($r['metodo_pago'])) ?></td>
                                 <td class="text-end fw-bold" style="color:var(--brand)">L <?= number_format((float)$r['monto'], 2) ?></td>
                                 <td class="text-center text-nowrap"><a href="recibo_pdf?id=<?= (int)$r['id'] ?>" target="_blank" class="btn btn-sm btn-outline-secondary" title="Ver el recibo en PDF"><i class="bi bi-file-earmark-pdf"></i></a>
+                                    <?= comprobanteBotones('recibo', (int)$r['id'], !empty($r['archivo_adjunto']), $puedeAdjuntar) ?>
                                     <?php if ($puedeCorreo): ?><a href="nuevo_cobro?receptor_id=<?= (int)$contrato['receptor_id'] ?>&tipo=envio_recibo&recibos=<?= (int)$r['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Enviar este recibo por correo"><i class="bi bi-send"></i></a><?php endif; ?></td>
                             </tr>
                         <?php endforeach; ?>
@@ -2030,6 +2041,42 @@ document.getElementById('selFirmaRecibo')?.addEventListener('change', async e =>
         Swal.fire({ title: '¿Quitar el vínculo?', text: 'La línea vuelve a quedar pendiente. El recibo, la factura o el pago anticipado no se borran.', icon: 'question', showCancelButton: true, confirmButtonText: 'Desvincular', cancelButtonText: 'Cancelar' })
             .then(r => { if (r.isConfirmed) post({ accion: 'desvincular', id: b.dataset.id }).then(listo).catch(e => Swal.fire('Error', e.message, 'error')); });
     }));
+})();
+</script>
+<?php endif; ?>
+<?php if ($puedeAdjuntar && ($recibos || $anticipos)): ?>
+<div class="modal fade" id="modalComp" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <form class="modal-content" id="formComp" novalidate>
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-paperclip me-1"></i> Comprobante del pago</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+            <div class="modal-body">
+                <input type="hidden" name="accion" value="comprobante"><input type="hidden" name="tipo" id="compTipo"><input type="hidden" name="id" id="compId">
+                <label class="form-label small">Archivo <span class="text-muted">(JPG, PNG o PDF, máx. 5 MB)</span></label>
+                <input type="file" name="comprobante" id="compArchivo" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp,application/pdf">
+                <div class="form-check mt-2 d-none" id="compQuitarGrp"><input class="form-check-input" type="checkbox" name="quitar_comprobante" value="1" id="compQuitar"><label class="form-check-label small" for="compQuitar">Quitar el comprobante actual</label></div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary btn-sm" type="submit">Guardar</button></div>
+        </form>
+    </div>
+</div>
+<script>
+(function () {
+    const form = document.getElementById('formComp'), modal = new bootstrap.Modal(document.getElementById('modalComp'));
+    document.querySelectorAll('.btn-comp').forEach(b => b.addEventListener('click', () => {
+        form.reset();
+        document.getElementById('compTipo').value = b.dataset.tipo; document.getElementById('compId').value = b.dataset.id;
+        document.getElementById('compQuitarGrp').classList.toggle('d-none', b.dataset.tiene !== '1');
+        modal.show();
+    }));
+    form.addEventListener('submit', e => {
+        e.preventDefault();
+        if (!document.getElementById('compArchivo').files.length && !document.getElementById('compQuitar').checked) { Swal.fire('Falta el archivo', 'Elegí el comprobante o marcá «Quitar».', 'info'); return; }
+        const btn = form.querySelector('[type=submit]'); btn.disabled = true;
+        fetch('includes/pago_recibido_accion.php', { method: 'POST', body: new FormData(form) }).then(r => r.json()).then(d => {
+            if (!d.success) throw new Error(d.error || 'No se pudo guardar.');
+            modal.hide(); Swal.fire({ icon: 'success', title: d.message, timer: 1500, showConfirmButton: false }).then(() => location.reload());
+        }).catch(err => Swal.fire('Error', err.message, 'error')).finally(() => btn.disabled = false);
+    });
 })();
 </script>
 <?php endif; ?>

@@ -182,6 +182,28 @@ function pagoRecibidoEditar(PDO $pdo, int $cid, int $uid, string $tipo, int $id,
             ->execute([$fecha, $metodo, $ref, $nuevaCuenta, $mov, (int)$p['cobro_id'], $cid]);
 }
 
+/**
+ * Adjunta, cambia o quita SOLO el comprobante de un pago (recibo o pago anticipado; los abonos de factura usan editar_cobro).
+ * No toca fecha, cuenta ni banco. El comprobante queda también en el depósito del banco, si lo tiene.
+ */
+function pagoRecibidoComprobante(PDO $pdo, int $cid, string $tipo, int $id, ?array $adjunto, bool $quitar): void
+{
+    if (!in_array($tipo, ['recibo', 'anticipo'], true)) throw new Exception("Tipo de pago inválido.");
+    $mp = pagoRecibidoMapa($tipo);
+    $p = pagoRecibidoObtener($pdo, $cid, $tipo, $id);
+    if ((int)$p['esta_anulado']) throw new Exception("El pago está anulado: no se edita.");
+    if (!$adjunto && !$quitar) throw new Exception("Elige un archivo.");
+    $antes = $p['archivo_adjunto'] ?? null;
+    $mov = (int)$p['movimiento_id'] ?: null;
+    if ($adjunto) {
+        $pdo->prepare("UPDATE {$mp['tabla']} SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND cliente_id = ?")->execute([$adjunto[0], $adjunto[1], $id, $cid]);
+        if ($mov) $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND cliente_id = ? AND (archivo_adjunto IS NULL OR archivo_adjunto = ?)")->execute([$adjunto[0], $adjunto[1], $mov, $cid, (string)$antes]);
+    } else {
+        $pdo->prepare("UPDATE {$mp['tabla']} SET archivo_adjunto = NULL, archivo_nombre = NULL WHERE id = ? AND cliente_id = ?")->execute([$id, $cid]);
+        if ($mov && $antes) $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = NULL, archivo_nombre = NULL WHERE id = ? AND cliente_id = ? AND archivo_adjunto = ?")->execute([$mov, $cid, $antes]);
+    }
+}
+
 /** Número del documento del pago (para descripciones). */
 function pagoRecibidoDocumento(PDO $pdo, string $tipo, array $p): string
 {

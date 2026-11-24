@@ -2,6 +2,7 @@
 // clientes/naranjaymedia/includes/pago_recibido_accion.php — Pagos recibidos (ver includes/pagos_recibidos.php).
 //   GET  ?ver=<tipo>&id=<id>                      → datos del pago para editarlo (JSON)
 //   POST accion=editar tipo, id, fecha, metodo, referencia, notas, cuenta_id, comprobante (archivo), quitar_comprobante
+//   POST accion=comprobante tipo (recibo|anticipo), id, comprobante (archivo) o quitar_comprobante → solo el comprobante
 require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 require_once '../../../includes/pagos_recibidos.php';
@@ -29,12 +30,19 @@ try {
         exit;
     }
     if (!in_array(USUARIO_ROL, ['admin', 'superadmin', 'facturador'], true)) throw new Exception("Tu rol solo puede consultar los pagos.");
-    if (($_POST['accion'] ?? '') !== 'editar') throw new Exception("Acción no válida.");
+    $accion = $_POST['accion'] ?? '';
+    if (!in_array($accion, ['editar', 'comprobante'], true)) throw new Exception("Acción no válida.");
     $adj = guardarAdjuntoGasto($_FILES['comprobante'] ?? null, $cid);
     $pdo->beginTransaction();
-    pagoRecibidoEditar($pdo, $cid, (int)USUARIO_ID, $tipo, $id, $_POST, $adj);
+    if ($accion === 'comprobante') {
+        pagoRecibidoComprobante($pdo, $cid, $tipo, $id, $adj, !empty($_POST['quitar_comprobante']));
+        $msg = $adj ? 'Comprobante guardado.' : 'Comprobante quitado.';
+    } else {
+        pagoRecibidoEditar($pdo, $cid, (int)USUARIO_ID, $tipo, $id, $_POST, $adj);
+        $msg = 'Pago actualizado.';
+    }
     $pdo->commit();
-    echo json_encode(['success' => true, 'message' => 'Pago actualizado.'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['success' => true, 'message' => $msg], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
     if ($adj) @unlink(gastoAdjuntoDir() . $adj[0]);

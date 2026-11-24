@@ -8,3 +8,5 @@
 <!-- <select data-buscar>: buscador con autocompletado (clientes y productos en facturas, cobros) -->
 <script src="../../clientes/js/select-buscar.js?v=<?= @filemtime(__DIR__ . '/../../clientes/js/select-buscar.js') ?>"></script>
 <script src="../../clientes/js/app-tabla.js?v=<?= @filemtime(__DIR__ . '/../../clientes/js/app-tabla.js') ?>"></script>
+<!-- Vista previa de comprobantes (imagen o PDF) sin salir de la página -->
+<script src="../../clientes/js/comprobante-vista.js?v=<?= @filemtime(__DIR__ . '/../../clientes/js/comprobante-vista.js') ?>"></script>
