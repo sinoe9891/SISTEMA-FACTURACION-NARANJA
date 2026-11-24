@@ -62,10 +62,16 @@ try {
             $msg = $n ? "Plan de pagos guardado ($n línea" . ($n > 1 ? 's' : '') . ")." : 'Plan de pagos eliminado.';
             break;
         case 'cobrar_recibo':
+            require_once __DIR__ . '/_gasto_adjuntos.php';
+            unset($_POST['adjunto']);
+            if ($adjComp = guardarAdjuntoGasto($_FILES['comprobante'] ?? null, $cid)) $_POST['adjunto'] = $adjComp;
             planCobrarRecibo($pdo, $cid, $uid, $id, $_POST);
             $msg = 'Recibo emitido y pago registrado.';
             break;
         case 'cobrar_anticipo':
+            require_once __DIR__ . '/_gasto_adjuntos.php';
+            unset($_POST['adjunto']);
+            if ($adjComp = guardarAdjuntoGasto($_FILES['comprobante'] ?? null, $cid)) $_POST['adjunto'] = $adjComp;
             $extraResp = ['anticipo_id' => planRegistrarAnticipo($pdo, $cid, $uid, $id, $_POST)];
             $msg = 'Pago registrado como pago anticipado (se aplica a la factura cuando la emitas).';
             break;

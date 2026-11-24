@@ -18,6 +18,11 @@ try {
     $contrato_id = filter_input(INPUT_POST, 'contrato_id', FILTER_VALIDATE_INT);
     if (!$contrato_id) throw new Exception("Contrato inválido.");
 
+    // Comprobante opcional (JPG, PNG, WEBP o PDF; 5 MB), como en los abonos de factura
+    require_once __DIR__ . '/_gasto_adjuntos.php';
+    unset($_POST['adjunto']);   // solo vale el archivo realmente subido
+    $adjComp = guardarAdjuntoGasto($_FILES['comprobante'] ?? null, $cid);
+    if ($adjComp) $_POST['adjunto'] = $adjComp;
     $pdo->beginTransaction();
     [$recId, $num] = reciboRegistrar($pdo, $cid, defined('USUARIO_ID') ? (int)USUARIO_ID : (int)($_SESSION['usuario_id'] ?? 0), $contrato_id, $_POST);
     $pdo->commit();

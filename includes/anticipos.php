@@ -66,7 +66,17 @@ function anticipoRegistrar(PDO $pdo, int $cid, int $usuario, array $d): int
     $pdo->prepare("INSERT INTO contratos_anticipos (cliente_id, contrato_id, fecha, monto, metodo, referencia, concepto, cuenta_id, movimiento_id, usuario_id)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         ->execute([$cid, $c['id'], $fecha, $monto, $metodo, $ref, $concepto, $cuentaId, $movId, $usuario]);
-    return (int)$pdo->lastInsertId();
+    $id = (int)$pdo->lastInsertId();
+    // Comprobante opcional (captura de la transferencia…): queda en el pago y en su depósito del banco
+    if (!empty($d['adjunto'])) {
+        [$arch, $nom] = $d['adjunto'];
+        $pdo->prepare("UPDATE contratos_anticipos SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ?")->execute([$arch, $nom, $id]);
+        if ($movId) {
+            try { $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND archivo_adjunto IS NULL")->execute([$arch, $nom, $movId]); }
+            catch (PDOException $e) { /* sin comprobante en movimientos */ }
+        }
+    }
+    return $id;
 }
 
 /** Anula un anticipo que aún no se aplicó a una factura (y su depósito bancario, si lo tiene). */

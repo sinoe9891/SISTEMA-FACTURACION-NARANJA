@@ -21,6 +21,9 @@ try {
     $pdo->beginTransaction();
     switch ($accion) {
         case 'registrar':
+            require_once __DIR__ . '/_gasto_adjuntos.php';
+            unset($_POST['adjunto']);
+            if ($adjComp = guardarAdjuntoGasto($_FILES['comprobante'] ?? null, $cid)) $_POST['adjunto'] = $adjComp;
             $id = anticipoRegistrar($pdo, $cid, $uid, $_POST);
             $msg = 'Pago anticipado registrado.';
             break;

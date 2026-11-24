@@ -2689,6 +2689,31 @@ suite('Recibos con banco, PDF, recordatorios del plan y envío de recibos por co
     $rec2 = (int)($r['json']['recibo_id'] ?? 0);
     check('un cobro anterior al saldo inicial liga la cuenta sin crear el depósito', $rec2 && (int)$f("SELECT cuenta_id FROM contratos_recibos WHERE id = $rec2") === $cta && !$f("SELECT movimiento_id FROM contratos_recibos WHERE id = $rec2"), $r['body']);
 
+    // Comprobante opcional en recibos y pagos anticipados
+    $r = $c->post('includes/recibo_guardar.php', ['contrato_id' => $ctr, 'monto' => 300, 'fecha_emision' => date('Y-m-d'), 'descripcion' => 'QA recibo con comprobante', 'metodo_pago' => 'transferencia', 'cuenta_id' => $cta,
+        'periodo_mes' => date('n'), 'periodo_anio' => date('Y'), 'comprobante' => new CURLFile(archivoTemporal('png'), 'image/png', 'transferencia.png')]);
+    $rec3 = (int)($r['json']['recibo_id'] ?? 0);
+    $mov3 = (int)$f("SELECT movimiento_id FROM contratos_recibos WHERE id = $rec3");
+    check('un recibo guarda su comprobante y lo deja también en el depósito del banco', $rec3 && $f("SELECT archivo_adjunto FROM contratos_recibos WHERE id = $rec3") && $mov3 && $f("SELECT archivo_adjunto FROM movimientos_bancarios WHERE id = $mov3") === $f("SELECT archivo_adjunto FROM contratos_recibos WHERE id = $rec3"), $r['body']);
+    $v = $c->get('pago_recibido_archivo', ['tipo' => 'recibo', 'id' => $rec3]);
+    check('el comprobante del recibo se puede ver', $v['code'] === 200 && str_contains($v['head'], 'image/png'), $v['head']);
+    $antes = (int)$f("SELECT COUNT(*) FROM contratos_recibos WHERE cliente_id = 2");
+    $r = $c->post('includes/recibo_guardar.php', ['contrato_id' => $ctr, 'monto' => 50, 'fecha_emision' => date('Y-m-d'), 'descripcion' => 'QA archivo malo', 'metodo_pago' => 'efectivo',
+        'comprobante' => new CURLFile(archivoTemporal('txt'), 'text/plain', 'malo.php')]);
+    check('un comprobante que no es imagen ni PDF se rechaza y no se emite el recibo', empty($r['json']['success']) && (int)$f("SELECT COUNT(*) FROM contratos_recibos WHERE cliente_id = 2") === $antes, $r['body']);
+    $r = $c->post('includes/recibo_guardar.php', ['contrato_id' => $ctr, 'monto' => 60, 'fecha_emision' => date('Y-m-d'), 'descripcion' => 'QA recibo sin comprobante', 'metodo_pago' => 'efectivo']);
+    $rec4 = (int)($r['json']['recibo_id'] ?? 0);
+    check('el comprobante es opcional: sin archivo el recibo se emite igual', $rec4 && $f("SELECT archivo_adjunto FROM contratos_recibos WHERE id = $rec4") === null, $r['body']);
+    $facCtrC = (int)$f("SELECT id FROM contratos WHERE cliente_id = 2 AND tipo_contrato = 'estandar' AND estado = 'activo' ORDER BY id LIMIT 1");
+    if ($facCtrC) {
+        $r = $c->post('includes/anticipo_accion.php', ['accion' => 'registrar', 'contrato_id' => $facCtrC, 'fecha' => date('Y-m-d'), 'monto' => '25.00', 'metodo' => 'transferencia', 'concepto' => 'QA anticipo comprobante',
+            'comprobante' => new CURLFile(archivoTemporal('pdf'), 'application/pdf', 'boleta.pdf')]);
+        $ant3 = (int)($r['json']['id'] ?? 0);
+        check('un pago anticipado guarda su comprobante', $ant3 && $f("SELECT archivo_adjunto FROM contratos_anticipos WHERE id = $ant3") && $c->get('pago_recibido_archivo', ['tipo' => 'anticipo', 'id' => $ant3])['code'] === 200, $r['body']);
+        if ($ant3) $pdo->exec("UPDATE contratos_anticipos SET anulado = 1, motivo_anulacion = 'QA' WHERE id = $ant3");
+    }
+    $pdo->exec("DELETE FROM contratos_recibos WHERE id IN ($rec3, $rec4)");
+
     // PDF del recibo
     $p = $c->get('recibo_pdf', ['id' => $rec1]);
     check('el recibo se descarga en PDF', $p['code'] === 200 && str_starts_with($p['body'], '%PDF'), substr($p['body'], 0, 100));

@@ -1901,6 +1901,8 @@ document.getElementById('selFirmaRecibo')?.addEventListener('change', async e =>
                     <div class="col-12"><label class="form-label small">Depositado en</label><select class="form-select form-select-sm" name="cuenta_id"><option value="">— No registrar en banco —</option>
                         <?php foreach ($cuentasAnt as $c): ?><option value="<?= (int)$c['id'] ?>"<?= bancoSel($c) ?>><?= htmlspecialchars($c['banco'] . ' ' . $c['numero']) ?></option><?php endforeach; ?></select></div>
                 <?php endif; ?>
+                <div class="col-12"><label class="form-label small">Comprobante <span class="text-muted">(opcional · captura de la transferencia, boleta… · JPG, PNG o PDF, máx. 5 MB)</span></label>
+                    <input type="file" name="comprobante" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp,application/pdf"></div>
             </div>
             <div class="modal-footer"><button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary btn-sm" type="submit">Registrar pago</button></div>
         </form>
@@ -1999,6 +2001,7 @@ document.getElementById('selFirmaRecibo')?.addEventListener('change', async e =>
                 <label class="form-label small mt-2">Método</label><select id="pcMetodo" class="form-select form-select-sm">${metodos}</select>
                 ${CUENTAS.length ? `<label class="form-label small mt-2">Depositado en</label><select id="pcCuenta" class="form-select form-select-sm"><option value="">— No registrar en banco —</option>${CUENTAS.map(c => `<option value="${c.id}"${c.pred ? ' selected' : ''}>${esc(c.txt)}</option>`).join('')}</select>` : ''}
                 ${ES_RECIBO ? '<label class="form-label small mt-2">Notas</label><input id="pcNotas" class="form-control form-control-sm" maxlength="255">' : '<label class="form-label small mt-2">Referencia</label><input id="pcRef" class="form-control form-control-sm" maxlength="100">'}
+                <label class="form-label small mt-2">Comprobante <span class="text-muted">(opcional · JPG, PNG o PDF, máx. 5 MB)</span></label><input type="file" id="pcArchivo" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp,application/pdf">
             </div>`,
             showCancelButton: true, confirmButtonText: ES_RECIBO ? 'Emitir recibo' : 'Registrar cobro', cancelButtonText: 'Cancelar', focusConfirm: false,
             preConfirm: () => post({
@@ -2006,6 +2009,7 @@ document.getElementById('selFirmaRecibo')?.addEventListener('change', async e =>
                 fecha: document.getElementById('pcFecha').value, metodo: document.getElementById('pcMetodo').value,
                 monto: document.getElementById('pcMonto')?.value, cuenta_id: document.getElementById('pcCuenta')?.value,
                 referencia: document.getElementById('pcRef')?.value, notas: document.getElementById('pcNotas')?.value,
+                comprobante: document.getElementById('pcArchivo')?.files[0],
             }).catch(e => Swal.showValidationMessage(e.message)),
         }).then(r => { if (r.isConfirmed && r.value) (r.value.anticipo_id && window.ofrecerRecibo ? window.ofrecerRecibo(r.value.anticipo_id, r.value.message) : listo(r.value)); });
     }));

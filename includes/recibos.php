@@ -48,5 +48,14 @@ function reciboRegistrar(PDO $pdo, int $cid, int $usuario, int $contratoId, arra
             $hayCuenta ? [$cuentaId, $movId] : []));
     $recId = (int)$pdo->lastInsertId();
     if ($movId) $pdo->prepare("UPDATE movimientos_bancarios SET referencia = ? WHERE id = ?")->execute(['Recibo ' . str_pad((string)$num, 5, '0', STR_PAD_LEFT), $movId]);
+    // Comprobante opcional (captura de la transferencia…): queda en el recibo y en su depósito del banco
+    if (!empty($d['adjunto'])) {
+        [$arch, $nom] = $d['adjunto'];
+        $pdo->prepare("UPDATE contratos_recibos SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ?")->execute([$arch, $nom, $recId]);
+        if ($movId) {
+            try { $pdo->prepare("UPDATE movimientos_bancarios SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND archivo_adjunto IS NULL")->execute([$arch, $nom, $movId]); }
+            catch (PDOException $e) { /* sin comprobante en movimientos */ }
+        }
+    }
     return [$recId, $num];
 }

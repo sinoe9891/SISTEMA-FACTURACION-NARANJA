@@ -370,6 +370,11 @@ $meses_es = [
                             <?php endif; ?>
 
                             <div class="col-12 rc-field">
+                                <label>Comprobante (opcional) <span style="font-weight:400;color:var(--muted)">· captura de la transferencia, boleta… JPG, PNG o PDF, máx. 5 MB</span></label>
+                                <input type="file" name="comprobante" class="form-control" accept="image/jpeg,image/png,image/webp,application/pdf">
+                            </div>
+
+                            <div class="col-12 rc-field">
                                 <label>Notas (opcional)</label>
                                 <textarea name="notas" rows="2" placeholder="Observaciones adicionales…"
                                     maxlength="500"></textarea>
