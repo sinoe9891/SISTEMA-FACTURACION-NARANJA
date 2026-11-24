@@ -146,7 +146,10 @@ try {
             break;
 
         case 'cheque_emitir':
+            require_once '../../../includes/comprobantes.php';
+            $compNuevo = comprobanteDisponible($pdo) ? guardarAdjuntoGasto($_FILES['comprobante'] ?? null, $cid) : null;   // foto del cheque (opcional)
             $extra['id'] = bancoEmitirCheque($pdo, $cid, $uid, $_POST);
+            if ($compNuevo) comprobanteAsignar($pdo, $cid, 'cheque', (int)$extra['id'], $compNuevo);
             $mensaje = 'Cheque registrado.';
             break;
 
@@ -167,6 +170,7 @@ try {
     echo json_encode(['success' => true, 'message' => $mensaje] + $extra, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    if (!empty($compNuevo)) @unlink(gastoAdjuntoDir() . $compNuevo[0]);   // el comprobante del cheque no quedó guardado
     if (!empty($archivo)) borrarAdjuntoGastoSiHuerfano($pdo, $archivo);   // el comprobante subido no quedó en ningún registro
     http_response_code(400);
     $msg = $e instanceof PDOException ? 'Error de base de datos al guardar la operación.' : $e->getMessage();

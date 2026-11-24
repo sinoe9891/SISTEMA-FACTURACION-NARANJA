@@ -2070,7 +2070,7 @@ document.getElementById('selFirmaRecibo')?.addEventListener('change', async e =>
     }));
     form.addEventListener('submit', e => {
         e.preventDefault();
-        if (!document.getElementById('compArchivo').files.length && !document.getElementById('compQuitar').checked) { Swal.fire('Falta el archivo', 'Elegí el comprobante o marcá «Quitar».', 'info'); return; }
+        if (!document.getElementById('compArchivo').files.length && !document.getElementById('compQuitar').checked) { Swal.fire('Falta el archivo', 'Elige el comprobante o marca «Quitar».', 'info'); return; }
         const btn = form.querySelector('[type=submit]'); btn.disabled = true;
         fetch('includes/pago_recibido_accion.php', { method: 'POST', body: new FormData(form) }).then(r => r.json()).then(d => {
             if (!d.success) throw new Error(d.error || 'No se pudo guardar.');

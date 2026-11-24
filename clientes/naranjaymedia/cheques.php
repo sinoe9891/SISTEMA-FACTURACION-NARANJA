@@ -3,9 +3,11 @@ $titulo = 'Cheques';
 require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/bancos.php';
+require_once '../../includes/comprobantes.php';
 
 $cid = cliente_actual();
 $instalado = bancosDisponible($pdo);
+$compOk = comprobanteDisponible($pdo);   // comprobante opcional del cheque (migración 2026-11-23)
 $puedeEditar = in_array(USUARIO_ROL, ['admin', 'superadmin', 'nomina'], true);   // emitir y marcar cobrado (Nómina y gastos también)
 $puedeAnular = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);
 $estado = in_array($_GET['estado'] ?? '', ['emitido', 'cobrado', 'anulado'], true) ? $_GET['estado'] : '';
@@ -62,9 +64,9 @@ require_once '../../includes/templates/header.php';
         </div>
         <div class="table-responsive">
             <table data-paginar class="table app-table">
-                <thead><tr><th>N.°</th><th>Fecha</th><th>Cuenta</th><th>Beneficiario</th><th>Concepto</th><th class="app-num">Monto</th><th>Estado</th><?php if ($puedeEditar): ?><th class="text-end">Acciones</th><?php endif; ?></tr></thead>
+                <thead><tr><th>N.°</th><th>Fecha</th><th>Cuenta</th><th>Beneficiario</th><th>Concepto</th><th class="app-num">Monto</th><th>Estado</th><?php if ($compOk): ?><th class="text-center">Comprobante</th><?php endif; ?><?php if ($puedeEditar): ?><th class="text-end">Acciones</th><?php endif; ?></tr></thead>
                 <tbody>
-                    <?php if (!$cheques): ?><tr><td colspan="8" class="text-center text-muted py-4">No hay cheques.</td></tr><?php endif; ?>
+                    <?php if (!$cheques): ?><tr><td colspan="9" class="text-center text-muted py-4">No hay cheques.</td></tr><?php endif; ?>
                     <?php foreach ($cheques as $ch): ?>
                         <tr>
                             <td class="font-monospace fw-semibold"><?= htmlspecialchars($ch['numero']) ?></td>
@@ -74,6 +76,7 @@ require_once '../../includes/templates/header.php';
                             <td class="small"><?= htmlspecialchars($ch['concepto'] ?? '') ?><?= $ch['estado'] === 'anulado' && $ch['motivo_anulacion'] ? '<div class="text-danger">Anulado: ' . htmlspecialchars($ch['motivo_anulacion']) . '</div>' : '' ?></td>
                             <td class="app-num"><?= bancoMoneda((float)$ch['monto'], $ch['moneda']) ?></td>
                             <td><span class="app-badge <?= $badge[$ch['estado']] ?>"><?= ucfirst($ch['estado']) ?></span><?= $ch['fecha_cobro'] ? '<div class="small text-muted">' . date('d/m/Y', strtotime($ch['fecha_cobro'])) . '</div>' : '' ?></td>
+                            <?php if ($compOk): ?><td class="text-center text-nowrap"><?= comprobanteBotonesFila('cheque', (int)$ch['id'], !empty($ch['archivo_adjunto']), $puedeEditar && $ch['estado'] !== 'anulado') ?></td><?php endif; ?>
                             <?php if ($puedeEditar): ?>
                                 <td class="text-end text-nowrap">
                                     <?php if ($ch['estado'] === 'emitido'): ?>
@@ -111,6 +114,7 @@ require_once '../../includes/templates/header.php';
                         <div class="col-12"><label class="form-label">Páguese a la orden de *</label><input class="form-control" name="beneficiario" required maxlength="150"></div>
                         <div class="col-6"><label class="form-label">Monto *</label><input class="form-control" type="number" step="0.01" min="0.01" name="monto" id="chMonto" required></div>
                         <div class="col-12"><label class="form-label">Concepto</label><input class="form-control" name="concepto" maxlength="255"></div>
+                        <?php if ($compOk): ?><div class="col-12"><label class="form-label">Comprobante <span class="text-muted small">(opcional · foto del cheque, JPG, PNG o PDF, máx. 5 MB)</span></label><input class="form-control" type="file" name="comprobante" accept="image/jpeg,image/png,image/webp,application/pdf"></div><?php endif; ?>
                         <div class="col-12 d-none" id="chAviso"><div class="alert alert-warning py-2 mb-0 small"><i class="bi bi-exclamation-triangle"></i> El monto supera el disponible de la cuenta (saldo menos cheques sin cobrar).</div></div>
                     </div>
                     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" type="submit">Registrar cheque</button></div>
@@ -120,6 +124,7 @@ require_once '../../includes/templates/header.php';
     <?php endif; ?>
 <?php endif; ?>
 
+<?php if ($compOk && $puedeEditar): require __DIR__ . '/../../includes/templates/_comprobante_modal.php'; endif; ?>
 <script src="../../clientes/js/bancos.js?v=<?= @filemtime(__DIR__ . '/../js/bancos.js') ?>"></script>
 <script>
 (function () {

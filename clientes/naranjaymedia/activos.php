@@ -5,10 +5,12 @@ require_once '../../includes/db.php';
 require_once '../../includes/session.php';
 require_once '../../includes/activos.php';
 require_once '../../includes/bancos.php';
+require_once '../../includes/comprobantes.php';
 
 $cid = (int)cliente_actual();
 $instalado = activosDisponible($pdo);
 $puedeEditar = in_array(USUARIO_ROL, ['admin', 'superadmin'], true);
+$compOk = comprobanteDisponible($pdo);   // comprobante opcional (migración 2026-11-23)
 $hoy = date('Y-m-d');
 $activos = $instalado ? activosLista($pdo, $cid) : [];
 $prestamos = $instalado ? prestamosRecibidos($pdo, $cid) : [];
@@ -92,6 +94,7 @@ require_once '../../includes/templates/header.php';
                             <td class="app-num fw-semibold"><?= number_format((float)$a['costo'] - $acum, 2) ?></td>
                             <td><?= $a['fecha_baja'] ? '<span class="app-badge app-badge-muted">Baja ' . date('d/m/Y', strtotime($a['fecha_baja'])) . '</span>' : ($acum >= (float)$a['costo'] - (float)$a['valor_residual'] - 0.004 ? '<span class="app-badge app-badge-muted">Depreciado</span>' : '<span class="app-badge app-badge-success">En uso</span>') ?></td>
                             <?php if ($puedeEditar): ?><td class="text-end text-nowrap">
+                                <?php if ($compOk): ?><?= comprobanteBotonesFila('activo', (int)$a['id'], !empty($a['archivo_adjunto']), true) ?><?php endif; ?>
                                 <button class="btn btn-sm btn-link p-0 me-2 btn-editar-activo" data-activo='<?= json_encode($a, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>'>Editar</button>
                                 <?php if (!$a['fecha_baja']): ?><button class="btn btn-sm btn-link p-0 me-2 btn-baja-activo" data-id="<?= (int)$a['id'] ?>">Dar de baja</button><?php endif; ?>
                                 <button class="btn btn-sm btn-link p-0 text-danger btn-eliminar-activo" data-id="<?= (int)$a['id'] ?>" title="Eliminar"><i class="bi bi-trash"></i></button>
@@ -119,7 +122,7 @@ require_once '../../includes/templates/header.php';
                             <td class="app-num"><?= (float)$p['tasa_anual'] > 0 ? rtrim(rtrim(number_format((float)$p['tasa_anual'], 2), '0'), '.') . ' %' : 'Sin intereses' ?></td>
                             <td class="app-num text-success"><?= number_format($sp['pagado'], 2) ?></td>
                             <td class="app-num fw-semibold <?= $sp['saldo'] > 0 ? 'text-danger' : 'text-success' ?>"><?= number_format($sp['saldo'], 2) ?></td>
-                            <?php if ($puedeEditar): ?><td class="text-end"><button class="btn btn-sm btn-link p-0 text-danger btn-anular-prestamo" data-id="<?= (int)$p['id'] ?>" title="Anular"><i class="bi bi-x-circle"></i></button></td><?php endif; ?>
+                            <?php if ($puedeEditar): ?><td class="text-end text-nowrap"><?php if ($compOk): ?><?= comprobanteBotonesFila('prestamo', (int)$p['id'], !empty($p['archivo_adjunto']), true) ?><?php endif; ?><button class="btn btn-sm btn-link p-0 text-danger btn-anular-prestamo" data-id="<?= (int)$p['id'] ?>" title="Anular"><i class="bi bi-x-circle"></i></button></td><?php endif; ?>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -144,6 +147,7 @@ require_once '../../includes/templates/header.php';
                     <div class="col-md-4"><label class="form-label">Origen</label><select class="form-select" name="origen"><option value="compra">Compra</option><option value="donacion">Donación</option><option value="prestamo">Financiado con préstamo</option><option value="mixto">Donación + préstamo</option></select></div>
                     <div class="col-md-4"><label class="form-label">Proveedor</label><input class="form-control" name="proveedor" maxlength="150"></div>
                     <div class="col-12"><label class="form-label">Notas</label><input class="form-control" name="notas"></div>
+                    <?php if ($compOk): ?><div class="col-12"><label class="form-label">Comprobante de la compra <span class="text-muted small">(opcional · factura del proveedor, JPG, PNG o PDF, máx. 5 MB)</span></label><input class="form-control" type="file" name="comprobante" accept="image/jpeg,image/png,image/webp,application/pdf"></div><?php endif; ?>
                     <div class="col-12" id="actCompraWrap">
                         <div class="border rounded p-2" style="background:#f8fafc">
                             <div class="form-check"><input class="form-check-input" type="checkbox" name="registrar_compra" value="1" id="actRegistrarCompra">
@@ -187,6 +191,7 @@ require_once '../../includes/templates/header.php';
                             <div class="col-sm-6"><label class="form-label small mb-1">Categoría</label><select class="form-select form-select-sm" name="categoria_id"><option value="">—</option><?php foreach ($categorias as $cg): ?><option value="<?= (int)$cg['id'] ?>"><?= htmlspecialchars($cg['nombre']) ?></option><?php endforeach; ?></select></div>
                         </div>
                     </div>
+                    <?php if ($compOk): ?><div class="col-12"><label class="form-label">Comprobante <span class="text-muted small">(opcional · contrato o boleta del préstamo, JPG, PNG o PDF, máx. 5 MB)</span></label><input class="form-control" type="file" name="comprobante" accept="image/jpeg,image/png,image/webp,application/pdf"></div><?php endif; ?>
                     <input type="hidden" name="generar_cuotas" id="pmGenerarFlag">
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" type="submit">Registrar préstamo</button></div>
@@ -196,6 +201,7 @@ require_once '../../includes/templates/header.php';
     <?php endif; ?>
 <?php endif; ?>
 
+<?php if ($compOk && $puedeEditar && $instalado): require __DIR__ . '/../../includes/templates/_comprobante_modal.php'; endif; ?>
 <script>
 (function () {
     const URL_A = 'includes/activo_accion.php';

@@ -4,7 +4,7 @@
  * con botones para abrirlo en otra pestaña o descargarlo. Con Ctrl/Cmd/Shift o clic central se abre normal en otra pestaña.
  */
 (function () {
-    const RUTA = /(?:^|\/)(pago_recibido_archivo|cobro_archivo|movimiento_archivo|gasto_archivo|gasto_operativo_archivo|socio_prestamo_archivo|socio_archivo|comision_archivo|prestamo_comprobante)(?:\.php)?\?/;
+    const RUTA = /(?:^|\/)(pago_recibido_archivo|comprobante_archivo|cobro_archivo|movimiento_archivo|gasto_archivo|gasto_operativo_archivo|socio_prestamo_archivo|socio_archivo|comision_archivo|prestamo_comprobante)(?:\.php)?\?/;
     let modal = null, urlObjeto = null;
 
     function armar() {

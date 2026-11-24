@@ -12,6 +12,8 @@ require_once '../../../includes/db.php';
 require_once '../../../includes/session.php';
 require_once '../../../includes/activos.php';
 require_once '../../../includes/bancos.php';
+require_once '../../../includes/comprobantes.php';
+require_once __DIR__ . '/_gasto_adjuntos.php';
 header('Content-Type: application/json; charset=utf-8');
 
 try {
@@ -33,6 +35,8 @@ try {
         return $cat;
     };
     $extra = [];
+    $compNuevo = null;   // comprobante subido en esta solicitud (se borra si no queda guardado)
+    $comprobante = function () use ($pdo, $cid, &$compNuevo) { return comprobanteDisponible($pdo) ? ($compNuevo = guardarAdjuntoGasto($_FILES['comprobante'] ?? null, $cid)) : null; };
 
     $pdo->beginTransaction();
     switch ($accion) {
@@ -76,6 +80,11 @@ try {
                     $msg .= ' La compra quedó en Gastos (no resta en resultados: se reconoce con la depreciación).';
                 }
             }
+            // Comprobante de la compra (factura del proveedor): en el activo y, si se registró el pago, también en su gasto
+            if ($adj = $comprobante()) {
+                comprobanteAsignar($pdo, $cid, 'activo', $id, $adj);
+                if (!empty($gid)) $pdo->prepare("UPDATE gastos SET archivo_adjunto = ?, archivo_nombre = ? WHERE id = ? AND cliente_id = ?")->execute([$adj[0], $adj[1], $gid, $cid]);
+            }
             $extra['id'] = $id;
             break;
 
@@ -116,6 +125,7 @@ try {
                 ->execute([$cid, $acreedor, mb_substr(trim((string)($_POST['descripcion'] ?? '')), 0, 255) ?: null, $monto, $fecha, $tasa, $cuotas, $activo, $grupo, trim((string)($_POST['notas'] ?? '')) ?: null, $uid]);
             $pid = (int)$pdo->lastInsertId();
             $msg = 'Préstamo registrado.';
+            if ($adj = $comprobante()) comprobanteAsignar($pdo, $cid, 'prestamo', $pid, $adj);   // contrato o boleta del préstamo
             // El dinero entró a una cuenta (si no fue en especie)
             if ($cta = filter_input(INPUT_POST, 'cuenta_id', FILTER_VALIDATE_INT)) {
                 $cuenta = bancoCuenta($pdo, $cid, $cta, true);
@@ -179,6 +189,7 @@ try {
     echo json_encode(['success' => true, 'message' => $msg] + $extra, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    if (!empty($compNuevo)) @unlink(gastoAdjuntoDir() . $compNuevo[0]);
     http_response_code(400);
     if ($e instanceof PDOException) error_log('activo_accion.php: ' . $e->getMessage());
     echo json_encode(['success' => false, 'error' => $e instanceof PDOException ? 'Error de base de datos.' : $e->getMessage()], JSON_UNESCAPED_UNICODE);
